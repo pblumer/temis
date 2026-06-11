@@ -14,3 +14,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0007 | FEEL-Number als Decimal (nicht float64) | accepted |
 | 0008 | Ressourcenlimits & Sandboxing | accepted |
 | 0009 | Projektname „Temis" | accepted |
+| 0010 | DMNDI-Round-trip über verbatim Token-Stream | accepted |

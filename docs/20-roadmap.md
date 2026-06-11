@@ -23,7 +23,7 @@ FEEL-Ausdrücken laden, kompilieren und korrekt evaluieren — als Go-Library.
 | WP | Titel | Abhängt von | Akzeptanzkriterium |
 |---|---|---|---|
 | WP-01 ✅ | Projektgerüst | – | **done** — `go build ./...`, `Makefile` mit `verify/test/bench/tck`, CI-Skript, lint-Konfig. `make verify` läuft (leer) grün. |
-| WP-02 | DMN-XML-Decoding (1.5, tolerant 1.3/1.4) | WP-01 | Structs gemäß DMN-XSD; lädt offizielle DMN-Beispiel-XML + dmn-js-Export verlustfrei in `internal/model`. Round-trip von `DMNDI` bleibt erhalten. Golden-File-Tests. |
+| WP-02 ✅ | DMN-XML-Decoding (1.5, tolerant 1.3/1.4) | WP-01 | **done** — Structs gemäß DMN-XSD; lädt DMN 1.3/1.4/1.5 namespace-tolerant verlustfrei in `internal/model`. `DMNDI`-Round-trip erhalten (ADR-0010). Golden-File-, Round-trip- & Fuzz-Tests. |
 | WP-03 | FEEL Lexer | WP-01 | Tokenisiert alle FEEL-Lexeme (Zahlen, Strings mit Escapes, Namen mit Leerzeichen!, Datums-/Zeitliterale, Operatoren). Property-Test: kein Input paniced. |
 | WP-04 | FEEL Parser → AST | WP-03 | Vollständige Ausdrucks-Grammatik (Operatorpräzedenz, `if/then/else`, `for/in/return`, `some/every`, Pfadzugriff, Funktionsaufruf, Listen/Contexts). Fehler liefern Position. |
 | WP-05 | FEEL-Werte & Number-Decimal | WP-01 | `Value`-Typen inkl. Decimal-Number (kein float), date/time/duration. Arithmetik spec-konform (Rundung, `null`-Propagation). |

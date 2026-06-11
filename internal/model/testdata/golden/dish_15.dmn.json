@@ -1,0 +1,94 @@
+{
+  "ID": "dish_definitions",
+  "Name": "Dish",
+  "Namespace": "http://temis.test/dish",
+  "DMNVersion": "1.5",
+  "HasDMNDI": true,
+  "InputData": [
+    {
+      "ID": "id_season",
+      "Name": "Season"
+    },
+    {
+      "ID": "id_guests",
+      "Name": "Guest Count"
+    }
+  ],
+  "Decisions": [
+    {
+      "ID": "id_dish",
+      "Name": "Dish",
+      "RequiredInputs": [
+        "id_season",
+        "id_guests"
+      ],
+      "DecisionTable": {
+        "ID": "dt_dish",
+        "HitPolicy": "U",
+        "Inputs": [
+          {
+            "ID": "in_season",
+            "Label": "Season",
+            "Expression": "Season",
+            "TypeRef": "string"
+          },
+          {
+            "ID": "in_guests",
+            "Label": "Guest Count",
+            "Expression": "Guest Count",
+            "TypeRef": "number"
+          }
+        ],
+        "Outputs": [
+          {
+            "ID": "out_dish",
+            "Name": "Dish",
+            "TypeRef": "string"
+          }
+        ],
+        "Rules": [
+          {
+            "ID": "r1",
+            "InputEntries": [
+              "\"Fall\"",
+              "\u003c= 8"
+            ],
+            "OutputEntries": [
+              "\"Spareribs\""
+            ]
+          },
+          {
+            "ID": "r2",
+            "InputEntries": [
+              "\"Winter\"",
+              "\u003c= 8"
+            ],
+            "OutputEntries": [
+              "\"Roastbeef\""
+            ]
+          },
+          {
+            "ID": "r3",
+            "InputEntries": [
+              "\"Spring\"",
+              "[5..8]"
+            ],
+            "OutputEntries": [
+              "\"Steak\""
+            ]
+          },
+          {
+            "ID": "r4",
+            "InputEntries": [
+              "-",
+              "\u003e 8"
+            ],
+            "OutputEntries": [
+              "\"Stew\""
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
