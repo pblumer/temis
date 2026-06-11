@@ -56,6 +56,30 @@ func (e *Env) slot(name string) (int, bool) {
 // Names returns the variable names in slot order.
 func (e *Env) Names() []string { return e.order }
 
+// Derive returns a new Env with extra names appended after the existing slots.
+// It is used to add the implicit unary-test input "?" to a decision env without
+// disturbing the existing slot indices.
+func (e *Env) Derive(extra ...string) *Env {
+	d := &Env{index: make(map[string]int, len(e.index)+len(extra))}
+	for _, n := range e.order {
+		d.define(n)
+	}
+	for _, n := range extra {
+		d.define(n)
+	}
+	return d
+}
+
+// Extend returns a new Scope with extra values appended after the existing
+// slots, matching an Env produced by Derive. The receiver is left unchanged, so
+// a base scope can be extended repeatedly with different values.
+func (s *Scope) Extend(extra ...value.Value) *Scope {
+	vars := make([]value.Value, len(s.vars)+len(extra))
+	copy(vars, s.vars)
+	copy(vars[len(s.vars):], extra)
+	return &Scope{vars: vars}
+}
+
 // NewScope builds a runtime Scope from named input values, placing each into its
 // env slot. Names absent from values (or with a nil value) become null. This is
 // the single map→slots boundary; everything past it is index-based.
