@@ -1,0 +1,85 @@
+{
+  "ID": "discount_definitions",
+  "Name": "Discount",
+  "Namespace": "http://temis.test/discount",
+  "DMNVersion": "1.4",
+  "HasDMNDI": false,
+  "InputData": [
+    {
+      "ID": "id_customer",
+      "Name": "Customer Type"
+    },
+    {
+      "ID": "id_order",
+      "Name": "Order Total"
+    }
+  ],
+  "Decisions": [
+    {
+      "ID": "id_discount",
+      "Name": "Discount",
+      "RequiredInputs": [
+        "id_customer",
+        "id_order"
+      ],
+      "DecisionTable": {
+        "ID": "dt_discount",
+        "HitPolicy": "F",
+        "Inputs": [
+          {
+            "ID": "in_customer",
+            "Label": "Customer Type",
+            "Expression": "Customer Type",
+            "TypeRef": "string",
+            "AllowedValues": "\"Business\",\"Private\""
+          },
+          {
+            "ID": "in_order",
+            "Label": "Order Total",
+            "Expression": "Order Total",
+            "TypeRef": "number"
+          }
+        ],
+        "Outputs": [
+          {
+            "ID": "out_discount",
+            "Name": "Discount",
+            "TypeRef": "number"
+          }
+        ],
+        "Rules": [
+          {
+            "ID": "d1",
+            "InputEntries": [
+              "\"Business\"",
+              "\u003e= 1000"
+            ],
+            "OutputEntries": [
+              "0.15"
+            ]
+          },
+          {
+            "ID": "d2",
+            "InputEntries": [
+              "\"Business\"",
+              "-"
+            ],
+            "OutputEntries": [
+              "0.10"
+            ]
+          },
+          {
+            "ID": "d3",
+            "InputEntries": [
+              "\"Private\"",
+              "-"
+            ],
+            "OutputEntries": [
+              "0.05"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

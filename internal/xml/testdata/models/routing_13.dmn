@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:temis="http://temis.test/ext"
+             id="routing_definitions"
+             name="Routing"
+             namespace="http://temis.test/routing">
+  <temis:note>generated fixture for the unknown-element diagnostic</temis:note>
+  <inputData id="id_age" name="Applicant Age"/>
+  <decision id="id_eligibility" name="Eligibility">
+    <informationRequirement>
+      <requiredInput href="#id_age"/>
+    </informationRequirement>
+    <literalExpression id="le_eligibility" typeRef="string">
+      <text>if Applicant Age >= 18 then "ELIGIBLE" else "INELIGIBLE"</text>
+    </literalExpression>
+  </decision>
+  <decision id="id_routing" name="Routing">
+    <informationRequirement>
+      <requiredDecision href="#id_eligibility"/>
+    </informationRequirement>
+    <literalExpression id="le_routing" typeRef="string">
+      <text>if Eligibility = "ELIGIBLE" then "ACCEPT" else "DECLINE"</text>
+    </literalExpression>
+  </decision>
+</definitions>

@@ -1,0 +1,39 @@
+{
+  "ID": "routing_definitions",
+  "Name": "Routing",
+  "Namespace": "http://temis.test/routing",
+  "DMNVersion": "1.3",
+  "HasDMNDI": false,
+  "InputData": [
+    {
+      "ID": "id_age",
+      "Name": "Applicant Age"
+    }
+  ],
+  "Decisions": [
+    {
+      "ID": "id_eligibility",
+      "Name": "Eligibility",
+      "RequiredInputs": [
+        "id_age"
+      ],
+      "LiteralExpression": {
+        "ID": "le_eligibility",
+        "TypeRef": "string",
+        "Text": "if Applicant Age \u003e= 18 then \"ELIGIBLE\" else \"INELIGIBLE\""
+      }
+    },
+    {
+      "ID": "id_routing",
+      "Name": "Routing",
+      "RequiredDecisions": [
+        "id_eligibility"
+      ],
+      "LiteralExpression": {
+        "ID": "le_routing",
+        "TypeRef": "string",
+        "Text": "if Eligibility = \"ELIGIBLE\" then \"ACCEPT\" else \"DECLINE\""
+      }
+    }
+  ]
+}
