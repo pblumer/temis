@@ -93,21 +93,24 @@ darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf d
 ## 4. Zentrale interne Schnittstelle (stabilisierend)
 
 ```go
-// internal/feel
-type Value any            // konkret: nil, bool, *Number, string, time-typen, []Value, *Context, *Function
-type Scope interface {    // Variablenauflösung zur Laufzeit
-    Get(name string) (Value, bool)
-}
-type CompiledExpr func(s Scope) (Value, error)   // das ist der "kompilierte" FEEL-Ausdruck
+// internal/value — das Wertemodell (eigenes Paket, s. §2-Hinweis)
+type Value interface{ Kind() Kind; String() string /* … */ }  // null/bool/number/string/temporal/list/context/range/function
+
+// internal/feel — Compiler & Hot-Path-Schnittstelle (WP-06)
+type Scope struct{ /* vars []value.Value */ }                 // Slot-Array, keine Map im Hot Path (§5.2)
+type Env struct{ /* name→Slot-Index */ }                      // Compile-Zeit-Layout; Env.NewScope(map) ist die einzige map→Slots-Grenze
+type CompiledExpr func(*Scope) (value.Value, error)            // reine Go-Closure, immutable, thread-safe
 
 // internal/boxed — jede Boxed Expression kompiliert zu genau dieser Signatur
 type Compiler interface {
-    Compile(node model.Expression, env *TypeEnv) (feel.CompiledExpr, []Diagnostic, error)
+    Compile(node model.Expression, env *Env) (feel.CompiledExpr, []Diagnostic, error)
 }
 ```
 
-Diese drei Typen sind das Rückgrat. Performance entsteht dadurch, dass `CompiledExpr`
-eine reine Go-Closure ist — kein AST-Walk, keine Reflection im Hot Path.
+Diese Typen sind das Rückgrat. Performance entsteht dadurch, dass `CompiledExpr`
+eine reine Go-Closure ist — kein AST-Walk, keine Reflection im Hot Path. **Variablen
+sind zur Compile-Zeit auf Slot-Indizes aufgelöst** (`Scope` ist ein konkretes
+Slot-Array, kein `Get(name)`-Interface — verfeinert gem. §5.2, beschlossen in WP-06).
 
 ## 5. Performance-Architektur (konkrete Regeln)
 
