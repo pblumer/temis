@@ -34,13 +34,17 @@ temis/
 │   │   ├── schema.go           //   Go-Structs gemäß DMN-XSD
 │   │   └── decode.go           //   Namespace-tolerantes Decoding
 │   ├── model/                  // versionsneutrales Domänenmodell (DRG, Decision, Table…)
+│   ├── value/                  // FEEL/DMN-Wertemodell (eigenes Paket, s. u.)
+│   │   ├── value.go            //   Value-Interface, null/bool/string/list/context/range/function
+│   │   ├── number.go           //   Number = apd.Decimal (ADR-0007), 34 Stellen, half-even
+│   │   ├── temporal.go         //   date/time/date-time + zwei Dauer-Typen, Parsing
+│   │   ├── compare.go arith.go //   Gleichheit/Ordnung & Arithmetik mit null-Propagation
 │   ├── feel/                   // FEEL: Lexer→Parser→AST→Typecheck→Compiler→Closure
 │   │   ├── token.go lexer.go
 │   │   ├── ast.go parser.go
 │   │   ├── types.go            //   FEEL-Typsystem
 │   │   ├── typecheck.go
 │   │   ├── compile.go          //   AST → CompiledExpr (func(*Scope) Value)
-│   │   ├── value.go            //   FEEL-Werte (number=big.Decimal, date/time, list, context…)
 │   │   ├── builtins/           //   alle FEEL-Built-in-Funktionen, je Kategorie 1 Datei
 │   │   └── scope.go            //   Variablenauflösung zur Laufzeit
 │   ├── boxed/                  // Boxed Expressions → Compiler (nutzt feel/)
@@ -59,6 +63,11 @@ temis/
 **Regel für KI-Agenten:** `dmn/` ist die einzige öffentliche API. Alles unter `internal/`
 darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf die Engine zugreifen
 — niemals direkt auf `internal/`.
+
+> **Hinweis (WP-05):** Das Wertemodell liegt in einem **eigenen Paket `internal/value`**
+> (nicht in `internal/feel`), damit Wert-Namen wie `Number`/`Kind` nicht mit den
+> Token-Kinds des Lexers (`feel.Number`, `feel.Kind`) kollidieren. `feel`, `boxed`,
+> `drg` und `dmn` importieren `internal/value`.
 
 ## 3. Datenfluss im Detail
 
