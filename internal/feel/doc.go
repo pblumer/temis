@@ -6,6 +6,6 @@
 // compile time, while the resulting closure evaluates with minimal allocation
 // on the hot path. Numbers are decimal (never float64); see ADR-0007.
 //
-// The lexer (token.go, lexer.go) is implemented; the parser and later stages
-// follow in WP-04ff.
+// The lexer (token.go, lexer.go) and the parser (ast.go, parser.go) are
+// implemented; the type system, compiler and built-ins follow in WP-05ff.
 package feel
