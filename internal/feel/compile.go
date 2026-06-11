@@ -3,6 +3,7 @@ package feel
 import (
 	"fmt"
 
+	"github.com/pblumer/temis/internal/feel/builtins"
 	"github.com/pblumer/temis/internal/value"
 )
 
@@ -26,7 +27,7 @@ func (e *CompileError) Error() string {
 // Compile lowers an AST into a CompiledExpr, resolving variable names to slots
 // via env. It returns the first CompileError encountered, if any.
 func Compile(expr Expr, env *Env) (CompiledExpr, error) {
-	c := &compiler{env: env}
+	c := &compiler{env: env, builtins: builtins.Default()}
 	ce := c.compile(expr)
 	if c.err != nil {
 		return nil, c.err
@@ -44,8 +45,9 @@ func CompileString(src string, env *Env) (CompiledExpr, error) {
 }
 
 type compiler struct {
-	env *Env
-	err *CompileError
+	env      *Env
+	builtins *builtins.Registry
+	err      *CompileError
 }
 
 // fail records the first compile error and returns a null-yielding closure so
@@ -114,7 +116,7 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *PathExpr:
 		return c.compilePath(n)
 	case *CallExpr:
-		return c.fail(n.Pos(), "function calls are not supported yet (WP-07)")
+		return c.compileCall(n)
 	case *ForExpr, *QuantifiedExpr, *FunctionDefExpr, *FilterExpr, *InstanceOfExpr:
 		return c.fail(e.Pos(), "%T is not supported yet (WP-20)", e)
 	default:
@@ -319,6 +321,103 @@ func (c *compiler) compilePath(n *PathExpr) CompiledExpr {
 		}
 		return mv, nil
 	}
+}
+
+func (c *compiler) compileCall(n *CallExpr) CompiledExpr {
+	name, ok := n.Fn.(*NameRef)
+	if !ok {
+		return c.fail(n.Fn.Pos(), "only built-in function names can be called (user functions: WP-24)")
+	}
+	b, ok := c.builtins.Lookup(name.Name)
+	if !ok {
+		return c.fail(name.Pos(), "unknown function %q", name.Name)
+	}
+	argExprs := c.bindArgs(b, n)
+	if argExprs == nil {
+		return constNull
+	}
+	fn := b.Fn
+	return func(s *Scope) (value.Value, error) {
+		vals := make([]value.Value, len(argExprs))
+		for i, ae := range argExprs {
+			v, err := ae(s)
+			if err != nil {
+				return nil, err
+			}
+			vals[i] = v
+		}
+		return fn(vals)
+	}
+}
+
+// bindArgs resolves a call's arguments to compiled expressions in parameter
+// order, checking arity. Positional and named arguments may not be mixed.
+func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
+	named, positional := false, false
+	for _, a := range n.Args {
+		if a.Name != "" {
+			named = true
+		} else {
+			positional = true
+		}
+	}
+	if named && positional {
+		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", b.Name)
+		return nil
+	}
+
+	count := len(n.Args)
+	if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
+		c.fail(n.Pos(), "%q expects %s arguments, got %d", b.Name, arityText(b), count)
+		return nil
+	}
+
+	if !named {
+		out := make([]CompiledExpr, count)
+		for i, a := range n.Args {
+			out[i] = c.compile(a.Value)
+		}
+		return out
+	}
+
+	// Named arguments: place each at its parameter index; omitted parameters
+	// default to null so optional trailing parameters work.
+	if len(b.Params) == 0 {
+		c.fail(n.Pos(), "%q does not accept named arguments", b.Name)
+		return nil
+	}
+	out := make([]CompiledExpr, len(b.Params))
+	for i := range out {
+		out[i] = constNull
+	}
+	for _, a := range n.Args {
+		idx := indexOf(b.Params, a.Name)
+		if idx < 0 {
+			c.fail(n.Pos(), "%q has no parameter %q", b.Name, a.Name)
+			return nil
+		}
+		out[idx] = c.compile(a.Value)
+	}
+	return out
+}
+
+func indexOf(ss []string, s string) int {
+	for i, v := range ss {
+		if v == s {
+			return i
+		}
+	}
+	return -1
+}
+
+func arityText(b *builtins.Builtin) string {
+	if b.Variadic() {
+		return fmt.Sprintf("at least %d", b.MinArgs)
+	}
+	if b.MinArgs == b.MaxArgs {
+		return fmt.Sprintf("exactly %d", b.MinArgs)
+	}
+	return fmt.Sprintf("%d to %d", b.MinArgs, b.MaxArgs)
 }
 
 // valueBinop evaluates both operands and applies a value-level binary op.
