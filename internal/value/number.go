@@ -109,6 +109,33 @@ func (n Number) neg() Number {
 	return reduced(res)
 }
 
+// Floor returns the greatest integer less than or equal to n.
+func (n Number) Floor() Number { return n.roundIntegral(apd.RoundFloor) }
+
+// Ceiling returns the smallest integer greater than or equal to n.
+func (n Number) Ceiling() Number { return n.roundIntegral(apd.RoundCeiling) }
+
+// Abs returns the absolute value of n.
+func (n Number) Abs() Number {
+	res := new(apd.Decimal)
+	res.Abs(n.dec)
+	return reduced(res)
+}
+
+// Int64 returns n truncated to an int64 and whether it fit exactly as an integer.
+func (n Number) Int64() (int64, bool) {
+	i, err := n.dec.Int64()
+	return i, err == nil
+}
+
+func (n Number) roundIntegral(mode apd.Rounder) Number {
+	ctx := numberContext // copy so we don't mutate the shared context
+	ctx.Rounding = mode
+	res := new(apd.Decimal)
+	_, _ = ctx.RoundToIntegralValue(res, n.dec)
+	return reduced(res)
+}
+
 func (n Number) binop(o Number, op func(d, x, y *apd.Decimal) (apd.Condition, error)) (Number, bool) {
 	res := new(apd.Decimal)
 	cond, err := op(res, n.dec, o.dec)

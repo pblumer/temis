@@ -174,7 +174,7 @@ func TestCompileErrors(t *testing.T) {
 		line, col int
 	}{
 		{"x + 1", 1, 1},                    // unknown variable
-		{"f(1)", 1, 2},                     // calls deferred to WP-07
+		{"f(1)", 1, 1},                     // unknown function, at the name position
 		{"for i in [1] return i", 1, 1},    // deferred to WP-20
 		{"some x in xs satisfies x", 1, 1}, // deferred to WP-20
 	}
