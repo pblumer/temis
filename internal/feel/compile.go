@@ -48,6 +48,21 @@ type compiler struct {
 	env      *Env
 	builtins *builtins.Registry
 	err      *CompileError
+	// implicit holds the scope slots of enclosing filter elements (innermost
+	// last). A name that resolves to no static slot is looked up against these
+	// at runtime, so filter predicates can reference the keys of context
+	// elements directly (e.g. people[age > 18]).
+	implicit []int
+}
+
+// withEnv runs fn with c.env temporarily replaced, restoring it afterwards. It
+// lets iteration and filter bodies compile against an env extended with their
+// loop variables without disturbing the surrounding compilation.
+func (c *compiler) withEnv(env *Env, fn func()) {
+	prev := c.env
+	c.env = env
+	fn()
+	c.env = prev
 }
 
 // fail records the first compile error and returns a null-yielding closure so
@@ -85,11 +100,26 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 		}
 		return func(*Scope) (value.Value, error) { return v, nil }
 	case *NameRef:
-		i, ok := c.env.slot(n.Name)
-		if !ok {
-			return c.fail(n.Pos(), "unknown variable %q", n.Name)
+		if i, ok := c.env.slot(n.Name); ok {
+			return func(s *Scope) (value.Value, error) { return s.at(i), nil }
 		}
-		return func(s *Scope) (value.Value, error) { return s.at(i), nil }
+		// Not a static variable: inside a filter, resolve against the enclosing
+		// context elements at runtime (innermost first); otherwise it is an error.
+		if len(c.implicit) > 0 {
+			slots := append([]int(nil), c.implicit...)
+			name := n.Name
+			return func(s *Scope) (value.Value, error) {
+				for k := len(slots) - 1; k >= 0; k-- {
+					if ctx, ok := s.at(slots[k]).(*value.Context); ok {
+						if v, ok := ctx.Get(name); ok {
+							return v, nil
+						}
+					}
+				}
+				return value.Null, nil
+			}
+		}
+		return c.fail(n.Pos(), "unknown variable %q", n.Name)
 	case *UnaryExpr:
 		x := c.compile(n.X)
 		return func(s *Scope) (value.Value, error) {
@@ -117,8 +147,16 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 		return c.compilePath(n)
 	case *CallExpr:
 		return c.compileCall(n)
-	case *ForExpr, *QuantifiedExpr, *FunctionDefExpr, *FilterExpr, *InstanceOfExpr:
-		return c.fail(e.Pos(), "%T is not supported yet (WP-20)", e)
+	case *ForExpr:
+		return c.compileForExpr(n)
+	case *QuantifiedExpr:
+		return c.compileQuantified(n)
+	case *FilterExpr:
+		return c.compileFilter(n)
+	case *FunctionDefExpr:
+		return c.fail(e.Pos(), "function definitions are not supported yet (WP-24)")
+	case *InstanceOfExpr:
+		return c.fail(e.Pos(), "instance of is not supported yet (WP-30)")
 	default:
 		return c.fail(e.Pos(), "unsupported expression %T", e)
 	}
@@ -311,16 +349,30 @@ func (c *compiler) compilePath(n *PathExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
-		ctx, ok := v.(*value.Context)
-		if !ok {
-			return value.Null, nil
+		// Path projection over a list: e.name yields the list of each element's
+		// member (null where an element is not a context or lacks the key).
+		if l, ok := v.(value.List); ok {
+			out := make([]value.Value, len(l.Elements))
+			for i, e := range l.Elements {
+				out[i] = memberOf(e, name)
+			}
+			return value.NewList(out...), nil
 		}
-		mv, ok := ctx.Get(name)
-		if !ok {
-			return value.Null, nil
-		}
-		return mv, nil
+		return memberOf(v, name), nil
 	}
+}
+
+// memberOf returns the named member of a context value, or null when v is not a
+// context or has no such key.
+func memberOf(v value.Value, name string) value.Value {
+	ctx, ok := v.(*value.Context)
+	if !ok {
+		return value.Null
+	}
+	if mv, ok := ctx.Get(name); ok {
+		return mv
+	}
+	return value.Null
 }
 
 func (c *compiler) compileCall(n *CallExpr) CompiledExpr {
