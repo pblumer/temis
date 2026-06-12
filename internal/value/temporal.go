@@ -89,6 +89,13 @@ func (dt DateTime) String() string {
 // Time returns the underlying instant.
 func (dt DateTime) Time() time.Time { return dt.t }
 
+// NewDateTime returns a zoned DateTime for the instant t. The location of t
+// determines the rendered zone suffix (UTC renders as "Z"). It is the entry
+// point used when converting a Go time.Time input into a FEEL value.
+func NewDateTime(t time.Time) DateTime {
+	return DateTime{t: t, z: zone{zoned: true}}
+}
+
 const refDay = "0001-01-01"
 
 // ParseTime parses "HH:MM:SS(.fff)?" with an optional Z, ±HH:MM or @Zone suffix.

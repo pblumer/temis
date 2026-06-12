@@ -1,0 +1,64 @@
+package dmn
+
+import (
+	"context"
+	"fmt"
+)
+
+// Input is an evaluation context: variable name → Go value. Keys are input-data
+// or required-decision names; values are converted to FEEL values per the
+// mapping documented on Evaluate. Names the model does not reference are
+// ignored; referenced names absent from the map evaluate to FEEL null.
+type Input map[string]any
+
+// Result is the outcome of evaluating a decision.
+type Result struct {
+	// Outputs holds the requested decision's result, keyed by decision name.
+	Outputs map[string]any
+	// Decisions holds every decision evaluated to produce the result. Until DRG
+	// chaining (WP-28) this mirrors Outputs.
+	Decisions map[string]any
+	// Diags holds runtime diagnostics (e.g. a null produced by a recoverable
+	// error). Spec-conformant null results are not errors.
+	Diags Diagnostics
+}
+
+// Evaluate runs the decision against in and returns its result. Compilation has
+// already happened, so this is the cheap, repeatable phase.
+//
+// Go inputs convert to FEEL values as follows: nil→null, bool→boolean, the
+// integer and floating-point kinds→number (decimal; float inputs may lose
+// precision — prefer string or integer for exact amounts), string→string,
+// time.Time→date and time, []any→list, map[string]any→context. A value already
+// of the engine's internal value type is passed through.
+//
+// FEEL results convert back to Go with numbers rendered as their exact decimal
+// string (ADR-0007), booleans as bool, strings as string, temporal values and
+// ranges as their canonical FEEL string, lists as []any and contexts as
+// map[string]any. A spec-conformant null becomes nil and is not an error; only
+// genuine runtime failures (a context cancellation, an exhausted limit, a
+// UNIQUE table with multiple matches) return a non-nil error.
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if c.expr == nil {
+		return Result{}, fmt.Errorf("dmn: decision %q has no executable logic", c.name)
+	}
+
+	vals, err := inputToValues(in)
+	if err != nil {
+		return Result{}, err
+	}
+
+	out, err := c.expr(c.env.NewScope(vals))
+	if err != nil {
+		return Result{}, fmt.Errorf("dmn: evaluate decision %q: %w", c.name, err)
+	}
+
+	result := fromValue(out)
+	return Result{
+		Outputs:   map[string]any{c.name: result},
+		Decisions: map[string]any{c.name: result},
+	}, nil
+}
