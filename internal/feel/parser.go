@@ -578,10 +578,23 @@ func (p *parser) parseIterators(_ Kind) []Iterator {
 	for {
 		name := p.expect(Name)
 		p.expect(In)
+		domain := p.parseExpr()
+		// In an iteration context FEEL allows a bare range `low..high`, which is
+		// the closed range [low..high]; brackets are not required here.
+		if p.cur().Kind == DotDot {
+			dot := p.advance()
+			domain = &IntervalLit{
+				baseNode:   base(dot),
+				LowClosed:  true,
+				Low:        domain,
+				High:       p.parseExpr(),
+				HighClosed: true,
+			}
+		}
 		iters = append(iters, Iterator{
 			Name:    name.Text,
 			NamePos: Position{Line: name.Line, Col: name.Col},
-			In:      p.parseExpr(),
+			In:      domain,
 		})
 		if p.cur().Kind != Comma {
 			return iters

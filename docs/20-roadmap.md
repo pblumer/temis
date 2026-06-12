@@ -43,7 +43,7 @@ Decision Services, plus Service-Wrapper (HTTP + gRPC).
 
 | WP | Titel | Abhängt von | Akzeptanzkriterium |
 |---|---|---|---|
-| WP-20 | FEEL vollständig | WP-06 | `for`-Comprehensions (multi-`in`), `some/every`, Range-Funktionen, String-Slicing, Pfad-/Filter-Ausdrücke `list[cond]`, Kontext-Filter, vollständige Operatorensemantik. |
+| WP-20 ✅ | FEEL vollständig | WP-06 | **done** — `for`-Comprehensions (multi-Iterator/kartesisch, geschachtelte Domains, Range-Domains `1..3` asc/desc), `some`/`every … satisfies` (dreiwertig), Filter `list[cond]`: Index `list[n]` (1-basiert, negativ vom Ende), Boolean-Prädikat über impliziter Variable `item` **und** direktem Kontext-Key-Zugriff (`people[age > 18]`, geschachtelt), Pfad-Projektion über Listen `list.feld`. Bare-Range im Iterationsdomain im Parser ergänzt; `function(…)`→WP-24, `instance of`→WP-30. (Range-**Built-ins** before/after/… → WP-21.) |
 | WP-21 | FEEL Built-ins vollständig | WP-07, WP-20 | **Alle** Built-ins der DMN-1.5-Tabelle (conversion, boolean, string, list, numeric, date/time, range, temporal, sort, context functions). Je Built-in ≥ 1 Test inkl. `null`-Fälle. |
 | WP-22 | Date/Time/Duration vollständig | WP-05 | Zeitzonen, `@`-Literale, Dauer-Arithmetik, Vergleiche, `is`-Gleichheit. Gegen FEEL-Spezifikationsbeispiele getestet. |
 | WP-23 | Boxed Context & Invocation | WP-20 | Context mit Result-Cell; Invocation ruft BKM mit benannten Parametern. |

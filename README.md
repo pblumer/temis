@@ -34,11 +34,12 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-08 | Unary Tests | ✅ |
 | WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | ✅ |
 | WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | ✅ |
-| WP-11 | MVP-Beispiele & Golden-Tests | 🚧 in Entwicklung |
+| WP-11 | MVP-Beispiele & Golden-Tests | ✅ |
 
-> Die **öffentliche `dmn/`-API** entsteht in WP-10 (gerade in Entwicklung). Solange sie nicht
-> als `v1` stabilisiert ist (WP-43), kann sie sich noch ändern; `internal/` ist generell frei.
-> Die maßgebliche, fortlaufend gepflegte Statusquelle ist `docs/20-roadmap.md`.
+> **MVP erreicht (WP-01–11).** Die Beta-Phase (FEEL-Vollständigkeit, weitere Boxed-Formen,
+> DRG-Verkettung, Service-Wrapper, TCK) läuft jetzt — Stand je Paket in `docs/20-roadmap.md`.
+> WP-20 (FEEL vollständig) ist in Arbeit. Die öffentliche `dmn/`-API ist bis zur
+> `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
 
 ### Was heute funktioniert
 
@@ -48,6 +49,9 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
   Unterstützt u. a. Arithmetik (Decimal, `0.1 + 0.2 = 0.3`), Vergleiche, dreiwertige
   Boolesche Logik, `if`, `between`/`in`, Listen/Contexts/Ranges, Pfadzugriff, `@`-Temporal­literale
   und Funktionsaufrufe gegen die Built-in-Registry — alles mit FEEL-`null`-Propagation.
+- **FEEL-Comprehensions & Filter:** `for … return` (mehrere Iteratoren, kartesisch, Range-Domains
+  `1..3`), `some`/`every … satisfies`, Filter `list[prädikat]` (inkl. Kontext-Keys wie
+  `people[age > 18]`), Index-Zugriff `list[n]` und Pfad-Projektion `list.feld`.
 - **Decision Tables ausführen:** Unary Tests in den Eingabezellen, Hit Policies **U/A/F/R/C**
   (inkl. Collect-Aggregation SUM/MIN/MAX/COUNT), Einzel-/Mehrfach-Output.
 - **Library-API (`dmn`):** `Engine.Compile(ctx, xml)` → `Definitions`, daraus `Decision(idOrName)`
