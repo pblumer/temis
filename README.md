@@ -30,15 +30,15 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-04 | FEEL-Parser → AST | ✅ |
 | WP-05 | FEEL-Wertemodell, Number als Decimal (`apd`), Temporaltypen | ✅ |
 | WP-06 | FEEL-Compiler-Kern (AST → Closure, Slot-Index-Variablen) | ✅ |
-| WP-07 | FEEL-Built-ins (Kern) | 🚧 in Review |
-| WP-08 | Unary Tests | offen |
-| WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | offen |
-| WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | offen |
+| WP-07 | FEEL-Built-ins (Kern) | ✅ |
+| WP-08 | Unary Tests | ✅ |
+| WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | ✅ |
+| WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | 🚧 in Entwicklung |
 | WP-11 | MVP-Beispiele & Golden-Tests | offen |
 
-> Die **öffentliche `dmn/`-API** entsteht in WP-10. Bis dahin liegt die gesamte Logik unter
-> `internal/` und kann sich frei ändern. Die maßgebliche, fortlaufend gepflegte Statusquelle
-> ist `docs/20-roadmap.md`.
+> Die **öffentliche `dmn/`-API** entsteht in WP-10 (gerade in Entwicklung). Solange sie nicht
+> als `v1` stabilisiert ist (WP-43), kann sie sich noch ändern; `internal/` ist generell frei.
+> Die maßgebliche, fortlaufend gepflegte Statusquelle ist `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 
@@ -48,6 +48,19 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
   Unterstützt u. a. Arithmetik (Decimal, `0.1 + 0.2 = 0.3`), Vergleiche, dreiwertige
   Boolesche Logik, `if`, `between`/`in`, Listen/Contexts/Ranges, Pfadzugriff, `@`-Temporal­literale
   und Funktionsaufrufe gegen die Built-in-Registry — alles mit FEEL-`null`-Propagation.
+- **Decision Tables ausführen:** Unary Tests in den Eingabezellen, Hit Policies **U/A/F/R/C**
+  (inkl. Collect-Aggregation SUM/MIN/MAX/COUNT), Einzel-/Mehrfach-Output.
+- **Library-API (`dmn`):** `Engine.Compile(ctx, xml)` → `Definitions`, daraus `Decision(idOrName)`
+  → `CompiledDecision.Evaluate(ctx, Input)` → `Result`. Go⇄FEEL-Typ-Mapping; FEEL-Numbers
+  werden verlustfrei als exakter Dezimal-String zurückgegeben.
+
+```go
+eng := dmn.New()
+defs, diags, _ := eng.Compile(ctx, xmlBytes)
+dec, _ := defs.Decision("Dish")
+res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
+fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
+```
 
 ## Entwicklung
 
@@ -62,7 +75,7 @@ make help          # alle Make-Targets
 ### Projektstruktur (Auszug)
 
 ```
-dmn/                 # öffentliche API (entsteht in WP-10)
+dmn/                 # öffentliche API (Engine, Compile/Evaluate — WP-10)
 internal/
   xml/               # DMN-XML ⇄ Modell (namespace-tolerant)
   model/             # versionsneutrales Domänenmodell
