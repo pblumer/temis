@@ -33,8 +33,8 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-07 | FEEL-Built-ins (Kern) | ✅ |
 | WP-08 | Unary Tests | ✅ |
 | WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | ✅ |
-| WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | 🚧 in Entwicklung |
-| WP-11 | MVP-Beispiele & Golden-Tests | offen |
+| WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | ✅ |
+| WP-11 | MVP-Beispiele & Golden-Tests | 🚧 in Entwicklung |
 
 > Die **öffentliche `dmn/`-API** entsteht in WP-10 (gerade in Entwicklung). Solange sie nicht
 > als `v1` stabilisiert ist (WP-43), kann sie sich noch ändern; `internal/` ist generell frei.

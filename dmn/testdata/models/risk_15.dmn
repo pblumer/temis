@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             id="risk_definitions"
+             name="Risk Score"
+             namespace="http://temis.test/risk">
+  <inputData id="id_debt" name="Has Debt"/>
+  <inputData id="id_new" name="Is New Customer"/>
+  <decision id="id_risk" name="Risk Score">
+    <informationRequirement id="ir_debt">
+      <requiredInput href="#id_debt"/>
+    </informationRequirement>
+    <informationRequirement id="ir_new">
+      <requiredInput href="#id_new"/>
+    </informationRequirement>
+    <decisionTable id="dt_risk" hitPolicy="COLLECT" aggregation="SUM">
+      <input id="in_debt" label="Has Debt">
+        <inputExpression typeRef="boolean">
+          <text>Has Debt</text>
+        </inputExpression>
+      </input>
+      <input id="in_new" label="Is New Customer">
+        <inputExpression typeRef="boolean">
+          <text>Is New Customer</text>
+        </inputExpression>
+      </input>
+      <output id="out_points" name="Risk Points" typeRef="number"/>
+      <rule id="r1">
+        <inputEntry><text>true</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>30</text></outputEntry>
+      </rule>
+      <rule id="r2">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>true</text></inputEntry>
+        <outputEntry><text>20</text></outputEntry>
+      </rule>
+      <rule id="r3">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>5</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="diagram_risk">
+      <dmndi:DMNShape id="shape_debt" dmnElementRef="id_debt">
+        <dc:Bounds x="160" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_new" dmnElementRef="id_new">
+        <dc:Bounds x="400" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_risk" dmnElementRef="id_risk">
+        <dc:Bounds x="280" y="260" width="180" height="80"/>
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

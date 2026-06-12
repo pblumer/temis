@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             id="dish_definitions"
+             name="Dish"
+             namespace="http://temis.test/dish">
+  <inputData id="id_season" name="Season"/>
+  <inputData id="id_guests" name="Guest Count"/>
+  <decision id="id_dish" name="Dish">
+    <informationRequirement id="ir_season">
+      <requiredInput href="#id_season"/>
+    </informationRequirement>
+    <informationRequirement id="ir_guests">
+      <requiredInput href="#id_guests"/>
+    </informationRequirement>
+    <decisionTable id="dt_dish" hitPolicy="UNIQUE">
+      <input id="in_season" label="Season">
+        <inputExpression typeRef="string">
+          <text>Season</text>
+        </inputExpression>
+      </input>
+      <input id="in_guests" label="Guest Count">
+        <inputExpression typeRef="number">
+          <text>Guest Count</text>
+        </inputExpression>
+      </input>
+      <output id="out_dish" name="Dish" typeRef="string"/>
+      <rule id="r1">
+        <inputEntry><text>"Fall"</text></inputEntry>
+        <inputEntry><text>&lt;= 8</text></inputEntry>
+        <outputEntry><text>"Spareribs"</text></outputEntry>
+      </rule>
+      <rule id="r2">
+        <inputEntry><text>"Winter"</text></inputEntry>
+        <inputEntry><text>&lt;= 8</text></inputEntry>
+        <outputEntry><text>"Roastbeef"</text></outputEntry>
+      </rule>
+      <rule id="r3">
+        <inputEntry><text>"Spring"</text></inputEntry>
+        <inputEntry><text>[5..8]</text></inputEntry>
+        <outputEntry><text>"Steak"</text></outputEntry>
+      </rule>
+      <rule id="r4">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt; 8</text></inputEntry>
+        <outputEntry><text>"Stew"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="diagram_1">
+      <dmndi:DMNShape id="shape_season" dmnElementRef="id_season">
+        <dc:Bounds x="160" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_guests" dmnElementRef="id_guests">
+        <dc:Bounds x="400" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_dish" dmnElementRef="id_dish">
+        <dc:Bounds x="280" y="260" width="180" height="80"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="edge_season" dmnElementRef="ir_season">
+        <di:waypoint x="250" y="160"/>
+        <di:waypoint x="340" y="260"/>
+      </dmndi:DMNEdge>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>
