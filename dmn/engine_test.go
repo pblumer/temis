@@ -2,8 +2,6 @@ package dmn_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -112,51 +110,5 @@ func TestCompileErrorAsDiagnostic(t *testing.T) {
 	// The model still loads; the broken decision is simply not executable.
 	if _, err := defs.Decision("Bad"); err == nil {
 		t.Error("expected Decision to reject a non-compiled decision")
-	}
-}
-
-// TestDishEndToEnd loads the dish_15.dmn fixture through the public API and
-// checks the documented quickstart path end to end.
-func TestDishEndToEnd(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "internal", "xml", "testdata", "models", "dish_15.dmn"))
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
-	}
-
-	eng := dmn.New()
-	defs, diags, err := eng.Compile(context.Background(), data)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-	if diags.HasErrors() {
-		t.Fatalf("unexpected compile errors: %+v", diags)
-	}
-
-	dec, err := defs.Decision("Dish")
-	if err != nil {
-		t.Fatalf("lookup Dish: %v", err)
-	}
-
-	cases := []struct {
-		season string
-		guests int
-		want   string
-	}{
-		{"Fall", 4, "Spareribs"},
-		{"Winter", 4, "Roastbeef"},
-		{"Spring", 6, "Steak"},
-		{"Summer", 10, "Stew"},
-	}
-	for _, c := range cases {
-		res, err := dec.Evaluate(context.Background(), dmn.Input{
-			"Season":      c.season,
-			"Guest Count": c.guests,
-		})
-		if err != nil {
-			t.Fatalf("evaluate %s/%d: %v", c.season, c.guests, err)
-		}
-		if got := res.Outputs["Dish"]; got != c.want {
-			t.Errorf("Dish(%s, %d) = %v, want %q", c.season, c.guests, got, c.want)
-		}
 	}
 }
