@@ -165,6 +165,86 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestDocsAndSpec(t *testing.T) {
+	h := newTestServer(t)
+
+	rec := do(t, h, "GET", "/docs", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /docs = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("/docs content-type = %q, want text/html", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "swagger-ui") {
+		t.Errorf("/docs body does not look like a Swagger UI page")
+	}
+
+	rec = do(t, h, "GET", "/openapi.yaml", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /openapi.yaml = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "openapi:") {
+		t.Errorf("/openapi.yaml body is not the OpenAPI document")
+	}
+}
+
+func TestTokenAuth(t *testing.T) {
+	const token = "s3cr3t-token"
+	h := NewServer(nil, WithToken(token)).Handler()
+	xml := dishXML(t)
+
+	// No token → 401 with the stable code, on a gated endpoint.
+	rec := do(t, h, "POST", "/v1/models", "application/xml", xml)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated POST = %d, want 401 (body %s)", rec.Code, rec.Body)
+	}
+	if p := decode[problem](t, rec); p.Code != "UNAUTHORIZED" {
+		t.Errorf("code = %q, want UNAUTHORIZED", p.Code)
+	}
+	if wa := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(wa, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q, want Bearer challenge", wa)
+	}
+
+	// Wrong token → 401.
+	if rec := doAuth(t, h, "POST", "/v1/models", "application/xml", xml, "nope"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token POST = %d, want 401", rec.Code)
+	}
+
+	// Correct token → 201.
+	rec = doAuth(t, h, "POST", "/v1/models", "application/xml", xml, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("authenticated POST = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+
+	// Discovery and probes stay public even with a token configured.
+	for _, path := range []string{"/docs", "/openapi.yaml", "/healthz"} {
+		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusOK {
+			t.Errorf("GET %s with token configured = %d, want 200", path, rec.Code)
+		}
+	}
+}
+
+func TestNoTokenLeavesAPIOpen(t *testing.T) {
+	// An Authorization header on an open server is ignored, not rejected.
+	h := newTestServer(t)
+	rec := doAuth(t, h, "POST", "/v1/models", "application/xml", dishXML(t), "ignored")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST on open server = %d, want 201", rec.Code)
+	}
+}
+
+func doAuth(t *testing.T, h http.Handler, method, path, contentType string, body []byte, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

@@ -35,8 +35,22 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 type Server struct {
 	engine *dmn.Engine
 
+	// token, when non-empty, is the bearer token required on the /v1 data
+	// endpoints. Empty means the API is open.
+	token string
+
 	mu     sync.RWMutex
 	models map[string]*storedModel
+}
+
+// Option configures a Server at construction time.
+type Option func(*Server)
+
+// WithToken requires callers of the /v1 data endpoints to present
+// "Authorization: Bearer <token>". An empty token leaves the API open. The
+// docs, OpenAPI spec and health endpoints are never gated.
+func WithToken(token string) Option {
+	return func(s *Server) { s.token = token }
 }
 
 // storedModel is a compiled model held in the cache together with the index and
@@ -49,12 +63,16 @@ type storedModel struct {
 }
 
 // NewServer returns a Server backed by engine. If engine is nil a default engine
-// is used.
-func NewServer(engine *dmn.Engine) *Server {
+// is used. Options such as WithToken tune the server's behaviour.
+func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	return &Server{engine: engine, models: map[string]*storedModel{}}
+	s := &Server{engine: engine, models: map[string]*storedModel{}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Handler returns the HTTP handler exposing the service routes. It uses the
@@ -62,10 +80,14 @@ func NewServer(engine *dmn.Engine) *Server {
 // required.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/models", s.handleCreateModel)
-	mux.HandleFunc("GET /v1/models/{id}", s.handleGetModel)
-	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.handleEvaluateModel)
-	mux.HandleFunc("POST /v1/evaluate", s.handleEvaluateStateless)
+	// Data endpoints: gated by the optional bearer token.
+	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
+	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
+	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
+	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
+	// Discovery and probes: always public.
+	mux.HandleFunc("GET /docs", s.handleDocs)
+	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
 	return mux

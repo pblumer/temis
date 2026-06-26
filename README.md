@@ -105,6 +105,27 @@ Endpunkte: `POST /v1/models`, `GET /v1/models/{id}`, `POST /v1/models/{id}/evalu
 `POST /v1/evaluate`, `GET /healthz`/`/readyz`. Vollständig in `service/openapi.yaml` und
 `docs/40-api-contract.md` §2. Fehler als RFC-7807 `application/problem+json`.
 
+**Interaktive API-Doku (Swagger UI):** Der Server liefert eine dynamische
+OpenAPI-Testseite unter `GET /docs` (lädt das eingebettete Spec von
+`GET /openapi.yaml`) — Endpunkte direkt im Browser ausprobieren.
+
+```sh
+go run ./cmd/temisd -addr :8080
+# Browser: http://localhost:8080/docs
+```
+
+**Optionaler Token-Schutz:** Mit `-token <token>` (oder `TEMIS_API_TOKEN`) verlangen
+die `/v1`-Endpunkte `Authorization: Bearer <token>` (sonst `401`,
+`code: UNAUTHORIZED`); `/docs`, `/openapi.yaml` und die Health-Probes bleiben offen.
+In Swagger UI den Token über **Authorize** eintragen.
+
+```sh
+go run ./cmd/temisd -addr :8080 -token gehenix
+curl -H 'Authorization: Bearer gehenix' \
+     --data-binary @dmn/testdata/models/dish_15.dmn \
+     -H 'Content-Type: application/xml' localhost:8080/v1/models
+```
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.

@@ -124,11 +124,18 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
 | `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...} }` → `Result` |
 | `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache) |
+| `GET` | `/docs` | Interaktive Swagger-UI-Testseite (lädt `/openapi.yaml`) |
+| `GET` | `/openapi.yaml` | Eingebettetes OpenAPI-3-Dokument |
 | `GET` | `/healthz`, `/readyz` | Liveness/Readiness |
 
 - Modelle werden serverseitig gecacht (WP-35), Key = Hash des XML.
 - Fehlerantworten: RFC-7807 `application/problem+json` mit stabilem `code`.
 - Limits (WP-34) gelten pro Request.
+- **Optionaler Token-Schutz:** Mit `temisd -token <token>` (oder `TEMIS_API_TOKEN`)
+  verlangen die `/v1`-Endpunkte `Authorization: Bearer <token>`; fehlt/falsch →
+  `401` mit `code: UNAUTHORIZED` (`WWW-Authenticate: Bearer`). Ohne Token ist die
+  API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
+  OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
 
 ## 3. gRPC-Service (`service/dmn.proto`)
 
