@@ -188,6 +188,28 @@ func TestDocsAndSpec(t *testing.T) {
 	}
 }
 
+func TestPlaygroundUI(t *testing.T) {
+	h := newTestServer(t)
+
+	for _, path := range []string{"/", "/ui"} {
+		rec := do(t, h, "GET", path, "", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Errorf("%s content-type = %q, want text/html", path, ct)
+		}
+		if !strings.Contains(rec.Body.String(), "DMN Playground") {
+			t.Errorf("%s body does not look like the playground page", path)
+		}
+	}
+
+	// The root pattern must not swallow unknown paths into a 200.
+	if rec := do(t, h, "GET", "/does-not-exist", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /does-not-exist = %d, want 404", rec.Code)
+	}
+}
+
 func TestTokenAuth(t *testing.T) {
 	const token = "s3cr3t-token"
 	h := NewServer(nil, WithToken(token)).Handler()
@@ -217,7 +239,7 @@ func TestTokenAuth(t *testing.T) {
 	}
 
 	// Discovery and probes stay public even with a token configured.
-	for _, path := range []string{"/docs", "/openapi.yaml", "/healthz"} {
+	for _, path := range []string{"/", "/ui", "/docs", "/openapi.yaml", "/healthz"} {
 		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with token configured = %d, want 200", path, rec.Code)
 		}

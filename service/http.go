@@ -86,6 +86,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
+	mux.HandleFunc("GET /{$}", s.handleUI)
+	mux.HandleFunc("GET /ui", s.handleUI)
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
 	mux.HandleFunc("GET /healthz", s.handleHealth)

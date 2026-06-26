@@ -31,7 +31,8 @@ func main() {
 	if *token != "" {
 		log.Printf("temisd: /v1 endpoints require a bearer token")
 	}
-	log.Printf("temisd %s listening on %s — Swagger UI at http://%s/docs", version.Version, *addr, *addr)
+	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs",
+		version.Version, *addr, *addr, *addr)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
