@@ -18,6 +18,8 @@ import (
 func main() {
 	showVersion := flag.Bool("version", false, "print the temisd version and exit")
 	addr := flag.String("addr", ":8080", "address to listen on (host:port)")
+	token := flag.String("token", os.Getenv("TEMIS_API_TOKEN"),
+		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
 	flag.Parse()
 
 	if *showVersion {
@@ -25,8 +27,11 @@ func main() {
 		return
 	}
 
-	srv := service.NewServer(dmn.New())
-	log.Printf("temisd %s listening on %s", version.Version, *addr)
+	srv := service.NewServer(dmn.New(), service.WithToken(*token))
+	if *token != "" {
+		log.Printf("temisd: /v1 endpoints require a bearer token")
+	}
+	log.Printf("temisd %s listening on %s — Swagger UI at http://%s/docs", version.Version, *addr, *addr)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)

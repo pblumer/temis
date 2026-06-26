@@ -55,7 +55,7 @@ temis/
 │   ├── drg/                    // Decision-Graph: Topo-Sort, Dependency-Resolution, Eval-Plan
 │   └── tck/                    // TCK-Runner (liest offizielle .dmn + Testcases)
 ├── service/                    // HTTP- & gRPC-Handler (von cmd/temisd genutzt)
-│   ├── http.go openapi.yaml
+│   ├── http.go openapi.go openapi.yaml   // Routen, Bearer-Token, Swagger-UI/Spec
 │   └── grpc.go dmn.proto
 └── docs/                       // diese Planungsdokumente
 ```

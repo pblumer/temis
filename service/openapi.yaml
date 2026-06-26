@@ -7,8 +7,22 @@ info:
     then evaluate one of its decisions against a JSON input context. A stateless
     endpoint compiles and evaluates in a single request. The surface is
     experimental until the v1 stabilisation (roadmap WP-43).
+
+
+    When the server is started with a token (`temisd -token …` or
+    `TEMIS_API_TOKEN`), the `/v1` endpoints require an
+    `Authorization: Bearer <token>` header — click **Authorize** and paste the
+    token to try them here. When no token is configured the API is open and the
+    header is ignored.
 servers:
   - url: /
+# Bearer auth is optional: when the server runs without a token the empty
+# requirement ({}) makes every endpoint callable; when a token is set, callers
+# present it via the bearerAuth scheme. Swagger UI's "Authorize" button binds to
+# bearerAuth.
+security:
+  - bearerAuth: []
+  - {}
 paths:
   /v1/models:
     post:
@@ -33,6 +47,8 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/models/{id}:
     get:
       summary: Get a cached model's index
@@ -47,6 +63,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ModelResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: No model with that id
           content:
@@ -76,6 +94,8 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: Unknown model or decision
           content:
@@ -105,6 +125,21 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /docs:
+    get:
+      summary: Interactive Swagger UI
+      description: Browser page for trying the API; loads the spec from /openapi.yaml.
+      security: []
+      responses:
+        "200": { description: HTML page }
+  /openapi.yaml:
+    get:
+      summary: This OpenAPI document
+      security: []
+      responses:
+        "200": { description: OpenAPI 3 document (YAML) }
   /healthz:
     get:
       summary: Liveness probe
@@ -116,6 +151,20 @@ paths:
       responses:
         "200": { description: OK }
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Opaque token configured via `temisd -token` / `TEMIS_API_TOKEN`. Sent as
+        `Authorization: Bearer <token>`. Only enforced when the server is started
+        with a token.
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token (only when the server requires one)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
   schemas:
     ModelResponse:
       type: object
