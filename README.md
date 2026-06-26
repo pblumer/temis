@@ -38,12 +38,13 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-20 | FEEL vollständig (`for`/`some`/`every`, Filter, Pfad-Projektion) | ✅ |
 | WP-21 | FEEL-Built-ins vollständig (nicht-temporal: string/numeric/list/context/range/sort) | ✅ |
 | WP-22 | Date/Time/Duration + temporale Built-ins, Komponentenzugriff, `@`-Literale | ✅ |
+| WP-32 | HTTP-Service (`temisd`): `/v1/models`, `/v1/evaluate`, OpenAPI | ✅ |
 
-> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22 ✅).** Die Beta-Phase (weitere
-> Boxed-Formen, DRG-Verkettung, Service-Wrapper, TCK) geht weiter — Stand je Paket in
-> `docs/20-roadmap.md`. Als Nächstes: **WP-23/24** (Boxed Context/Invocation/Function & BKM)
-> und **WP-28** (DRG-Verkettung). Die öffentliche `dmn/`-API ist bis zur
-> `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
+> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
+> ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
+> (Boxed Context/Invocation/Function & BKM), **WP-28** (DRG-Verkettung für Multi-Decision-
+> Modelle) und **WP-34/35** (Limits, Modell-Cache). Die öffentliche `dmn/`- und HTTP-API ist
+> bis zur `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
 
 ### Was heute funktioniert
 
@@ -81,6 +82,28 @@ dec, _ := defs.Decision("Dish")
 res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
 fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
 ```
+
+### Als HTTP-Service (`temisd`)
+
+```sh
+go run ./cmd/temisd -addr :8080        # Server starten
+
+# Modell hochladen (→ liefert eine content-addressed modelId)
+curl --data-binary @dmn/testdata/models/dish_15.dmn \
+     -H 'Content-Type: application/xml' localhost:8080/v1/models
+
+# Stateless kompilieren + auswerten in einem Request
+curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "{
+  \"xml\": $(jq -Rs . < dmn/testdata/models/dish_15.dmn),
+  \"decision\": \"Dish\",
+  \"input\": {\"Season\": \"Winter\", \"Guest Count\": 8}
+}"
+# → {"outputs":{"Dish":"Roastbeef"}, ...}
+```
+
+Endpunkte: `POST /v1/models`, `GET /v1/models/{id}`, `POST /v1/models/{id}/evaluate`,
+`POST /v1/evaluate`, `GET /healthz`/`/readyz`. Vollständig in `service/openapi.yaml` und
+`docs/40-api-contract.md` §2. Fehler als RFC-7807 `application/problem+json`.
 
 ## Entwicklung
 

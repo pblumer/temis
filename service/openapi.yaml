@@ -1,0 +1,178 @@
+openapi: 3.0.3
+info:
+  title: Temis DMN Engine API
+  version: "1.0-experimental"
+  description: >
+    HTTP interface to the Temis DMN 1.5 decision engine. Upload a DMN XML model,
+    then evaluate one of its decisions against a JSON input context. A stateless
+    endpoint compiles and evaluates in a single request. The surface is
+    experimental until the v1 stabilisation (roadmap WP-43).
+servers:
+  - url: /
+paths:
+  /v1/models:
+    post:
+      summary: Compile and cache a DMN model
+      description: >
+        The request body is the raw DMN XML document. The response carries the
+        content-addressed model id, the model index and any compile diagnostics.
+        Re-uploading the same document returns the same id.
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema: { type: string }
+      responses:
+        "201":
+          description: Model compiled and cached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelResponse" }
+        "400":
+          description: Empty body or malformed XML
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}:
+    get:
+      summary: Get a cached model's index
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Model index
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelResponse" }
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/evaluate:
+    post:
+      summary: Evaluate a decision of a cached model
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateModelRequest" }
+      responses:
+        "200":
+          description: Evaluation result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateResponse" }
+        "400":
+          description: Invalid request body or missing decision
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404":
+          description: Unknown model or decision
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Evaluation failed (e.g. UNIQUE table with multiple matches)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/evaluate:
+    post:
+      summary: Stateless compile-and-evaluate in one request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateStatelessRequest" }
+      responses:
+        "200":
+          description: Evaluation result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateResponse" }
+        "400":
+          description: Missing xml/decision or malformed input
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        "200": { description: OK }
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        "200": { description: OK }
+components:
+  schemas:
+    ModelResponse:
+      type: object
+      properties:
+        modelId: { type: string, example: "sha256:..." }
+        decisions:
+          type: array
+          items: { type: string }
+        inputs:
+          type: array
+          items: { type: string }
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/Diagnostic" }
+    EvaluateModelRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string }
+        input:
+          type: object
+          additionalProperties: true
+    EvaluateStatelessRequest:
+      type: object
+      required: [xml, decision]
+      properties:
+        xml: { type: string }
+        decision: { type: string }
+        input:
+          type: object
+          additionalProperties: true
+    EvaluateResponse:
+      type: object
+      properties:
+        outputs:
+          type: object
+          additionalProperties: true
+        decisions:
+          type: object
+          additionalProperties: true
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/Diagnostic" }
+    Diagnostic:
+      type: object
+      properties:
+        severity: { type: string, enum: [error, warning, info] }
+        code: { type: string }
+        message: { type: string }
+        decisionId: { type: string }
+        line: { type: integer }
+        col: { type: integer }
+    Problem:
+      description: RFC-7807 problem detail with a stable engine-specific code.
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
