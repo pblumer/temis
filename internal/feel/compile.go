@@ -35,9 +35,11 @@ func Compile(expr Expr, env *Env) (CompiledExpr, error) {
 	return ce, nil
 }
 
-// CompileString parses and compiles src in one step.
+// CompileString parses and compiles src in one step. It supplies the built-in
+// registry as the parser's name oracle so multi-word builtin names whose
+// fragments include keywords (e.g. "index of") assemble correctly.
 func CompileString(src string, env *Env) (CompiledExpr, error) {
-	expr, err := Parse(src)
+	expr, err := ParseWithNames(src, builtins.Default())
 	if err != nil {
 		return nil, err
 	}

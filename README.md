@@ -35,10 +35,13 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | ✅ |
 | WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | ✅ |
 | WP-11 | MVP-Beispiele & Golden-Tests | ✅ |
+| WP-20 | FEEL vollständig (`for`/`some`/`every`, Filter, Pfad-Projektion) | ✅ |
+| WP-21 | FEEL-Built-ins vollständig (nicht-temporal: string/numeric/list/context/range/sort) | ✅ |
 
-> **MVP erreicht (WP-01–11).** Die Beta-Phase (FEEL-Vollständigkeit, weitere Boxed-Formen,
-> DRG-Verkettung, Service-Wrapper, TCK) läuft jetzt — Stand je Paket in `docs/20-roadmap.md`.
-> WP-20 (FEEL vollständig) ist in Arbeit. Die öffentliche `dmn/`-API ist bis zur
+> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21 ✅).** Die Beta-Phase (weitere
+> Boxed-Formen, DRG-Verkettung, Service-Wrapper, TCK) geht weiter — Stand je Paket in
+> `docs/20-roadmap.md`. Als Nächstes: **WP-22** (Date/Time/Duration inkl. temporaler
+> Built-ins) und **WP-28** (DRG-Verkettung). Die öffentliche `dmn/`-API ist bis zur
 > `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
 
 ### Was heute funktioniert
@@ -52,6 +55,13 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 - **FEEL-Comprehensions & Filter:** `for … return` (mehrere Iteratoren, kartesisch, Range-Domains
   `1..3`), `some`/`every … satisfies`, Filter `list[prädikat]` (inkl. Kontext-Keys wie
   `people[age > 18]`), Index-Zugriff `list[n]` und Pfad-Projektion `list.feld`.
+- **FEEL-Built-ins (nicht-temporal vollständig):** string (inkl. `matches`/`replace`/`split`,
+  `string join`, `substring before/after`), numeric (`decimal`, `round …`, `modulo`, `sqrt`,
+  `log`, `exp`, `even`/`odd`), list (`all`/`any`, `sublist`, `append`, `concatenate`,
+  `insert before`, `remove`, `reverse`, `index of`, `union`, `distinct values`, `flatten`,
+  `product`, `median`, `stddev`, `mode`), context (`get value`, `get entries`, `context put`,
+  `context merge`, `context`), range-Relationen (`before`, `overlaps`, `includes`, `during`, …)
+  und `sort`. (Temporale Built-ins folgen mit WP-22.)
 - **Decision Tables ausführen:** Unary Tests in den Eingabezellen, Hit Policies **U/A/F/R/C**
   (inkl. Collect-Aggregation SUM/MIN/MAX/COUNT), Einzel-/Mehrfach-Output.
 - **Library-API (`dmn`):** `Engine.Compile(ctx, xml)` → `Definitions`, daraus `Decision(idOrName)`

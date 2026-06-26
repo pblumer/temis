@@ -69,9 +69,13 @@ func buildDefault() *Registry {
 	r := NewRegistry()
 	registerBoolean(r)
 	registerList(r)
+	registerListMore(r)
 	registerString(r)
 	registerConversion(r)
 	registerNumeric(r)
+	registerContext(r)
+	registerRange(r)
+	registerSort(r)
 	return r
 }
 
