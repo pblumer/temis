@@ -105,7 +105,19 @@ Endpunkte: `POST /v1/models`, `GET /v1/models/{id}`, `POST /v1/models/{id}/evalu
 `POST /v1/evaluate`, `GET /healthz`/`/readyz`. Vollständig in `service/openapi.yaml` und
 `docs/40-api-contract.md` §2. Fehler als RFC-7807 `application/problem+json`.
 
-**Interaktive API-Doku (Swagger UI):** Der Server liefert eine dynamische
+**Web-UI (DMN-Playground):** Der Server liefert unter `GET /ui` (auch `GET /`) eine
+eigenständige, abhängigkeitsfreie Bedienoberfläche: DMN-XML einfügen oder als Datei
+laden → **Modell laden** liest Decisions und Inputs aus → Eingabewerte eintragen →
+**Auswerten**. Outputs, Decisions und Diagnostics werden direkt angezeigt; ein optionaler
+Bearer-Token kann gesetzt werden. Die Seite enthält kein externes Asset (kein CDN) und
+funktioniert daher offline; sie nutzt ausschließlich die `/v1`-Endpunkte.
+
+```sh
+go run ./cmd/temisd -addr :8080
+# Browser: http://localhost:8080/ui
+```
+
+**Interaktive API-Doku (Swagger UI):** Der Server liefert zusätzlich eine dynamische
 OpenAPI-Testseite unter `GET /docs` (lädt das eingebettete Spec von
 `GET /openapi.yaml`) — Endpunkte direkt im Browser ausprobieren.
 
