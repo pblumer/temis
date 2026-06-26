@@ -35,11 +35,16 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-09 | Decision-Table-Compiler + Hit Policies U/A/F/R/C | ✅ |
 | WP-10 | Öffentliche Library-API (`dmn.Engine`, Compile/Evaluate) | ✅ |
 | WP-11 | MVP-Beispiele & Golden-Tests | ✅ |
+| WP-20 | FEEL vollständig (`for`/`some`/`every`, Filter, Pfad-Projektion) | ✅ |
+| WP-21 | FEEL-Built-ins vollständig (nicht-temporal: string/numeric/list/context/range/sort) | ✅ |
+| WP-22 | Date/Time/Duration + temporale Built-ins, Komponentenzugriff, `@`-Literale | ✅ |
+| WP-32 | HTTP-Service (`temisd`): `/v1/models`, `/v1/evaluate`, OpenAPI | ✅ |
 
-> **MVP erreicht (WP-01–11).** Die Beta-Phase (FEEL-Vollständigkeit, weitere Boxed-Formen,
-> DRG-Verkettung, Service-Wrapper, TCK) läuft jetzt — Stand je Paket in `docs/20-roadmap.md`.
-> WP-20 (FEEL vollständig) ist in Arbeit. Die öffentliche `dmn/`-API ist bis zur
-> `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
+> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
+> ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
+> (Boxed Context/Invocation/Function & BKM), **WP-28** (DRG-Verkettung für Multi-Decision-
+> Modelle) und **WP-34/35** (Limits, Modell-Cache). Die öffentliche `dmn/`- und HTTP-API ist
+> bis zur `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
 
 ### Was heute funktioniert
 
@@ -52,6 +57,18 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 - **FEEL-Comprehensions & Filter:** `for … return` (mehrere Iteratoren, kartesisch, Range-Domains
   `1..3`), `some`/`every … satisfies`, Filter `list[prädikat]` (inkl. Kontext-Keys wie
   `people[age > 18]`), Index-Zugriff `list[n]` und Pfad-Projektion `list.feld`.
+- **FEEL-Built-ins (nicht-temporal vollständig):** string (inkl. `matches`/`replace`/`split`,
+  `string join`, `substring before/after`), numeric (`decimal`, `round …`, `modulo`, `sqrt`,
+  `log`, `exp`, `even`/`odd`), list (`all`/`any`, `sublist`, `append`, `concatenate`,
+  `insert before`, `remove`, `reverse`, `index of`, `union`, `distinct values`, `flatten`,
+  `product`, `median`, `stddev`, `mode`), context (`get value`, `get entries`, `context put`,
+  `context merge`, `context`), range-Relationen (`before`, `overlaps`, `includes`, `during`, …)
+  und `sort`.
+- **Date/Time/Duration:** Konstruktoren `date`/`time`/`date and time`/`duration`/
+  `years and months duration`, `now`/`today` (injizierbare Uhr), Kalender-Funktionen
+  (`day of week`, `month of year`, `day of year`, `week of year`) sowie Komponentenzugriff
+  per Pfad (`date("2024-02-29").year`, `duration("P1Y6M").months`, `…​.time offset`). Zonen
+  als Offset, `Z` oder `@Area/City`; `@`-Literale für alle vier Temporaltypen.
 - **Decision Tables ausführen:** Unary Tests in den Eingabezellen, Hit Policies **U/A/F/R/C**
   (inkl. Collect-Aggregation SUM/MIN/MAX/COUNT), Einzel-/Mehrfach-Output.
 - **Library-API (`dmn`):** `Engine.Compile(ctx, xml)` → `Definitions`, daraus `Decision(idOrName)`
@@ -65,6 +82,28 @@ dec, _ := defs.Decision("Dish")
 res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
 fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
 ```
+
+### Als HTTP-Service (`temisd`)
+
+```sh
+go run ./cmd/temisd -addr :8080        # Server starten
+
+# Modell hochladen (→ liefert eine content-addressed modelId)
+curl --data-binary @dmn/testdata/models/dish_15.dmn \
+     -H 'Content-Type: application/xml' localhost:8080/v1/models
+
+# Stateless kompilieren + auswerten in einem Request
+curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "{
+  \"xml\": $(jq -Rs . < dmn/testdata/models/dish_15.dmn),
+  \"decision\": \"Dish\",
+  \"input\": {\"Season\": \"Winter\", \"Guest Count\": 8}
+}"
+# → {"outputs":{"Dish":"Roastbeef"}, ...}
+```
+
+Endpunkte: `POST /v1/models`, `GET /v1/models/{id}`, `POST /v1/models/{id}/evaluate`,
+`POST /v1/evaluate`, `GET /healthz`/`/readyz`. Vollständig in `service/openapi.yaml` und
+`docs/40-api-contract.md` §2. Fehler als RFC-7807 `application/problem+json`.
 
 ## Entwicklung
 
