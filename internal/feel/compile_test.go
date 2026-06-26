@@ -173,10 +173,10 @@ func TestCompileErrors(t *testing.T) {
 		src       string
 		line, col int
 	}{
-		{"x + 1", 1, 1},                    // unknown variable
-		{"f(1)", 1, 1},                     // unknown function, at the name position
-		{"for i in [1] return i", 1, 1},    // deferred to WP-20
-		{"some x in xs satisfies x", 1, 1}, // deferred to WP-20
+		{"x + 1", 1, 1},                     // unknown variable
+		{"f(1)", 1, 1},                      // unknown function, at the name position
+		{"function(x) x + 1", 1, 1},         // function definitions deferred to WP-24
+		{"some x in xs satisfies x", 1, 11}, // unknown domain variable "xs"
 	}
 	for _, c := range cases {
 		_, err := CompileString(c.src, NewEnv())

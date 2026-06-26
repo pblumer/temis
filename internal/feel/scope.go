@@ -70,6 +70,23 @@ func (e *Env) Derive(extra ...string) *Env {
 	return d
 }
 
+// Append returns a new Env with name bound to a fresh trailing slot, shadowing
+// any existing binding of the same name. Unlike Derive it always allocates a new
+// slot, so it pairs with Scope.Extend to introduce iteration and filter
+// variables that may shadow an outer variable of the same name.
+func (e *Env) Append(name string) *Env {
+	d := &Env{
+		index: make(map[string]int, len(e.index)+1),
+		order: append([]string(nil), e.order...),
+	}
+	for k, v := range e.index {
+		d.index[k] = v
+	}
+	d.index[name] = len(d.order)
+	d.order = append(d.order, name)
+	return d
+}
+
 // Extend returns a new Scope with extra values appended after the existing
 // slots, matching an Env produced by Derive. The receiver is left unchanged, so
 // a base scope can be extended repeatedly with different values.
