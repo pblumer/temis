@@ -1,0 +1,574 @@
+{
+  "info": {
+    "name": "Temis DMN Engine API",
+    "description": "HTTP interface to the Temis DMN 1.5 decision engine.\n\nSet the **baseUrl** and **token** variables (or import the `temis.blumer.cloud` environment). The collection sends `Authorization: Bearer {{token}}` on the /v1 endpoints; leave token empty for an open server.\n\n- **Discovery & Health** — public endpoints (Swagger UI, spec, probes)\n- **Models** — upload a model, then evaluate it by id\n- **Stateless Evaluate — Examples** — self-contained example calls\n\nExamples mirror dmn/testdata/models and the engine's golden tests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "modelId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Discovery & Health",
+      "description": "Public endpoints — reachable even when the API requires a token.",
+      "item": [
+        {
+          "name": "Swagger UI (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "docs"
+              ]
+            },
+            "description": "Interactive Swagger UI test page.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "OpenAPI document (YAML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi.yaml",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "openapi.yaml"
+              ]
+            },
+            "description": "The embedded OpenAPI 3 contract that Swagger UI loads.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Liveness probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Readiness probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Models — Upload & Evaluate (stateful)",
+      "description": "Upload a model once, then evaluate it by id. Run the three requests in order; step 1 stores {{modelId}}.",
+      "item": [
+        {
+          "name": "1. Upload DMN model (Dish)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "models"
+              ]
+            },
+            "description": "Upload the raw DMN XML. The response carries a content-addressed modelId, which is saved to the {{modelId}} collection variable for the next requests.",
+            "body": {
+              "mode": "raw",
+              "raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<definitions xmlns=\"https://www.omg.org/spec/DMN/20230324/MODEL/\"\n             xmlns:dmndi=\"https://www.omg.org/spec/DMN/20230324/DMNDI/\"\n             xmlns:dc=\"http://www.omg.org/spec/DMN/20180521/DC/\"\n             xmlns:di=\"http://www.omg.org/spec/DMN/20180521/DI/\"\n             id=\"dish_definitions\"\n             name=\"Dish\"\n             namespace=\"http://temis.test/dish\">\n  <inputData id=\"id_season\" name=\"Season\"/>\n  <inputData id=\"id_guests\" name=\"Guest Count\"/>\n  <decision id=\"id_dish\" name=\"Dish\">\n    <informationRequirement id=\"ir_season\">\n      <requiredInput href=\"#id_season\"/>\n    </informationRequirement>\n    <informationRequirement id=\"ir_guests\">\n      <requiredInput href=\"#id_guests\"/>\n    </informationRequirement>\n    <decisionTable id=\"dt_dish\" hitPolicy=\"UNIQUE\">\n      <input id=\"in_season\" label=\"Season\">\n        <inputExpression typeRef=\"string\">\n          <text>Season</text>\n        </inputExpression>\n      </input>\n      <input id=\"in_guests\" label=\"Guest Count\">\n        <inputExpression typeRef=\"number\">\n          <text>Guest Count</text>\n        </inputExpression>\n      </input>\n      <output id=\"out_dish\" name=\"Dish\" typeRef=\"string\"/>\n      <rule id=\"r1\">\n        <inputEntry><text>\"Fall\"</text></inputEntry>\n        <inputEntry><text>&lt;= 8</text></inputEntry>\n        <outputEntry><text>\"Spareribs\"</text></outputEntry>\n      </rule>\n      <rule id=\"r2\">\n        <inputEntry><text>\"Winter\"</text></inputEntry>\n        <inputEntry><text>&lt;= 8</text></inputEntry>\n        <outputEntry><text>\"Roastbeef\"</text></outputEntry>\n      </rule>\n      <rule id=\"r3\">\n        <inputEntry><text>\"Spring\"</text></inputEntry>\n        <inputEntry><text>[5..8]</text></inputEntry>\n        <outputEntry><text>\"Steak\"</text></outputEntry>\n      </rule>\n      <rule id=\"r4\">\n        <inputEntry><text>-</text></inputEntry>\n        <inputEntry><text>&gt; 8</text></inputEntry>\n        <outputEntry><text>\"Stew\"</text></outputEntry>\n      </rule>\n    </decisionTable>\n  </decision>\n  <dmndi:DMNDI>\n    <dmndi:DMNDiagram id=\"diagram_1\">\n      <dmndi:DMNShape id=\"shape_season\" dmnElementRef=\"id_season\">\n        <dc:Bounds x=\"160\" y=\"100\" width=\"180\" height=\"60\"/>\n      </dmndi:DMNShape>\n      <dmndi:DMNShape id=\"shape_guests\" dmnElementRef=\"id_guests\">\n        <dc:Bounds x=\"400\" y=\"100\" width=\"180\" height=\"60\"/>\n      </dmndi:DMNShape>\n      <dmndi:DMNShape id=\"shape_dish\" dmnElementRef=\"id_dish\">\n        <dc:Bounds x=\"280\" y=\"260\" width=\"180\" height=\"80\"/>\n      </dmndi:DMNShape>\n      <dmndi:DMNEdge id=\"edge_season\" dmnElementRef=\"ir_season\">\n        <di:waypoint x=\"250\" y=\"160\"/>\n        <di:waypoint x=\"340\" y=\"260\"/>\n      </dmndi:DMNEdge>\n    </dmndi:DMNDiagram>\n  </dmndi:DMNDI>\n</definitions>\n",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "const id = pm.response.json().modelId;",
+                  "pm.collectionVariables.set(\"modelId\", id);",
+                  "pm.test(\"modelId looks content-addressed\", () => pm.expect(id).to.match(/^sha256:/));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2. Get model index",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/models/{{modelId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "models",
+                "{{modelId}}"
+              ]
+            },
+            "description": "Read the cached model's decisions and inputs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3. Evaluate decision (Dish, Winter)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/models/{{modelId}}/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "models",
+                "{{modelId}}",
+                "evaluate"
+              ]
+            },
+            "description": "Evaluate a decision of the uploaded model. Try other seasons/guest counts from the saved examples.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Dish\",\n  \"input\": {\n    \"Season\": \"Winter\",\n    \"Guest Count\": 4\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Dish = Roastbeef\", () => pm.expect(pm.response.json().outputs.Dish).to.eql(\"Roastbeef\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stateless Evaluate — Examples",
+      "description": "Each request inlines one example DMN model and evaluates it in a single call (POST /v1/evaluate). No upload needed — Send and read the outputs.",
+      "item": [
+        {
+          "name": "Dish — dish_15",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Seasonal dish recommendation (hit policy UNIQUE). Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20230324/MODEL/\\\"\\n             xmlns:dmndi=\\\"https://www.omg.org/spec/DMN/20230324/DMNDI/\\\"\\n             xmlns:dc=\\\"http://www.omg.org/spec/DMN/20180521/DC/\\\"\\n             xmlns:di=\\\"http://www.omg.org/spec/DMN/20180521/DI/\\\"\\n             id=\\\"dish_definitions\\\"\\n             name=\\\"Dish\\\"\\n             namespace=\\\"http://temis.test/dish\\\">\\n  <inputData id=\\\"id_season\\\" name=\\\"Season\\\"/>\\n  <inputData id=\\\"id_guests\\\" name=\\\"Guest Count\\\"/>\\n  <decision id=\\\"id_dish\\\" name=\\\"Dish\\\">\\n    <informationRequirement id=\\\"ir_season\\\">\\n      <requiredInput href=\\\"#id_season\\\"/>\\n    </informationRequirement>\\n    <informationRequirement id=\\\"ir_guests\\\">\\n      <requiredInput href=\\\"#id_guests\\\"/>\\n    </informationRequirement>\\n    <decisionTable id=\\\"dt_dish\\\" hitPolicy=\\\"UNIQUE\\\">\\n      <input id=\\\"in_season\\\" label=\\\"Season\\\">\\n        <inputExpression typeRef=\\\"string\\\">\\n          <text>Season</text>\\n        </inputExpression>\\n      </input>\\n      <input id=\\\"in_guests\\\" label=\\\"Guest Count\\\">\\n        <inputExpression typeRef=\\\"number\\\">\\n          <text>Guest Count</text>\\n        </inputExpression>\\n      </input>\\n      <output id=\\\"out_dish\\\" name=\\\"Dish\\\" typeRef=\\\"string\\\"/>\\n      <rule id=\\\"r1\\\">\\n        <inputEntry><text>\\\"Fall\\\"</text></inputEntry>\\n        <inputEntry><text>&lt;= 8</text></inputEntry>\\n        <outputEntry><text>\\\"Spareribs\\\"</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r2\\\">\\n        <inputEntry><text>\\\"Winter\\\"</text></inputEntry>\\n        <inputEntry><text>&lt;= 8</text></inputEntry>\\n        <outputEntry><text>\\\"Roastbeef\\\"</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r3\\\">\\n        <inputEntry><text>\\\"Spring\\\"</text></inputEntry>\\n        <inputEntry><text>[5..8]</text></inputEntry>\\n        <outputEntry><text>\\\"Steak\\\"</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r4\\\">\\n        <inputEntry><text>-</text></inputEntry>\\n        <inputEntry><text>&gt; 8</text></inputEntry>\\n        <outputEntry><text>\\\"Stew\\\"</text></outputEntry>\\n      </rule>\\n    </decisionTable>\\n  </decision>\\n  <dmndi:DMNDI>\\n    <dmndi:DMNDiagram id=\\\"diagram_1\\\">\\n      <dmndi:DMNShape id=\\\"shape_season\\\" dmnElementRef=\\\"id_season\\\">\\n        <dc:Bounds x=\\\"160\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_guests\\\" dmnElementRef=\\\"id_guests\\\">\\n        <dc:Bounds x=\\\"400\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_dish\\\" dmnElementRef=\\\"id_dish\\\">\\n        <dc:Bounds x=\\\"280\\\" y=\\\"260\\\" width=\\\"180\\\" height=\\\"80\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNEdge id=\\\"edge_season\\\" dmnElementRef=\\\"ir_season\\\">\\n        <di:waypoint x=\\\"250\\\" y=\\\"160\\\"/>\\n        <di:waypoint x=\\\"340\\\" y=\\\"260\\\"/>\\n      </dmndi:DMNEdge>\\n    </dmndi:DMNDiagram>\\n  </dmndi:DMNDI>\\n</definitions>\\n\",\n  \"decision\": \"Dish\",\n  \"input\": {\n    \"Season\": \"Winter\",\n    \"Guest Count\": 4\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Dish = Roastbeef\", () => pm.expect(String(pm.response.json().outputs[\"Dish\"])).to.eql(\"Roastbeef\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Discount — discount_14",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Customer discount tier from type + order total. Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20211108/MODEL/\\\"\\n             id=\\\"discount_definitions\\\"\\n             name=\\\"Discount\\\"\\n             namespace=\\\"http://temis.test/discount\\\">\\n  <inputData id=\\\"id_customer\\\" name=\\\"Customer Type\\\"/>\\n  <inputData id=\\\"id_order\\\" name=\\\"Order Total\\\"/>\\n  <decision id=\\\"id_discount\\\" name=\\\"Discount\\\">\\n    <informationRequirement>\\n      <requiredInput href=\\\"#id_customer\\\"/>\\n    </informationRequirement>\\n    <informationRequirement>\\n      <requiredInput href=\\\"#id_order\\\"/>\\n    </informationRequirement>\\n    <decisionTable id=\\\"dt_discount\\\" hitPolicy=\\\"FIRST\\\">\\n      <input id=\\\"in_customer\\\" label=\\\"Customer Type\\\">\\n        <inputExpression typeRef=\\\"string\\\">\\n          <text>Customer Type</text>\\n        </inputExpression>\\n        <inputValues>\\n          <text>\\\"Business\\\",\\\"Private\\\"</text>\\n        </inputValues>\\n      </input>\\n      <input id=\\\"in_order\\\" label=\\\"Order Total\\\">\\n        <inputExpression typeRef=\\\"number\\\">\\n          <text>Order Total</text>\\n        </inputExpression>\\n      </input>\\n      <output id=\\\"out_discount\\\" name=\\\"Discount\\\" typeRef=\\\"number\\\"/>\\n      <rule id=\\\"d1\\\">\\n        <inputEntry><text>\\\"Business\\\"</text></inputEntry>\\n        <inputEntry><text>&gt;= 1000</text></inputEntry>\\n        <outputEntry><text>0.15</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"d2\\\">\\n        <inputEntry><text>\\\"Business\\\"</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>0.10</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"d3\\\">\\n        <inputEntry><text>\\\"Private\\\"</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>0.05</text></outputEntry>\\n      </rule>\\n    </decisionTable>\\n  </decision>\\n</definitions>\\n\",\n  \"decision\": \"Discount\",\n  \"input\": {\n    \"Customer Type\": \"Business\",\n    \"Order Total\": 1500\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Discount = 0.15\", () => pm.expect(String(pm.response.json().outputs[\"Discount\"])).to.eql(\"0.15\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Eligibility — routing_13",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Age-based eligibility check (DMN 1.3 model, tolerantly decoded). Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20191111/MODEL/\\\"\\n             xmlns:temis=\\\"http://temis.test/ext\\\"\\n             id=\\\"routing_definitions\\\"\\n             name=\\\"Routing\\\"\\n             namespace=\\\"http://temis.test/routing\\\">\\n  <temis:note>generated fixture for the unknown-element diagnostic</temis:note>\\n  <inputData id=\\\"id_age\\\" name=\\\"Applicant Age\\\"/>\\n  <decision id=\\\"id_eligibility\\\" name=\\\"Eligibility\\\">\\n    <informationRequirement>\\n      <requiredInput href=\\\"#id_age\\\"/>\\n    </informationRequirement>\\n    <literalExpression id=\\\"le_eligibility\\\" typeRef=\\\"string\\\">\\n      <text>if Applicant Age >= 18 then \\\"ELIGIBLE\\\" else \\\"INELIGIBLE\\\"</text>\\n    </literalExpression>\\n  </decision>\\n  <decision id=\\\"id_routing\\\" name=\\\"Routing\\\">\\n    <informationRequirement>\\n      <requiredDecision href=\\\"#id_eligibility\\\"/>\\n    </informationRequirement>\\n    <literalExpression id=\\\"le_routing\\\" typeRef=\\\"string\\\">\\n      <text>if Eligibility = \\\"ELIGIBLE\\\" then \\\"ACCEPT\\\" else \\\"DECLINE\\\"</text>\\n    </literalExpression>\\n  </decision>\\n</definitions>\\n\",\n  \"decision\": \"Eligibility\",\n  \"input\": {\n    \"Applicant Age\": 20\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Eligibility = ELIGIBLE\", () => pm.expect(String(pm.response.json().outputs[\"Eligibility\"])).to.eql(\"ELIGIBLE\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Loan Approval — loan_15",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Loan approval from credit score + annual income. Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20230324/MODEL/\\\"\\n             xmlns:dmndi=\\\"https://www.omg.org/spec/DMN/20230324/DMNDI/\\\"\\n             xmlns:dc=\\\"http://www.omg.org/spec/DMN/20180521/DC/\\\"\\n             id=\\\"loan_definitions\\\"\\n             name=\\\"Loan Approval\\\"\\n             namespace=\\\"http://temis.test/loan\\\">\\n  <inputData id=\\\"id_score\\\" name=\\\"Credit Score\\\"/>\\n  <inputData id=\\\"id_income\\\" name=\\\"Annual Income\\\"/>\\n  <decision id=\\\"id_loan\\\" name=\\\"Loan Approval\\\">\\n    <informationRequirement id=\\\"ir_score\\\">\\n      <requiredInput href=\\\"#id_score\\\"/>\\n    </informationRequirement>\\n    <informationRequirement id=\\\"ir_income\\\">\\n      <requiredInput href=\\\"#id_income\\\"/>\\n    </informationRequirement>\\n    <decisionTable id=\\\"dt_loan\\\" hitPolicy=\\\"FIRST\\\">\\n      <input id=\\\"in_score\\\" label=\\\"Credit Score\\\">\\n        <inputExpression typeRef=\\\"number\\\">\\n          <text>Credit Score</text>\\n        </inputExpression>\\n      </input>\\n      <input id=\\\"in_income\\\" label=\\\"Annual Income\\\">\\n        <inputExpression typeRef=\\\"number\\\">\\n          <text>Annual Income</text>\\n        </inputExpression>\\n      </input>\\n      <output id=\\\"out_decision\\\" name=\\\"Decision\\\" typeRef=\\\"string\\\"/>\\n      <output id=\\\"out_rate\\\" name=\\\"Interest Rate\\\" typeRef=\\\"number\\\"/>\\n      <rule id=\\\"r1\\\">\\n        <inputEntry><text>&lt; 600</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>\\\"Declined\\\"</text></outputEntry>\\n        <outputEntry><text>0</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r2\\\">\\n        <inputEntry><text>-</text></inputEntry>\\n        <inputEntry><text>&lt; 30000</text></inputEntry>\\n        <outputEntry><text>\\\"Declined\\\"</text></outputEntry>\\n        <outputEntry><text>0</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r3\\\">\\n        <inputEntry><text>&gt;= 750</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>\\\"Approved\\\"</text></outputEntry>\\n        <outputEntry><text>0.035</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r4\\\">\\n        <inputEntry><text>&gt;= 700</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>\\\"Approved\\\"</text></outputEntry>\\n        <outputEntry><text>0.05</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r5\\\">\\n        <inputEntry><text>-</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>\\\"Review\\\"</text></outputEntry>\\n        <outputEntry><text>0.08</text></outputEntry>\\n      </rule>\\n    </decisionTable>\\n  </decision>\\n  <dmndi:DMNDI>\\n    <dmndi:DMNDiagram id=\\\"diagram_loan\\\">\\n      <dmndi:DMNShape id=\\\"shape_score\\\" dmnElementRef=\\\"id_score\\\">\\n        <dc:Bounds x=\\\"160\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_income\\\" dmnElementRef=\\\"id_income\\\">\\n        <dc:Bounds x=\\\"400\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_loan\\\" dmnElementRef=\\\"id_loan\\\">\\n        <dc:Bounds x=\\\"280\\\" y=\\\"260\\\" width=\\\"180\\\" height=\\\"80\\\"/>\\n      </dmndi:DMNShape>\\n    </dmndi:DMNDiagram>\\n  </dmndi:DMNDI>\\n</definitions>\\n\",\n  \"decision\": \"Loan Approval\",\n  \"input\": {\n    \"Credit Score\": 800,\n    \"Annual Income\": 60000\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Risk Score — risk_15",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Risk scoring from boolean flags (Collect/SUM). Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20230324/MODEL/\\\"\\n             xmlns:dmndi=\\\"https://www.omg.org/spec/DMN/20230324/DMNDI/\\\"\\n             xmlns:dc=\\\"http://www.omg.org/spec/DMN/20180521/DC/\\\"\\n             id=\\\"risk_definitions\\\"\\n             name=\\\"Risk Score\\\"\\n             namespace=\\\"http://temis.test/risk\\\">\\n  <inputData id=\\\"id_debt\\\" name=\\\"Has Debt\\\"/>\\n  <inputData id=\\\"id_new\\\" name=\\\"Is New Customer\\\"/>\\n  <decision id=\\\"id_risk\\\" name=\\\"Risk Score\\\">\\n    <informationRequirement id=\\\"ir_debt\\\">\\n      <requiredInput href=\\\"#id_debt\\\"/>\\n    </informationRequirement>\\n    <informationRequirement id=\\\"ir_new\\\">\\n      <requiredInput href=\\\"#id_new\\\"/>\\n    </informationRequirement>\\n    <decisionTable id=\\\"dt_risk\\\" hitPolicy=\\\"COLLECT\\\" aggregation=\\\"SUM\\\">\\n      <input id=\\\"in_debt\\\" label=\\\"Has Debt\\\">\\n        <inputExpression typeRef=\\\"boolean\\\">\\n          <text>Has Debt</text>\\n        </inputExpression>\\n      </input>\\n      <input id=\\\"in_new\\\" label=\\\"Is New Customer\\\">\\n        <inputExpression typeRef=\\\"boolean\\\">\\n          <text>Is New Customer</text>\\n        </inputExpression>\\n      </input>\\n      <output id=\\\"out_points\\\" name=\\\"Risk Points\\\" typeRef=\\\"number\\\"/>\\n      <rule id=\\\"r1\\\">\\n        <inputEntry><text>true</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>30</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r2\\\">\\n        <inputEntry><text>-</text></inputEntry>\\n        <inputEntry><text>true</text></inputEntry>\\n        <outputEntry><text>20</text></outputEntry>\\n      </rule>\\n      <rule id=\\\"r3\\\">\\n        <inputEntry><text>-</text></inputEntry>\\n        <inputEntry><text>-</text></inputEntry>\\n        <outputEntry><text>5</text></outputEntry>\\n      </rule>\\n    </decisionTable>\\n  </decision>\\n  <dmndi:DMNDI>\\n    <dmndi:DMNDiagram id=\\\"diagram_risk\\\">\\n      <dmndi:DMNShape id=\\\"shape_debt\\\" dmnElementRef=\\\"id_debt\\\">\\n        <dc:Bounds x=\\\"160\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_new\\\" dmnElementRef=\\\"id_new\\\">\\n        <dc:Bounds x=\\\"400\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_risk\\\" dmnElementRef=\\\"id_risk\\\">\\n        <dc:Bounds x=\\\"280\\\" y=\\\"260\\\" width=\\\"180\\\" height=\\\"80\\\"/>\\n      </dmndi:DMNShape>\\n    </dmndi:DMNDiagram>\\n  </dmndi:DMNDI>\\n</definitions>\\n\",\n  \"decision\": \"Risk Score\",\n  \"input\": {\n    \"Has Debt\": true,\n    \"Is New Customer\": true\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Risk Score = 55\", () => pm.expect(String(pm.response.json().outputs[\"Risk Score\"])).to.eql(\"55\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Net Total — pricing_15",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/evaluate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "evaluate"
+              ]
+            },
+            "description": "Exact-decimal net total (19.99 * 3 = 59.97, no float drift). Self-contained: the DMN XML is inlined, so just hit Send.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"xml\": \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n<definitions xmlns=\\\"https://www.omg.org/spec/DMN/20230324/MODEL/\\\"\\n             xmlns:dmndi=\\\"https://www.omg.org/spec/DMN/20230324/DMNDI/\\\"\\n             xmlns:dc=\\\"http://www.omg.org/spec/DMN/20180521/DC/\\\"\\n             id=\\\"pricing_definitions\\\"\\n             name=\\\"Pricing\\\"\\n             namespace=\\\"http://temis.test/pricing\\\">\\n  <inputData id=\\\"id_price\\\" name=\\\"Unit Price\\\"/>\\n  <inputData id=\\\"id_qty\\\" name=\\\"Quantity\\\"/>\\n  <inputData id=\\\"id_name\\\" name=\\\"Product Name\\\"/>\\n  <decision id=\\\"id_net\\\" name=\\\"Net Total\\\">\\n    <informationRequirement id=\\\"ir_price\\\">\\n      <requiredInput href=\\\"#id_price\\\"/>\\n    </informationRequirement>\\n    <informationRequirement id=\\\"ir_qty\\\">\\n      <requiredInput href=\\\"#id_qty\\\"/>\\n    </informationRequirement>\\n    <literalExpression id=\\\"le_net\\\" typeRef=\\\"number\\\">\\n      <text>Unit Price * Quantity</text>\\n    </literalExpression>\\n  </decision>\\n  <decision id=\\\"id_label\\\" name=\\\"Label\\\">\\n    <informationRequirement id=\\\"ir_name\\\">\\n      <requiredInput href=\\\"#id_name\\\"/>\\n    </informationRequirement>\\n    <literalExpression id=\\\"le_label\\\" typeRef=\\\"string\\\">\\n      <text>upper case(substring(Product Name, 1, 3))</text>\\n    </literalExpression>\\n  </decision>\\n  <dmndi:DMNDI>\\n    <dmndi:DMNDiagram id=\\\"diagram_pricing\\\">\\n      <dmndi:DMNShape id=\\\"shape_price\\\" dmnElementRef=\\\"id_price\\\">\\n        <dc:Bounds x=\\\"160\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_qty\\\" dmnElementRef=\\\"id_qty\\\">\\n        <dc:Bounds x=\\\"400\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_name\\\" dmnElementRef=\\\"id_name\\\">\\n        <dc:Bounds x=\\\"640\\\" y=\\\"100\\\" width=\\\"180\\\" height=\\\"60\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_net\\\" dmnElementRef=\\\"id_net\\\">\\n        <dc:Bounds x=\\\"280\\\" y=\\\"260\\\" width=\\\"180\\\" height=\\\"80\\\"/>\\n      </dmndi:DMNShape>\\n      <dmndi:DMNShape id=\\\"shape_label\\\" dmnElementRef=\\\"id_label\\\">\\n        <dc:Bounds x=\\\"640\\\" y=\\\"260\\\" width=\\\"180\\\" height=\\\"80\\\"/>\\n      </dmndi:DMNShape>\\n    </dmndi:DMNDiagram>\\n  </dmndi:DMNDI>\\n</definitions>\\n\",\n  \"decision\": \"Net Total\",\n  \"input\": {\n    \"Unit Price\": 19.99,\n    \"Quantity\": 3\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Net Total = 59.97\", () => pm.expect(String(pm.response.json().outputs[\"Net Total\"])).to.eql(\"59.97\"));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

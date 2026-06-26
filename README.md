@@ -126,6 +126,10 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
+**Postman:** Importierbare Collection (alle Endpunkte + eigenständige
+Beispiel-Requests) und ein Environment für `temis.blumer.cloud` liegen in
+`service/postman/` — siehe `service/postman/README.md`.
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.
