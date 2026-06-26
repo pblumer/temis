@@ -76,6 +76,7 @@ func buildDefault() *Registry {
 	registerContext(r)
 	registerRange(r)
 	registerSort(r)
+	registerTemporal(r)
 	return r
 }
 

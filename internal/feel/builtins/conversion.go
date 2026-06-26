@@ -28,22 +28,6 @@ func registerConversion(r *Registry) {
 		return value.Str(args[0].String()), nil
 	}))
 
-	// date(from): parse a date string, or extract the date of a date-and-time.
-	r.Register(fixed("date", []string{"from"}, 1, 1, func(args []value.Value) (value.Value, error) {
-		switch v := args[0].(type) {
-		case value.Date:
-			return v, nil
-		case value.Str:
-			d, err := value.ParseDate(string(v))
-			if err != nil {
-				return value.Null, nil
-			}
-			return d, nil
-		case value.DateTime:
-			t := v.Time()
-			return value.NewDate(t.Year(), t.Month(), t.Day()), nil
-		default:
-			return value.Null, nil
-		}
-	}))
+	// The temporal conversions date/time/date and time/duration live in
+	// temporal.go (registerTemporal) alongside the other date/time builtins.
 }

@@ -37,11 +37,12 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-11 | MVP-Beispiele & Golden-Tests | ✅ |
 | WP-20 | FEEL vollständig (`for`/`some`/`every`, Filter, Pfad-Projektion) | ✅ |
 | WP-21 | FEEL-Built-ins vollständig (nicht-temporal: string/numeric/list/context/range/sort) | ✅ |
+| WP-22 | Date/Time/Duration + temporale Built-ins, Komponentenzugriff, `@`-Literale | ✅ |
 
-> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21 ✅).** Die Beta-Phase (weitere
+> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22 ✅).** Die Beta-Phase (weitere
 > Boxed-Formen, DRG-Verkettung, Service-Wrapper, TCK) geht weiter — Stand je Paket in
-> `docs/20-roadmap.md`. Als Nächstes: **WP-22** (Date/Time/Duration inkl. temporaler
-> Built-ins) und **WP-28** (DRG-Verkettung). Die öffentliche `dmn/`-API ist bis zur
+> `docs/20-roadmap.md`. Als Nächstes: **WP-23/24** (Boxed Context/Invocation/Function & BKM)
+> und **WP-28** (DRG-Verkettung). Die öffentliche `dmn/`-API ist bis zur
 > `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
 
 ### Was heute funktioniert
@@ -61,7 +62,12 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
   `insert before`, `remove`, `reverse`, `index of`, `union`, `distinct values`, `flatten`,
   `product`, `median`, `stddev`, `mode`), context (`get value`, `get entries`, `context put`,
   `context merge`, `context`), range-Relationen (`before`, `overlaps`, `includes`, `during`, …)
-  und `sort`. (Temporale Built-ins folgen mit WP-22.)
+  und `sort`.
+- **Date/Time/Duration:** Konstruktoren `date`/`time`/`date and time`/`duration`/
+  `years and months duration`, `now`/`today` (injizierbare Uhr), Kalender-Funktionen
+  (`day of week`, `month of year`, `day of year`, `week of year`) sowie Komponentenzugriff
+  per Pfad (`date("2024-02-29").year`, `duration("P1Y6M").months`, `…​.time offset`). Zonen
+  als Offset, `Z` oder `@Area/City`; `@`-Literale für alle vier Temporaltypen.
 - **Decision Tables ausführen:** Unary Tests in den Eingabezellen, Hit Policies **U/A/F/R/C**
   (inkl. Collect-Aggregation SUM/MIN/MAX/COUNT), Einzel-/Mehrfach-Output.
 - **Library-API (`dmn`):** `Engine.Compile(ctx, xml)` → `Definitions`, daraus `Decision(idOrName)`

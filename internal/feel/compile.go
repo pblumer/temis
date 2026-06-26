@@ -364,14 +364,17 @@ func (c *compiler) compilePath(n *PathExpr) CompiledExpr {
 	}
 }
 
-// memberOf returns the named member of a context value, or null when v is not a
-// context or has no such key.
+// memberOf returns the named member of a value: a context entry, or a temporal
+// or duration property (e.g. date(...).year). It yields null when v has no such
+// member.
 func memberOf(v value.Value, name string) value.Value {
-	ctx, ok := v.(*value.Context)
-	if !ok {
+	if ctx, ok := v.(*value.Context); ok {
+		if mv, ok := ctx.Get(name); ok {
+			return mv
+		}
 		return value.Null
 	}
-	if mv, ok := ctx.Get(name); ok {
+	if mv, ok := value.Member(v, name); ok {
 		return mv
 	}
 	return value.Null

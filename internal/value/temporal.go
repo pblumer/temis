@@ -243,7 +243,8 @@ func (d YearsMonthsDuration) String() string {
 // ParseDuration parses an ISO 8601 duration into either a years-months or a
 // days-time duration. The two FEEL duration types are disjoint, so a literal
 // mixing year/month and day/time components is rejected. Fractional components
-// are not accepted (refined in WP-22).
+// (e.g. PT1.5H) are not yet accepted — a documented limitation tracked for a
+// later refinement.
 func ParseDuration(s string) (Value, error) {
 	neg := false
 	body := s
