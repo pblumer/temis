@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"sync"
 
 	"github.com/pblumer/temis/dmn"
@@ -39,6 +40,11 @@ type Server struct {
 	// endpoints. Empty means the API is open.
 	token string
 
+	// listModels enables the GET /v1/models listing endpoint. When false the
+	// handler responds 404, so callers cannot enumerate the cached models (and
+	// thereby the decisions in them). Defaults to true.
+	listModels bool
+
 	mu     sync.RWMutex
 	models map[string]*storedModel
 }
@@ -51,6 +57,14 @@ type Option func(*Server)
 // docs, OpenAPI spec and health endpoints are never gated.
 func WithToken(token string) Option {
 	return func(s *Server) { s.token = token }
+}
+
+// WithModelListing toggles the GET /v1/models endpoint that enumerates every
+// cached model with its decisions and inputs. Listing is enabled by default;
+// pass WithModelListing(false) to keep the cached decisions private — the
+// endpoint then responds 404 as if it did not exist.
+func WithModelListing(enabled bool) Option {
+	return func(s *Server) { s.listModels = enabled }
 }
 
 // storedModel is a compiled model held in the cache together with the index and
@@ -68,7 +82,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, models: map[string]*storedModel{}}
+	s := &Server{engine: engine, models: map[string]*storedModel{}, listModels: true}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -82,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	// Data endpoints: gated by the optional bearer token.
 	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
+	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
@@ -102,6 +117,17 @@ type modelResponse struct {
 	Decisions   []string        `json:"decisions"`
 	Inputs      []string        `json:"inputs"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
+}
+
+type modelListResponse struct {
+	Models []modelSummary `json:"models"`
+	Count  int            `json:"count"`
+}
+
+type modelSummary struct {
+	ModelID   string   `json:"modelId"`
+	Decisions []string `json:"decisions"`
+	Inputs    []string `json:"inputs"`
 }
 
 type evaluateModelRequest struct {
@@ -152,6 +178,33 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		Inputs:      sm.index.Inputs,
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
+}
+
+// handleListModels returns a summary of every model currently held in the
+// cache, sorted by id for a stable order. When listing is disabled
+// (WithModelListing(false)) it responds 404 so the cached decisions stay
+// private and the endpoint looks absent.
+func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
+	if !s.listModels {
+		writeProblem(w, http.StatusNotFound, "NOT_FOUND", "model listing is disabled")
+		return
+	}
+
+	s.mu.RLock()
+	summaries := make([]modelSummary, 0, len(s.models))
+	for _, sm := range s.models {
+		summaries = append(summaries, modelSummary{
+			ModelID:   sm.id,
+			Decisions: sm.index.Decisions,
+			Inputs:    sm.index.Inputs,
+		})
+	}
+	s.mu.RUnlock()
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].ModelID < summaries[j].ModelID
+	})
+	writeJSON(w, http.StatusOK, modelListResponse{Models: summaries, Count: len(summaries)})
 }
 
 // handleGetModel returns a cached model's index.

@@ -49,6 +49,26 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List cached models
+      description: >
+        Returns a summary (id, decisions, inputs) of every model currently held
+        in the in-memory cache. This endpoint can be disabled at startup
+        (`temisd -list-models=false`) to keep the cached decisions private; when
+        disabled it responds 404 as if it did not exist.
+      responses:
+        "200":
+          description: The cached models
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Model listing is disabled
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/models/{id}:
     get:
       summary: Get a cached model's index
@@ -166,6 +186,23 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    ModelListResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelSummary" }
+        count: { type: integer }
+    ModelSummary:
+      type: object
+      properties:
+        modelId: { type: string, example: "sha256:..." }
+        decisions:
+          type: array
+          items: { type: string }
+        inputs:
+          type: array
+          items: { type: string }
     ModelResponse:
       type: object
       properties:

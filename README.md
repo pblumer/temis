@@ -101,9 +101,15 @@ curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "
 # → {"outputs":{"Dish":"Roastbeef"}, ...}
 ```
 
-Endpunkte: `POST /v1/models`, `GET /v1/models/{id}`, `POST /v1/models/{id}/evaluate`,
-`POST /v1/evaluate`, `GET /healthz`/`/readyz`. Vollständig in `service/openapi.yaml` und
-`docs/40-api-contract.md` §2. Fehler als RFC-7807 `application/problem+json`.
+Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
+`POST /v1/models/{id}/evaluate`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
+Vollständig in `service/openapi.yaml` und `docs/40-api-contract.md` §2. Fehler als
+RFC-7807 `application/problem+json`.
+
+**Gecachte Modelle auflisten:** `GET /v1/models` liefert alle aktuell im Cache
+liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die
+hinterlegten Decisions einsehen kann, schaltet den Endpunkt mit
+`-list-models=false` ab — er antwortet dann mit `404`, als gäbe es ihn nicht.
 
 **Web-UI (DMN-Playground):** Der Server liefert unter `GET /ui` (auch `GET /`) eine
 eigenständige, abhängigkeitsfreie Bedienoberfläche: DMN-XML einfügen oder als Datei

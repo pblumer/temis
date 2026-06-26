@@ -20,6 +20,8 @@ func main() {
 	addr := flag.String("addr", ":8080", "address to listen on (host:port)")
 	token := flag.String("token", os.Getenv("TEMIS_API_TOKEN"),
 		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
+	listModels := flag.Bool("list-models", true,
+		"expose GET /v1/models, which lists every cached model; set false to keep decisions private")
 	flag.Parse()
 
 	if *showVersion {
@@ -27,9 +29,15 @@ func main() {
 		return
 	}
 
-	srv := service.NewServer(dmn.New(), service.WithToken(*token))
+	srv := service.NewServer(dmn.New(),
+		service.WithToken(*token),
+		service.WithModelListing(*listModels),
+	)
 	if *token != "" {
 		log.Printf("temisd: /v1 endpoints require a bearer token")
+	}
+	if !*listModels {
+		log.Printf("temisd: GET /v1/models listing disabled")
 	}
 	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs",
 		version.Version, *addr, *addr, *addr)
