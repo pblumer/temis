@@ -40,6 +40,10 @@ const (
 type Server struct {
 	engine  *dmn.Engine
 	version string
+	// token, when non-empty, is the bearer token required on the HTTP transport
+	// (HTTPHandler). It does not apply to the stdio transport, which is a trusted
+	// local subprocess.
+	token string
 
 	mu     sync.RWMutex
 	models map[string]*storedModel
@@ -56,6 +60,13 @@ func WithVersion(v string) Option {
 			s.version = v
 		}
 	}
+}
+
+// WithHTTPToken requires callers of the HTTP transport to present
+// "Authorization: Bearer <token>". An empty token leaves the HTTP endpoint open.
+// It has no effect on the stdio transport.
+func WithHTTPToken(token string) Option {
+	return func(s *Server) { s.token = token }
 }
 
 // NewServer returns a Server backed by engine. If engine is nil a default engine

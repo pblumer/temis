@@ -19,3 +19,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0012 | F-01 als Einsteiger-Editor (separates Frontend, dmn-js unverändert) | accepted |
 | 0013 | temis als Laufzeit-Verifikationswerkzeug für KI-Agenten (Agent-First-Schnittstelle) | accepted |
 | 0014 | MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK) | accepted |
+| 0015 | Remote-MCP über nativen Streamable-HTTP-Transport (`temis-mcp -http`) | accepted |
