@@ -272,8 +272,29 @@ service DmnEngine {
 - Decimal-genaue Zahlen als String-Feld transportieren, um JSON-/proto-float-Verlust zu
   vermeiden (ADR-0007-Konsequenz).
 
-## 4. Versionierung
+## 4. Versionierung & Stabilität (SemVer, WP-43)
 
-- Go-Modulpfad endet bei Major ≥ 2 auf `/v2` (Go-Konvention).
-- HTTP-Pfade tragen `/v1`. gRPC-Package `dmn.v1`.
-- Stabilität ab WP-43. Davor „experimental", in README markiert.
+Ab WP-43 ist `package dmn` als **stabile v1-Oberfläche** zugesagt (ADR-0011,
+ADR-0018). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
+
+- **Stabiler Vertrag (v1):** die exportierten Symbole von `package dmn` —
+  `Engine`/`New`/`Option` (+ `WithLimits`), `Compile`, `Definitions`
+  (+ `Decision`/`Service`/`InputSchema`/`Index`/`ModelName`), `CompiledDecision`
+  (+ `Evaluate`/`EvalOption`/`WithTrace`/`WithStrictInput`/`ValidateInput`),
+  `CompiledService`, `Input`/`Result`/`Trace`, `Diagnostics`/`Diagnostic`/`Sev*`,
+  die `Code*`-Konstanten, `EvalError`/`InputError`, `InputField`/`InputProblem`,
+  `Limits`. Diese Menge ist durch den **API-Surface-Golden-Test**
+  (`dmn/apisurface_test.go` → `testdata/api/dmn.api`) eingefroren: jede Änderung
+  der exportierten Oberfläche bricht CI und erzwingt eine bewusste Entscheidung.
+- **Additive Änderungen** (neue Funktion/Typ/Feld/`Code*`) → Minor. Golden mit
+  `-update-api` aktualisieren.
+- **Breaking Changes** (Umbenennen/Entfernen/Signaturänderung; auch das
+  Verschieben der Compile-/Eval-Fehlergrenze aus §1.4 oder das Umbenennen eines
+  `Diagnostic.Code`) → **Major**. Go-Modulpfad endet bei Major ≥ 2 auf `/vN`.
+- **Deprecation-Policy:** ein zu entfernendes Symbol wird zuerst mit
+  `// Deprecated: <Grund/Ersatz>` markiert (bleibt voll funktionsfähig),
+  frühestens im nächsten Major entfernt.
+- **`internal/` ist ausgenommen** (privat, jederzeit änderbar) — nur `package dmn`
+  ist der SemVer-Vertrag (ADR-0011).
+- **HTTP/gRPC:** HTTP-Pfade tragen `/v1`, gRPC-Package `dmn.v1`; RFC-7807-`code`
+  und `Diagnostic.Code` sind additiv stabil (§1.4/§2).
