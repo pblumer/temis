@@ -11,6 +11,10 @@ import 'dmn-js/dist/assets/dmn-font/css/dmn.css';
 import './style.css';
 import { STARTER_DMN } from './starter.js';
 import { loadModel, evaluate } from './api.js';
+import { initBranding } from './branding.js';
+
+// Theme/CI anwenden, bevor der Editor rendert (vermeidet Farb-Flackern).
+initBranding();
 
 const $ = (id) => document.getElementById(id);
 

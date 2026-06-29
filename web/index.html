@@ -7,8 +7,14 @@
   </head>
   <body>
     <header>
-      <h1>Temis — DMN-Editor</h1>
+      <img id="brandLogo" class="brand-logo" alt="" hidden />
+      <h1 id="brandTitle">Temis — DMN-Editor</h1>
       <span class="sub">dmn-js · Modell zeichnen und direkt auswerten</span>
+      <div class="spacer"></div>
+      <div id="themeSwitch" class="theme-switch" hidden>
+        <label for="themeSelect">Theme</label>
+        <select id="themeSelect"></select>
+      </div>
     </header>
 
     <div id="app">
@@ -66,6 +72,9 @@
       </aside>
     </div>
 
+    <!-- Optionales Deployment-Branding (CI). Muss vor dem Modul laufen, damit
+         window.TEMIS_BRANDING beim Init gesetzt ist. Standard-Datei ist leer. -->
+    <script src="/branding.js"></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

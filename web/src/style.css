@@ -5,6 +5,7 @@
   --fg: #e6e9ef;
   --muted: #98a2b3;
   --accent: #5b8def;
+  --accent-fg: #ffffff;
   --ok: #3fb950;
   --err: #f85149;
   --warn: #d29922;
@@ -45,6 +46,41 @@ header h1 {
 header .sub {
   color: var(--muted);
   font-size: 13px;
+}
+
+header .spacer {
+  flex: 1;
+}
+
+.brand-logo {
+  height: 24px;
+  width: auto;
+  align-self: center;
+}
+
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+
+.theme-switch label {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.theme-switch select {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 #app {
@@ -114,7 +150,7 @@ select {
 
 button {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   border: none;
   border-radius: 6px;
   padding: 8px 14px;

@@ -62,7 +62,34 @@ Beim Ausliefern hinter denselben Origin wie `temisd` legen (oder einen Reverse-P
 | `src/api.js` | dünner Client für die temis-HTTP-API |
 | `src/starter.js` | Start-Diagramm (DRD + Decision Table) |
 | `src/style.css` | Styles des Panels (dmn-js behält sein eigenes Theme) |
+| `src/branding.js` | Theme-/Branding-System (CI-Anpassung, ADR-0016) |
+| `public/branding.js` | Deployment-Branding-Vorlage (leer = Standard-Themes) |
 | `vite.config.js` | Dev-Server + Proxy auf `temisd` |
+
+## Theming / Branding (CI-Anpassung)
+
+Die Oberfläche steuert ihr Aussehen über CSS-Variablen (`src/style.css`). `src/branding.js`
+bietet darauf aufbauend zwei eingebaute Themes (**Temis Dunkel**, **Temis Hell**); der
+Umschalter sitzt rechts in der Kopfzeile, die Wahl wird in `localStorage` gemerkt. Hintergrund:
+`docs/adr/ADR-0016-frontend-theming-branding.md`.
+
+Für die **Corporate Identity einer Firma** lässt sich die Oberfläche ohne Neubau des Bundles
+anpassen: beim Ausliefern `public/branding.js` (wird nach `dist/branding.js` kopiert) durch eine
+eigene Version ersetzen und `window.TEMIS_BRANDING` setzen — Produktname, Logo und ein eigenes
+Theme (erbt per `base` von einem eingebauten Theme, überschreibt nur Abweichendes über `vars`):
+
+```js
+window.TEMIS_BRANDING = {
+  brand: 'ACME AG',
+  logo: '/branding/acme-logo.svg',
+  theme: { id: 'acme', label: 'ACME', base: 'temis-light', vars: { '--accent': '#e4002b' } },
+  defaultTheme: 'acme',
+  allowUserSwitch: true, // false = fest gebrandetes Deployment ohne Umschalter
+};
+```
+
+Die Vorlage `public/branding.js` enthält ein kommentiertes Beispiel. Theme-Auswahl in Reihenfolge:
+`?theme=` (URL) > gespeicherte Nutzerwahl > `defaultTheme` > Firmen-Theme > `temis-dark`.
 
 ## Nächste Schritte (F-02, siehe Roadmap)
 
