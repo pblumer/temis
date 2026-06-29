@@ -130,6 +130,23 @@ export async function getTable(modelId: string, decision: string): Promise<Table
   return (await r.json()) as TableView
 }
 
+// TableEdit is the editable payload for a decision table: its rule rows (columns
+// and hit policy are preserved server-side).
+export type TableEdit = { rules: TableRule[] }
+
+// saveTable rewrites a decision's table rules (POST), recompiles the model and
+// returns the saved model's detail — incl. its new id and any compile
+// diagnostics, so the caller can surface a cell the engine rejects.
+export async function saveTable(modelId: string, decision: string, edit: TableEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Tabelle speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
 // problemMessage extracts a human-readable message from an RFC-7807 problem+json
 // error body, including structured input-validation problems, falling back to the
 // HTTP status.

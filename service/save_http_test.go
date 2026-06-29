@@ -78,6 +78,52 @@ func TestGetDecisionTable(t *testing.T) {
 	}
 }
 
+// TestSaveDecisionTable edits a rule's output cell via the endpoint and checks
+// the saved revision's table reflects it.
+func TestSaveDecisionTable(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+
+	tv := decode[dmn.TableView](t, do(t, h, "GET", "/v1/models/"+id+"/decisions/Dish/table", "", nil))
+	rules := make([]dmn.TableRule, len(tv.Rules))
+	for i, r := range tv.Rules {
+		rules[i] = dmn.TableRule{InputEntries: r.InputEntries, OutputEntries: r.OutputEntries, Annotations: r.Annotations}
+		if r.OutputEntries[0] == `"Roastbeef"` {
+			rules[i].OutputEntries = []string{`"Lobster"`}
+		}
+	}
+	body := mustJSON(t, dmn.TableEdit{Rules: rules})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/decisions/"+tv.DecisionID+"/table", "application/json", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST table = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+	if saved.ModelID == id {
+		t.Error("saved model id unchanged; a table edit should change the content hash")
+	}
+
+	tv2 := decode[dmn.TableView](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/decisions/Dish/table", "", nil))
+	var sawLobster bool
+	for _, r := range tv2.Rules {
+		if r.OutputEntries[0] == `"Lobster"` {
+			sawLobster = true
+		}
+	}
+	if !sawLobster {
+		t.Errorf("edited output not persisted; rules=%+v", tv2.Rules)
+	}
+}
+
+// TestSaveDecisionTableNoTable is a 404 for a decision without a table.
+func TestSaveDecisionTableNoTable(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+	body := mustJSON(t, dmn.TableEdit{Rules: nil})
+	if rec := do(t, h, "POST", "/v1/models/"+id+"/decisions/Nope/table", "application/json", body); rec.Code != http.StatusNotFound {
+		t.Errorf("POST table for unknown decision = %d, want 404", rec.Code)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)

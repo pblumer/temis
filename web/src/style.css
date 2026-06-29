@@ -192,8 +192,10 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   color: var(--muted);
 }
 .dt-close:hover { background: #f1f4f9; }
+.dt-scroll { overflow: auto; max-height: calc(88vh - 132px); }
 .dt { border-collapse: collapse; width: 100%; font-size: 13px; }
-.dt th, .dt td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.dt th, .dt td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+.dt thead th { position: sticky; top: 0; z-index: 1; }
 .dt-idx { width: 30px; text-align: center; color: var(--muted); background: #f8fafc; }
 .dt-band th { text-align: center; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: #f8fafc; }
 .dt-cols th { background: #f1f5f9; font-weight: 600; }
@@ -201,5 +203,55 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .dt-out { background: #f6fbf7; }
 .dt-coltext { display: flex; flex-direction: column; gap: 2px; }
 .dt-type { font: 11px/1 ui-monospace, monospace; color: var(--muted); font-weight: 400; }
-.dt-rule:hover td { background: #eef4ff; }
 .dt-ann { color: var(--muted); }
+.dt-del { width: 34px; text-align: center; }
+/* Editable cells */
+.dt-cell {
+  width: 100%;
+  min-width: 90px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: 13px/1.3 ui-monospace, SFMono-Regular, monospace;
+  background: transparent;
+  color: var(--fg);
+}
+.dt-cell:focus { outline: none; border-color: var(--accent); background: #fff; }
+.dt-cell:hover { background: #fff; }
+.dt-cell-invalid { border-color: #e5484d; background: #fff4f4; }
+.dt-cell-invalid:focus { border-color: #e5484d; }
+.dt-rowdel {
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.55;
+  border-radius: 5px;
+  padding: 2px 5px;
+}
+.dt-rowdel:hover { opacity: 1; background: #fff4f4; border-color: var(--line); }
+.dt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+}
+.dt-toolbar .tbtn {
+  font: 13px/1 system-ui, sans-serif;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+}
+.dt-toolbar .tbtn:hover { background: #f1f4f9; }
+.dt-toolbar .tbtn:disabled { color: #c2c9d4; cursor: default; }
+.dt-save { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+.dt-save:hover { filter: brightness(1.05); }
+.dt-status { font-size: 13px; color: var(--muted); }
+.dt-status.dt-error { color: #e5484d; }

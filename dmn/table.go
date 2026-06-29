@@ -1,6 +1,12 @@
 package dmn
 
-import "github.com/pblumer/temis/internal/model"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/pblumer/temis/internal/model"
+	dmnxml "github.com/pblumer/temis/internal/xml"
+)
 
 // TableView is a decision's decision-table logic, flattened for display by the
 // modeler (ADR-0016): the static table — hit policy, input/output columns and
@@ -64,6 +70,70 @@ func (d *Definitions) DecisionTable(idOrName string) (TableView, bool) {
 		v.Rules = append(v.Rules, TableRule{InputEntries: r.InputEntries, OutputEntries: r.OutputEntries, Annotations: r.Annotations})
 	}
 	return v, true
+}
+
+// TableEdit is the editable payload for a decision table: its rule rows. The
+// columns and hit policy are not changed by this edit (they keep the original
+// table's structure), so the decision logic stays consistent — only the rows are
+// rewritten (ADR-0016, table editing).
+type TableEdit struct {
+	Rules []TableRule `json:"rules"`
+}
+
+// ApplyTableEdit rewrites the rule rows of a decision's decision table in a DMN
+// document and returns the updated XML. It patches the existing document, so the
+// table's columns, hit policy, the DMNDI and every other decision are preserved.
+// An empty input entry is stored as "-" (the DMN "any" match). It errors when the
+// decision has no decision-table logic.
+func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error) {
+	def, err := dmnxml.Decode(src)
+	if err != nil {
+		return nil, err
+	}
+	rules := make([]dmnxml.Rule, len(edit.Rules))
+	for i, r := range edit.Rules {
+		rules[i] = dmnxml.Rule{
+			InputEntries:  normalizeInputEntries(r.InputEntries),
+			OutputEntries: trimEntries(r.OutputEntries),
+			Annotations:   dropTrailingEmpty(trimEntries(r.Annotations)),
+		}
+	}
+	if !def.SetDecisionTableRules(decisionID, rules) {
+		return nil, fmt.Errorf("dmn: decision %q has no decision table", decisionID)
+	}
+	return dmnxml.Encode(def)
+}
+
+// normalizeInputEntries trims each input cell and maps an empty cell to "-", the
+// DMN unary test that matches any value.
+func normalizeInputEntries(in []string) []string {
+	out := make([]string, len(in))
+	for i, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			s = "-"
+		}
+		out[i] = s
+	}
+	return out
+}
+
+func trimEntries(in []string) []string {
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.TrimSpace(s)
+	}
+	return out
+}
+
+// dropTrailingEmpty removes empty strings from the tail, so an all-empty
+// annotation slice round-trips as no annotations rather than empty elements.
+func dropTrailingEmpty(in []string) []string {
+	end := len(in)
+	for end > 0 && in[end-1] == "" {
+		end--
+	}
+	return in[:end]
 }
 
 // decisionModel resolves a decision by id or name to the underlying model

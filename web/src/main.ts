@@ -176,7 +176,7 @@ async function boot(root: HTMLElement): Promise<void> {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId))
+      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId)))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
