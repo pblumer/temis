@@ -191,8 +191,8 @@ func TestMultipleOutputsAndDash(t *testing.T) {
 
 func TestCompileErrors(t *testing.T) {
 	// unsupported hit policy
-	if _, err := CompileTable(mkTable(model.HitPriority, model.AggNone, []string{"x"}, []string{"o"}), feel.NewEnv("x"), nil); err == nil {
-		t.Error("PRIORITY should be unsupported")
+	if _, err := CompileTable(mkTable(model.HitPolicy("Z"), model.AggNone, []string{"x"}, []string{"o"}), feel.NewEnv("x"), nil); err == nil {
+		t.Error("an unknown hit policy should be unsupported")
 	}
 	// aggregation with multiple outputs
 	bad := mkTable(model.HitCollect, model.AggSum, []string{"x"}, []string{"a", "b"},
