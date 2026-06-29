@@ -4,12 +4,12 @@
 GO      ?= go
 PKGS    ?= ./...
 
-.PHONY: all verify fmt fmt-check vet lint test bench tck build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck build tidy clean help
 
 all: verify
 
-## verify: full gate — formatting, vet, lint, race tests, bench & tck smoke
-verify: fmt-check vet lint test bench tck
+## verify: full gate — formatting, vet, lint, race tests, bench, budget & tck
+verify: fmt-check vet lint test bench budget tck
 
 ## fmt: format all Go sources in place
 fmt:
@@ -41,6 +41,10 @@ test:
 ## bench: smoke-run all benchmarks without running tests
 bench:
 	$(GO) test -run=^$$ -bench=. -benchmem $(PKGS)
+
+## budget: performance-budget CI gate, run without the race detector (WP-42, docs/50-testing-strategy.md §6)
+budget:
+	$(GO) test -run '^TestPerformanceBudget$$' -count=1 ./dmn/
 
 ## tck: run the TCK runner package (tolerant while no cases exist yet)
 tck:
