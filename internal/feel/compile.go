@@ -63,10 +63,11 @@ func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledEx
 // nameOracle returns the parser name oracle covering the built-ins and any
 // user-function names, so multi-word names from either source assemble.
 func nameOracle(funcs map[string]*Func) NameSet {
-	if len(funcs) == 0 {
-		return builtins.Default()
+	sets := unionNames{builtins.Default(), feelTypeNames}
+	if len(funcs) > 0 {
+		sets = append(sets, funcNames(funcs))
 	}
-	return unionNames{builtins.Default(), funcNames(funcs)}
+	return sets
 }
 
 type compiler struct {
@@ -192,7 +193,7 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *FunctionDefExpr:
 		return c.compileFunctionDef(n)
 	case *InstanceOfExpr:
-		return c.fail(e.Pos(), "instance of is not supported yet (WP-30)")
+		return c.compileInstanceOf(n)
 	default:
 		return c.fail(e.Pos(), "unsupported expression %T", e)
 	}
@@ -303,6 +304,25 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 			}
 		}
 		return value.False, nil
+	}
+}
+
+// compileInstanceOf compiles `X instance of Type`. The type name must be a FEEL
+// built-in (or Any); an unknown name (e.g. a user-defined item-definition type)
+// is a compile error until the type system binds them (WP-31).
+func (c *compiler) compileInstanceOf(n *InstanceOfExpr) CompiledExpr {
+	if _, ok := instanceOf(value.Null, n.Type); !ok {
+		return c.fail(n.Pos(), "unknown type %q in instance of", n.Type)
+	}
+	x := c.compile(n.X)
+	typeName := n.Type
+	return func(s *Scope) (value.Value, error) {
+		v, err := x(s)
+		if err != nil {
+			return nil, err
+		}
+		res, _ := instanceOf(v, typeName)
+		return value.BoolOf(res), nil
 	}
 }
 
