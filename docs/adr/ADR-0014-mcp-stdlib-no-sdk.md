@@ -1,12 +1,12 @@
-# ADR-0013: MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK)
+# ADR-0014: MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK)
 
 - **Status:** accepted
 - **Datum:** 2026-06-29
-- **Kontext-WP:** WP-50 (löst die in ADR-0012 zugesagte Folge-Entscheidung zu SDK/Transport ein)
+- **Kontext-WP:** WP-50 (löst die in ADR-0013 zugesagte Folge-Entscheidung zu SDK/Transport ein)
 
 ## Kontext
 
-ADR-0012 hat temis als Agent-First-Verifikationswerkzeug positioniert und als erste
+ADR-0013 hat temis als Agent-First-Verifikationswerkzeug positioniert und als erste
 Säule den MCP-Server (WP-50) festgelegt — samt der ausdrücklichen Folgeaufgabe, die
 Wahl von **MCP-SDK und Transport** in einem eigenen ADR mit Abhängigkeitsbegründung
 festzuhalten (Goldene Regel 6: neue Dependency = ADR + Begründung). Dieses ADR ist

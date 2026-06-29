@@ -1,4 +1,4 @@
-# ADR-0012: temis als Laufzeit-Verifikationswerkzeug für KI-Agenten (Agent-First-Schnittstelle)
+# ADR-0013: temis als Laufzeit-Verifikationswerkzeug für KI-Agenten (Agent-First-Schnittstelle)
 
 - **Status:** accepted
 - **Datum:** 2026-06-29
@@ -122,7 +122,7 @@ In-Process-Batches nicht).
 - `docs/60-ai-agent-guide.md` um die Unterscheidung **Agent-als-Contributor** (baut
   temis) vs. **Agent-als-Konsument** (nutzt temis zur Laufzeit) ergänzen.
 - ~~Folge-ADR: Wahl von MCP-SDK und Transport (stdio vs. HTTP/SSE) inkl.
-  Abhängigkeitsbegründung.~~ → **erledigt in ADR-0013** (Eigenbau über Standard­
+  Abhängigkeitsbegründung.~~ → **erledigt in ADR-0014** (Eigenbau über Standard­
   bibliothek, stdio; kein SDK).
 - `docs/40-api-contract.md`: Entscheidungsspur als Teil der `Result`-Oberfläche
   spezifizieren (Form, Stabilität, opt-in-Schalter).

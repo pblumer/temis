@@ -1,12 +1,12 @@
 // Package mcp exposes the Temis DMN engine to AI agents over the Model Context
 // Protocol (MCP). It is a thin adapter that reaches the engine only through the
 // public dmn package, never through internal/ (architecture D5/ADR-0005), and
-// realises the first pillar of the Agent-First surface (ADR-0012, WP-50): an
+// realises the first pillar of the Agent-First surface (ADR-0013, WP-50): an
 // agent can discover and call temis as a native tool to delegate a rule-based
 // decision and get a deterministic, reproducible answer back.
 //
 // The protocol is JSON-RPC 2.0 over the stdio transport, implemented with the
-// standard library alone (no MCP SDK dependency — see ADR-0013). The server
+// standard library alone (no MCP SDK dependency — see ADR-0014). The server
 // offers four tools: list_models, load_model, describe_decision and evaluate.
 // Compiled models are cached in memory keyed by the SHA-256 of their XML, so
 // re-loading the same document is idempotent and returns the same model id.

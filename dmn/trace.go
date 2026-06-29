@@ -4,7 +4,7 @@ import "github.com/pblumer/temis/internal/boxed"
 
 // Trace is an optional, structured explanation of an evaluation: which decision
 // tables ran, the input values they tested, which rules matched (and why), and
-// what those rules produced. It lets a caller — notably an AI agent (ADR-0012,
+// what those rules produced. It lets a caller — notably an AI agent (ADR-0013,
 // WP-51) — justify a decision rather than merely read its output.
 //
 // A Trace is derived from the actual evaluation, never reconstructed after the

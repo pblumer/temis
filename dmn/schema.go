@@ -11,7 +11,7 @@ import (
 // InputField describes one input a decision expects: its name, its declared FEEL
 // type (empty when the model declares none) and whether the decision requires
 // it. It is the self-description an agent reads before calling Evaluate
-// (ADR-0012, WP-52).
+// (ADR-0013, WP-52).
 type InputField struct {
 	Name     string `json:"name"`
 	Type     string `json:"type,omitempty"`

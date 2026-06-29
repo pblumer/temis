@@ -1,6 +1,6 @@
 // Command temis-mcp serves the Temis DMN engine to AI agents over the Model
 // Context Protocol (JSON-RPC 2.0 over stdio). It is the Agent-First entry point
-// from ADR-0012 (WP-50): an agent launches this binary as a subprocess and calls
+// from ADR-0013 (WP-50): an agent launches this binary as a subprocess and calls
 // temis as a native tool to delegate rule-based decisions and get deterministic,
 // reproducible answers.
 //

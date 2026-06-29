@@ -3,7 +3,7 @@ package boxed
 import "github.com/pblumer/temis/internal/value"
 
 // Recorder collects a decision table's evaluation steps so the engine can hand
-// back a structured explanation (ADR-0012, WP-51). It is attached to a Scope via
+// back a structured explanation (ADR-0013, WP-51). It is attached to a Scope via
 // (*feel.Scope).WithTrace before evaluation and read back afterwards. A nil
 // Recorder means tracing is off and the evaluator takes its normal,
 // allocation-free path; the recorder is written only on the opt-in trace path.

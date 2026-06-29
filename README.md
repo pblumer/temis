@@ -149,7 +149,7 @@ curl -H 'Authorization: Bearer gehenix' \
 
 ### Für KI-Agenten (`temis-mcp`, MCP über stdio)
 
-temis ist bewusst als **Verifikationswerkzeug für KI-Agenten** ausgelegt (ADR-0012):
+temis ist bewusst als **Verifikationswerkzeug für KI-Agenten** ausgelegt (ADR-0013):
 Statt eine regelbasierte Entscheidung selbst zu „raten", delegiert ein Agent sie an
 temis und bekommt eine **deterministische, reproduzierbare** Antwort zurück. `temis-mcp`
 bietet die Engine dafür als natives Werkzeug über das **Model Context Protocol**
@@ -185,7 +185,7 @@ number, got string" (`TYPE_MISMATCH`), unbekannte (`UNKNOWN_INPUT`) oder fehlend
 (`MISSING_INPUT`) Felder — statt eine falsch getippte Eingabe still zu `null`/Nichttreffer
 zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Eingabe stimmt.
 
-> Damit sind alle drei Agent-First-Säulen aus ADR-0012 umgesetzt (WP-50/51/52). Weiter
+> Damit sind alle drei Agent-First-Säulen aus ADR-0013 umgesetzt (WP-50/51/52). Weiter
 > geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
 > (DRG-Verkettung).
 

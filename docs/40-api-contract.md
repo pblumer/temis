@@ -68,7 +68,7 @@ type EvalOption func(*evalConfig)
 func WithTrace() EvalOption   // opt-in: füllt Result.Trace
 ```
 
-#### Entscheidungsspur (`Trace`) — opt-in, ADR-0012/WP-51
+#### Entscheidungsspur (`Trace`) — opt-in, ADR-0013/WP-51
 
 `WithTrace()` lässt `Evaluate` eine **strukturierte, aus der echten Auswertung
 abgeleitete** Erklärung anhängen (kein nachträgliches Rationalisat). Der Default-Pfad
@@ -99,7 +99,7 @@ type TraceCondition struct { Input, Entry string; Matched bool }
 HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
 dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
 
-#### Eingabe-Schema & strenge Validierung — ADR-0012/WP-52
+#### Eingabe-Schema & strenge Validierung — ADR-0013/WP-52
 
 Selbstbeschreibung der erwarteten Inputs samt Typen, plus präzise, maschinenlesbare
 Validierungsfehler statt stillschweigend falscher Defaults.

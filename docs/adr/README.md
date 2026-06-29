@@ -16,5 +16,5 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0009 | Projektname „Temis" | accepted |
 | 0010 | DMNDI-Round-trip über verbatim Token-Stream | accepted |
 | 0011 | Core Engine als reine Go-Library (`Compile`/`Evaluate`), Service nur Adapter | accepted |
-| 0012 | temis als Laufzeit-Verifikationswerkzeug für KI-Agenten (Agent-First-Schnittstelle) | accepted |
-| 0013 | MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK) | accepted |
+| 0013 | temis als Laufzeit-Verifikationswerkzeug für KI-Agenten (Agent-First-Schnittstelle) | accepted |
+| 0014 | MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK) | accepted |

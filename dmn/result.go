@@ -38,7 +38,7 @@ type evalConfig struct {
 
 // WithTrace makes Evaluate attach a structured explanation (which rules matched
 // and why) to Result.Trace. It is opt-in: without it, evaluation takes the
-// allocation-free path and Result.Trace stays nil (ADR-0012, WP-51).
+// allocation-free path and Result.Trace stays nil (ADR-0013, WP-51).
 func WithTrace() EvalOption {
 	return func(c *evalConfig) { c.trace = true }
 }
@@ -46,7 +46,7 @@ func WithTrace() EvalOption {
 // WithStrictInput makes Evaluate validate the input against the decision's
 // declared schema first and fail with an *InputError if it does not conform —
 // instead of silently coercing a wrong-typed or misnamed value into a null or a
-// non-match (ADR-0012, WP-52). Without it, evaluation is lenient as before.
+// non-match (ADR-0013, WP-52). Without it, evaluation is lenient as before.
 func WithStrictInput() EvalOption {
 	return func(c *evalConfig) { c.strict = true }
 }

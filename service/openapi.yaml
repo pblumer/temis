@@ -275,7 +275,7 @@ components:
       type: object
       description: >
         Structured explanation of the evaluation, present only when the request
-        set explain=true. Derived from the actual evaluation (ADR-0012/WP-51).
+        set explain=true. Derived from the actual evaluation (ADR-0013/WP-51).
       properties:
         tables:
           type: array
