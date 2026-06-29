@@ -1,0 +1,15 @@
+version: v2
+# Generate Go message types and Connect (gRPC) handlers/clients into
+# internal/gen. The module= option strips the import-path prefix so files land
+# at internal/gen/dmnv1/ (matching the proto's go_package). Generated code is
+# committed so `go build` needs no protoc/buf (same policy as web/dist).
+clean: true
+plugins:
+  - local: protoc-gen-go
+    out: internal/gen
+    opt:
+      - module=github.com/pblumer/temis/internal/gen
+  - local: protoc-gen-connect-go
+    out: internal/gen
+    opt:
+      - module=github.com/pblumer/temis/internal/gen

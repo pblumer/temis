@@ -58,3 +58,25 @@ jobs:
       - name: Verify committed dist is up to date
         run: git diff --exit-code -- dist
         working-directory: web
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Install codegen plugins
+        run: make proto-tools
+
+      - name: Verify committed gRPC code is up to date
+        run: PATH="$(go env GOPATH)/bin:$PATH" make proto-check

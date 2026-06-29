@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+// Package dmn.v1 is the gRPC contract for the Temis DMN engine (WP-33,
+// docs/40-api-contract.md §3). It mirrors the HTTP service: compile a DMN model
+// once, then evaluate a named decision against an input context — statelessly
+// (send the XML) or against a previously compiled model (send its id).
+package dmn.v1;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/pblumer/temis/internal/gen/dmnv1";
+
+// DmnEngine compiles and evaluates DMN decisions.
+service DmnEngine {
+  // Compile decodes and compiles a DMN XML document, caches it and returns its
+  // content-addressed id plus the index and any per-decision diagnostics.
+  rpc Compile(CompileRequest) returns (CompileResponse);
+
+  // Evaluate runs one decision and returns its outputs (and the results of the
+  // decisions it required). The model is identified by id or supplied inline.
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+
+  // EvaluateBatch streams evaluations: each request on the stream yields one
+  // response, in order, so a client can pipeline many decisions over a single
+  // connection (AK WP-33: streaming for batch).
+  rpc EvaluateBatch(stream EvaluateRequest) returns (stream EvaluateResponse);
+}
+
+// Diagnostic is one compile- or evaluation-time message, mirroring
+// dmn.Diagnostic. Codes are stable and machine-readable (docs/40-api-contract.md).
+message Diagnostic {
+  string severity = 1;
+  string code = 2;
+  string message = 3;
+  string decision_id = 4;
+  int32 line = 5;
+  int32 col = 6;
+}
+
+message CompileRequest {
+  // xml is the DMN XML document to compile.
+  bytes xml = 1;
+}
+
+message CompileResponse {
+  string model_id = 1;
+  string name = 2;
+  repeated string decisions = 3;
+  repeated string inputs = 4;
+  repeated Diagnostic diagnostics = 5;
+}
+
+message EvaluateRequest {
+  // model selects the model to evaluate: a previously compiled model_id, or an
+  // inline xml document compiled (and cached) for this request.
+  oneof model {
+    string model_id = 1;
+    bytes xml = 2;
+  }
+  // decision is the name (or id) of the decision to evaluate.
+  string decision = 3;
+  // input is the leaf input context. FEEL numbers are carried as decimal
+  // strings to avoid float rounding (ADR-0007); lists and contexts nest as the
+  // Struct list/struct kinds.
+  google.protobuf.Struct input = 4;
+  // explain requests the decision trace in the response.
+  bool explain = 5;
+  // strict validates the input against the decision's schema before evaluating.
+  bool strict = 6;
+}
+
+message EvaluateResponse {
+  // outputs maps each output name to its value (numbers as decimal strings).
+  google.protobuf.Struct outputs = 1;
+  // decisions maps every evaluated decision (the requested one plus its
+  // requirements) to its result.
+  google.protobuf.Struct decisions = 2;
+  repeated Diagnostic diagnostics = 3;
+  // trace is the decision trace, present only when explain was set.
+  google.protobuf.Struct trace = 4;
+}

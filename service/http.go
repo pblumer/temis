@@ -21,6 +21,9 @@ import (
 	"net/http"
 	"sort"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
 	"github.com/pblumer/temis/dmn"
 	webui "github.com/pblumer/temis/web"
 )
@@ -132,7 +135,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(webui.Assets())))
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
-	return mux
+
+	// gRPC: the Connect handler serves the dmn.v1.DmnEngine service (gRPC,
+	// gRPC-Web and Connect) under its own path prefix on the same mux (WP-33).
+	grpcPath, grpcHandler := s.grpcHandler()
+	mux.Handle(grpcPath, grpcHandler)
+
+	// h2c lets full gRPC and the bidi EvaluateBatch stream work over cleartext
+	// HTTP/2 (no TLS); HTTP/1.1 requests are still served normally.
+	return h2c.NewHandler(mux, &http2.Server{})
 }
 
 // --- request/response DTOs ---
