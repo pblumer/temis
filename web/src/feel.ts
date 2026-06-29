@@ -3,10 +3,14 @@
 // the initial app stays light. Once loaded, validation is synchronous and runs
 // fully in the browser — the same parser the engine uses, offline (ADR-0016).
 
+type CellResult = { ok: boolean; line?: number; col?: number; message?: string }
+
 declare global {
   interface Window {
     Go: new () => { run: (instance: WebAssembly.Instance) => void; importObject: WebAssembly.Imports }
     temisFeelValidateName?: (name: string) => { ok: boolean; message?: string }
+    temisFeelValidate?: (expr: string, namesCsv: string) => CellResult
+    temisFeelValidateUnary?: (test: string, namesCsv: string) => CellResult
   }
 }
 
@@ -46,4 +50,24 @@ export function validateName(name: string): NameCheck {
   const fn = window.temisFeelValidateName
   if (!fn) return { ok: true }
   return fn(name)
+}
+
+export type CellCheck = { ok: boolean; message?: string }
+
+// validateExpr checks a decision-table output cell (a full FEEL expression) that
+// may reference the given input names. ok=true optimistically until the module
+// loads, so editing is never blocked while it downloads.
+export function validateExpr(expr: string, names: string[]): CellCheck {
+  const fn = window.temisFeelValidate
+  if (!fn) return { ok: true }
+  return fn(expr, names.join(','))
+}
+
+// validateUnary checks a decision-table input cell (a FEEL unary test, e.g.
+// `> 10`, `"Winter"`, `[1..5]`). The engine binds the column value to "?"; the
+// cell may also reference the given input names.
+export function validateUnary(test: string, names: string[]): CellCheck {
+  const fn = window.temisFeelValidateUnary
+  if (!fn) return { ok: true }
+  return fn(test, names.join(','))
 }

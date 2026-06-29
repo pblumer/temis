@@ -124,6 +124,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
 	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
@@ -333,6 +334,42 @@ func (s *Server) handleGetDecisionTable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, table)
+}
+
+// handleSaveDecisionTable rewrites a decision's decision-table rules and caches
+// the recompiled model under its new content hash, returning the saved model's
+// id and any compile diagnostics (so the client can surface a cell the engine
+// rejects). The table's columns and hit policy are preserved (ADR-0016). It is a
+// 404 when the model or the decision's table is absent.
+func (s *Server) handleSaveDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.TableEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyTableEdit(sm.xml, r.PathValue("decision"), edit)
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, "TABLE_NOT_FOUND", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
 }
 
 // handleSaveModel applies modeler edits (positions, names, types) to a cached

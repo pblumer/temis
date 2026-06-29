@@ -54,6 +54,24 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 	return false
 }
 
+// SetDecisionTableRules replaces the rule rows of the decision-table logic of the
+// decision identified by id. The table's columns (inputs/outputs) and hit policy
+// are left untouched — only the rows change. It reports whether a matching
+// decision with decision-table logic was found.
+func (d *Definitions) SetDecisionTableRules(id string, rules []Rule) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID == id {
+			dt := d.Decisions[i].DecisionTable
+			if dt == nil {
+				return false
+			}
+			dt.Rules = rules
+			return true
+		}
+	}
+	return false
+}
+
 // MoveShape repositions the DMNShape bound to element id within a captured DMNDI
 // token stream, rewriting its <Bounds> x/y attributes in place (width and height
 // are preserved). It is the inverse of ParseDI: it matches local element and
