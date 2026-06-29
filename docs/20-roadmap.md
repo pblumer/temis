@@ -96,6 +96,13 @@ Erweiterungen über `package dmn` (ADR-0011); kein `internal/`-Zugriff von auße
 
 ## dmn-js-Integration (querschnittlich, ab MVP relevant)
 
+> **Überholt durch ADR-0016 (2026-06-29).** Die hier beschriebene Linie „dmn-js unverändert
+> einbetten" ist abgelöst: temis baut einen **eigenen Modeler** auf einem Fork des MIT-Kerns
+> (diagram-js/table-js/dmn-moddle) — für 1.5-Authoring, ohne bpmn.io-Logo-Pflicht, mit
+> FEEL-Validierung gegen die echte Engine. Siehe **Etappe Eigener Modeler (WP-60–67)** unten.
+> Die **Round-trip-Pflicht** (Standard-DMN-XML als Schnittstelle, WP-02) bleibt unverändert
+> gültig; F-01 ist als historischer Stand `done` dokumentiert.
+
 dmn-js erzeugt und liest **Standard-DMN-XML**. Es gibt nichts „proprietär" zu adaptieren —
 die Engine muss exakt dieses XML lesen/schreiben können (das ist WP-02). dmn-js wird
 **unverändert** eingebettet und angepasst — **nie geforkt** (ADR-0012; bpmn.io-Logo bleibt
@@ -117,3 +124,39 @@ dmn-js per CDN — wie die Swagger-UI unter `/docs`; **keine zweite Toolchain**.
   per `go:embed` für ein offline lauffähiges `/ui`.
 - Round-trip-Pflicht: Eine in dmn-js gespeicherte Datei muss von der Engine ladbar sein
   **und** eine von der Engine (un)veränderte Datei muss in dmn-js wieder öffnen.
+
+---
+
+## Etappe Eigener Modeler — „eigener Stack, DMN 1.5, kein bpmn-io" (ADR-0016)
+
+**Ziel:** Ein eigener, eingebetteter DMN-Modeler (DRD-Canvas + Decision-Table- +
+Boxed-Expression-Editor) auf einem **Fork des MIT-Kerns** (diagram-js/table-js/dmn-moddle),
+vollständig gelöst von dmn-js. Treiber: **1.5-Authoring** inkl. Boxed Expressions, verlustfreier
+Round-Trip, kein bpmn.io-Logo, und **FEEL-Validierung gegen die echte temis-Engine**. temis
+bleibt XML-/FEEL-/1.5-Autorität.
+
+**Vorarbeit ✅ (ADR-0016-Gates):** Lizenz-Audit (Kern = MIT) bestätigt; **FEEL-WASM-Spike**
+(`cmd/feel-wasm`, `web/feel-spike`) gebaut & headless verifiziert — beweist Live-Validierung
+im Browser, offline.
+
+**Etappen-Definition of Done:** `/ui` nutzt ausschließlich den eigenen, per `go:embed`
+ausgelieferten Modeler (kein CDN, offline); ein DMN-**1.5**-Modell (inkl. eines Boxed-1.5-
+Konstrukts) lässt sich visuell anlegen/bearbeiten und durchläuft Laden→Speichern **verlustfrei**;
+FEEL-Zellen werden live gegen temis validiert; alter Fluss (Upload→bearbeiten→deployen→auswerten)
+E2E-headless grün.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-60 | Frontend-Toolchain & Repo-Struktur | – | Eigenes `web/`-Frontend (TS + Build, z. B. Vite), eigene CI-Lane (lint/test/build); gebaute Assets per `go:embed` in `temisd`/`/ui` ausgeliefert → **ein Binary, kein CDN, offline**. AK: `make` baut das Frontend reproduzierbar, CI prüft es, `temisd` serviert die App ohne Netz. (Kehrt ADR-0012 „keine zweite Toolchain" bewusst um.) |
+| WP-61 | MIT-Kern vendoren, dmn-js-Wrapper weglassen | WP-60 | diagram-js/table-js/dmn-moddle/moddle(-xml)/min-dom/tiny-svg/didi als geforkte/vendored MIT-Pakete; **dmn-js entfällt**. AK: minimaler diagram-js-Canvas rendert **ohne** dmn-js; MIT-Lizenz-/Attribution-Dateien übernommen; **kein bpmn.io-Logo** im Build. |
+| WP-62 | Client-Modell + DMN-1.5-XML-Round-Trip | WP-61 | dmn-moddle-Fork um **1.5-Namespace** + neue Deskriptoren (conditional/filter/iterator/…) erweitert; Client liest/schreibt DMN 1.5; temis validiert/normalisiert. AK: ein 1.5-Modell inkl. Boxed-1.5-Konstrukt überlebt Laden→Speichern **verlustfrei** (Go-Round-Trip-Test wie WP-02 **+** Frontend-Test). **Risiko-WP — zuerst absichern.** |
+| WP-63 | Command-Stack / Undo-Redo (Fundament) | WP-61 | Jede Modell-Mutation als **reversibles Command**; Undo/Redo. AK: erzeugen/verschieben/löschen rückgängig **und** wiederholbar. Fundament, **nicht** nachgerüstet. |
+| WP-64 | Decision-Table-Editor | WP-62, WP-63 | Editierbares Grid (Spalten/Regeln add/reorder, Hit Policy, Ein-/Mehrfach-Output); FEEL-Zellen **live gegen temis-FEEL** validiert (baut auf dem WASM-Spike auf). AK: Tabelle bearbeiten → korrektes 1.5-XML; ungültige Zelle mit `line:col` markiert; E2E headless. |
+| WP-65 | DRD-Canvas (Modeler) | WP-62, WP-63 | Renderer für Decision/InputData/BKM/KnowledgeSource + die 4 Requirement-Typen, DMN-Modellierungsregeln, Palette/Context-Pad, Connection-Routing/Docking. AK: DRD zeichnen/bearbeiten → gültiges Modell **+ DMNDI**. Iterativ: Render/Selektion/Move → Connect/Rules → Palette/Context-Pad → Routing/Snapping. |
+| WP-66 | Boxed-Expression-Editor (1.5) | WP-64 | context/list/invocation/function/conditional/filter/iterator als rekursive Forms. AK: ein Boxed-1.5-Konstrukt **visuell anlegbar** und round-trip-fest. |
+| WP-67 | `/ui`-Migration & F-01/F-02-Ablösung | WP-64, WP-65 | CDN-dmn-js in `service/ui.go` → **eigener eingebetteter Modeler**; Deploy/Evaluate + Diagnostics-/Trace-Overlay (`line:col`) angebunden. AK: `/ui` nutzt nur noch den eigenen Modeler, **offline, kein CDN**; Fluss Upload→bearbeiten→deployen→auswerten E2E-headless grün. |
+
+> **BPMN-Synergie (später, eigenes ADR):** `bpmn-js` sitzt auf demselben MIT-Kern. Der hier
+> entstehende Fork (Canvas/Command-Stack/Palette aus WP-61/63/65) ist das Fundament für einen
+> **eigenen BPMN-Editor** in der künftigen BPMN-Workflow-Engine — gleiche Toolchain, gemeinsame
+> FEEL-Integration; DMN ist die erste fachliche Schicht, BPMN die zweite.
