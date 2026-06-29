@@ -21,8 +21,9 @@ async function boot(root: HTMLElement): Promise<void> {
       <div id="canvas" class="canvas"></div>
       <p class="hint">
         WP-65: Die DRG wird über <code>/v1/models/{id}/graph</code> aus der Engine
-        geladen und mit eigenen Renderern gezeichnet (Auto-Layout, da die API noch
-        kein DMNDI liefert). Selektion/Move/Connect und Modellier-Interaktionen folgen.
+        geladen und mit eigenen Renderern gezeichnet — mit dem <strong>authored
+        DMNDI-Layout</strong>, wo vorhanden (sonst Auto-Layout). Selektion/Move/Connect
+        und Modellier-Interaktionen folgen.
       </p>
     </main>`
 

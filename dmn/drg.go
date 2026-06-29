@@ -1,5 +1,7 @@
 package dmn
 
+import "github.com/pblumer/temis/internal/model"
+
 // Graph is the decision requirements graph (DRG) of a model: its nodes and the
 // requirement edges between them, for tooling that draws the diagram — notably
 // the own modeler frontend (ADR-0016), which renders this directly rather than
@@ -11,11 +13,17 @@ type Graph struct {
 }
 
 // GraphNode is one DRG element. Type is one of "decision", "inputData" or
-// "businessKnowledgeModel".
+// "businessKnowledgeModel". X/Y/Width/Height carry the authored DMNDI bounds
+// when the model has a diagram (omitted otherwise, so the client falls back to
+// auto-layout).
 type GraphNode struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Name string `json:"name"`
+	ID     string  `json:"id"`
+	Type   string  `json:"type"`
+	Name   string  `json:"name"`
+	X      float64 `json:"x,omitempty"`
+	Y      float64 `json:"y,omitempty"`
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
 }
 
 // GraphEdge is one requirement, directed from the required (upstream) element to
@@ -34,12 +42,20 @@ type GraphEdge struct {
 func (d *Definitions) Graph() Graph {
 	g := Graph{}
 	known := map[string]bool{}
+	var shapes map[string]model.Bounds
+	if d.model.Diagram != nil {
+		shapes = d.model.Diagram.Shapes
+	}
 	add := func(id, typ, name string) {
 		if id == "" {
 			return
 		}
 		known[id] = true
-		g.Nodes = append(g.Nodes, GraphNode{ID: id, Type: typ, Name: name})
+		n := GraphNode{ID: id, Type: typ, Name: name}
+		if b, ok := shapes[id]; ok {
+			n.X, n.Y, n.Width, n.Height = b.X, b.Y, b.Width, b.Height
+		}
+		g.Nodes = append(g.Nodes, n)
 	}
 	for _, in := range d.model.InputData {
 		add(in.ID, "inputData", in.Name)

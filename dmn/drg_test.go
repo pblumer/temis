@@ -40,6 +40,32 @@ func TestGraphChaining(t *testing.T) {
 	}
 }
 
+// TestGraphDMNDIBounds checks that a model carrying DMNDI exposes the authored
+// element bounds on its graph nodes (for the modeler's layout).
+func TestGraphDMNDIBounds(t *testing.T) {
+	defs := compileModel(t, "pricing_15.dmn")
+	g := defs.Graph()
+	if len(g.Nodes) == 0 {
+		t.Fatal("no nodes")
+	}
+	for _, n := range g.Nodes {
+		if n.Width <= 0 || n.Height <= 0 {
+			t.Errorf("node %q has no DMNDI bounds (%+v), want authored size", n.Name, n)
+		}
+	}
+}
+
+// TestGraphNoDMNDIBounds checks that a model WITHOUT DMNDI exposes no bounds, so
+// the client falls back to auto-layout.
+func TestGraphNoDMNDIBounds(t *testing.T) {
+	defs := compileModel(t, "discount_14.dmn")
+	for _, n := range defs.Graph().Nodes {
+		if n.Width != 0 || n.Height != 0 || n.X != 0 || n.Y != 0 {
+			t.Errorf("node %q has bounds %+v, want none (no DMNDI)", n.Name, n)
+		}
+	}
+}
+
 // TestGraphKnowledgeRequirement checks BKM nodes and the knowledgeRequirement
 // edge kind appear in the graph.
 func TestGraphKnowledgeRequirement(t *testing.T) {

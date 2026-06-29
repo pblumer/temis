@@ -47,6 +47,14 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		HasDMNDI:   def.DMNDI != nil,
 	}
 
+	if di := dmnxml.ParseDI(def.DMNDI); di != nil {
+		shapes := make(map[string]Bounds, len(di.Shapes))
+		for _, s := range di.Shapes {
+			shapes[s.Ref] = Bounds{X: s.X, Y: s.Y, Width: s.Width, Height: s.Height}
+		}
+		m.Diagram = &Diagram{Shapes: shapes}
+	}
+
 	for _, it := range def.ItemDefs {
 		m.ItemDefinitions = append(m.ItemDefinitions, mapItemDef(it))
 	}
