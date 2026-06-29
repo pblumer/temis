@@ -58,10 +58,75 @@ type Result struct {
     Outputs   map[string]any   // Name → Ergebnis (FEEL→Go zurückkonvertiert)
     Decisions map[string]any   // alle ausgewerteten Zwischen-Decisions
     Diags     Diagnostics      // Laufzeit-Warnungen (z.B. null aus Fehler)
+    Trace     *Trace           // strukturierte Erklärung; nur bei WithTrace, sonst nil
 }
 
-func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, error)
+// Evaluate ist variadisch erweiterbar; ohne Optionen unverändert (abwärtskompatibel).
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
+
+type EvalOption func(*evalConfig)
+func WithTrace() EvalOption   // opt-in: füllt Result.Trace
 ```
+
+#### Entscheidungsspur (`Trace`) — opt-in, ADR-0013/WP-51
+
+`WithTrace()` lässt `Evaluate` eine **strukturierte, aus der echten Auswertung
+abgeleitete** Erklärung anhängen (kein nachträgliches Rationalisat). Der Default-Pfad
+ohne Option bleibt allokationsarm (Performance-Budget, ADR-0011). Die `Trace`-Typen
+sind die einzige `dmn`-Oberfläche mit JSON-Tags: HTTP- und MCP-Adapter serialisieren sie
+verbatim, die Feldnamen sind damit Teil des Wire-Vertrags.
+
+```go
+type Trace struct {
+    Tables []TableTrace            // je ausgewerteter Decision Table ein Eintrag
+}
+type TableTrace struct {
+    HitPolicy   string             // U/A/F/R/C
+    Aggregation string             // SUM/MIN/MAX/COUNT oder "" (kein/Plain-Collect)
+    Inputs      []TraceInput       // Eingabespalten + ausgewertete Werte
+    Rules       []TraceRule        // jede Regel mit ihren Bedingungsergebnissen
+    Matched     []int              // Indizes (0-basiert) der getroffenen Regeln
+}
+type TraceInput     struct { Expression string; Value any }
+type TraceRule      struct {
+    Index int; ID string; Matched bool
+    Conditions []TraceCondition    // bis einschließlich der ersten verfehlten (Short-Circuit)
+    Outputs    []any               // nur gesetzt, wenn die Regel zum Ergebnis beigetragen hat
+}
+type TraceCondition struct { Input, Entry string; Matched bool }
+```
+
+HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
+dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
+
+#### Eingabe-Schema & strenge Validierung — ADR-0013/WP-52
+
+Selbstbeschreibung der erwarteten Inputs samt Typen, plus präzise, maschinenlesbare
+Validierungsfehler statt stillschweigend falscher Defaults.
+
+```go
+type InputField struct { Name string; Type string; Required bool }   // Type "" = undeklariert/Custom
+func (c *CompiledDecision) InputSchema() []InputField
+func (d *Definitions)      InputSchema(idOrName string) ([]InputField, error)
+
+type InputProblem struct { Input, Code, Message, Expected, Got string }  // Code: TYPE_MISMATCH | UNKNOWN_INPUT | MISSING_INPUT
+func (c *CompiledDecision) ValidateInput(in Input) []InputProblem        // leeres Ergebnis = gültig
+
+func WithStrictInput() EvalOption   // Evaluate validiert zuerst; bei Verstoß → *InputError{Problems}
+type InputError struct { Problems []InputProblem }
+```
+
+Der Typ wird aus dem `typeRef` der InputData-Variablen abgeleitet, ersatzweise aus dem
+`typeRef` der Decision-Table-Input-Clause gleichen Namens (dmn-js-Stil). Kanonische
+FEEL-Typen: `string`, `number`, `boolean`, `date`, `time`, `date and time`, `duration`;
+unbekannte/Custom-Typen (Item Definitions, WP-31) erzeugen `""` und damit keine
+Constraint. `null` ist nie ein Typkonflikt (Abwesenheit ist `MISSING_INPUT`).
+
+HTTP: Auswerten akzeptiert `"strict": true`; bei Verstoß `422` mit
+`code: INVALID_INPUT` und der Liste unter `problems`. Die Modell-Antwort
+(`POST /v1/models`, `GET /v1/models/{id}`) trägt zusätzlich `schema` (Decision-Name →
+`InputField[]`). MCP: `describe_decision` liefert das typisierte Schema; `evaluate`
+akzeptiert `"strict": true`.
 
 ### 1.4 Diagnostics & Fehler
 
@@ -174,8 +239,8 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | `POST` | `/v1/models` | DMN-XML hochladen → kompilieren, gibt `modelId` + Diagnostics |
 | `GET` | `/v1/models` | Liste aller gecachten Modelle (`modelId`, Decisions, Inputs) — abschaltbar |
 | `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
-| `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...} }` → `Result` |
-| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache) |
+| `POST` | `/v1/models/{id}/evaluate` | `{ "decision", "input", "explain"?, "strict"? }` → `Result` (+ `trace` bei `explain`; `422 INVALID_INPUT` + `problems` bei `strict`) |
+| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache); `explain`/`strict` analog |
 | `GET` | `/docs` | Interaktive Swagger-UI-Testseite (lädt `/openapi.yaml`) |
 | `GET` | `/openapi.yaml` | Eingebettetes OpenAPI-3-Dokument |
 | `GET` | `/healthz`, `/readyz` | Liveness/Readiness |

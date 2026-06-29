@@ -28,6 +28,32 @@ type Result struct {
 	// Diags holds runtime diagnostics (e.g. a null produced by a recoverable
 	// error). Spec-conformant null results are not errors.
 	Diags Diagnostics
+	// Trace is the structured explanation of this evaluation, present only when
+	// the call requested it via WithTrace; nil otherwise.
+	Trace *Trace
+}
+
+// EvalOption tunes a single Evaluate call.
+type EvalOption func(*evalConfig)
+
+type evalConfig struct {
+	trace  bool
+	strict bool
+}
+
+// WithTrace makes Evaluate attach a structured explanation (which rules matched
+// and why) to Result.Trace. It is opt-in: without it, evaluation takes the
+// allocation-free path and Result.Trace stays nil (ADR-0013, WP-51).
+func WithTrace() EvalOption {
+	return func(c *evalConfig) { c.trace = true }
+}
+
+// WithStrictInput makes Evaluate validate the input against the decision's
+// declared schema first and fail with an *InputError if it does not conform —
+// instead of silently coercing a wrong-typed or misnamed value into a null or a
+// non-match (ADR-0013, WP-52). Without it, evaluation is lenient as before.
+func WithStrictInput() EvalOption {
+	return func(c *evalConfig) { c.strict = true }
 }
 
 // Evaluate runs the decision against in and returns its result. Compilation has
@@ -44,9 +70,13 @@ type Result struct {
 // ranges as their canonical FEEL string, lists as []any and contexts as
 // map[string]any.
 //
-// Evaluate is hard (fail-fast): it returns a non-nil error — always an
-// *EvalError, classifiable via its Code — in exactly these cases:
+// Evaluate is hard (fail-fast): it returns a non-nil error in exactly these
+// cases. Most are an *EvalError, classifiable via its Code; a strict
+// input-validation failure (WithStrictInput) is an *InputError instead.
 //
+//   - *InputError: with WithStrictInput, the input does not satisfy the
+//     decision's declared schema (wrong type, unknown or missing input). Checked
+//     first, so it supersedes the CodeMissingInput case below.
 //   - CodeNotExecutable: the decision did not compile to executable logic.
 //     The caller is expected to check diags.HasErrors() after Compile; reaching
 //     here is a caller bug, not a data case, and is not masked as a null.
@@ -63,7 +93,10 @@ type Result struct {
 // A spec-conformant FEEL null (a runtime type mismatch, division by zero, …) is
 // NOT an error: it becomes a nil output in Result, optionally with a
 // warning/info diagnostic in Result.Diags.
-func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, error) {
+//
+// Optional behaviour is opt-in via EvalOption (WithTrace, WithStrictInput);
+// without options the call is lenient and allocation-lean as before.
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		// Cancellation/deadline; deliberately CodeRuntime, not a limit breach.
 		return Result{}, &EvalError{
@@ -78,6 +111,19 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 			Code:       CodeNotExecutable,
 			DecisionID: c.id,
 			Message:    "decision has no executable logic; check Compile diagnostics (diags.HasErrors()) before evaluating",
+		}
+	}
+
+	var cfg evalConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Strict validation runs first and reports every problem at once (wrong type,
+	// unknown or missing input); it supersedes the single-missing check below.
+	if cfg.strict {
+		if probs := c.ValidateInput(in); len(probs) > 0 {
+			return Result{}, &InputError{Problems: probs}
 		}
 	}
 
@@ -102,15 +148,22 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 	}
 
 	ev := newEvaluator(base)
+	if cfg.trace {
+		ev.rec = boxed.NewRecorder()
+	}
 	out, err := ev.eval(c)
 	if err != nil {
 		return Result{}, c.classifyRuntime(err)
 	}
 
-	return Result{
+	res := Result{
 		Outputs:   map[string]any{c.name: fromValue(out)},
 		Decisions: ev.decisions,
-	}, nil
+	}
+	if cfg.trace {
+		res.Trace = traceFromRecorder(ev.rec)
+	}
+	return res, nil
 }
 
 // classifyRuntime maps a runtime error from the compiled expression to a typed

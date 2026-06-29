@@ -37,7 +37,7 @@ func parsePriorityList(text string) ([]value.Value, error) {
 // the position of each output value in its allowed-values list, compared across
 // outputs in column order (ties keep table order). Priority returns the single
 // highest-priority output; Output Order returns all outputs in priority order.
-func (ct *compiledTable) prioritized(s *feel.Scope, matched []int, asList bool) (value.Value, error) {
+func (ct *compiledTable) prioritized(s *feel.Scope, matched []int, asList bool, tt *TableTrace) (value.Value, error) {
 	if len(matched) == 0 {
 		if asList {
 			return value.NewList(), nil
@@ -52,7 +52,7 @@ func (ct *compiledTable) prioritized(s *feel.Scope, matched []int, asList bool) 
 	}
 	scoredRules := make([]scored, len(matched))
 	for i, ri := range matched {
-		cells, err := ct.ruleCells(s, ri)
+		cells, err := ct.ruleCells(s, ri, tt)
 		if err != nil {
 			return nil, err
 		}

@@ -1,8 +1,17 @@
 # Leitfaden für KI-Coding-Agenten
 
-> Dieses Dokument richtet sich an Claude Code (o. ä.). Es ist bewusst direktiv und
-> deterministisch formuliert. Wenn etwas hier mit deinem „Bauchgefühl" kollidiert,
-> gewinnt dieses Dokument — außer die DMN-Spec/das TCK widerspricht, dann gewinnt die Spec.
+> **Zwei Rollen von Agenten — nicht verwechseln (ADR-0013):**
+> - **Agent als Contributor** *(dieses Dokument)*: ein Coding-Agent, der temis **baut**.
+>   Für ihn gelten die Arbeitsregeln unten.
+> - **Agent als Konsument**: ein Agent, der temis zur **Laufzeit nutzt**, um eine
+>   regelbasierte Entscheidung zu delegieren und sich gegen ein deterministisches,
+>   nachvollziehbares Ergebnis abzusichern. Sein Einstieg ist `temis-mcp` (MCP-Server,
+>   WP-50) bzw. der HTTP-Service — siehe README und ADR-0013, nicht dieses Dokument.
+>
+> Dieses Dokument richtet sich an Claude Code (o. ä.) in der **Contributor**-Rolle. Es ist
+> bewusst direktiv und deterministisch formuliert. Wenn etwas hier mit deinem „Bauchgefühl"
+> kollidiert, gewinnt dieses Dokument — außer die DMN-Spec/das TCK widerspricht, dann
+> gewinnt die Spec.
 
 ## 1. Arbeitsschleife (für jedes Arbeitspaket)
 

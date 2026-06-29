@@ -164,6 +164,70 @@ func TestEvaluateStateless(t *testing.T) {
 	}
 }
 
+func TestEvaluateWithTrace(t *testing.T) {
+	h := newTestServer(t)
+
+	// Without explain: no trace in the response.
+	plain := mustJSON(t, evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+	})
+	if resp := decode[evaluateResponse](t, do(t, h, "POST", "/v1/evaluate", "application/json", plain)); resp.Trace != nil {
+		t.Errorf("trace should be absent without explain, got %+v", resp.Trace)
+	}
+
+	// With explain: trace present, hit policy U, one matched rule producing Roastbeef.
+	withTrace := mustJSON(t, evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+		Explain:  true,
+	})
+	resp := decode[evaluateResponse](t, do(t, h, "POST", "/v1/evaluate", "application/json", withTrace))
+	if resp.Trace == nil || len(resp.Trace.Tables) != 1 {
+		t.Fatalf("want one traced table, got %+v", resp.Trace)
+	}
+	tbl := resp.Trace.Tables[0]
+	if tbl.HitPolicy != "U" || len(tbl.Matched) != 1 {
+		t.Errorf("trace table = %+v, want hit policy U with one match", tbl)
+	}
+}
+
+func TestModelResponseCarriesTypedSchema(t *testing.T) {
+	h := newTestServer(t)
+	resp := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t)))
+	fields, ok := resp.Schema["Dish"]
+	if !ok {
+		t.Fatalf("model response missing schema for Dish: %+v", resp.Schema)
+	}
+	types := map[string]string{}
+	for _, f := range fields {
+		types[f.Name] = f.Type
+	}
+	if types["Season"] != "string" || types["Guest Count"] != "number" {
+		t.Errorf("schema types = %v, want Season:string, Guest Count:number", types)
+	}
+}
+
+func TestEvaluateStrictRejectsMistypedInput(t *testing.T) {
+	h := newTestServer(t)
+	body := mustJSON(t, evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": "8"},
+		Strict:   true,
+	})
+	rec := do(t, h, "POST", "/v1/evaluate", "application/json", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("strict mistyped = %d, want 422 (body %s)", rec.Code, rec.Body)
+	}
+	p := decode[problem](t, rec)
+	if p.Code != "INVALID_INPUT" || len(p.Problems) != 1 || p.Problems[0].Code != "TYPE_MISMATCH" {
+		t.Errorf("problem = %+v, want INVALID_INPUT with a TYPE_MISMATCH", p)
+	}
+}
+
 func TestErrorResponses(t *testing.T) {
 	h := newTestServer(t)
 	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID

@@ -26,6 +26,7 @@ type CompiledDecision struct {
 	id, name string
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
+	inputs   []InputField      // declared input schema, for self-description and validation
 	// requires are the decisions this one consumes directly; the evaluator runs
 	// them first and feeds their results in by name (WP-28). Resolved after all
 	// decisions compile.

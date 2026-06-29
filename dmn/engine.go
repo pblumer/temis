@@ -129,7 +129,13 @@ func compileBKMs(m *model.Definitions) (map[string]*feel.Func, Diagnostics) {
 // diagnostic for the failure.
 func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string]*feel.Func) (*CompiledDecision, Diagnostics) {
 	env := feel.NewEnv(envNames(m, dec)...)
-	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env, reqInputs: reqInputNames(m, dec)}
+	cd := &CompiledDecision{
+		id:        dec.ID,
+		name:      dec.Name,
+		env:       env,
+		inputs:    buildInputSchema(m, dec),
+		reqInputs: reqInputNames(m, dec),
+	}
 
 	logic := dec.Logic()
 	if logic == nil {

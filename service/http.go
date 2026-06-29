@@ -113,10 +113,26 @@ func (s *Server) Handler() http.Handler {
 // --- request/response DTOs ---
 
 type modelResponse struct {
-	ModelID     string          `json:"modelId"`
-	Decisions   []string        `json:"decisions"`
-	Inputs      []string        `json:"inputs"`
-	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
+	ModelID     string                      `json:"modelId"`
+	Decisions   []string                    `json:"decisions"`
+	Inputs      []string                    `json:"inputs"`
+	Schema      map[string][]dmn.InputField `json:"schema,omitempty"`
+	Diagnostics []diagnosticDTO             `json:"diagnostics,omitempty"`
+}
+
+// schemaOf returns each executable decision's typed input schema, keyed by
+// decision name, for self-description.
+func schemaOf(defs *dmn.Definitions, decisions []string) map[string][]dmn.InputField {
+	if len(decisions) == 0 {
+		return nil
+	}
+	out := make(map[string][]dmn.InputField, len(decisions))
+	for _, name := range decisions {
+		if fields, err := defs.InputSchema(name); err == nil {
+			out[name] = fields
+		}
+	}
+	return out
 }
 
 type modelListResponse struct {
@@ -133,18 +149,23 @@ type modelSummary struct {
 type evaluateModelRequest struct {
 	Decision string         `json:"decision"`
 	Input    map[string]any `json:"input"`
+	Explain  bool           `json:"explain,omitempty"`
+	Strict   bool           `json:"strict,omitempty"`
 }
 
 type evaluateStatelessRequest struct {
 	XML      string         `json:"xml"`
 	Decision string         `json:"decision"`
 	Input    map[string]any `json:"input"`
+	Explain  bool           `json:"explain,omitempty"`
+	Strict   bool           `json:"strict,omitempty"`
 }
 
 type evaluateResponse struct {
 	Outputs     map[string]any  `json:"outputs"`
 	Decisions   map[string]any  `json:"decisions"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
+	Trace       *dmn.Trace      `json:"trace,omitempty"`
 }
 
 type diagnosticDTO struct {
@@ -176,6 +197,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		ModelID:     sm.id,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
+		Schema:      schemaOf(sm.defs, sm.index.Decisions),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -218,6 +240,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 		ModelID:     sm.id,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
+		Schema:      schemaOf(sm.defs, sm.index.Decisions),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -234,7 +257,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input)
+	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -254,15 +277,17 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input)
+	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// evaluate runs a decision and writes the result or an appropriate problem.
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any) {
+// evaluate runs a decision and writes the result or an appropriate problem. When
+// explain is set the response carries the decision trace (which rules matched and
+// why).
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -272,8 +297,26 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		writeProblem(w, http.StatusNotFound, "DECISION_NOT_FOUND", err.Error())
 		return
 	}
-	res, err := dec.Evaluate(ctx, dmn.Input(input))
+	var opts []dmn.EvalOption
+	if explain {
+		opts = append(opts, dmn.WithTrace())
+	}
+	if strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
+	res, err := dec.Evaluate(ctx, dmn.Input(input), opts...)
 	if err != nil {
+		var ie *dmn.InputError
+		if errors.As(err, &ie) {
+			writeProblemDetail(w, problem{
+				Title:    http.StatusText(http.StatusUnprocessableEntity),
+				Status:   http.StatusUnprocessableEntity,
+				Detail:   "input does not satisfy the decision's schema",
+				Code:     "INVALID_INPUT",
+				Problems: ie.Problems,
+			})
+			return
+		}
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
 	}
@@ -281,6 +324,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		Outputs:     res.Outputs,
 		Decisions:   res.Decisions,
 		Diagnostics: toDiagnosticDTOs(res.Diags),
+		Trace:       res.Trace,
 	})
 }
 
@@ -354,23 +398,25 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// problem is an RFC-7807 problem detail with a stable engine-specific code.
+// problem is an RFC-7807 problem detail with a stable engine-specific code. The
+// optional Problems extension carries structured input-validation failures
+// (code INVALID_INPUT).
 type problem struct {
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail,omitempty"`
-	Code   string `json:"code"`
+	Title    string             `json:"title"`
+	Status   int                `json:"status"`
+	Detail   string             `json:"detail,omitempty"`
+	Code     string             `json:"code"`
+	Problems []dmn.InputProblem `json:"problems,omitempty"`
 }
 
 func writeProblem(w http.ResponseWriter, status int, code, detail string) {
+	writeProblemDetail(w, problem{Title: http.StatusText(status), Status: status, Detail: detail, Code: code})
+}
+
+func writeProblemDetail(w http.ResponseWriter, p problem) {
 	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(problem{
-		Title:  http.StatusText(status),
-		Status: status,
-		Detail: detail,
-		Code:   code,
-	})
+	w.WriteHeader(p.Status)
+	_ = json.NewEncoder(w).Encode(p)
 }
 
 func toDiagnosticDTOs(diags dmn.Diagnostics) []diagnosticDTO {

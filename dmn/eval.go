@@ -3,6 +3,7 @@ package dmn
 import (
 	"fmt"
 
+	"github.com/pblumer/temis/internal/boxed"
 	"github.com/pblumer/temis/internal/value"
 )
 
@@ -16,6 +17,10 @@ type evaluator struct {
 	visiting  map[*CompiledDecision]bool
 	decisions map[string]any  // evaluated decisions, by name, for the Result
 	boundary  map[string]bool // decision names the evaluator must not compute (service inputs)
+	// rec, when set, collects a decision trace shared across the whole graph, so
+	// every decision table the evaluation touches records into one explanation
+	// (WP-51). nil disables tracing.
+	rec *boxed.Recorder
 }
 
 func newEvaluator(base map[string]value.Value) *evaluator {
@@ -65,7 +70,11 @@ func (e *evaluator) eval(d *CompiledDecision) (value.Value, error) {
 		vals[req.name] = rv
 	}
 
-	out, err := d.expr(d.env.NewScope(vals))
+	scope := d.env.NewScope(vals)
+	if e.rec != nil {
+		scope = scope.WithTrace(e.rec)
+	}
+	out, err := d.expr(scope)
 	if err != nil {
 		return nil, fmt.Errorf("dmn: evaluate decision %q: %w", d.name, err)
 	}
