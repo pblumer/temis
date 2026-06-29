@@ -62,6 +62,21 @@ Decision Services, plus Service-Wrapper (HTTP + gRPC).
 
 ---
 
+## Etappe Agent-First — „Verlässliches Verifikationswerkzeug für KI-Agenten" (ADR-0012)
+
+**Ziel:** temis so zugänglich machen, dass ein KI-Agent regelbasierte Entscheidungen
+**delegieren**, das Ergebnis **begründen** und seine Eingaben **absichern** kann —
+deterministisch, nachvollziehbar, agenten-nativ. Alle drei WPs sind dünne Adapter bzw.
+Erweiterungen über `package dmn` (ADR-0011); kein `internal/`-Zugriff von außen.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-50 | MCP-Server (`temis-mcp`) | WP-32 | Eigenes Binary (`cmd/temis-mcp`), das `package dmn` konsumiert und temis über das Model Context Protocol als natives Werkzeug anbietet: Modelle laden/auflisten, Decision + Eingabe-Schema beschreiben, auswerten. Kein `internal/`-Import. Folge-ADR fixiert SDK + Transport (stdio/HTTP) inkl. Abhängigkeitsbegründung (Goldene Regel 6). Tests über die MCP-Tool-Oberfläche; manuell mit `dish_15.dmn` verifiziert. |
+| WP-51 | Entscheidungsspur in `Result` | WP-09, WP-10 | **Opt-in** strukturierte Begründung pro Auswertung: gefeuerte Regel(n) (Index/ID), angewandte Hit Policy + Aggregation, erfüllte/verfehlte Eingabebedingungen. Ableitung der *tatsächlichen* Engine-Auswertung (kein LLM-Rationalisat). Default-Pfad ohne Spur bleibt allokationsarm (Performance-Budget, ADR-0011). In `docs/40-api-contract.md` als `Result`-Oberfläche spezifiziert; über Library, Service *und* MCP konsumierbar. |
+| WP-52 | Agent-Schema & strenge Eingabevalidierung | WP-10, WP-51 | Selbstbeschreibung erwarteter Inputs samt Typen; präzise, maschinenlesbare Validierungsfehler (z. B. „Feld X erwartet Number, erhielt String") statt stillschweigend falscher Defaults. Über Library-API, Service und MCP verfügbar; tabellengetriebene Tests je Fehlerklasse. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.

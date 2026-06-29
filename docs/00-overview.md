@@ -26,6 +26,7 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 | D5 | Betriebsform | **Library-first**, Service als dünner Wrapper | ADR-0005 |
 | D6 | Editor/Frontend | dmn-js (read/write Standard-DMN-XML) | ADR-0006 |
 | D7 | Keine externen FEEL-Abhängigkeiten | eigener Lexer/Parser/Compiler | ADR-0004 |
+| D8 | Zielgruppe Agenten | **Agent-First**: temis als Laufzeit-Verifikationswerkzeug (MCP, Entscheidungsspur, Agent-Schema) | ADR-0012 |
 
 ## 3. Nicht-Ziele (explizit ausgeschlossen, verhindert Scope-Creep)
 
