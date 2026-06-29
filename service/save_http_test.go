@@ -58,6 +58,26 @@ func TestSaveModelPersistsEdits(t *testing.T) {
 	}
 }
 
+// TestGetDecisionTable checks the decision-table endpoint returns the table view
+// for a table decision, and 404 for a non-table decision.
+func TestGetDecisionTable(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+
+	rec := do(t, h, "GET", "/v1/models/"+id+"/decisions/Dish/table", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET table = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+	tv := decode[dmn.TableView](t, rec)
+	if tv.Name != "Dish" || len(tv.Rules) == 0 || len(tv.Inputs) == 0 {
+		t.Errorf("table view = %+v, want Dish with inputs and rules", tv)
+	}
+
+	if rec := do(t, h, "GET", "/v1/models/"+id+"/decisions/Nope/table", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET table for unknown decision = %d, want 404", rec.Code)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)

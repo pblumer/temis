@@ -11,7 +11,7 @@ body {
   color: var(--fg);
   background: #f8fafc;
 }
-main { max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+main { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
 h1 { font-size: 24px; margin: 0 0 4px; }
 .sub { color: var(--muted); margin: 0 0 20px; }
 .wp {
@@ -26,7 +26,8 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .hint { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; margin-top: 20px; }
 .probe { color: var(--accent); font-weight: 600; }
 .canvas {
-  height: 440px;
+  height: min(64vh, 720px);
+  min-height: 420px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background-color: #fcfdff;
@@ -77,8 +78,9 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 }
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   margin: 16px 0 8px;
   font-size: 13px;
 }
@@ -104,5 +106,100 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .toolbar .tbtn:disabled { color: #c2c9d4; cursor: default; }
 .toolbar .tbtn:not(:disabled):hover { background: #f1f4f9; }
 .toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
-.toolbar .status { color: var(--muted); margin-left: 4px; }
+.toolbar .type-editor select { max-width: 170px; }
+.toolbar .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
 code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+/* Evaluate panel — feature parity with the legacy editor (ADR-0016 WP-67). */
+.eval-panel { margin-top: 20px; }
+.eval-title { font-size: 15px; margin: 0 0 10px; }
+.eval-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 13px; }
+.eval-row label { color: var(--muted); font-weight: 600; }
+.eval-row select {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.eval-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.eval-field-wrap { display: flex; flex-direction: column; gap: 3px; }
+.eval-field-label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.eval-field {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.eval-field:focus { outline: none; border-color: var(--accent); }
+.eval-empty { color: var(--muted); font-size: 13px; margin: 4px 0; }
+.eval-result { font-size: 13px; min-height: 20px; }
+.eval-ok { color: var(--accent); font-weight: 600; }
+.eval-error { color: #e5484d; }
+.eval-out { border-collapse: collapse; margin-top: 6px; }
+.eval-out th, .eval-out td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; }
+.eval-out th { background: #f1f5f9; font-weight: 600; }
+
+/* Decision-table overlay (double-click a table-decision in the DRD). */
+.dt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+}
+.dt-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.3);
+  max-width: min(960px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+.dt-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+.dt-title { font-size: 16px; font-weight: 700; }
+.dt-policy {
+  font: 12px/1 ui-monospace, monospace;
+  background: var(--accent);
+  color: #fff;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.dt-close {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+}
+.dt-close:hover { background: #f1f4f9; }
+.dt { border-collapse: collapse; width: 100%; font-size: 13px; }
+.dt th, .dt td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.dt-idx { width: 30px; text-align: center; color: var(--muted); background: #f8fafc; }
+.dt-band th { text-align: center; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: #f8fafc; }
+.dt-cols th { background: #f1f5f9; font-weight: 600; }
+.dt-in { background: #fcfdff; }
+.dt-out { background: #f6fbf7; }
+.dt-coltext { display: flex; flex-direction: column; gap: 2px; }
+.dt-type { font: 11px/1 ui-monospace, monospace; color: var(--muted); font-weight: 400; }
+.dt-rule:hover td { background: #eef4ff; }
+.dt-ann { color: var(--muted); }

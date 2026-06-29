@@ -120,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
 	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
 	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
+	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
@@ -303,6 +304,24 @@ func (s *Server) handleGetModelGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sm.defs.Graph())
+}
+
+// handleGetDecisionTable returns a decision's static decision-table view (hit
+// policy, columns and rule rows), so the modeler can open it on double-click
+// without parsing DMN XML in the browser (ADR-0016). It is a 404 when the model,
+// the decision, or its decision-table logic is absent.
+func (s *Server) handleGetDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	table, ok := sm.defs.DecisionTable(r.PathValue("decision"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "TABLE_NOT_FOUND", "no decision table for that decision")
+		return
+	}
+	writeJSON(w, http.StatusOK, table)
 }
 
 // handleSaveModel applies modeler edits (positions, names, types) to a cached

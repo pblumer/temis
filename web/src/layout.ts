@@ -6,7 +6,7 @@ import type { Graph } from './api'
 // requirement chain). Either way, requirement edges are routed border-to-border
 // between the node boxes, so they work for any positions.
 
-export type LaidNode = { id: string; type: string; name: string; dataType?: string; varName?: string; x: number; y: number; w: number; h: number }
+export type LaidNode = { id: string; type: string; name: string; dataType?: string; varName?: string; hasTable?: boolean; x: number; y: number; w: number; h: number }
 export type LaidEdge = { id: string; type: string; source: string; target: string; waypoints: { x: number; y: number }[] }
 export type Laid = { nodes: LaidNode[]; edges: LaidEdge[] }
 
@@ -71,7 +71,7 @@ function autoLayout(graph: Graph, pos: Map<string, LaidNode>): void {
     const y = PAD + (maxRow - r) * (ROW_GAP + 70)
     for (const n of bucket) {
       const s = sizeOf(n.type)
-      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, x, y, w: s.w, h: s.h })
+      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, x, y, w: s.w, h: s.h })
       x += s.w + COL_GAP
     }
   }
@@ -86,7 +86,7 @@ export function layout(graph: Graph): Laid {
     graph.nodes.every((n) => (n.width ?? 0) > 0 && (n.height ?? 0) > 0)
   if (hasLayout) {
     for (const n of graph.nodes) {
-      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, x: n.x ?? 0, y: n.y ?? 0, w: n.width ?? 0, h: n.height ?? 0 })
+      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, x: n.x ?? 0, y: n.y ?? 0, w: n.width ?? 0, h: n.height ?? 0 })
     }
   } else {
     autoLayout(graph, pos)

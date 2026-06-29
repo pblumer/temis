@@ -47,6 +47,9 @@ export type ModelerHandle = {
   setSelectedType: (dataType: string) => void
   // nodes returns the current state of every node, for persisting edits.
   nodes: () => NodeState[]
+  // onOpenTable fires with a decision's id when the user double-clicks a decision
+  // whose logic is a decision table (to open its table view).
+  onOpenTable: (cb: (decisionId: string) => void) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -89,7 +92,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -105,6 +108,15 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // command stack is empty here because addShape/addConnection bypass it.
   let changeCb = (): void => {}
   eventBus.on('commandStack.changed', () => changeCb())
+
+  // Double-clicking a decision that has a decision table opens its table view.
+  // Such shapes are not inline-renamed (see dmn-label-editing), so the gestures
+  // don't collide.
+  let openTableCb = (_decisionId: string): void => {}
+  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean } }) => {
+    const el = e.element
+    if (el && el.type === 'dmn:decision' && el.hasTable) openTableCb(el.id)
+  })
 
   let selectCb = (_sel: Selected): void => {}
   const reportSelection = (): void => {
@@ -136,5 +148,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       const shape = s as Shape & { name?: string; dataType?: string }
       return { id: shape.id, type: shape.type.replace(/^dmn:/, ''), name: shape.name, dataType: shape.dataType, x: shape.x, y: shape.y }
     }),
+    onOpenTable: (cb) => {
+      openTableCb = cb
+    },
   }
 }

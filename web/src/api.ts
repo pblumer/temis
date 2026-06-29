@@ -11,6 +11,7 @@ export type GraphNode = {
   name: string
   dataType?: string
   varName?: string
+  hasTable?: boolean
   x?: number
   y?: number
   width?: number
@@ -21,11 +22,42 @@ export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export type ModelSummary = { modelId: string; name?: string; decisions: string[]; inputs: string[] }
 
+// InputField mirrors dmn.InputField: a decision's typed input, with its optional
+// allowed-values constraint, for building the evaluation form.
+export type InputField = { name: string; type?: string; required: boolean; constraint?: string }
+export type Diagnostic = { severity: string; code: string; message: string }
+
+// ModelDetail mirrors the service modelResponse: decisions/inputs plus the typed
+// per-decision input schema used to drive the evaluate form.
+export type ModelDetail = {
+  modelId: string
+  name?: string
+  decisions: string[]
+  inputs: string[]
+  schema?: Record<string, InputField[]>
+  diagnostics?: Diagnostic[]
+}
+
 export async function listModels(): Promise<ModelSummary[]> {
   const r = await fetch('/v1/models')
   if (!r.ok) throw new Error('Modelle laden fehlgeschlagen (HTTP ' + r.status + ')')
   const body = (await r.json()) as { models?: ModelSummary[] }
   return body.models ?? []
+}
+
+export async function getModel(modelId: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId))
+  if (!r.ok) throw new Error('Modell laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as ModelDetail
+}
+
+// createModel uploads a DMN-XML document to the engine, which compiles and caches
+// it (POST /v1/models), and returns its detail incl. the typed input schema. This
+// is the own modeler's file/paste-deploy path — no dmn-js needed (ADR-0016).
+export async function createModel(xml: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models', { method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: xml })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Deploy fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
 }
 
 export async function getGraph(modelId: string): Promise<Graph> {
@@ -51,4 +83,63 @@ export async function saveModel(modelId: string, nodes: NodeEdit[]): Promise<str
   if (!r.ok) throw new Error('Speichern fehlgeschlagen (HTTP ' + r.status + ')')
   const body = (await r.json()) as { modelId: string }
   return body.modelId
+}
+
+// EvalResult mirrors the service evaluateResponse: the root decision's outputs
+// plus every evaluated decision's result, and any diagnostics.
+export type EvalResult = {
+  outputs: Record<string, unknown>
+  decisions: Record<string, unknown>
+  diagnostics?: Diagnostic[]
+}
+
+// evaluate runs one decision of a cached model against the given input context
+// (POST /v1/models/{id}/evaluate). Validation failures (RFC-7807 problem+json)
+// are surfaced as a readable error.
+export async function evaluate(modelId: string, decision: string, input: Record<string, unknown>): Promise<EvalResult> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, input }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Auswertung fehlgeschlagen'))
+  return (await r.json()) as EvalResult
+}
+
+// TableView mirrors dmn.TableView: a decision's static decision-table logic for
+// display in the modeler.
+export type TableInput = { label?: string; expression: string; typeRef?: string }
+export type TableOutput = { name?: string; label?: string; typeRef?: string }
+export type TableRule = { inputEntries: string[]; outputEntries: string[]; annotations?: string[] }
+export type TableView = {
+  decisionId: string
+  name: string
+  hitPolicy: string
+  aggregation?: string
+  inputs: TableInput[]
+  outputs: TableOutput[]
+  rules: TableRule[]
+}
+
+// getTable fetches a decision's decision-table view, or null when the decision
+// has no decision-table logic (HTTP 404).
+export async function getTable(modelId: string, decision: string): Promise<TableView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Decision Table laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as TableView
+}
+
+// problemMessage extracts a human-readable message from an RFC-7807 problem+json
+// error body, including structured input-validation problems, falling back to the
+// HTTP status.
+async function problemMessage(r: Response, fallback: string): Promise<string> {
+  try {
+    const p = (await r.json()) as { detail?: string; problems?: { message: string }[] }
+    let msg = p.detail || fallback
+    if (p.problems?.length) msg += ': ' + p.problems.map((x) => x.message).join('; ')
+    return msg
+  } catch {
+    return fallback + ' (HTTP ' + r.status + ')'
+  }
 }
