@@ -1,5 +1,6 @@
 import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit } from './api'
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
+import { FEEL_TYPES } from './feeltypes'
 
 // Hit policies offered in the editor (single-letter DMN codes) and the Collect
 // aggregations.
@@ -7,13 +8,12 @@ const HIT_POLICIES: [string, string][] = [
   ['U', 'Unique'], ['A', 'Any'], ['P', 'Priority'], ['F', 'First'], ['R', 'Rule order'], ['C', 'Collect'],
 ]
 const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
-const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and time', 'days and time duration', 'years and months duration']
 
 // openTableOverlay fetches a decision's decision-table and shows it in a fully
 // editable modal (ADR-0016): hit policy, input/output columns (add/remove, edit
 // expression/name/type) and rule cells, all FEEL-validated, then saved back into
 // the model. onSaved gets the saved model's new id (its content hash changed).
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void): Promise<void> {
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES): Promise<void> {
   let fetched: TableView | null
   try {
     fetched = await getTable(modelId, decisionId)
@@ -78,7 +78,7 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
 
   const rebuild = (): void => {
     scroll.textContent = ''
-    scroll.append(buildGrid(state, inputNames(), rebuild))
+    scroll.append(buildGrid(state, inputNames(), rebuild, typeOptions))
   }
   rebuild()
 
@@ -142,7 +142,7 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
 
 // buildGrid renders the editable table from the working state. rebuild is called
 // after a structural change (column/row add/remove) to redraw.
-function buildGrid(state: TableView, names: string[], rebuild: () => void): HTMLElement {
+function buildGrid(state: TableView, names: string[], rebuild: () => void, typeOptions: string[]): HTMLElement {
   const table = el('table', { class: 'dt' })
   const head = el('thead')
 
@@ -155,8 +155,8 @@ function buildGrid(state: TableView, names: string[], rebuild: () => void): HTML
 
   // Column header row: editable expression/name + type + remove.
   const cols = el('tr', { class: 'dt-cols' }, el('th', { class: 'dt-idx' }, '#'))
-  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild)))
-  state.outputs.forEach((c, k) => cols.append(outputHeader(state, c, k, rebuild)))
+  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild, typeOptions)))
+  state.outputs.forEach((c, k) => cols.append(outputHeader(state, c, k, rebuild, typeOptions)))
   cols.append(el('th', { class: 'dt-ann' }, ''), el('th', { class: 'dt-del' }, ''))
   head.append(cols)
   table.append(head)
@@ -168,7 +168,7 @@ function buildGrid(state: TableView, names: string[], rebuild: () => void): HTML
   return table
 }
 
-function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void): HTMLElement {
+function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void, typeOptions: string[]): HTMLElement {
   const expr = el('input', { class: 'dt-head-field', value: col.expression ?? '', placeholder: 'FEEL' }) as HTMLInputElement
   const check = (): void => {
     const s = expr.value.trim()
@@ -177,14 +177,14 @@ function inputHeader(state: TableView, col: TableInput, k: number, names: string
   }
   expr.addEventListener('input', check)
   check()
-  return el('th', { class: 'dt-in' }, el('div', { class: 'dt-colhead' }, expr, typeSelect(col), removeBtn(() => {
+  return el('th', { class: 'dt-in' }, el('div', { class: 'dt-colhead' }, expr, typeSelect(col, typeOptions), removeBtn(() => {
     state.inputs.splice(k, 1)
     state.rules.forEach((r) => r.inputEntries.splice(k, 1))
     rebuild()
   })))
 }
 
-function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: () => void): HTMLElement {
+function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: () => void, typeOptions: string[]): HTMLElement {
   const name = el('input', { class: 'dt-head-field', value: col.name ?? '', placeholder: 'Name' }) as HTMLInputElement
   const check = (): void => {
     const s = name.value.trim()
@@ -200,7 +200,7 @@ function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: ()
     state.rules.forEach((r) => r.outputEntries.splice(k, 1))
     rebuild()
   }) : el('span', { class: 'dt-rm-spacer' })
-  return el('th', { class: 'dt-out' }, el('div', { class: 'dt-colhead' }, name, typeSelect(col), rm))
+  return el('th', { class: 'dt-out' }, el('div', { class: 'dt-colhead' }, name, typeSelect(col, typeOptions), rm))
 }
 
 function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void): HTMLElement {
@@ -234,9 +234,15 @@ function cell(entries: string[], k: number, kind: 'in' | 'out', names: string[])
   return box
 }
 
-function typeSelect(col: { typeRef?: string }): HTMLSelectElement {
+// withCurrent ensures the column's current type appears in the options, even if
+// it is a custom type that has since been removed from the model.
+function withCurrent(options: string[], current?: string): string[] {
+  return current && !options.includes(current) ? [...options, current] : options
+}
+
+function typeSelect(col: { typeRef?: string }, typeOptions: string[]): HTMLSelectElement {
   const sel = el('select', { class: 'dt-type-sel', title: 'Typ' }) as HTMLSelectElement
-  for (const t of FEEL_TYPES) sel.append(option(t, t || '— Typ —', (col.typeRef ?? '') === t))
+  for (const t of withCurrent(typeOptions, col.typeRef)) sel.append(option(t, t || '— Typ —', (col.typeRef ?? '') === t))
   sel.addEventListener('change', () => {
     col.typeRef = sel.value
   })

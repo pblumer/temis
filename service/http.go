@@ -123,6 +123,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
 	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
 	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
+	mux.HandleFunc("GET /v1/models/{id}/types", s.requireToken(s.handleGetTypes))
+	mux.HandleFunc("POST /v1/models/{id}/types", s.requireToken(s.handleSaveType))
+	mux.HandleFunc("DELETE /v1/models/{id}/types/{name}", s.requireToken(s.handleDeleteType))
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
@@ -324,6 +327,73 @@ func (s *Server) handleGetModelGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sm.defs.Graph())
+}
+
+// handleGetTypes returns the model's named item definitions, for the modeler's
+// type manager and type pickers (ADR-0016).
+func (s *Server) handleGetTypes(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"types": sm.defs.ItemDefinitions()})
+}
+
+// handleSaveType creates or updates a simple item definition, recompiles and
+// caches the model, and returns the new id. A structured (component) type or an
+// empty name is a 400.
+func (s *Server) handleSaveType(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var t dmn.ItemType
+	if err := decodeJSON(w, r, &t); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetItemDefinition(sm.xml, t)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "TYPE_SAVE_FAILED", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
+}
+
+// handleDeleteType removes a named item definition and returns the recompiled
+// model's new id.
+func (s *Server) handleDeleteType(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	patched, err := dmn.RemoveItemDefinition(sm.xml, r.PathValue("name"))
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, "TYPE_NOT_FOUND", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
+}
+
+// respondSaved compiles and caches patched XML and writes the saved model
+// response, the common tail of the modeler's mutating endpoints.
+func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, patched []byte) {
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
 }
 
 // handleGetDecisionTable returns a decision's static decision-table view (hit

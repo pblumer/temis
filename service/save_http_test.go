@@ -256,6 +256,39 @@ func TestLiteralEndpoints(t *testing.T) {
 	}
 }
 
+// TestTypeEndpoints checks creating, listing and deleting a custom type through
+// the endpoints.
+func TestTypeEndpoints(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+
+	body := mustJSON(t, dmn.ItemType{Name: "Color", TypeRef: "string", AllowedValues: `"red","green"`})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/types", "application/json", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST type = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+
+	list := decode[struct {
+		Types []dmn.ItemType `json:"types"`
+	}](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/types", "", nil))
+	if len(list.Types) != 1 || list.Types[0].Name != "Color" {
+		t.Fatalf("types = %+v, want one named Color", list.Types)
+	}
+
+	del := do(t, h, "DELETE", "/v1/models/"+saved.ModelID+"/types/Color", "", nil)
+	if del.Code != http.StatusCreated {
+		t.Fatalf("DELETE type = %d, want 201 (body %s)", del.Code, del.Body)
+	}
+	after := decode[modelResponse](t, del)
+	empty := decode[struct {
+		Types []dmn.ItemType `json:"types"`
+	}](t, do(t, h, "GET", "/v1/models/"+after.ModelID+"/types", "", nil))
+	if len(empty.Types) != 0 {
+		t.Errorf("types after delete = %+v, want none", empty.Types)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)

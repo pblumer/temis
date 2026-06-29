@@ -52,6 +52,8 @@ func (d *Definitions) Index() ModelIndex
 
 func (d *Definitions) InputSchema(idOrName string) ([]InputField, error)
 
+func (d *Definitions) ItemDefinitions() []ItemType
+
 func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
 
 func (d *Definitions) ModelName() string
@@ -85,6 +87,10 @@ func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, erro
 func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
 
 func New(opts ...Option) *Engine
+
+func RemoveItemDefinition(src []byte, name string) ([]byte, error)
+
+func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
 func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
 
@@ -201,6 +207,14 @@ type InputProblem struct {
 	Message		string	`json:"message"`
 	Expected	string	`json:"expected,omitempty"`
 	Got		string	`json:"got,omitempty"`
+}
+
+type ItemType struct {
+	Name		string	`json:"name"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+	IsCollection	bool	`json:"isCollection,omitempty"`
+	AllowedValues	string	`json:"allowedValues,omitempty"`
+	Structured	bool	`json:"structured,omitempty"`
 }
 
 type Limits struct {

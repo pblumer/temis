@@ -81,6 +81,50 @@ func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inp
 	return false
 }
 
+// UpsertItemDefinition creates or updates a (simple) item definition by name: its
+// base type, collection flag and allowed-values constraint. It refuses (returns
+// false) for an empty name or when an existing definition of that name is
+// structured (has item components), so the simple editor never clobbers a
+// structured type.
+func (d *Definitions) UpsertItemDefinition(name, typeRef string, isCollection bool, allowedValues string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for i := range d.ItemDefs {
+		if d.ItemDefs[i].Name == name {
+			if len(d.ItemDefs[i].Components) > 0 {
+				return false
+			}
+			d.ItemDefs[i].TypeRef = strings.TrimSpace(typeRef)
+			d.ItemDefs[i].IsCollection = isCollection
+			d.ItemDefs[i].AllowedValues = textOrNil(allowedValues)
+			return true
+		}
+	}
+	d.ItemDefs = append(d.ItemDefs, ItemDef{Name: name, TypeRef: strings.TrimSpace(typeRef), IsCollection: isCollection, AllowedValues: textOrNil(allowedValues)})
+	return true
+}
+
+// RemoveItemDefinition removes the item definition with the given name, reporting
+// whether one was found. References to it elsewhere are left untouched.
+func (d *Definitions) RemoveItemDefinition(name string) bool {
+	for i := range d.ItemDefs {
+		if d.ItemDefs[i].Name == name {
+			d.ItemDefs = append(d.ItemDefs[:i], d.ItemDefs[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func textOrNil(s string) *Text {
+	if s = strings.TrimSpace(s); s == "" {
+		return nil
+	}
+	return &Text{Value: s}
+}
+
 // SetLiteralExpression sets (or creates) the literal-expression logic of the
 // decision identified by id, with the given FEEL text and result type. It refuses
 // (returns false) when the decision is unknown or already carries a different

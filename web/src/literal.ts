@@ -1,7 +1,6 @@
 import { getLiteral, saveLiteral, type LiteralView } from './api'
 import { ensureFeel, validateExpr } from './feel'
-
-const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and time', 'days and time duration', 'years and months duration']
+import { FEEL_TYPES } from './feeltypes'
 
 // openLiteralOverlay shows a decision's literal FEEL expression in an editable
 // modal (ADR-0016): a FEEL textarea validated live against the real engine plus a
@@ -9,7 +8,8 @@ const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and
 // literal yet (an undecided decision), the editor opens empty — saving creates
 // it. names are the in-scope variables the expression may reference. onSaved gets
 // the saved model's new id.
-export async function openLiteralOverlay(modelId: string, decisionId: string, title: string, names: string[], onSaved?: (newModelId: string) => void, opts?: { fresh?: boolean }): Promise<void> {
+export async function openLiteralOverlay(modelId: string, decisionId: string, title: string, names: string[], onSaved?: (newModelId: string) => void, opts?: { fresh?: boolean; typeOptions?: string[] }): Promise<void> {
+  const typeOptions = opts?.typeOptions ?? FEEL_TYPES
   let lit: LiteralView | null = null
   if (!opts?.fresh) {
     // fresh = an undecided decision with no literal yet; skip the fetch (and its
@@ -38,9 +38,11 @@ export async function openLiteralOverlay(modelId: string, decisionId: string, ti
   })
 
   const typeSel = el('select', { class: 'dt-type-sel lit-type', title: 'Ergebnistyp' }) as HTMLSelectElement
-  for (const t of FEEL_TYPES) {
+  const cur = lit?.typeRef ?? ''
+  const typeList = cur && !typeOptions.includes(cur) ? [...typeOptions, cur] : typeOptions
+  for (const t of typeList) {
     const o = el('option', { value: t }, t || '— Typ —') as HTMLOptionElement
-    o.selected = (lit?.typeRef ?? '') === t
+    o.selected = cur === t
     typeSel.append(o)
   }
   const closeBtn = el('button', { class: 'dt-close', type: 'button', title: 'Schließen (Esc)' }, '✕') as HTMLButtonElement
