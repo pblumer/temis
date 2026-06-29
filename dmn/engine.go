@@ -84,7 +84,7 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 // diagnostic for the failure.
 func compileDecision(m *model.Definitions, dec *model.Decision) (*CompiledDecision, Diagnostics) {
 	env := feel.NewEnv(envNames(m, dec)...)
-	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env}
+	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env, reqInputs: reqInputNames(m, dec)}
 
 	switch {
 	case dec.LiteralExpression != nil:
@@ -139,12 +139,35 @@ func envNames(m *model.Definitions, dec *model.Decision) []string {
 	return names
 }
 
+// reqInputNames returns the resolved names of a decision's required input data
+// (input data only, not required decisions). Names are looked up from the
+// model's InputData; duplicates, empty names and unresolved references are
+// dropped. These are the inputs Evaluate treats as mandatory.
+func reqInputNames(m *model.Definitions, dec *model.Decision) []string {
+	byID := make(map[string]string, len(m.InputData))
+	for _, in := range m.InputData {
+		byID[in.ID] = in.Name
+	}
+
+	var names []string
+	seen := make(map[string]bool)
+	for _, id := range dec.RequiredInputs {
+		name, ok := byID[id]
+		if !ok || name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names
+}
+
 // compileDiagnostic turns a FEEL/boxed compile error into a diagnostic, carrying
 // the source position when the error exposes one.
 func compileDiagnostic(dec *model.Decision, err error) Diagnostic {
 	d := Diagnostic{
 		Severity:   SevError,
-		Code:       "FEEL_COMPILE_ERROR",
+		Code:       CodeFEELCompile,
 		Message:    err.Error(),
 		DecisionID: dec.ID,
 	}

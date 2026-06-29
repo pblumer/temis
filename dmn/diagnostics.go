@@ -29,8 +29,12 @@ func (s Severity) String() string {
 // Diagnostic is a single problem found while compiling or evaluating a model. It
 // is never a panic: user errors are reported, not fatal.
 type Diagnostic struct {
-	Severity   Severity
-	Code       string // stable, machine-readable code, e.g. "FEEL_COMPILE_ERROR"
+	Severity Severity
+	// Code is the stable, machine-readable error class, one of the Code*
+	// constants (e.g. CodeFEELCompile). It names the failure class, never the
+	// severity, and is part of the SemVer surface — callers may program against
+	// it. Message is human-readable and NOT stable; do not parse it.
+	Code       string
 	Message    string
 	DecisionID string
 	Line, Col  int // source position; 0 when not applicable
@@ -58,7 +62,7 @@ func fromModelDiagnostics(in []model.Diagnostic) Diagnostics {
 	for i, d := range in {
 		out[i] = Diagnostic{
 			Severity:   fromModelSeverity(d.Severity),
-			Code:       "MODEL_" + d.Severity.String(),
+			Code:       d.Code,
 			Message:    d.Message,
 			DecisionID: d.DecisionID,
 		}

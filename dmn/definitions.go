@@ -23,6 +23,10 @@ type CompiledDecision struct {
 	id, name string
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
+	// reqInputs are the resolved names of the decision's required input data
+	// (input data only, not required decisions). Evaluate fails hard when any is
+	// absent from the supplied Input.
+	reqInputs []string
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error
