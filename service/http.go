@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
+	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
@@ -359,6 +360,42 @@ func (s *Server) handleSaveDecisionTable(w http.ResponseWriter, r *http.Request)
 	patched, err := dmn.ApplyTableEdit(sm.xml, r.PathValue("decision"), edit)
 	if err != nil {
 		writeProblem(w, http.StatusNotFound, "TABLE_NOT_FOUND", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleSaveGraph reconciles a cached model to a desired decision requirements
+// graph — persisting added and removed nodes/edges as well as moved/renamed/
+// retyped ones — then recompiles and caches the result, returning the new model
+// id and any compile diagnostics. Surviving decisions keep their logic; new
+// decisions are created undecided. It is the modeler's structural save (ADR-0016).
+func (s *Server) handleSaveGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.GraphEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyGraph(sm.xml, edit)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
 	saved, err := s.compileAndStore(r.Context(), patched)

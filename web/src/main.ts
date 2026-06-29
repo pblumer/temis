@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveModel, type ModelSummary, type NodeEdit } from './api'
+import { listModels, getGraph, getModel, createModel, saveGraph, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel } from './evaluate'
@@ -79,19 +79,17 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!handle || !dirty) return
     const current = models[Number(select.value)]
     if (!current) return
-    const edits: NodeEdit[] = handle.nodes().map((n) => ({
-      id: n.id,
-      name: n.name,
-      // type only applies to InputData server-side; sending it for others is a no-op.
-      dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined,
-      x: n.x,
-      y: n.y,
-    }))
+    // The structural save persists everything on the canvas — moved/renamed/
+    // retyped nodes AND nodes/edges added or removed (ADR-0016).
+    const { nodes, edges } = handle.graph()
     saveBtn.disabled = true
     status.textContent = 'speichert …'
     try {
-      const newId = await saveModel(current.modelId, edits)
-      await reselect(newId)
+      const saved = await saveGraph(current.modelId, {
+        nodes: nodes.map((n) => ({ ...n, dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined })),
+        edges,
+      })
+      await reselect(saved.modelId)
       status.textContent = 'gespeichert ✓'
     } catch (e) {
       status.textContent = (e as Error).message

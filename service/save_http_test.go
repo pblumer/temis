@@ -124,6 +124,47 @@ func TestSaveDecisionTableNoTable(t *testing.T) {
 	}
 }
 
+// TestSaveGraphAddNode adds a node + edge through the graph endpoint and checks
+// the saved revision's graph carries them.
+func TestSaveGraphAddNode(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+
+	g := decode[dmn.Graph](t, do(t, h, "GET", "/v1/models/"+id+"/graph", "", nil))
+	edit := dmn.GraphEdit{}
+	for _, n := range g.Nodes {
+		edit.Nodes = append(edit.Nodes, dmn.GraphNodeEdit{ID: n.ID, Type: n.Type, Name: n.Name, DataType: n.DataType, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height})
+	}
+	for _, e := range g.Edges {
+		edit.Edges = append(edit.Edges, dmn.GraphEdgeEdit(e))
+	}
+	edit.Nodes = append(edit.Nodes, dmn.GraphNodeEdit{ID: "id_wine", Type: "inputData", Name: "Wine", DataType: "string", X: 600, Y: 100, Width: 120, Height: 50})
+	edit.Edges = append(edit.Edges, dmn.GraphEdgeEdit{Type: "informationRequirement", Source: "id_wine", Target: "id_dish"})
+
+	rec := do(t, h, "POST", "/v1/models/"+id+"/graph", "application/json", mustJSON(t, edit))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST graph = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+	if saved.ModelID == id {
+		t.Error("saved model id unchanged; a structural edit should change the content hash")
+	}
+
+	g2 := decode[dmn.Graph](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/graph", "", nil))
+	var wine *dmn.GraphNode
+	for i := range g2.Nodes {
+		if g2.Nodes[i].Name == "Wine" {
+			wine = &g2.Nodes[i]
+		}
+	}
+	if wine == nil {
+		t.Fatalf("added node 'Wine' missing in saved graph: %+v", g2.Nodes)
+	}
+	if wine.X != 600 || wine.Width != 120 {
+		t.Errorf("Wine shape not persisted: %+v", *wine)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)
