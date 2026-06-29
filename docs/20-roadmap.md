@@ -112,7 +112,10 @@ dmn-js per CDN — wie die Swagger-UI unter `/docs`; **keine zweite Toolchain**.
 - **F-01** (Beta, optional) ✅: **Editor in `/ui`** (`service/ui.go`). Bettet dmn-js per CDN ein
   (read-only `dmn-navigated-viewer`, bearbeitbar `dmn-modeler`). Fluss: Datei hochladen/XML
   einfügen → read-only Ansicht → „Bearbeiten" → editierbar → „Auf Server deployen"
-  (`POST /v1/models`) → Decision wählen → `POST /v1/models/{id}/evaluate` → Outputs sichtbar.
+  (`POST /v1/models`) → Decision wählen → `POST /v1/models/{id}/evaluate` (`explain:true`).
+  **Ergebnis als Graph:** die durchlaufenen Decisions werden im DRD markiert und mit ihrem
+  Wert beschriftet (angefragte Decision hervorgehoben, Zwischenergebnisse separat) — nutzt die
+  DRG-Verkettung (WP-28) und die `decisions`-Map. „Neu" erstellt ein leeres Modell.
   **Kein** Produktziel der Engine. End-to-End per Headless-Browser verifiziert. Grenze: dmn-js
   rendert DMN 1.3 (1.4/1.5 wertet die Engine aus, zeichnet der Editor ggf. nicht).
 - **F-02** (optional, nach F-01): Einsteiger-UX-Module — reduzierte Palette,
