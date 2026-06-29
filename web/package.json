@@ -1,0 +1,17 @@
+{
+  "name": "temis-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Temis own DMN modeler frontend (ADR-0016) — Vite + TypeScript scaffold (WP-60).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "~5.4.10"
+  }
+}
