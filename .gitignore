@@ -16,8 +16,3 @@ go.work.sum
 .DS_Store
 .idea/
 .vscode/
-
-# Frontend (web/) build & deps
-/web/node_modules/
-/web/dist/
-/web/package-lock.json
