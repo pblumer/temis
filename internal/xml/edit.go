@@ -81,6 +81,29 @@ func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inp
 	return false
 }
 
+// SetLiteralExpression sets (or creates) the literal-expression logic of the
+// decision identified by id, with the given FEEL text and result type. It refuses
+// (returns false) when the decision is unknown or already carries a different
+// boxed logic (decision table, context, …), which would conflict.
+func (d *Definitions) SetLiteralExpression(id, text, typeRef string) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		if dec.present() && dec.LiteralExpression == nil {
+			return false // some other boxed logic is present
+		}
+		if dec.LiteralExpression == nil {
+			dec.LiteralExpression = &LiteralExpression{}
+		}
+		dec.LiteralExpression.Text = text
+		dec.LiteralExpression.TypeRef = typeRef
+		return true
+	}
+	return false
+}
+
 // MoveShape repositions the DMNShape bound to element id within a captured DMNDI
 // token stream, rewriting its <Bounds> x/y attributes in place (width and height
 // are preserved). It is the inverse of ParseDI: it matches local element and

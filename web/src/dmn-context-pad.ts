@@ -17,6 +17,7 @@ const ICON_INPUT = svg(`<rect x="2" y="6" width="14" height="6" rx="3" ${stroke}
 const ICON_DECISION = svg(`<rect x="3" y="5" width="12" height="8" rx="1" ${stroke}/>`)
 const ICON_BKM = svg(`<path d="M6 5h9v6l-2 2H3V7z" ${stroke}/>`)
 const ICON_TABLE = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M2.5 7h13M7 7v7.5" ${stroke}/>`)
+const ICON_LITERAL = svg(`<path d="M6 4 3 9l3 5M12 4l3 5-3 5" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -82,15 +83,23 @@ class DmnContextPadProvider {
           action: { click: () => this.append(element as Shape, kind) },
         }
       }
-      // A decision without a table can get a fresh one (columns from its
-      // requirements). The handler lives in the app shell, so fire an event.
-      if (!(element as { hasTable?: boolean }).hasTable) {
+      // An undecided decision (no logic yet) can get a fresh decision table or a
+      // literal expression. The handlers live in the app shell, so fire events.
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean })
+      if (!decided.hasTable && !decided.hasLiteral) {
         entries['create-table'] = {
           group: 'add',
           className: 'cp-icon',
           title: 'Decision Table anlegen',
           imageUrl: ICON_TABLE,
           action: { click: () => this.eventBus.fire('dmn.createTable', { element }) },
+        }
+        entries['create-literal'] = {
+          group: 'add',
+          className: 'cp-icon',
+          title: 'FEEL-Ausdruck anlegen',
+          imageUrl: ICON_LITERAL,
+          action: { click: () => this.eventBus.fire('dmn.createLiteral', { element }) },
         }
       }
     }

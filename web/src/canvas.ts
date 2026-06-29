@@ -65,6 +65,13 @@ export type ModelerHandle = {
   // onCreateTable fires with a decision's id when the user asks (via the context
   // pad) to give a table-less decision a fresh decision table.
   onCreateTable: (cb: (decisionId: string) => void) => void
+  // onOpenLiteral fires with a decision's id when the user double-clicks a
+  // decision whose logic is a literal FEEL expression (to open the expression
+  // editor).
+  onOpenLiteral: (cb: (decisionId: string) => void) => void
+  // onCreateLiteral fires with a decision's id when the user asks (via the context
+  // pad) to give an undecided decision a literal expression.
+  onCreateLiteral: (cb: (decisionId: string) => void) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -120,7 +127,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -141,14 +148,21 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // Such shapes are not inline-renamed (see dmn-label-editing), so the gestures
   // don't collide.
   let openTableCb = (_decisionId: string): void => {}
-  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean } }) => {
+  let openLiteralCb = (_decisionId: string): void => {}
+  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean } }) => {
     const el = e.element
-    if (el && el.type === 'dmn:decision' && el.hasTable) openTableCb(el.id)
+    if (!el || el.type !== 'dmn:decision') return
+    if (el.hasTable) openTableCb(el.id)
+    else if (el.hasLiteral) openLiteralCb(el.id)
   })
 
   let createTableCb = (_decisionId: string): void => {}
+  let createLiteralCb = (_decisionId: string): void => {}
   eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
     if (e.element) createTableCb(e.element.id)
+  })
+  eventBus.on('dmn.createLiteral', (e: { element?: Shape }) => {
+    if (e.element) createLiteralCb(e.element.id)
   })
 
   let selectCb = (_sel: Selected): void => {}
@@ -197,6 +211,12 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onCreateTable: (cb) => {
       createTableCb = cb
+    },
+    onOpenLiteral: (cb) => {
+      openLiteralCb = cb
+    },
+    onCreateLiteral: (cb) => {
+      createLiteralCb = cb
     },
   }
 }
