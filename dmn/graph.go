@@ -45,7 +45,7 @@ func detectCycles(defs *Definitions) Diagnostics {
 			case gray:
 				diags = append(diags, Diagnostic{
 					Severity:   SevError,
-					Code:       "DECISION_CYCLE",
+					Code:       CodeDecisionCycle,
 					Message:    fmt.Sprintf("decision %q is part of a dependency cycle (via %q)", label(cd), label(req)),
 					DecisionID: cd.id,
 				})

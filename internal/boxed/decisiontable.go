@@ -13,6 +13,18 @@ import (
 	"github.com/pblumer/temis/internal/value"
 )
 
+// MultipleMatchError reports that a UNIQUE hit-policy decision table matched
+// more than one rule, which DMN forbids. It is a typed runtime error so the API
+// edge (dmn.Evaluate) can classify it precisely as UNIQUE_MULTIPLE_MATCH via
+// errors.As, instead of falling back to a generic runtime code.
+type MultipleMatchError struct {
+	Matched int // number of rules that matched
+}
+
+func (e *MultipleMatchError) Error() string {
+	return fmt.Sprintf("UNIQUE hit policy: %d rules matched", e.Matched)
+}
+
 // CompileTable compiles a decision table into a CompiledExpr over env (the
 // decision's input variables). The evaluated result depends on the table's
 // shape and hit policy:
@@ -149,7 +161,7 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 			return value.Null, nil
 		}
 		if len(matched) > 1 {
-			return nil, fmt.Errorf("UNIQUE hit policy: %d rules matched", len(matched))
+			return nil, &MultipleMatchError{Matched: len(matched)}
 		}
 		return ct.ruleOutput(s, matched[0])
 

@@ -1,0 +1,18 @@
+{
+  "name": "temis-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Optionaler Einsteiger-Editor für Temis (F-01, ADR-0012): bettet dmn-js unverändert ein und wertet Modelle live gegen die temis-HTTP-API aus.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dmn-js": "^17.8.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

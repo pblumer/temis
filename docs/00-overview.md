@@ -29,7 +29,9 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 
 ## 3. Nicht-Ziele (explizit ausgeschlossen, verhindert Scope-Creep)
 
-- **Kein** eigener Web-Editor — dmn-js wird unverändert eingebunden.
+- **Kein** eigener Web-Editor (kein From-Scratch-Diagrammeditor) — dmn-js wird unverändert
+  eingebunden. Ein optionaler **Einsteiger-Editor** bettet dmn-js als separates Frontend ein
+  und passt die UX nur über additive Module an, ohne Fork (F-01, ADR-0012).
 - **Kein** Decision-Management-UI (Versionierung, Deployment-Konsole) im MVP.
 - **Kein** PMML/ONNX-Import (DMN 1.5 erlaubt es; bewusst Post-1.0).
 - **Kein** verteilter Cluster-Betrieb / kein eingebauter Persistenzlayer im MVP.

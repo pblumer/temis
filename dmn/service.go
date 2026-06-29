@@ -79,7 +79,7 @@ func compileServices(defs *Definitions, m *model.Definitions) Diagnostics {
 			if !ok || out.expr == nil {
 				diags = append(diags, Diagnostic{
 					Severity: SevError,
-					Code:     "SERVICE_OUTPUT_UNRESOLVED",
+					Code:     CodeServiceOutputUnresolved,
 					Message:  fmt.Sprintf("decision service %q references unknown or non-executable output decision %q", serviceLabel(ds), id),
 				})
 				continue
