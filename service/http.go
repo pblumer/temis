@@ -113,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /{$}", s.handleUI)
 	mux.HandleFunc("GET /ui", s.handleUI)
+	mux.HandleFunc("GET /og-image.png", s.handleOGImage)
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
 	mux.HandleFunc("GET /healthz", s.handleHealth)

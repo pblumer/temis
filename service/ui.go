@@ -1,6 +1,18 @@
 package service
 
-import "net/http"
+import (
+	_ "embed"
+	"html"
+	"net/http"
+	"strings"
+)
+
+// ogImage is the 1200×630 link-preview card (Open Graph) served at /og-image.png
+// and referenced by the playground's og:image/twitter:image tags. Embedded at
+// build time so the binary ships its own preview with no external assets.
+//
+//go:embed og-image.png
+var ogImage []byte
 
 // playgroundPage is the interactive DMN UI served at "/" and "/ui": a single
 // HTML document with inline CSS and vanilla JavaScript. It embeds bpmn.io's
@@ -29,6 +41,24 @@ const playgroundPage = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Temis — DMN Editor</title>
+  <meta name="description" content="DMN-Decision-Engine &amp; Editor — Modelle im Browser ansehen, bearbeiten, deployen und auswerten. Voller FEEL-Scope, DMN 1.5.">
+  <meta name="theme-color" content="#5b8def">
+  <!-- Link-Vorschau (Open Graph / Twitter Card) für Teams, Slack, WhatsApp etc.
+       og:url/og:image werden serverseitig auf absolute URLs gesetzt (handleUI). -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Temis">
+  <meta property="og:title" content="Temis — DMN Editor">
+  <meta property="og:description" content="DMN-Decision-Engine &amp; Editor — Modelle im Browser ansehen, bearbeiten, deployen und auswerten. Voller FEEL-Scope, DMN 1.5.">
+  <meta property="og:url" content="__OG_BASE__/">
+  <meta property="og:image" content="__OG_BASE__/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Temis — DMN-Decision-Engine & Editor">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Temis — DMN Editor">
+  <meta name="twitter:description" content="DMN-Decision-Engine & Editor — Modelle im Browser ansehen, bearbeiten, deployen und auswerten.">
+  <meta name="twitter:image" content="__OG_BASE__/og-image.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8def'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 4 28 16 16 28 4 16Z'/%3E%3Cpath d='M11.5 16.3 14.8 19.6 20.8 12.8'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/assets/diagram-js.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/assets/dmn-js-shared.css">
@@ -964,9 +994,48 @@ const playgroundPage = `<!DOCTYPE html>
 
 // handleUI serves the interactive DMN editor. Like the docs page it is always
 // public so the engine is explorable even when the data endpoints require a
-// token (the page lets the user supply that token).
-func (s *Server) handleUI(w http.ResponseWriter, _ *http.Request) {
+// token (the page lets the user supply that token). The og:url/og:image
+// placeholders are filled in with the request's absolute base URL so link
+// previews (Teams, Slack, …) resolve the embedded preview image.
+func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
+	page := strings.ReplaceAll(playgroundPage, "__OG_BASE__", html.EscapeString(baseURL(r)))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(playgroundPage))
+	_, _ = w.Write([]byte(page))
+}
+
+// handleOGImage serves the embedded link-preview card. Always public so crawlers
+// (Teams, Slack, …) can fetch it without a token.
+func (s *Server) handleOGImage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(ogImage)
+}
+
+// baseURL reconstructs the absolute origin (scheme://host) of the request,
+// honoring the reverse-proxy headers X-Forwarded-Proto/Host so og:* URLs are
+// correct behind a proxy or TLS terminator.
+func baseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if p := firstField(r.Header.Get("X-Forwarded-Proto")); p != "" {
+		scheme = p
+	}
+	host := r.Host
+	if h := firstField(r.Header.Get("X-Forwarded-Host")); h != "" {
+		host = h
+	}
+	return scheme + "://" + host
+}
+
+// firstField returns the first comma-separated, trimmed value of a header that
+// proxies may set as a list (e.g. "https, http").
+func firstField(v string) string {
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
 }

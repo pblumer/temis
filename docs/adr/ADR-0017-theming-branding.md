@@ -45,6 +45,12 @@ nichts an der Engine (Go-Modul bleibt frontend-frei, ADR-0006/0011):
   überschreiben das Logo per `branding.logo`.
 - **Asset-Freiheit bleibt:** die Seite lädt außer dmn-js (CDN, wie Swagger UI) keine
   weiteren Assets; das Branding-Global wird vom Betrieb beigesteuert, nicht vom Binary.
+- **Link-Vorschau:** die Seite trägt Open-Graph-/Twitter-Card-Meta-Tags, damit Links in
+  Teams/Slack/WhatsApp eine Vorschaukarte zeigen. `og:url`/`og:image` werden serverseitig
+  auf die absolute Request-Origin gesetzt (inkl. `X-Forwarded-Proto/Host` hinter Proxy);
+  das Vorschaubild (1200×630, dieselbe Logo-Glyphe) ist als PNG eingebettet (`go:embed`)
+  und wird unter `/og-image.png` öffentlich ausgeliefert. Das Branding der Vorschau bleibt
+  Standard-Temis (Crawler führen kein JS aus, lesen also `window.TEMIS_BRANDING` nicht).
 
 Unabhängig von ADR-0016 (eigener Modeler-Fork): Das Theming sitzt auf der Hüll-UI, nicht im
 Modeler, und gilt für die dmn-js-Einbettung wie für einen späteren eigenen Modeler.
