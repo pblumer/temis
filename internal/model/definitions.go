@@ -47,8 +47,9 @@ type Definitions struct {
 	DMNVersion Version
 	HasDMNDI   bool
 
-	ItemDefinitions []*ItemDefinition `json:",omitempty"`
-	InputData       []*InputData      `json:",omitempty"`
-	BKMs            []*BKM            `json:",omitempty"`
-	Decisions       []*Decision       `json:",omitempty"`
+	ItemDefinitions []*ItemDefinition  `json:",omitempty"`
+	InputData       []*InputData       `json:",omitempty"`
+	BKMs            []*BKM             `json:",omitempty"`
+	Decisions       []*Decision        `json:",omitempty"`
+	Services        []*DecisionService `json:",omitempty"`
 }

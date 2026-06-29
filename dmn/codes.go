@@ -49,6 +49,16 @@ const (
 	// than one rule. Returned as an error from Evaluate.
 	CodeUniqueMultiple = "UNIQUE_MULTIPLE_MATCH"
 
+	// CodeDecisionCycle marks a dependency cycle in the decision graph, detected
+	// at compile time. Reported as an error-severity diagnostic from Compile; the
+	// decisions in the cycle cannot be evaluated. Severity: error.
+	CodeDecisionCycle = "DECISION_CYCLE"
+
+	// CodeServiceOutputUnresolved marks a decision service whose output decision
+	// reference does not resolve to an executable decision. Reported as an
+	// error-severity diagnostic from Compile. Severity: error.
+	CodeServiceOutputUnresolved = "SERVICE_OUTPUT_UNRESOLVED"
+
 	// CodeRuntime is an honest placeholder for runtime failures that are not yet
 	// exposed as a typed cause and so cannot be reliably classified at the API
 	// edge (e.g. a resource-limit breach is today a bare error indistinguishable

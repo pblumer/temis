@@ -16,6 +16,10 @@ import "github.com/pblumer/temis/internal/value"
 type Scope struct {
 	vars  []value.Value
 	trace any
+	// st is per-evaluation execution state shared across the scope lineage of a
+	// single NewScope (propagated by Extend). It bounds user-function recursion
+	// (WP-24). It is nil only for scopes built outside NewScope.
+	st *evalState
 }
 
 // Trace returns the scope's opaque trace sink, or nil when tracing is off.
@@ -29,6 +33,19 @@ func (s *Scope) WithTrace(sink any) *Scope {
 	ns.trace = sink
 	return &ns
 }
+
+// evalState carries mutable, per-evaluation execution state. A fresh instance is
+// created by NewScope and shared (never copied) down the scope lineage, so it is
+// confined to one evaluation and never touched by concurrent ones.
+type evalState struct {
+	depth    int // current user-function call depth
+	maxDepth int // limit beyond which recursion is refused
+}
+
+// DefaultMaxCallDepth bounds nested user-function (BKM / function literal) calls,
+// turning unbounded recursion into a runtime error instead of a stack overflow
+// (ADR-0008). It is a fixed default until limits become configurable (WP-34).
+const DefaultMaxCallDepth = 256
 
 // at returns the value in slot i, or null if i is out of range (defensive; the
 // compiler only ever emits valid indices).
@@ -113,7 +130,7 @@ func (s *Scope) Extend(extra ...value.Value) *Scope {
 	vars := make([]value.Value, len(s.vars)+len(extra))
 	copy(vars, s.vars)
 	copy(vars[len(s.vars):], extra)
-	return &Scope{vars: vars, trace: s.trace}
+	return &Scope{vars: vars, trace: s.trace, st: s.st}
 }
 
 // NewScope builds a runtime Scope from named input values, placing each into its
@@ -128,5 +145,5 @@ func (e *Env) NewScope(values map[string]value.Value) *Scope {
 			vars[i] = value.Null
 		}
 	}
-	return &Scope{vars: vars}
+	return &Scope{vars: vars, st: &evalState{maxDepth: DefaultMaxCallDepth}}
 }

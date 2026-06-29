@@ -54,12 +54,15 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, TypeRef: variableTypeRef(in.Variable)})
 	}
 	for _, b := range def.BKMs {
-		m.BKMs = append(m.BKMs, &BKM{ID: b.ID, Name: b.Name})
+		m.BKMs = append(m.BKMs, mapBKM(b))
 	}
 	for _, d := range def.Decisions {
 		dec, dd := mapDecision(d)
 		m.Decisions = append(m.Decisions, dec)
 		diags = append(diags, dd...)
+	}
+	for _, ds := range def.Services {
+		m.Services = append(m.Services, mapService(ds))
 	}
 
 	for _, u := range def.Unknown {
@@ -109,27 +112,210 @@ func mapDecision(d dmnxml.Decision) (*Decision, []Diagnostic) {
 	}
 
 	var diags []Diagnostic
+	switch logic := mapExpression(d.Expression).(type) {
+	case nil:
+		diags = append(diags, Diagnostic{
+			Severity:   SeverityWarning,
+			Code:       "DECISION_NO_LOGIC",
+			Message:    "decision has no executable logic",
+			Source:     "decision",
+			DecisionID: d.ID,
+		})
+	case *LiteralExpression:
+		dec.LiteralExpression = logic
+	case *DecisionTable:
+		dec.DecisionTable = logic
+	case *ContextExpr:
+		dec.Context = logic
+	case *Invocation:
+		dec.Invocation = logic
+	case *FunctionDef:
+		dec.FunctionDef = logic
+	case *ListExpr:
+		dec.List = logic
+	case *RelationExpr:
+		dec.Relation = logic
+	case *Conditional:
+		dec.Conditional = logic
+	case *ForExpr:
+		dec.For = logic
+	case *Quantified:
+		dec.Quantified = logic
+	case *FilterExpr:
+		dec.Filter = logic
+	}
+	return dec, diags
+}
+
+// mapExpression maps a decoded boxed expression to the model. It returns nil when
+// no expression child is present (an undecided position).
+func mapExpression(x dmnxml.Expression) Expression {
 	switch {
-	case d.LiteralExpression != nil:
-		le := d.LiteralExpression
-		dec.LiteralExpression = &LiteralExpression{
+	case x.LiteralExpression != nil:
+		le := x.LiteralExpression
+		return &LiteralExpression{
 			ID:                 le.ID,
 			TypeRef:            le.TypeRef,
 			ExpressionLanguage: le.ExprLang,
 			Text:               strings.TrimSpace(le.Text),
 		}
-	case d.DecisionTable != nil:
-		dec.DecisionTable = mapTable(d.DecisionTable)
+	case x.DecisionTable != nil:
+		return mapTable(x.DecisionTable)
+	case x.Context != nil:
+		return mapContext(x.Context)
+	case x.Invocation != nil:
+		return mapInvocation(x.Invocation)
+	case x.FunctionDefinition != nil:
+		return mapFunctionDef(x.FunctionDefinition)
+	case x.List != nil:
+		return mapList(x.List)
+	case x.Relation != nil:
+		return mapRelation(x.Relation)
+	case x.Conditional != nil:
+		return mapConditional(x.Conditional)
+	case x.For != nil:
+		return mapFor(x.For)
+	case x.Every != nil:
+		return mapQuantified("every", x.Every)
+	case x.Some != nil:
+		return mapQuantified("some", x.Some)
+	case x.Filter != nil:
+		return mapFilter(x.Filter)
 	default:
-		diags = append(diags, Diagnostic{
-			Severity:   SeverityWarning,
-			Code:       "DECISION_NO_LOGIC",
-			Message:    "decision has no literal expression or decision table",
-			Source:     "decision",
-			DecisionID: d.ID,
-		})
+		return nil
 	}
-	return dec, diags
+}
+
+func mapList(l *dmnxml.List) *ListExpr {
+	le := &ListExpr{ID: l.ID}
+	for _, it := range l.Items {
+		le.Items = append(le.Items, mapExpression(it))
+	}
+	return le
+}
+
+func mapRelation(r *dmnxml.Relation) *RelationExpr {
+	re := &RelationExpr{ID: r.ID}
+	for _, c := range r.Columns {
+		re.Columns = append(re.Columns, c.Name)
+	}
+	for _, row := range r.Rows {
+		mr := RelationRow{}
+		for _, cell := range row.Cells {
+			mr.Cells = append(mr.Cells, mapExpression(cell))
+		}
+		re.Rows = append(re.Rows, mr)
+	}
+	return re
+}
+
+func mapConditional(c *dmnxml.Conditional) *Conditional {
+	return &Conditional{
+		ID:   c.ID,
+		If:   mapChild(c.If),
+		Then: mapChild(c.Then),
+		Else: mapChild(c.Else),
+	}
+}
+
+func mapFor(it *dmnxml.Iterator) *ForExpr {
+	return &ForExpr{
+		ID:               it.ID,
+		IteratorVariable: it.IteratorVariable,
+		In:               mapChild(it.In),
+		Return:           mapChild(it.Return),
+	}
+}
+
+func mapQuantified(kind string, it *dmnxml.Iterator) *Quantified {
+	return &Quantified{
+		ID:               it.ID,
+		Kind:             kind,
+		IteratorVariable: it.IteratorVariable,
+		In:               mapChild(it.In),
+		Satisfies:        mapChild(it.Satisfies),
+	}
+}
+
+func mapFilter(f *dmnxml.Filter) *FilterExpr {
+	return &FilterExpr{ID: f.ID, In: mapChild(f.In), Match: mapChild(f.Match)}
+}
+
+// mapChild maps the single expression a holder element wraps, or nil when the
+// holder is absent.
+func mapChild(c *dmnxml.ChildExpr) Expression {
+	if c == nil {
+		return nil
+	}
+	return mapExpression(c.Expression)
+}
+
+func mapContext(c *dmnxml.Context) *ContextExpr {
+	ctx := &ContextExpr{ID: c.ID}
+	for _, e := range c.Entries {
+		entry := ContextEntry{Value: mapExpression(e.Expression)}
+		if e.Variable != nil {
+			entry.Name = e.Variable.Name
+		}
+		ctx.Entries = append(ctx.Entries, entry)
+	}
+	return ctx
+}
+
+func mapInvocation(in *dmnxml.Invocation) *Invocation {
+	inv := &Invocation{ID: in.ID, Called: mapExpression(in.Expression)}
+	for _, b := range in.Bindings {
+		bind := Binding{Value: mapExpression(b.Expression)}
+		if b.Parameter != nil {
+			bind.Parameter = b.Parameter.Name
+		}
+		inv.Bindings = append(inv.Bindings, bind)
+	}
+	return inv
+}
+
+func mapFunctionDef(fn *dmnxml.FunctionDefinition) *FunctionDef {
+	fd := &FunctionDef{ID: fn.ID, Kind: strings.TrimSpace(fn.Kind), Body: mapExpression(fn.Expression)}
+	for _, p := range fn.Parameters {
+		fd.Parameters = append(fd.Parameters, FunctionParam{Name: p.Name, TypeRef: strings.TrimSpace(p.TypeRef)})
+	}
+	return fd
+}
+
+func mapService(ds dmnxml.DecisionService) *DecisionService {
+	return &DecisionService{
+		ID:                    ds.ID,
+		Name:                  ds.Name,
+		OutputDecisions:       localRefs(ds.OutputDecisions),
+		EncapsulatedDecisions: localRefs(ds.EncapsulatedDecisions),
+		InputDecisions:        localRefs(ds.InputDecisions),
+		InputData:             localRefs(ds.InputData),
+	}
+}
+
+// localRefs resolves a list of href references to their local identifiers,
+// dropping empties.
+func localRefs(refs []dmnxml.Ref) []string {
+	var out []string
+	for _, r := range refs {
+		if id := localRef(r.Href); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func mapBKM(b dmnxml.BKM) *BKM {
+	m := &BKM{ID: b.ID, Name: b.Name, VariableTypeRef: variableTypeRef(b.Variable)}
+	if b.EncapsulatedLogic != nil {
+		m.EncapsulatedLogic = mapFunctionDef(b.EncapsulatedLogic)
+	}
+	for _, kr := range b.KnowledgeRequirts {
+		if ref := localRef(hrefOf(kr.RequiredKnowledge)); ref != "" {
+			m.RequiredKnowledge = append(m.RequiredKnowledge, ref)
+		}
+	}
+	return m
 }
 
 func mapTable(t *dmnxml.DecisionTable) *DecisionTable {

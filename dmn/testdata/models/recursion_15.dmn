@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/recursion"
+             name="Recursion" id="def_rec">
+  <inputData id="id_n" name="N">
+    <variable name="N" typeRef="number"/>
+  </inputData>
+
+  <!-- A recursive business knowledge model: the body calls itself by name. -->
+  <businessKnowledgeModel id="id_fact" name="fact">
+    <variable name="fact" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="n" typeRef="number"/>
+      <literalExpression>
+        <text>if n &lt;= 1 then 1 else n * fact(n - 1)</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="id_factorial" name="Factorial">
+    <variable name="Factorial" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_n"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_fact"/>
+    </knowledgeRequirement>
+    <invocation>
+      <literalExpression><text>fact</text></literalExpression>
+      <binding>
+        <parameter name="n"/>
+        <literalExpression><text>N</text></literalExpression>
+      </binding>
+    </invocation>
+  </decision>
+</definitions>

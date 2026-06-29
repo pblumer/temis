@@ -78,7 +78,7 @@ func TestNestedFilter(t *testing.T) {
 
 func TestUnsupportedConstructsReport(t *testing.T) {
 	for _, src := range []string{
-		"function(x) x + 1",
+		"function(x) external x",
 		"x instance of number",
 	} {
 		env := NewEnv("x")

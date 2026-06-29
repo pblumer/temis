@@ -15,18 +15,32 @@ type Definitions struct {
 	// encoding/xml does not emit XMLName.Space when marshalling, so Encode
 	// populates this field to round-trip the default namespace; on decode the
 	// declaration is consumed as a namespace and this field stays empty.
-	Xmlns     string        `xml:"xmlns,attr,omitempty"`
-	ID        string        `xml:"id,attr,omitempty"`
-	Name      string        `xml:"name,attr,omitempty"`
-	Namespace string        `xml:"namespace,attr,omitempty"`
-	ExprLang  string        `xml:"expressionLanguage,attr,omitempty"`
-	TypeLang  string        `xml:"typeLanguage,attr,omitempty"`
-	ItemDefs  []ItemDef     `xml:"itemDefinition"`
-	InputData []InputData   `xml:"inputData"`
-	BKMs      []BKM         `xml:"businessKnowledgeModel"`
-	Decisions []Decision    `xml:"decision"`
-	DMNDI     *Raw          `xml:"DMNDI"`
-	Unknown   []UnknownElem `xml:",any"`
+	Xmlns     string            `xml:"xmlns,attr,omitempty"`
+	ID        string            `xml:"id,attr,omitempty"`
+	Name      string            `xml:"name,attr,omitempty"`
+	Namespace string            `xml:"namespace,attr,omitempty"`
+	ExprLang  string            `xml:"expressionLanguage,attr,omitempty"`
+	TypeLang  string            `xml:"typeLanguage,attr,omitempty"`
+	ItemDefs  []ItemDef         `xml:"itemDefinition"`
+	InputData []InputData       `xml:"inputData"`
+	BKMs      []BKM             `xml:"businessKnowledgeModel"`
+	Decisions []Decision        `xml:"decision"`
+	Services  []DecisionService `xml:"decisionService"`
+	DMNDI     *Raw              `xml:"DMNDI"`
+	Unknown   []UnknownElem     `xml:",any"`
+}
+
+// DecisionService mirrors <decisionService>: the decisions it exposes
+// (outputDecision), the ones it evaluates internally (encapsulatedDecision) and
+// the ones it expects the caller to supply (inputDecision / inputData), all by
+// href.
+type DecisionService struct {
+	ID                    string `xml:"id,attr,omitempty"`
+	Name                  string `xml:"name,attr,omitempty"`
+	OutputDecisions       []Ref  `xml:"outputDecision"`
+	EncapsulatedDecisions []Ref  `xml:"encapsulatedDecision"`
+	InputDecisions        []Ref  `xml:"inputDecision"`
+	InputData             []Ref  `xml:"inputData"`
 }
 
 // ItemDef mirrors <itemDefinition>. Nested components are captured one level
@@ -54,23 +68,100 @@ type Variable struct {
 	TypeRef string `xml:"typeRef,attr,omitempty"`
 }
 
-// BKM mirrors <businessKnowledgeModel>. Only its identity is decoded in WP-02;
-// the encapsulated logic (function definition) is handled in WP-24.
+// BKM mirrors <businessKnowledgeModel>. Its encapsulated logic is a function
+// definition (formal parameters + body) callable by invocation or by name from
+// another expression (WP-23/WP-24).
 type BKM struct {
-	ID   string `xml:"id,attr,omitempty"`
-	Name string `xml:"name,attr,omitempty"`
+	ID                string              `xml:"id,attr,omitempty"`
+	Name              string              `xml:"name,attr,omitempty"`
+	Variable          *Variable           `xml:"variable"`
+	EncapsulatedLogic *FunctionDefinition `xml:"encapsulatedLogic"`
+	KnowledgeRequirts []KnowledgeRequirt  `xml:"knowledgeRequirement"`
 }
 
-// Decision mirrors <decision>. Exactly one of LiteralExpression or
-// DecisionTable carries the logic; both may be nil for an undecided decision.
+// Decision mirrors <decision>. Its logic is exactly one boxed expression (a
+// literal expression, decision table, context, invocation or function
+// definition); all may be nil for an undecided decision.
 type Decision struct {
 	ID                  string               `xml:"id,attr,omitempty"`
 	Name                string               `xml:"name,attr,omitempty"`
 	Variable            *Variable            `xml:"variable"`
 	InformationRequirts []InformationRequirt `xml:"informationRequirement"`
 	KnowledgeRequirts   []KnowledgeRequirt   `xml:"knowledgeRequirement"`
-	LiteralExpression   *LiteralExpression   `xml:"literalExpression"`
-	DecisionTable       *DecisionTable       `xml:"decisionTable"`
+	Expression
+}
+
+// Expression carries the mutually-exclusive boxed-expression children that may
+// appear as a decision's logic, a context entry's value, an invocation's called
+// function, a binding's argument or a function body. At most one field is
+// non-nil. Embedding it lets every such position decode the same element set
+// without repeating the tags.
+type Expression struct {
+	LiteralExpression  *LiteralExpression  `xml:"literalExpression"`
+	DecisionTable      *DecisionTable      `xml:"decisionTable"`
+	Context            *Context            `xml:"context"`
+	Invocation         *Invocation         `xml:"invocation"`
+	FunctionDefinition *FunctionDefinition `xml:"functionDefinition"`
+	List               *List               `xml:"list"`
+	Relation           *Relation           `xml:"relation"`
+	Conditional        *Conditional        `xml:"conditional"`
+	For                *Iterator           `xml:"for"`
+	Every              *Iterator           `xml:"every"`
+	Some               *Iterator           `xml:"some"`
+	Filter             *Filter             `xml:"filter"`
+}
+
+// Context mirrors a boxed <context>: an ordered list of context entries. A final
+// entry without a variable is the result cell (DMN 1.5 §7.3.4).
+type Context struct {
+	ID      string         `xml:"id,attr,omitempty"`
+	Entries []ContextEntry `xml:"contextEntry"`
+}
+
+// ContextEntry mirrors <contextEntry>: an optional named variable bound to the
+// entry's expression value.
+type ContextEntry struct {
+	Variable *Variable `xml:"variable"`
+	Expression
+}
+
+// Invocation mirrors a boxed <invocation>: a called function (the embedded
+// expression, typically a literal expression naming a BKM) plus the parameter
+// bindings supplying its arguments.
+type Invocation struct {
+	ID string `xml:"id,attr,omitempty"`
+	Expression
+	Bindings []Binding `xml:"binding"`
+}
+
+// Binding mirrors an invocation <binding>: a formal parameter bound to an
+// argument expression.
+type Binding struct {
+	Parameter *Parameter `xml:"parameter"`
+	Expression
+}
+
+// Parameter mirrors a binding's <parameter> information item (its name selects
+// the formal parameter of the called function).
+type Parameter struct {
+	Name    string `xml:"name,attr,omitempty"`
+	TypeRef string `xml:"typeRef,attr,omitempty"`
+}
+
+// FunctionDefinition mirrors <functionDefinition>: formal parameters and a body
+// expression. Kind defaults to FEEL; non-FEEL kinds (Java, PMML) are not
+// executable.
+type FunctionDefinition struct {
+	ID         string            `xml:"id,attr,omitempty"`
+	Kind       string            `xml:"kind,attr,omitempty"`
+	Parameters []FormalParameter `xml:"formalParameter"`
+	Expression
+}
+
+// FormalParameter mirrors a function's <formalParameter> information item.
+type FormalParameter struct {
+	Name    string `xml:"name,attr,omitempty"`
+	TypeRef string `xml:"typeRef,attr,omitempty"`
 }
 
 // InformationRequirt mirrors <informationRequirement>: a dependency on another

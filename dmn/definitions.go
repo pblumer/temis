@@ -10,10 +10,13 @@ import (
 // Definitions is a compiled DMN model: the set of decisions a document declares,
 // each ready to evaluate. It is immutable after Compile and safe to share.
 type Definitions struct {
-	model  *model.Definitions
-	byID   map[string]*CompiledDecision
-	byName map[string]*CompiledDecision
-	order  []*CompiledDecision
+	model         *model.Definitions
+	byID          map[string]*CompiledDecision
+	byName        map[string]*CompiledDecision
+	order         []*CompiledDecision
+	servicesByID  map[string]*CompiledService
+	servicesByNam map[string]*CompiledService
+	serviceOrder  []*CompiledService
 }
 
 // CompiledDecision is a single decision's compiled logic. It is immutable and
@@ -24,6 +27,10 @@ type CompiledDecision struct {
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
 	inputs   []InputField      // declared input schema, for self-description and validation
+	// requires are the decisions this one consumes directly; the evaluator runs
+	// them first and feeds their results in by name (WP-28). Resolved after all
+	// decisions compile.
+	requires []*CompiledDecision
 	// reqInputs are the resolved names of the decision's required input data
 	// (input data only, not required decisions). Evaluate fails hard when any is
 	// absent from the supplied Input.

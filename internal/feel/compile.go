@@ -27,7 +27,14 @@ func (e *CompileError) Error() string {
 // Compile lowers an AST into a CompiledExpr, resolving variable names to slots
 // via env. It returns the first CompileError encountered, if any.
 func Compile(expr Expr, env *Env) (CompiledExpr, error) {
-	c := &compiler{env: env, builtins: builtins.Default()}
+	return CompileWith(expr, env, nil)
+}
+
+// CompileWith is Compile with a set of user-defined functions (BKMs, boxed
+// function definitions) in scope, resolved by name when an expression calls or
+// references them (WP-23/WP-24). A nil map behaves like Compile.
+func CompileWith(expr Expr, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
+	c := &compiler{env: env, builtins: builtins.Default(), funcs: funcs}
 	ce := c.compile(expr)
 	if c.err != nil {
 		return nil, c.err
@@ -39,16 +46,33 @@ func Compile(expr Expr, env *Env) (CompiledExpr, error) {
 // registry as the parser's name oracle so multi-word builtin names whose
 // fragments include keywords (e.g. "index of") assemble correctly.
 func CompileString(src string, env *Env) (CompiledExpr, error) {
-	expr, err := ParseWithNames(src, builtins.Default())
+	return CompileStringWith(src, env, nil)
+}
+
+// CompileStringWith is CompileString with user-defined functions in scope. The
+// parser's name oracle covers both the built-ins and the function names, so a
+// multi-word function name (e.g. a BKM named "Rate Table") assembles correctly.
+func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
+	expr, err := ParseWithNames(src, nameOracle(funcs))
 	if err != nil {
 		return nil, err
 	}
-	return Compile(expr, env)
+	return CompileWith(expr, env, funcs)
+}
+
+// nameOracle returns the parser name oracle covering the built-ins and any
+// user-function names, so multi-word names from either source assemble.
+func nameOracle(funcs map[string]*Func) NameSet {
+	if len(funcs) == 0 {
+		return builtins.Default()
+	}
+	return unionNames{builtins.Default(), funcNames(funcs)}
 }
 
 type compiler struct {
 	env      *Env
 	builtins *builtins.Registry
+	funcs    map[string]*Func
 	err      *CompileError
 	// implicit holds the scope slots of enclosing filter elements (innermost
 	// last). A name that resolves to no static slot is looked up against these
@@ -78,6 +102,10 @@ func (c *compiler) fail(pos Position, format string, args ...any) CompiledExpr {
 
 func constNull(*Scope) (value.Value, error) { return value.Null, nil }
 
+// NullExpr is a CompiledExpr that always yields null. It fills omitted arguments
+// of a call so the callee always receives a full argument list.
+func NullExpr(s *Scope) (value.Value, error) { return constNull(s) }
+
 func (c *compiler) compile(e Expr) CompiledExpr {
 	switch n := e.(type) {
 	case *NumberLit:
@@ -104,6 +132,12 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *NameRef:
 		if i, ok := c.env.slot(n.Name); ok {
 			return func(s *Scope) (value.Value, error) { return s.at(i), nil }
+		}
+		// A named user function (BKM / function definition) referenced as a value
+		// lifts to a first-class function value bound to the current recursion
+		// budget, so it can be passed to higher-order built-ins or stored.
+		if f, ok := c.funcs[n.Name]; ok {
+			return func(s *Scope) (value.Value, error) { return f.asValue(s), nil }
 		}
 		// Not a static variable: inside a filter, resolve against the enclosing
 		// context elements at runtime (innermost first); otherwise it is an error.
@@ -156,7 +190,7 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *FilterExpr:
 		return c.compileFilter(n)
 	case *FunctionDefExpr:
-		return c.fail(e.Pos(), "function definitions are not supported yet (WP-24)")
+		return c.compileFunctionDef(n)
 	case *InstanceOfExpr:
 		return c.fail(e.Pos(), "instance of is not supported yet (WP-30)")
 	default:
@@ -273,9 +307,14 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 }
 
 func (c *compiler) compileIf(n *IfExpr) CompiledExpr {
-	cond := c.compile(n.Cond)
-	then := c.compile(n.Then)
-	els := c.compile(n.Else)
+	return IfThenElse(c.compile(n.Cond), c.compile(n.Then), c.compile(n.Else))
+}
+
+// IfThenElse builds a FEEL conditional: then runs only when cond is exactly the
+// boolean true, otherwise els runs (so a null or non-boolean condition takes the
+// else branch). It is the shared runtime of the literal `if` and the boxed
+// <conditional> (WP-26).
+func IfThenElse(cond, then, els CompiledExpr) CompiledExpr {
 	return func(s *Scope) (value.Value, error) {
 		cv, err := cond(s)
 		if err != nil {
@@ -381,30 +420,197 @@ func memberOf(v value.Value, name string) value.Value {
 }
 
 func (c *compiler) compileCall(n *CallExpr) CompiledExpr {
-	name, ok := n.Fn.(*NameRef)
-	if !ok {
-		return c.fail(n.Fn.Pos(), "only built-in function names can be called (user functions: WP-24)")
-	}
-	b, ok := c.builtins.Lookup(name.Name)
-	if !ok {
+	if name, ok := n.Fn.(*NameRef); ok {
+		if b, ok := c.builtins.Lookup(name.Name); ok {
+			return c.compileBuiltinCall(b, n)
+		}
+		if f, ok := c.funcs[name.Name]; ok {
+			return c.compileFuncCall(f, n)
+		}
+		// A name bound to a function value (e.g. a parameter or context entry
+		// holding a function) is resolved and called at runtime.
+		if _, ok := c.env.slot(name.Name); ok {
+			return c.compileValueCall(c.compile(name), n)
+		}
 		return c.fail(name.Pos(), "unknown function %q", name.Name)
 	}
+	// The callee is an arbitrary expression that must evaluate to a function. A
+	// literal can never be one, so reject it at compile time.
+	switch n.Fn.(type) {
+	case *NumberLit, *StringLit, *BoolLit, *NullLit, *AtLit:
+		return c.fail(n.Fn.Pos(), "callee is not a function")
+	}
+	return c.compileValueCall(c.compile(n.Fn), n)
+}
+
+func (c *compiler) compileBuiltinCall(b *builtins.Builtin, n *CallExpr) CompiledExpr {
 	argExprs := c.bindArgs(b, n)
 	if argExprs == nil {
 		return constNull
 	}
 	fn := b.Fn
 	return func(s *Scope) (value.Value, error) {
-		vals := make([]value.Value, len(argExprs))
-		for i, ae := range argExprs {
-			v, err := ae(s)
-			if err != nil {
-				return nil, err
-			}
-			vals[i] = v
+		vals, err := evalArgs(argExprs, s)
+		if err != nil {
+			return nil, err
 		}
 		return fn(vals)
 	}
+}
+
+// compileFuncCall binds a call to a statically known user function, arranging
+// named arguments into the function's parameter order. This is the path that
+// supports recursion: the body's self-reference resolves to the same *Func.
+func (c *compiler) compileFuncCall(f *Func, n *CallExpr) CompiledExpr {
+	argExprs := c.bindNamedArgs(f.Params, f.Name, n)
+	if argExprs == nil {
+		return constNull
+	}
+	return func(s *Scope) (value.Value, error) {
+		vals, err := evalArgs(argExprs, s)
+		if err != nil {
+			return nil, err
+		}
+		return f.call(s, vals)
+	}
+}
+
+// compileValueCall calls whatever function value the callee expression yields,
+// passing positional arguments (named arguments are not available without the
+// callee's parameter list, so they are rejected).
+func (c *compiler) compileValueCall(callee CompiledExpr, n *CallExpr) CompiledExpr {
+	argExprs := make([]CompiledExpr, len(n.Args))
+	for i, a := range n.Args {
+		if a.Name != "" {
+			return c.fail(n.Pos(), "named arguments require a statically known function")
+		}
+		argExprs[i] = c.compile(a.Value)
+	}
+	return func(s *Scope) (value.Value, error) {
+		fv, err := callee(s)
+		if err != nil {
+			return nil, err
+		}
+		fn, ok := fv.(*value.Function)
+		if !ok {
+			return value.Null, nil
+		}
+		vals, err := evalArgs(argExprs, s)
+		if err != nil {
+			return nil, err
+		}
+		return fn.Call(vals)
+	}
+}
+
+// compileFunctionDef compiles a function(...) literal into a closure that, when
+// evaluated, captures the current scope and yields a function value. The body is
+// compiled against the surrounding env extended with the formal parameters, so
+// the closure can read enclosing variables (closures over context, WP-24).
+func (c *compiler) compileFunctionDef(n *FunctionDefExpr) CompiledExpr {
+	if n.External {
+		return c.fail(n.Pos(), "external functions are not supported")
+	}
+	bodyEnv := c.env
+	params := make([]string, len(n.Params))
+	for i, p := range n.Params {
+		params[i] = p.Name
+		bodyEnv = bodyEnv.Append(p.Name)
+	}
+	var body CompiledExpr
+	c.withEnv(bodyEnv, func() { body = c.compile(n.Body) })
+	if c.err != nil {
+		return constNull
+	}
+	return FuncValue(params, body)
+}
+
+// FuncValue returns a CompiledExpr that yields a first-class function value
+// capturing the scope it is evaluated in (closure over enclosing variables). The
+// body must have been compiled against an Env whose trailing slots are params,
+// in order; calling the value binds the arguments to those slots (missing → null,
+// surplus ignored) and runs the body under the recursion-depth limit.
+func FuncValue(params []string, body CompiledExpr) CompiledExpr {
+	arity := len(params)
+	return func(s *Scope) (value.Value, error) {
+		captured := s
+		return &value.Function{
+			Arity: arity,
+			Call: func(args []value.Value) (value.Value, error) {
+				st := captured.st
+				if st != nil {
+					if st.depth >= st.maxDepth {
+						return nil, fmt.Errorf("feel: call depth limit %d exceeded", st.maxDepth)
+					}
+					st.depth++
+					defer func() { st.depth-- }()
+				}
+				vals := make([]value.Value, arity)
+				for i := range vals {
+					if i < len(args) {
+						vals[i] = args[i]
+					} else {
+						vals[i] = value.Null
+					}
+				}
+				return body(captured.Extend(vals...))
+			},
+		}, nil
+	}
+}
+
+// bindNamedArgs resolves a call's arguments into params order. Calls to a known
+// function may use positional or named arguments (not both); omitted parameters
+// default to null.
+func (c *compiler) bindNamedArgs(params []string, name string, n *CallExpr) []CompiledExpr {
+	named, positional := false, false
+	for _, a := range n.Args {
+		if a.Name != "" {
+			named = true
+		} else {
+			positional = true
+		}
+	}
+	if named && positional {
+		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", name)
+		return nil
+	}
+	if len(n.Args) > len(params) {
+		c.fail(n.Pos(), "%q expects at most %d arguments, got %d", name, len(params), len(n.Args))
+		return nil
+	}
+	out := make([]CompiledExpr, len(params))
+	for i := range out {
+		out[i] = constNull
+	}
+	if !named {
+		for i, a := range n.Args {
+			out[i] = c.compile(a.Value)
+		}
+		return out
+	}
+	for _, a := range n.Args {
+		idx := indexOf(params, a.Name)
+		if idx < 0 {
+			c.fail(n.Pos(), "%q has no parameter %q", name, a.Name)
+			return nil
+		}
+		out[idx] = c.compile(a.Value)
+	}
+	return out
+}
+
+// evalArgs evaluates each compiled argument against s.
+func evalArgs(argExprs []CompiledExpr, s *Scope) ([]value.Value, error) {
+	vals := make([]value.Value, len(argExprs))
+	for i, ae := range argExprs {
+		v, err := ae(s)
+		if err != nil {
+			return nil, err
+		}
+		vals[i] = v
+	}
+	return vals, nil
 }
 
 // bindArgs resolves a call's arguments to compiled expressions in parameter
