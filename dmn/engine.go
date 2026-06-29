@@ -63,8 +63,11 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	}
 	diags := fromModelDiagnostics(modelDiags)
 
+	funcs, funcDiags := compileBKMs(m)
+	diags = append(diags, funcDiags...)
+
 	for _, dec := range m.Decisions {
-		cd, dd := compileDecision(m, dec)
+		cd, dd := compileDecision(m, dec, funcs)
 		diags = append(diags, dd...)
 		defs.order = append(defs.order, cd)
 		if cd.id != "" {
@@ -78,31 +81,63 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	return defs, diags, nil
 }
 
+// compileBKMs compiles every business knowledge model into a named FEEL function
+// available to all expressions. Functions are registered before their bodies
+// compile, so a model may call itself (recursion) or a sibling (mutual
+// recursion). A body that fails to compile yields a diagnostic and an
+// uncallable (nil-body) function.
+func compileBKMs(m *model.Definitions) (map[string]*feel.Func, Diagnostics) {
+	funcs := make(map[string]*feel.Func)
+	for _, b := range m.BKMs {
+		if b.Name == "" || b.EncapsulatedLogic == nil {
+			continue
+		}
+		fn := &feel.Func{Name: b.Name}
+		for _, p := range b.EncapsulatedLogic.Parameters {
+			fn.Params = append(fn.Params, p.Name)
+		}
+		funcs[b.Name] = fn
+	}
+
+	var diags Diagnostics
+	for _, b := range m.BKMs {
+		fn, ok := funcs[b.Name]
+		if !ok {
+			continue
+		}
+		bodyEnv := feel.NewEnv(fn.Params...)
+		body, err := boxed.Compile(b.EncapsulatedLogic.Body, bodyEnv, funcs)
+		if err != nil {
+			diags = append(diags, Diagnostic{
+				Severity: SevError,
+				Code:     "FEEL_COMPILE_ERROR",
+				Message:  fmt.Sprintf("business knowledge model %q: %s", b.Name, err.Error()),
+			})
+			continue
+		}
+		fn.Body = body
+	}
+	return funcs, diags
+}
+
 // compileDecision compiles one decision's logic into a CompiledDecision. A
 // decision without a literal expression or decision table, or whose logic fails
 // to compile, yields a CompiledDecision with a nil expr (not executable) plus a
 // diagnostic for the failure.
-func compileDecision(m *model.Definitions, dec *model.Decision) (*CompiledDecision, Diagnostics) {
+func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string]*feel.Func) (*CompiledDecision, Diagnostics) {
 	env := feel.NewEnv(envNames(m, dec)...)
 	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env}
 
-	switch {
-	case dec.LiteralExpression != nil:
-		ce, err := feel.CompileString(dec.LiteralExpression.Text, env)
-		if err != nil {
-			return cd, Diagnostics{compileDiagnostic(dec, err)}
-		}
-		cd.expr = ce
-	case dec.DecisionTable != nil:
-		ce, err := boxed.CompileTable(dec.DecisionTable, env)
-		if err != nil {
-			return cd, Diagnostics{compileDiagnostic(dec, err)}
-		}
-		cd.expr = ce
-	default:
+	logic := dec.Logic()
+	if logic == nil {
 		// No executable logic; FromXML already emitted a warning for this.
+		return cd, nil
 	}
-
+	ce, err := boxed.Compile(logic, env, funcs)
+	if err != nil {
+		return cd, Diagnostics{compileDiagnostic(dec, err)}
+	}
+	cd.expr = ce
 	return cd, nil
 }
 

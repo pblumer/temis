@@ -53,7 +53,7 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, TypeRef: variableTypeRef(in.Variable)})
 	}
 	for _, b := range def.BKMs {
-		m.BKMs = append(m.BKMs, &BKM{ID: b.ID, Name: b.Name})
+		m.BKMs = append(m.BKMs, mapBKM(b))
 	}
 	for _, d := range def.Decisions {
 		dec, dd := mapDecision(d)
@@ -107,26 +107,96 @@ func mapDecision(d dmnxml.Decision) (*Decision, []Diagnostic) {
 	}
 
 	var diags []Diagnostic
+	switch logic := mapExpression(d.Expression).(type) {
+	case nil:
+		diags = append(diags, Diagnostic{
+			Severity:   SeverityWarning,
+			Message:    "decision has no executable logic",
+			Source:     "decision",
+			DecisionID: d.ID,
+		})
+	case *LiteralExpression:
+		dec.LiteralExpression = logic
+	case *DecisionTable:
+		dec.DecisionTable = logic
+	case *ContextExpr:
+		dec.Context = logic
+	case *Invocation:
+		dec.Invocation = logic
+	case *FunctionDef:
+		dec.FunctionDef = logic
+	}
+	return dec, diags
+}
+
+// mapExpression maps a decoded boxed expression to the model. It returns nil when
+// no expression child is present (an undecided position).
+func mapExpression(x dmnxml.Expression) Expression {
 	switch {
-	case d.LiteralExpression != nil:
-		le := d.LiteralExpression
-		dec.LiteralExpression = &LiteralExpression{
+	case x.LiteralExpression != nil:
+		le := x.LiteralExpression
+		return &LiteralExpression{
 			ID:                 le.ID,
 			TypeRef:            le.TypeRef,
 			ExpressionLanguage: le.ExprLang,
 			Text:               strings.TrimSpace(le.Text),
 		}
-	case d.DecisionTable != nil:
-		dec.DecisionTable = mapTable(d.DecisionTable)
+	case x.DecisionTable != nil:
+		return mapTable(x.DecisionTable)
+	case x.Context != nil:
+		return mapContext(x.Context)
+	case x.Invocation != nil:
+		return mapInvocation(x.Invocation)
+	case x.FunctionDefinition != nil:
+		return mapFunctionDef(x.FunctionDefinition)
 	default:
-		diags = append(diags, Diagnostic{
-			Severity:   SeverityWarning,
-			Message:    "decision has no literal expression or decision table",
-			Source:     "decision",
-			DecisionID: d.ID,
-		})
+		return nil
 	}
-	return dec, diags
+}
+
+func mapContext(c *dmnxml.Context) *ContextExpr {
+	ctx := &ContextExpr{ID: c.ID}
+	for _, e := range c.Entries {
+		entry := ContextEntry{Value: mapExpression(e.Expression)}
+		if e.Variable != nil {
+			entry.Name = e.Variable.Name
+		}
+		ctx.Entries = append(ctx.Entries, entry)
+	}
+	return ctx
+}
+
+func mapInvocation(in *dmnxml.Invocation) *Invocation {
+	inv := &Invocation{ID: in.ID, Called: mapExpression(in.Expression)}
+	for _, b := range in.Bindings {
+		bind := Binding{Value: mapExpression(b.Expression)}
+		if b.Parameter != nil {
+			bind.Parameter = b.Parameter.Name
+		}
+		inv.Bindings = append(inv.Bindings, bind)
+	}
+	return inv
+}
+
+func mapFunctionDef(fn *dmnxml.FunctionDefinition) *FunctionDef {
+	fd := &FunctionDef{ID: fn.ID, Kind: strings.TrimSpace(fn.Kind), Body: mapExpression(fn.Expression)}
+	for _, p := range fn.Parameters {
+		fd.Parameters = append(fd.Parameters, FunctionParam{Name: p.Name, TypeRef: strings.TrimSpace(p.TypeRef)})
+	}
+	return fd
+}
+
+func mapBKM(b dmnxml.BKM) *BKM {
+	m := &BKM{ID: b.ID, Name: b.Name, VariableTypeRef: variableTypeRef(b.Variable)}
+	if b.EncapsulatedLogic != nil {
+		m.EncapsulatedLogic = mapFunctionDef(b.EncapsulatedLogic)
+	}
+	for _, kr := range b.KnowledgeRequirts {
+		if ref := localRef(hrefOf(kr.RequiredKnowledge)); ref != "" {
+			m.RequiredKnowledge = append(m.RequiredKnowledge, ref)
+		}
+	}
+	return m
 }
 
 func mapTable(t *dmnxml.DecisionTable) *DecisionTable {

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/bkm-invocation"
+             name="BkmInvocation" id="def_bkm">
+  <inputData id="id_total" name="Order Total">
+    <variable name="Order Total" typeRef="number"/>
+  </inputData>
+
+  <businessKnowledgeModel id="id_rate" name="Discount Rate">
+    <variable name="Discount Rate" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="total" typeRef="number"/>
+      <literalExpression>
+        <text>if total &gt; 1000 then 0.2 else 0.1</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <!-- Boxed invocation: bind the BKM's formal parameter by name. -->
+  <decision id="id_discount" name="Order Discount">
+    <variable name="Order Discount" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_total"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_rate"/>
+    </knowledgeRequirement>
+    <invocation>
+      <literalExpression><text>Discount Rate</text></literalExpression>
+      <binding>
+        <parameter name="total"/>
+        <literalExpression><text>Order Total</text></literalExpression>
+      </binding>
+    </invocation>
+  </decision>
+
+  <!-- The same BKM called directly from a literal expression. -->
+  <decision id="id_quick" name="Quick Discount">
+    <variable name="Quick Discount" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_total"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_rate"/>
+    </knowledgeRequirement>
+    <literalExpression><text>Discount Rate(Order Total)</text></literalExpression>
+  </decision>
+</definitions>

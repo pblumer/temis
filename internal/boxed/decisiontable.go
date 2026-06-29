@@ -25,7 +25,7 @@ import (
 // Per DMN, no matching rule yields null (an empty list for the collecting
 // policies). A Unique table with more than one match, or an Any table with
 // divergent outputs, is an evaluation error.
-func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, error) {
+func CompileTable(dt *model.DecisionTable, env *feel.Env, funcs map[string]*feel.Func) (feel.CompiledExpr, error) {
 	switch dt.HitPolicy {
 	case model.HitUnique, model.HitAny, model.HitFirst, model.HitRuleOrder, model.HitCollect:
 	default:
@@ -45,7 +45,7 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 	}
 
 	for i, in := range dt.Inputs {
-		ce, err := feel.CompileString(in.Expression, env)
+		ce, err := feel.CompileStringWith(in.Expression, env, funcs)
 		if err != nil {
 			return nil, fmt.Errorf("input %d expression %q: %w", i+1, in.Expression, err)
 		}
@@ -69,7 +69,7 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 			cr.tests = append(cr.tests, test)
 		}
 		for ci, entry := range r.OutputEntries {
-			out, err := compileOutput(entry, env)
+			out, err := compileOutput(entry, env, funcs)
 			if err != nil {
 				return nil, fmt.Errorf("rule %d output %d %q: %w", ri+1, ci+1, entry, err)
 			}
@@ -82,11 +82,11 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 }
 
 // compileOutput compiles an output cell; an empty cell evaluates to null.
-func compileOutput(entry string, env *feel.Env) (feel.CompiledExpr, error) {
+func compileOutput(entry string, env *feel.Env, funcs map[string]*feel.Func) (feel.CompiledExpr, error) {
 	if strings.TrimSpace(entry) == "" {
 		return feel.CompileString("null", env)
 	}
-	return feel.CompileString(entry, env)
+	return feel.CompileStringWith(entry, env, funcs)
 }
 
 type compiledRule struct {
