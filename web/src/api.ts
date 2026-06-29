@@ -105,22 +105,33 @@ export async function saveGraph(modelId: string, edit: GraphEdit): Promise<Model
   return (await r.json()) as ModelDetail
 }
 
+// Trace mirrors dmn.Trace: the structured "why" of an evaluation — which decision
+// tables ran, the values they tested and which rules matched.
+export type TraceCondition = { input: string; entry: string; matched: boolean }
+export type TraceRule = { index: number; id?: string; matched: boolean; conditions: TraceCondition[]; outputs?: unknown[] }
+export type TraceInput = { expression: string; value: unknown }
+export type TableTrace = { hitPolicy: string; aggregation?: string; inputs: TraceInput[]; rules: TraceRule[]; matched: number[] }
+export type Trace = { tables: TableTrace[] }
+
 // EvalResult mirrors the service evaluateResponse: the root decision's outputs
-// plus every evaluated decision's result, and any diagnostics.
+// plus every evaluated decision's result, any diagnostics, and (with explain) the
+// trace.
 export type EvalResult = {
   outputs: Record<string, unknown>
   decisions: Record<string, unknown>
   diagnostics?: Diagnostic[]
+  trace?: Trace
 }
 
 // evaluate runs one decision of a cached model against the given input context
-// (POST /v1/models/{id}/evaluate). Validation failures (RFC-7807 problem+json)
-// are surfaced as a readable error.
-export async function evaluate(modelId: string, decision: string, input: Record<string, unknown>): Promise<EvalResult> {
+// (POST /v1/models/{id}/evaluate). With explain, the result carries the decision
+// trace (which rules matched). Validation failures (RFC-7807 problem+json) are
+// surfaced as a readable error.
+export async function evaluate(modelId: string, decision: string, input: Record<string, unknown>, explain = false): Promise<EvalResult> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision, input }),
+    body: JSON.stringify({ decision, input, explain }),
   })
   if (!r.ok) throw new Error(await problemMessage(r, 'Auswertung fehlgeschlagen'))
   return (await r.json()) as EvalResult

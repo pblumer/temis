@@ -1,4 +1,4 @@
-import { evaluate, type ModelDetail, type InputField } from './api'
+import { evaluate, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
 
 // renderEvaluatePanel brings the legacy /ui evaluate workflow into the own
 // modeler (feature parity before the root cutover, ADR-0016 WP-67): pick a
@@ -63,8 +63,9 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void
     result.textContent = 'wertet aus …'
     result.className = 'eval-result'
     try {
-      const res = await evaluate(model.modelId, decisionSel.value, input)
+      const res = await evaluate(model.modelId, decisionSel.value, input, true)
       showResult(result, res.outputs)
+      if (res.trace) showTrace(result, res.trace)
     } catch (e) {
       result.className = 'eval-result eval-error'
       result.textContent = (e as Error).message
@@ -103,6 +104,54 @@ function showResult(host: HTMLElement, outputs: Record<string, unknown>): void {
     table.append(el('tr', {}, el('th', {}, k), el('td', {}, el('code', {}, fmt(outputs[k])))))
   }
   host.append(el('span', { class: 'eval-ok' }, 'Ergebnis'), table)
+}
+
+// showTrace renders the evaluation trace below the outputs: one block per
+// decision table, with the tested input values and every rule — the matched
+// rule(s) highlighted, so the user sees which rule hit and why.
+function showTrace(host: HTMLElement, trace: Trace): void {
+  const tables = trace.tables ?? []
+  if (!tables.length) return
+  const wrap = el('div', { class: 'trace' })
+  wrap.append(el('div', { class: 'trace-title' }, 'Begründung (welche Regel hat gehittet)'))
+  tables.forEach((tt, i) => wrap.append(traceTable(tt, tables.length > 1 ? i + 1 : 0)))
+  host.append(wrap)
+}
+
+function traceTable(tt: TableTrace, n: number): HTMLElement {
+  const block = el('div', { class: 'trace-block' })
+  const matched = tt.matched ?? []
+  const policy = tt.hitPolicy + (tt.aggregation ? ' ' + tt.aggregation : '')
+  const head = matched.length
+    ? `Regel ${matched.map((m) => m + 1).join(', ')} hat gehittet`
+    : 'keine Regel hat gehittet'
+  block.append(el('div', { class: 'trace-head' }, (n ? `Tabelle ${n} · ` : '') + head, el('span', { class: 'trace-policy' }, policy)))
+
+  const table = el('table', { class: 'trace-grid' })
+  // Header: input columns (with the value each tested) + output.
+  const hr = el('tr', {}, el('th', { class: 'trace-idx' }, '#'))
+  for (const in_ of tt.inputs ?? []) hr.append(el('th', {}, el('div', { class: 'trace-col' }, el('span', {}, in_.expression), el('code', { class: 'trace-val' }, '= ' + fmt(in_.value)))))
+  hr.append(el('th', {}, 'Output'))
+  table.append(hr)
+
+  const nIn = (tt.inputs ?? []).length
+  for (const r of tt.rules ?? []) {
+    const row = el('tr', { class: r.matched ? 'trace-rule trace-hit' : 'trace-rule' }, el('td', { class: 'trace-idx' }, String(r.index + 1)))
+    for (let k = 0; k < nIn; k++) {
+      const cond = r.conditions?.[k]
+      const cls = cond ? (cond.matched ? 'trace-ok' : 'trace-no') : 'trace-skip'
+      row.append(el('td', { class: cls }, cond ? cell(cond.entry) : ''))
+    }
+    row.append(el('td', { class: 'trace-out' }, r.matched && r.outputs ? r.outputs.map(fmt).join(', ') : ''))
+    table.append(row)
+  }
+  block.append(table)
+  return block
+}
+
+function cell(text: string | undefined): string {
+  const s = (text ?? '').trim()
+  return s === '' || s === '-' ? '–' : s
 }
 
 function fmt(v: unknown): string {
