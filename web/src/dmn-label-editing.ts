@@ -5,8 +5,16 @@ import type CommandStack from 'diagram-js/lib/command/CommandStack'
 import type { Element, Shape } from 'diagram-js/lib/model/Types'
 import { ensureFeel, validateName } from './feel'
 
-const isRenamable = (el: Element | undefined): el is Shape =>
-  !!el && typeof el.type === 'string' && el.type.indexOf('dmn:') === 0 && el.type !== 'dmn:informationRequirement' && el.type !== 'dmn:knowledgeRequirement'
+// A node is inline-renamable unless it is a requirement edge or a decision whose
+// logic is a decision table — for the latter, double-click opens the table view
+// instead (see canvas.ts), so the two gestures do not collide.
+const isRenamable = (el: (Element & { hasTable?: boolean }) | undefined): el is Shape =>
+  !!el &&
+  typeof el.type === 'string' &&
+  el.type.indexOf('dmn:') === 0 &&
+  el.type !== 'dmn:informationRequirement' &&
+  el.type !== 'dmn:knowledgeRequirement' &&
+  !(el.type === 'dmn:decision' && el.hasTable)
 
 // Undoable rename: change the element's name and report it changed so the
 // renderer redraws. diagram-js core has no label command, so we add one.

@@ -1,7 +1,9 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, saveModel, type ModelSummary, type NodeEdit } from './api'
+import { listModels, getGraph, getModel, createModel, saveModel, type ModelSummary, type NodeEdit } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
+import { renderEvaluatePanel } from './evaluate'
+import { openTableOverlay } from './table'
 import './style.css'
 
 // WP-65: the modeler now loads a REAL model from temis and draws its decision
@@ -16,6 +18,8 @@ async function boot(root: HTMLElement): Promise<void> {
       <div class="toolbar">
         <label for="model">Modell</label>
         <select id="model"></select>
+        <button id="open" class="tbtn" type="button" title="DMN-Datei laden (.dmn/.xml)">Öffnen…</button>
+        <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
         <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
         <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
         <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
@@ -26,11 +30,18 @@ async function boot(root: HTMLElement): Promise<void> {
         <span id="status" class="status"></span>
       </div>
       <div id="canvas" class="canvas"></div>
+      <section class="eval-panel">
+        <h2 class="eval-title">Auswerten</h2>
+        <div id="eval"></div>
+      </section>
       <p class="hint">
-        WP-65: Die DRG kommt über <code>/v1/models/{id}/graph</code> aus der Engine
-        (authored DMNDI-Layout, wo vorhanden, sonst Auto-Layout). <strong>Knoten sind
-        anklickbar und verschiebbar</strong>; jede Änderung läuft über den Command-Stack,
-        also Undo/Redo (Buttons oder Strg/Cmd+Z). Connect/Rules/Palette folgen.
+        Eigener Modeler ohne dmn-js: DRG über <code>/v1/models/{id}/graph</code>,
+        Bearbeiten/Speichern über <code>/save</code>, Auswerten über
+        <code>/evaluate</code>. <strong>Öffnen…</strong> lädt eine DMN-Datei in die
+        Engine. Knoten sind verschieb-/umbenennbar (Doppelklick); ein
+        <strong>Doppelklick auf eine Decision mit Tabelle öffnet die Decision
+        Table</strong>. Jede Änderung läuft über den Command-Stack (Undo/Redo,
+        Strg/Cmd+Z).
       </p>
     </main>`
 
@@ -40,9 +51,12 @@ async function boot(root: HTMLElement): Promise<void> {
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
   const saveBtn = root.querySelector<HTMLButtonElement>('#save')
+  const openBtn = root.querySelector<HTMLButtonElement>('#open')
+  const fileInput = root.querySelector<HTMLInputElement>('#file')
+  const evalHost = root.querySelector<HTMLElement>('#eval')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!select || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !typeEditor || !datatype) return
+  if (!select || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !evalHost || !typeEditor || !datatype) return
 
   // Built-in FEEL types for the InputData type editor; "" clears the type.
   const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and time', 'days and time duration', 'years and months duration']
@@ -77,12 +91,7 @@ async function boot(root: HTMLElement): Promise<void> {
     status.textContent = 'speichert …'
     try {
       const newId = await saveModel(current.modelId, edits)
-      models = await listModels()
-      models.sort((a, b) => (a.name ?? a.modelId).localeCompare(b.name ?? b.modelId))
-      renderOptions()
-      const idx = models.findIndex((m) => m.modelId === newId)
-      select.value = String(idx < 0 ? 0 : idx)
-      await show(Number(select.value))
+      await reselect(newId)
       status.textContent = 'gespeichert ✓'
     } catch (e) {
       status.textContent = (e as Error).message
@@ -90,6 +99,38 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
   saveBtn.addEventListener('click', () => void save())
+
+  // reselect refreshes the model list and switches the picker to modelId (e.g.
+  // after a save or an upload created/changed a cached model).
+  const reselect = async (modelId: string): Promise<void> => {
+    models = await listModels()
+    models.sort((a, b) => (a.name ?? a.modelId).localeCompare(b.name ?? b.modelId))
+    renderOptions()
+    const idx = models.findIndex((m) => m.modelId === modelId)
+    select.value = String(idx < 0 ? 0 : idx)
+    await show(Number(select.value))
+  }
+
+  // Open… deploys a chosen .dmn/.xml file to the engine and switches to it.
+  openBtn.addEventListener('click', () => fileInput.click())
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0]
+    if (!file) return
+    status.textContent = 'lädt Datei …'
+    void file
+      .text()
+      .then((xml) => createModel(xml))
+      .then((m) => reselect(m.modelId))
+      .then(() => {
+        status.textContent = 'geladen ✓'
+      })
+      .catch((e: Error) => {
+        status.textContent = e.message
+      })
+      .finally(() => {
+        fileInput.value = '' // allow re-loading the same file
+      })
+  })
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return
     const k = e.key.toLowerCase()
@@ -135,6 +176,7 @@ async function boot(root: HTMLElement): Promise<void> {
         dirty = true
         syncButtons()
       })
+      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
@@ -145,6 +187,12 @@ async function boot(root: HTMLElement): Promise<void> {
       })
       syncButtons()
       status.textContent = `${graph.nodes.length} Knoten · ${graph.edges.length} Kanten`
+      // Evaluate panel: needs the typed per-decision schema, so fetch the detail.
+      try {
+        renderEvaluatePanel(evalHost, await getModel(model.modelId))
+      } catch {
+        evalHost.textContent = ''
+      }
     } catch (e) {
       status.textContent = (e as Error).message
     }

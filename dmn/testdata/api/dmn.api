@@ -44,6 +44,8 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
 
 func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
 
+func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
+
 func (d *Definitions) Graph() Graph
 
 func (d *Definitions) Index() ModelIndex
@@ -137,10 +139,12 @@ type GraphNode struct {
 	DataType	string	`json:"dataType,omitempty"`
 
 	VarName	string	`json:"varName,omitempty"`
-	X	float64	`json:"x,omitempty"`
-	Y	float64	`json:"y,omitempty"`
-	Width	float64	`json:"width,omitempty"`
-	Height	float64	`json:"height,omitempty"`
+
+	HasTable	bool	`json:"hasTable,omitempty"`
+	X		float64	`json:"x,omitempty"`
+	Y		float64	`json:"y,omitempty"`
+	Width		float64	`json:"width,omitempty"`
+	Height		float64	`json:"height,omitempty"`
 }
 
 type Input map[string]any
@@ -199,12 +203,40 @@ type Result struct {
 
 type Severity int
 
+type TableInput struct {
+	Label		string	`json:"label,omitempty"`
+	Expression	string	`json:"expression"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+}
+
+type TableOutput struct {
+	Name	string	`json:"name,omitempty"`
+	Label	string	`json:"label,omitempty"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type TableRule struct {
+	InputEntries	[]string	`json:"inputEntries"`
+	OutputEntries	[]string	`json:"outputEntries"`
+	Annotations	[]string	`json:"annotations,omitempty"`
+}
+
 type TableTrace struct {
 	HitPolicy	string		`json:"hitPolicy"`
 	Aggregation	string		`json:"aggregation,omitempty"`
 	Inputs		[]TraceInput	`json:"inputs"`
 	Rules		[]TraceRule	`json:"rules"`
 	Matched		[]int		`json:"matched"`
+}
+
+type TableView struct {
+	DecisionID	string		`json:"decisionId"`
+	Name		string		`json:"name"`
+	HitPolicy	string		`json:"hitPolicy"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TableInput	`json:"inputs"`
+	Outputs		[]TableOutput	`json:"outputs"`
+	Rules		[]TableRule	`json:"rules"`
 }
 
 type Trace struct {
