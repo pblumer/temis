@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             id="definitions_chain" name="Alterskette (Demo)" namespace="http://temis/chain">
+  <inputData id="InputData_Age" name="Age" />
+  <decision id="Decision_Category" name="Category">
+    <informationRequirement id="ir_age">
+      <requiredInput href="#InputData_Age" />
+    </informationRequirement>
+    <decisionTable id="DT_Category" hitPolicy="UNIQUE">
+      <input id="In_Age" label="Alter">
+        <inputExpression id="InExpr_Age" typeRef="number"><text>Age</text></inputExpression>
+      </input>
+      <output id="Out_Cat" label="Kategorie" name="Category" typeRef="string" />
+      <rule id="r1"><inputEntry id="ie1"><text>&lt; 18</text></inputEntry><outputEntry id="oe1"><text>"minor"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry id="ie2"><text>&gt;= 18</text></inputEntry><outputEntry id="oe2"><text>"adult"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="Decision_Greeting" name="Greeting">
+    <informationRequirement id="ir_cat">
+      <requiredDecision href="#Decision_Category" />
+    </informationRequirement>
+    <literalExpression id="LE_Greeting">
+      <text>if Category = "adult" then "Willkommen" else "Hallo Kind"</text>
+    </literalExpression>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_1">
+      <dmndi:DMNShape id="S_Greeting" dmnElementRef="Decision_Greeting">
+        <dc:Bounds height="80" width="180" x="160" y="80" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="S_Category" dmnElementRef="Decision_Category">
+        <dc:Bounds height="80" width="180" x="160" y="220" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="S_Age" dmnElementRef="InputData_Age">
+        <dc:Bounds height="45" width="125" x="187" y="360" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="E_cat" dmnElementRef="ir_cat">
+        <di:waypoint x="250" y="220" /><di:waypoint x="250" y="160" />
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="E_age" dmnElementRef="ir_age">
+        <di:waypoint x="250" y="360" /><di:waypoint x="250" y="300" />
+      </dmndi:DMNEdge>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

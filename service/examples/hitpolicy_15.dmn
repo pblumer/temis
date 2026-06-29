@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/hitpolicy"
+             name="HitPolicy" id="def_hp">
+  <inputData id="id_score" name="Score">
+    <variable name="Score" typeRef="number"/>
+  </inputData>
+
+  <!-- Priority: overlapping rules, highest-priority output value wins. -->
+  <decision id="id_risk" name="Risk Level">
+    <variable name="Risk Level" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#id_score"/>
+    </informationRequirement>
+    <decisionTable hitPolicy="PRIORITY">
+      <input id="i_score">
+        <inputExpression typeRef="number"><text>Score</text></inputExpression>
+      </input>
+      <output name="Risk Level" typeRef="string">
+        <outputValues><text>"High","Medium","Low"</text></outputValues>
+      </output>
+      <rule><inputEntry><text>&gt;= 0</text></inputEntry><outputEntry><text>"Low"</text></outputEntry></rule>
+      <rule><inputEntry><text>&gt;= 50</text></inputEntry><outputEntry><text>"Medium"</text></outputEntry></rule>
+      <rule><inputEntry><text>&gt;= 80</text></inputEntry><outputEntry><text>"High"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+
+  <!-- Output Order: every matching output, ranked by priority. -->
+  <decision id="id_levels" name="Levels">
+    <variable name="Levels"/>
+    <informationRequirement>
+      <requiredInput href="#id_score"/>
+    </informationRequirement>
+    <decisionTable hitPolicy="OUTPUT ORDER">
+      <input id="i_score2">
+        <inputExpression typeRef="number"><text>Score</text></inputExpression>
+      </input>
+      <output name="Level" typeRef="string">
+        <outputValues><text>"High","Medium","Low"</text></outputValues>
+      </output>
+      <rule><inputEntry><text>&gt;= 0</text></inputEntry><outputEntry><text>"Low"</text></outputEntry></rule>
+      <rule><inputEntry><text>&gt;= 50</text></inputEntry><outputEntry><text>"Medium"</text></outputEntry></rule>
+      <rule><inputEntry><text>&gt;= 80</text></inputEntry><outputEntry><text>"High"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

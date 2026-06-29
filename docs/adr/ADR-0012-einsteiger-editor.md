@@ -1,8 +1,13 @@
 # ADR-0012: F-01 wird zum Einsteiger-Editor (separates Frontend, dmn-js unverändert)
 
-- **Status:** accepted
+- **Status:** superseded by ADR-0016
 - **Datum:** 2026-06-29
 - **Kontext-WP:** F-01
+
+> **Überholt durch ADR-0016:** Die hier gewählte Integration „dmn-js per CDN unverändert in
+> `/ui`" wird abgelöst durch einen eigenen, eingebetteten DMN-Modeler (Fork des MIT-Kerns,
+> 1.5-fähig, ohne Logo-Pflicht). Das Argument gegen einen **dmn-js**-Fork bleibt korrekt —
+> ADR-0016 forkt bewusst nicht dmn-js, sondern dessen MIT-Unterbau.
 
 ## Kontext
 ADR-0006 legt fest: dmn-js ist Editor/Viewer, Schnittstelle ist Standard-DMN-XML, im
@@ -28,33 +33,44 @@ und „zu entschlacken". Das ist aus drei Gründen falsch:
 ## Optionen
 1. **dmn-js forken & anpassen** — hoher Aufwand, Wartungslast, Lizenzrisiko (Logo), kein
    Mehrwert gegenüber Modul-Erweiterung. **Verworfen.**
-2. **Editor-Code ins Engine-Repo legen** — verletzt ADR-0006 (kein Frontend im Go-Repo),
-   mischt Go- und JS-Toolchains. **Verworfen.**
-3. **Separates Frontend, dmn-js unverändert eingebettet** — F-01 wird vom Demo-Viewer zum
-   Einsteiger-Editor erweitert: dmn-js per npm, Einsteiger-UX über **eigene Module**
-   (reduzierte Palette, Tabellen-Vorlagen, Inline-Hilfe), verdrahtet gegen die bestehende
-   temis-HTTP-API für Live-Auswertung und inline gemappte Diagnostics. **Gewählt.**
+2. **Separates Frontend mit eigener npm-/Vite-Toolchain** (`web/`) — dmn-js per npm, eigener
+   Build, eigene CI-Lane. Funktioniert, war aber in der Praxis umständlich: separater
+   Dev-Server, zweite Toolchain, doppelte UI neben der bestehenden `/ui`-Seite. **Verworfen.**
+3. **In den bestehenden Service `/ui` integriert, dmn-js per CDN unverändert geladen** — die
+   schon vorhandene `service/ui.go`-Seite (Go-Raw-String, keine zweite Toolchain) bettet
+   dmn-js wie die Swagger-UI unter `/docs` von `cdn.jsdelivr.net` ein. Kein npm-Build, kein
+   separater Server: `temisd` startet, `/ui` ist der Editor. **Gewählt.**
 
 ## Entscheidung
-Option 3. F-01 bleibt **kein Produktziel der Engine**, wird aber von „Demo" zu
-„Einsteiger-Editor" konkretisiert:
+Option 3. F-01 bleibt **kein Produktziel der Engine**, wird aber von „Demo-Viewer" zum
+**Editor in `/ui`** ausgebaut:
 
-- **Eigenständiges Frontend** (Verzeichnis `web/`, eigener npm-Build, eigene CI-Lane),
-  getrennt vom Go-Modul. Das Go-Modul bleibt frontend-frei (ADR-0006, ADR-0011).
-- **dmn-js unverändert** (npm-Dependency), inkl. sichtbarem bpmn.io-Logo. Einsteiger-UX
-  ausschließlich über **additive Module**, nie durch Fork/Patch.
-- **Schnittstelle bleibt Standard-DMN-XML** (ADR-0006). Round-trip ist durch WP-02
-  garantiert; der Editor spricht die bestehenden Endpunkte `POST /v1/models`,
-  `POST /v1/models/{id}/evaluate`, `POST /v1/evaluate`.
-- **Einsteiger-Mehrwert = Drumherum:** Live-Auswertung beim Editieren, temis-Diagnostics
-  (`line/col`) inline an Tabellenzellen, mitgelieferte Vorlagen/Beispiele.
+- **Kein separates Frontend, keine zweite Toolchain.** Der Editor ist Teil der bestehenden
+  `service/ui.go`-Seite. dmn-js wird per **CDN** (`cdn.jsdelivr.net`, UMD-Bundles) geladen —
+  exakt das Muster, das `/docs` (Swagger UI) schon nutzt. Das Go-Modul bleibt ohne
+  vendored Frontend-Assets (ADR-0006, ADR-0011); es gibt keinen JS-Build-Schritt.
+- **dmn-js unverändert**, inkl. sichtbarem bpmn.io-Logo; nie Fork/Patch. Read-only =
+  `dmn-navigated-viewer`, bearbeitbar = `dmn-modeler` (beide UMD-Bundles, global `window.DmnJS`,
+  sequenziell geladen).
+- **Bedienfluss:** Datei hochladen (oder XML einfügen) → **read-only** in dmn-js gerendert →
+  Schalter **„Bearbeiten"** öffnet dasselbe Modell im editierbaren Modeler → **„Auf Server
+  deployen"** (`POST /v1/models`) macht Decisions/Inputs auswertbar → Auswerten
+  (`POST /v1/models/{id}/evaluate` bzw. `/v1/evaluate`).
+- **Schnittstelle bleibt Standard-DMN-XML** (ADR-0006); Round-trip durch WP-02 garantiert.
+- **Grenze:** dmn-js rendert **DMN 1.3** (was es selbst schreibt). Modelle in 1.4/1.5 werden
+  von der Engine ausgewertet, aber ggf. nicht im Editor gezeichnet — akzeptiert, da in dmn-js
+  erstellte Dateien 1.3 sind.
 
 ## Konsequenzen
-- **Positiv:** Klare Einsteiger-Oberfläche ohne Lizenzrisiko und ohne Fork-Wartung; Engine-
-  Repo bleibt sauber; temis-Diagnostics werden sichtbar nutzbar; Upstream-dmn-js-Updates
-  fließen per `npm update` ein.
-- **Negativ:** Zusätzliche JS-Toolchain/CI-Lane für `web/`; das bpmn.io-Logo ist
-  verpflichtend sichtbar (akzeptiert).
-- **Folgeaufgaben:** F-01 in `20-roadmap.md` entsprechend fassen; `web/`-Gerüst (dmn-js +
-  Live-Eval gegen `/v1`) aufsetzen; spätere Einsteiger-Module (Palette, Vorlagen,
-  Diagnostics-Overlay) als eigene F-Pakete nachziehen.
+- **Positiv:** Ein einziger Einstieg (`temisd` → `/ui`), keine zweite Toolchain/CI-Lane, kein
+  Build; konsistent mit `/docs`. dmn-js-Updates per CDN-Versionspin. End-to-End verifiziert
+  (Upload → read-only → bearbeiten → deployen → auswerten) per Headless-Browser.
+- **Negativ:** `/ui` lädt dmn-js zur Laufzeit vom CDN (wie `/docs`), also online beim ersten
+  Aufruf; das bpmn.io-Logo ist verpflichtend sichtbar (akzeptiert). Offline-Betrieb müsste
+  die Bundles später per `go:embed` ausliefern (Folgeaufgabe, falls nötig).
+- **Folgeaufgaben:** F-02 — Einsteiger-Module (reduzierte Palette, Tabellen-Vorlagen,
+  Inline-FEEL-Hilfe) und das **Diagnostics-Overlay**, das temis-`line/col`-Diagnostics auf
+  Tabellenzellen mappt. Optional: dmn-js-Bundles per `go:embed` für Offline-`/ui`.
+
+> **Hinweis:** Diese Entscheidung ersetzt die zuvor (in derselben ADR) gewählte Variante
+> „separates `web/`-Frontend". Der Kern bleibt unverändert: **dmn-js einbetten, nicht forken.**
