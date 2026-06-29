@@ -97,3 +97,9 @@ Ein neues ADR ersetzt dieses und nimmt das offizielle SDK auf, sobald **beides**
    MCP-Features werden gefordert, deren Eigenbau die SDK-Kosten überwiegt; **und**
 2. ein Go-Mindeststand von 1.25 ist für die Library akzeptabel (bzw. das SDK ist dann
    wieder mit dem Projekt-Go-Stand kompatibel).
+
+> **Update (ADR-0015):** Bedingung 1 ist eingetreten — ein remote/HTTP-routebarer
+> Transport wurde gefordert. Sie wurde jedoch **nativ** erfüllt (stdlib
+> Streamable HTTP, da unser Server reines Request/Response ist, ohne Streaming/
+> Sampling), sodass Bedingung 2 nicht aktiviert wurde. Das SDK bleibt
+> zurückgestellt; dieses ADR bleibt gültig. Details in **ADR-0015**.

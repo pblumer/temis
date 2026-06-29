@@ -42,6 +42,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-50 | Agent-First: MCP-Server (`temis-mcp`) über stdio | ✅ |
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
+| WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
 > ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
@@ -147,7 +148,7 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
-### Für KI-Agenten (`temis-mcp`, MCP über stdio)
+### Für KI-Agenten (`temis-mcp`, MCP über stdio & HTTP)
 
 temis ist bewusst als **Verifikationswerkzeug für KI-Agenten** ausgelegt (ADR-0013):
 Statt eine regelbasierte Entscheidung selbst zu „raten", delegiert ein Agent sie an
@@ -168,6 +169,20 @@ Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Ein
 // in der MCP-Client-Konfiguration
 { "command": "go", "args": ["run", "./cmd/temis-mcp"] }   // oder das gebaute Binary
 ```
+
+**Remote/HTTP (hinter einem Reverse Proxy routebar).** Statt als lokaler Subprozess
+kann `temis-mcp` MCP auch über **Streamable HTTP** anbieten (ADR-0015) — derselbe
+Server, anderer Transport, weiterhin reine Standardbibliothek:
+
+```sh
+go run ./cmd/temis-mcp -http :8081               # POST /mcp, GET /healthz
+go run ./cmd/temis-mcp -http :8081 -token geheim # optionaler Bearer-Token (nur HTTP)
+```
+
+`POST /mcp` nimmt je eine JSON-RPC-Nachricht und antwortet mit `application/json`
+(Notifications → `202`); `GET /mcp` → `405` (kein SSE-Stream); `GET /healthz` für
+Load-Balancer-Probes. Damit ist temis als geteilter MCP-Dienst hinter Traefik o. ä.
+erreichbar, ohne den REST-Service `temisd` mit MCP zu vermischen.
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine
