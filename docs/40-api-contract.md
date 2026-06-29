@@ -275,7 +275,7 @@ service DmnEngine {
 ## 4. Versionierung & Stabilität (SemVer, WP-43)
 
 Ab WP-43 ist `package dmn` als **stabile v1-Oberfläche** zugesagt (ADR-0011,
-ADR-0018). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
+ADR-0019). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
 
 - **Stabiler Vertrag (v1):** die exportierten Symbole von `package dmn` —
   `Engine`/`New`/`Option` (+ `WithLimits`), `Compile`, `Definitions`

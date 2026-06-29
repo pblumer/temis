@@ -1,4 +1,4 @@
-# ADR-0018: API-Stabilität, SemVer und Deprecation-Policy für `package dmn`
+# ADR-0019: API-Stabilität, SemVer und Deprecation-Policy für `package dmn`
 
 - **Status:** accepted
 - **Datum:** 2026-06-29

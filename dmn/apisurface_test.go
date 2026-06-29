@@ -17,7 +17,7 @@ import (
 var updateAPI = flag.Bool("update-api", false, "rewrite the public API surface golden")
 
 // TestPublicAPISurface pins the exported surface of package dmn — the
-// SemVer-stable v1 contract (ADR-0011, ADR-0018, docs/40-api-contract.md §1.5).
+// SemVer-stable v1 contract (ADR-0011, ADR-0019, docs/40-api-contract.md §1.5).
 // It parses the package, trims everything unexported (including unexported struct
 // fields) via ast.FileExports, and compares the rendered declarations to a
 // golden file. Any change to the exported surface — a new or removed symbol, a
@@ -77,7 +77,7 @@ func TestPublicAPISurface(t *testing.T) {
 	}
 	if got != string(want) {
 		t.Errorf("public API surface of package dmn changed.\n"+
-			"If intended: review for breaking changes (ADR-0018 — breaking ⇒ major version),\n"+
+			"If intended: review for breaking changes (ADR-0019 — breaking ⇒ major version),\n"+
 			"then re-run with -update-api.\n\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }

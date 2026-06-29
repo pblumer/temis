@@ -347,6 +347,50 @@ func TestPlaygroundUI(t *testing.T) {
 	}
 }
 
+func TestLinkPreview(t *testing.T) {
+	h := newTestServer(t)
+
+	// The page carries Open Graph / Twitter tags for link unfurling, and the
+	// __OG_BASE__ placeholder is replaced with the request's absolute origin.
+	body := do(t, h, "GET", "/", "", nil).Body.String()
+	for _, want := range []string{
+		`property="og:title"`,
+		`property="og:image"`,
+		`name="twitter:card" content="summary_large_image"`,
+		`http://example.com/og-image.png`, // httptest default host, made absolute
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing link-preview marker %q", want)
+		}
+	}
+	if strings.Contains(body, "__OG_BASE__") {
+		t.Error("og base placeholder was not substituted")
+	}
+
+	// The preview image is served as PNG, publicly, with a real PNG payload.
+	rec := do(t, h, "GET", "/og-image.png", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /og-image.png = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("og-image content-type = %q, want image/png", ct)
+	}
+	if !bytes.HasPrefix(rec.Body.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
+		t.Error("og-image body is not a PNG")
+	}
+
+	// Reverse-proxy headers drive the absolute URL so previews resolve behind a
+	// TLS terminator.
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "temis.example.com")
+	prox := httptest.NewRecorder()
+	h.ServeHTTP(prox, req)
+	if !strings.Contains(prox.Body.String(), "https://temis.example.com/og-image.png") {
+		t.Error("og:image did not honor X-Forwarded-Proto/Host")
+	}
+}
+
 func TestTokenAuth(t *testing.T) {
 	const token = "s3cr3t-token"
 	h := NewServer(nil, WithToken(token)).Handler()
