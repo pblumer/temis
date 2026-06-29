@@ -2,7 +2,8 @@ package dmn
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"strconv"
 
 	"github.com/pblumer/temis/internal/boxed"
 )
@@ -10,7 +11,9 @@ import (
 // Input is an evaluation context: variable name → Go value. Keys are input-data
 // or required-decision names; values are converted to FEEL values per the
 // mapping documented on Evaluate. Names the model does not reference are
-// ignored; referenced names absent from the map evaluate to FEEL null.
+// ignored. A referenced required input data name that is absent is a caller
+// error (Evaluate returns an EvalError with CodeMissingInput, not a silent
+// null); other referenced names absent from the map evaluate to FEEL null.
 type Input map[string]any
 
 // Result is the outcome of evaluating a decision.
@@ -63,15 +66,50 @@ func WithStrictInput() EvalOption {
 // FEEL results convert back to Go with numbers rendered as their exact decimal
 // string (ADR-0007), booleans as bool, strings as string, temporal values and
 // ranges as their canonical FEEL string, lists as []any and contexts as
-// map[string]any. A spec-conformant null becomes nil and is not an error; only
-// genuine runtime failures (a context cancellation, an exhausted limit, a
-// UNIQUE table with multiple matches) return a non-nil error.
+// map[string]any.
+//
+// Evaluate is hard (fail-fast): it returns a non-nil error in exactly these
+// cases. Most are an *EvalError, classifiable via its Code; a strict
+// input-validation failure (WithStrictInput) is an *InputError instead.
+//
+//   - *InputError: with WithStrictInput, the input does not satisfy the
+//     decision's declared schema (wrong type, unknown or missing input). Checked
+//     first, so it supersedes the CodeMissingInput case below.
+//   - CodeNotExecutable: the decision did not compile to executable logic.
+//     The caller is expected to check diags.HasErrors() after Compile; reaching
+//     here is a caller bug, not a data case, and is not masked as a null.
+//   - CodeMissingInput: a required input data value the model references is
+//     absent from in. Also a caller bug; not masked as a null.
+//   - CodeUniqueMultiple: a UNIQUE hit-policy table matched more than one rule
+//     (classified from a typed cause in internal/boxed).
+//   - CodeRuntime: the context was cancelled or its deadline passed, or the
+//     expression failed at runtime in a way not yet exposed as a typed cause.
+//     CodeLimitExceeded is reserved for the resource-limit path (ADR-0008): once
+//     limits are wired and their breach is typed, those failures move from
+//     CodeRuntime to CodeLimitExceeded.
+//
+// A spec-conformant FEEL null (a runtime type mismatch, division by zero, …) is
+// NOT an error: it becomes a nil output in Result, optionally with a
+// warning/info diagnostic in Result.Diags.
+//
+// Optional behaviour is opt-in via EvalOption (WithTrace, WithStrictInput);
+// without options the call is lenient and allocation-lean as before.
 func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error) {
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		// Cancellation/deadline; deliberately CodeRuntime, not a limit breach.
+		return Result{}, &EvalError{
+			Code:       CodeRuntime,
+			DecisionID: c.id,
+			Message:    "context error before evaluation",
+			Err:        err,
+		}
 	}
 	if c.expr == nil {
-		return Result{}, fmt.Errorf("dmn: decision %q has no executable logic", c.name)
+		return Result{}, &EvalError{
+			Code:       CodeNotExecutable,
+			DecisionID: c.id,
+			Message:    "decision has no executable logic; check Compile diagnostics (diags.HasErrors()) before evaluating",
+		}
 	}
 
 	var cfg evalConfig
@@ -79,15 +117,32 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 		opt(&cfg)
 	}
 
+	// Strict validation runs first and reports every problem at once (wrong type,
+	// unknown or missing input); it supersedes the single-missing check below.
 	if cfg.strict {
 		if probs := c.ValidateInput(in); len(probs) > 0 {
 			return Result{}, &InputError{Problems: probs}
 		}
 	}
 
+	for _, name := range c.reqInputs {
+		if _, ok := in[name]; !ok {
+			return Result{}, &EvalError{
+				Code:       CodeMissingInput,
+				DecisionID: c.id,
+				Message:    "missing required input " + strconv.Quote(name),
+			}
+		}
+	}
+
 	vals, err := inputToValues(in)
 	if err != nil {
-		return Result{}, err
+		return Result{}, &EvalError{
+			Code:       CodeRuntime,
+			DecisionID: c.id,
+			Message:    "converting inputs",
+			Err:        err,
+		}
 	}
 
 	scope := c.env.NewScope(vals)
@@ -99,7 +154,7 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 
 	out, err := c.expr(scope)
 	if err != nil {
-		return Result{}, fmt.Errorf("dmn: evaluate decision %q: %w", c.name, err)
+		return Result{}, c.classifyRuntime(err)
 	}
 
 	result := fromValue(out)
@@ -111,4 +166,26 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 		res.Trace = traceFromRecorder(rec)
 	}
 	return res, nil
+}
+
+// classifyRuntime maps a runtime error from the compiled expression to a typed
+// EvalError. Causes that are exposed as typed errors get a specific code; the
+// rest fall back to the honest CodeRuntime placeholder rather than claiming a
+// more precise classification the cause does not support.
+func (c *CompiledDecision) classifyRuntime(err error) *EvalError {
+	var mm *boxed.MultipleMatchError
+	if errors.As(err, &mm) {
+		return &EvalError{
+			Code:       CodeUniqueMultiple,
+			DecisionID: c.id,
+			Message:    "UNIQUE hit policy matched multiple rules",
+			Err:        err,
+		}
+	}
+	return &EvalError{
+		Code:       CodeRuntime,
+		DecisionID: c.id,
+		Message:    "evaluating decision",
+		Err:        err,
+	}
 }

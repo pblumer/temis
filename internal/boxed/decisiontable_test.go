@@ -1,6 +1,7 @@
 package boxed
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,8 +89,16 @@ func TestUniqueMultipleMatchIsError(t *testing.T) {
 		r{[]string{"< 10"}, []string{`"a"`}},
 		r{[]string{"< 20"}, []string{`"b"`}},
 	)
-	if err := evalErr(t, dt, x("5")); err == nil {
-		t.Error("UNIQUE with two matches should error")
+	err := evalErr(t, dt, x("5"))
+	if err == nil {
+		t.Fatal("UNIQUE with two matches should error")
+	}
+	var mm *MultipleMatchError
+	if !errors.As(err, &mm) {
+		t.Fatalf("error = %v (%T), want *MultipleMatchError", err, err)
+	}
+	if mm.Matched != 2 {
+		t.Errorf("Matched = %d, want 2", mm.Matched)
 	}
 }
 

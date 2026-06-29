@@ -33,6 +33,7 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 	if !ok {
 		diags = append(diags, Diagnostic{
 			Severity: SeverityWarning,
+			Code:     "UNKNOWN_NAMESPACE",
 			Message:  "unrecognised DMN namespace " + strconv.Quote(def.XMLName.Space) + "; decoded leniently",
 			Source:   "definitions",
 		})
@@ -64,6 +65,7 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 	for _, u := range def.Unknown {
 		diags = append(diags, Diagnostic{
 			Severity: SeverityWarning,
+			Code:     "UNKNOWN_ELEMENT",
 			Message:  "unknown element ignored",
 			Source:   u.XMLName.Local,
 		})
@@ -121,6 +123,7 @@ func mapDecision(d dmnxml.Decision) (*Decision, []Diagnostic) {
 	default:
 		diags = append(diags, Diagnostic{
 			Severity:   SeverityWarning,
+			Code:       "DECISION_NO_LOGIC",
 			Message:    "decision has no literal expression or decision table",
 			Source:     "decision",
 			DecisionID: d.ID,
