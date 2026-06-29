@@ -54,6 +54,14 @@ build:
 feel-spike:
 	./web/feel-spike/build.sh
 
+## web: build the embedded modeler frontend (ADR-0016 WP-60) into web/dist/
+web:
+	cd web && npm ci && npm run build
+
+## web-check: type-check the frontend without emitting (CI frontend lane)
+web-check:
+	cd web && npm ci && npm run typecheck
+
 ## tidy: tidy go.mod/go.sum
 tidy:
 	$(GO) mod tidy

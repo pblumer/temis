@@ -16,6 +16,9 @@ go.work.sum
 /web/feel-spike/feel.wasm
 /web/feel-spike/wasm_exec.js
 
+# Frontend deps (the built web/dist IS committed for a Node-free `go build`)
+/web/node_modules/
+
 # Editor/OS noise
 .DS_Store
 .idea/
