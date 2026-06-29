@@ -66,8 +66,10 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	funcs, funcDiags := compileBKMs(m)
 	diags = append(diags, funcDiags...)
 
+	items := buildItemTypes(m)
+
 	for _, dec := range m.Decisions {
-		cd, dd := compileDecision(m, dec, funcs)
+		cd, dd := compileDecision(m, dec, funcs, items)
 		diags = append(diags, dd...)
 		defs.order = append(defs.order, cd)
 		if cd.id != "" {
@@ -80,7 +82,7 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 
 	diags = append(diags, wireRequirements(defs, m)...)
 	diags = append(diags, compileServices(defs, m)...)
-	diags = append(diags, typecheckModel(m, funcs)...)
+	diags = append(diags, typecheckModel(m, funcs, items)...)
 
 	return defs, diags, nil
 }
@@ -128,14 +130,16 @@ func compileBKMs(m *model.Definitions) (map[string]*feel.Func, Diagnostics) {
 // decision without a literal expression or decision table, or whose logic fails
 // to compile, yields a CompiledDecision with a nil expr (not executable) plus a
 // diagnostic for the failure.
-func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string]*feel.Func) (*CompiledDecision, Diagnostics) {
+func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string]*feel.Func, items map[string]*feel.Type) (*CompiledDecision, Diagnostics) {
 	env := feel.NewEnv(envNames(m, dec)...)
+	constraints := buildConstraints(m, dec, items)
 	cd := &CompiledDecision{
-		id:        dec.ID,
-		name:      dec.Name,
-		env:       env,
-		inputs:    buildInputSchema(m, dec),
-		reqInputs: reqInputNames(m, dec),
+		id:          dec.ID,
+		name:        dec.Name,
+		env:         env,
+		inputs:      buildInputSchema(m, dec, items, constraints),
+		reqInputs:   reqInputNames(m, dec),
+		constraints: constraints,
 	}
 
 	logic := dec.Logic()

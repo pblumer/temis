@@ -1,10 +1,12 @@
 package dmn
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pblumer/temis/internal/feel"
 	"github.com/pblumer/temis/internal/model"
+	"github.com/pblumer/temis/internal/value"
 )
 
 // typecheckModel statically type-checks every decision's FEEL expressions
@@ -15,12 +17,54 @@ import (
 // appears; other boxed forms are left to evaluation's null semantics. The
 // checker is conservative: where a type is unknown it infers Any and stays
 // silent, so a well-typed model produces no findings.
-func typecheckModel(m *model.Definitions, funcs map[string]*feel.Func) Diagnostics {
-	items := buildItemTypes(m)
+func typecheckModel(m *model.Definitions, funcs map[string]*feel.Func, items map[string]*feel.Type) Diagnostics {
 	var diags Diagnostics
 	for _, dec := range m.Decisions {
 		env := buildTypeEnv(m, dec, items)
 		diags = append(diags, typecheckDecision(dec, env, funcs)...)
+		diags = append(diags, checkOutputConstraints(dec)...)
+	}
+	return diags
+}
+
+// checkOutputConstraints statically flags a decision-table output cell whose
+// constant literal value falls outside the output clause's allowedValues
+// (WP-31). Only constant cells are checked, so an expression cell — whose value
+// is unknown until evaluation — is never wrongly flagged.
+func checkOutputConstraints(dec *model.Decision) Diagnostics {
+	dt := dec.DecisionTable
+	if dt == nil {
+		return nil
+	}
+	matchers := make([]feel.CompiledExpr, len(dt.Outputs))
+	for i, out := range dt.Outputs {
+		if out.AllowedValues != "" {
+			if mtest, err := feel.CompileUnaryTest(out.AllowedValues, unaryEnv); err == nil {
+				matchers[i] = mtest
+			}
+		}
+	}
+
+	var diags Diagnostics
+	for _, r := range dt.Rules {
+		for ci, cell := range r.OutputEntries {
+			if ci >= len(matchers) || matchers[ci] == nil || strings.TrimSpace(cell) == "" {
+				continue
+			}
+			v, ok := feel.ConstValue(cell)
+			if !ok {
+				continue // not a constant; cannot decide statically
+			}
+			matched, err := feel.Matches(matchers[ci], unaryEnv.NewScope(map[string]value.Value{feel.InputVar: v}))
+			if err == nil && !matched {
+				diags = append(diags, Diagnostic{
+					Severity:   SevWarning,
+					Code:       CodeTypeError,
+					Message:    fmt.Sprintf("decision %q: output %s value %s is not among the allowed values %s", decisionLabel(dec), dt.Outputs[ci].Name, v.String(), dt.Outputs[ci].AllowedValues),
+					DecisionID: dec.ID,
+				})
+			}
+		}
 	}
 	return diags
 }

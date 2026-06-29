@@ -27,6 +27,9 @@ type CompiledDecision struct {
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
 	inputs   []InputField      // declared input schema, for self-description and validation
+	// constraints holds the resolved structural type and allowed-values matcher
+	// per input name, enforced by strict validation (WP-31).
+	constraints map[string]*inputConstraint
 	// requires are the decisions this one consumes directly; the evaluator runs
 	// them first and feeds their results in by name (WP-28). Resolved after all
 	// decisions compile.

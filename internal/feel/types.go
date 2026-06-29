@@ -133,6 +133,39 @@ func normalizeTypeName(name string) string {
 	return strings.ToLower(strings.ReplaceAll(name, " ", ""))
 }
 
+// ConstValue returns the value of src when it is a single constant literal — a
+// number, string, boolean, null or @-temporal — and false otherwise. It lets a
+// caller evaluate a constant cell (e.g. a decision-table output) without a
+// scope, for example to test it against an allowed-values constraint (WP-31).
+func ConstValue(src string) (value.Value, bool) {
+	expr, err := Parse(src)
+	if err != nil {
+		return nil, false
+	}
+	switch n := expr.(type) {
+	case *NumberLit:
+		num, err := value.ParseNumber(n.Text)
+		if err != nil {
+			return nil, false
+		}
+		return num, true
+	case *StringLit:
+		return value.Str(n.Value), true
+	case *BoolLit:
+		return value.BoolOf(n.Value), true
+	case *NullLit:
+		return value.Null, true
+	case *AtLit:
+		v, err := parseTemporal(n.Value)
+		if err != nil {
+			return nil, false
+		}
+		return v, true
+	default:
+		return nil, false
+	}
+}
+
 // instanceOf evaluates `v instance of typeName` per FEEL: it reports whether v's
 // runtime kind matches the named type. "Any" matches every value (including
 // null); a duration name matches either duration kind when unqualified. ok is
