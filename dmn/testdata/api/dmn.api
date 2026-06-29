@@ -42,6 +42,8 @@ func (c *CompiledDecision) Name() string
 
 func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
 
+func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool)
+
 func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
 
 func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
@@ -90,6 +92,8 @@ func New(opts ...Option) *Engine
 
 func RemoveItemDefinition(src []byte, name string) ([]byte, error)
 
+func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, error)
+
 func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
 func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
@@ -99,6 +103,26 @@ func WithLimits(l Limits) Option
 func WithStrictInput() EvalOption
 
 func WithTrace() EvalOption
+
+type BKMFunctionEdit struct {
+	Params		[]BKMParam	`json:"params"`
+	BodyText	string		`json:"bodyText"`
+	BodyTypeRef	string		`json:"bodyTypeRef"`
+}
+
+type BKMParam struct {
+	Name	string	`json:"name"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type BKMView struct {
+	BkmID		string		`json:"bkmId"`
+	Name		string		`json:"name"`
+	Params		[]BKMParam	`json:"params"`
+	BodyText	string		`json:"bodyText"`
+	BodyTypeRef	string		`json:"bodyTypeRef,omitempty"`
+	Simple		bool		`json:"simple"`
+}
 
 type CompiledDecision struct {
 	// contains filtered or unexported fields

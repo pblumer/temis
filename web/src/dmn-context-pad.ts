@@ -104,6 +104,18 @@ class DmnContextPadProvider {
       }
     }
 
+    // A business knowledge model: edit its encapsulated function (parameters +
+    // FEEL body). The handler lives in the app shell, so fire an event.
+    if (element.type === 'dmn:businessKnowledgeModel') {
+      entries['edit-bkm'] = {
+        group: 'add',
+        className: 'cp-icon',
+        title: 'Funktion bearbeiten',
+        imageUrl: ICON_LITERAL,
+        action: { click: () => this.eventBus.fire('dmn.openBKM', { element }) },
+      }
+    }
+
     entries['connect'] = {
       group: 'connect',
       className: 'cp-icon',

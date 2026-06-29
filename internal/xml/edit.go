@@ -148,6 +148,30 @@ func (d *Definitions) SetLiteralExpression(id, text, typeRef string) bool {
 	return false
 }
 
+// SetBKMFunction sets the encapsulated logic of the business knowledge model
+// identified by id to a function with the given formal parameters and a literal
+// FEEL body. It refuses (returns false) when the BKM is unknown or its current
+// body is a non-literal boxed expression, which the simple editor must not
+// overwrite.
+func (d *Definitions) SetBKMFunction(id string, params []FormalParameter, bodyText, bodyTypeRef string) bool {
+	for i := range d.BKMs {
+		if d.BKMs[i].ID != id {
+			continue
+		}
+		b := &d.BKMs[i]
+		if b.EncapsulatedLogic != nil && b.EncapsulatedLogic.present() && b.EncapsulatedLogic.LiteralExpression == nil {
+			return false
+		}
+		b.EncapsulatedLogic = &FunctionDefinition{
+			Kind:       "FEEL",
+			Parameters: params,
+			Expression: Expression{LiteralExpression: &LiteralExpression{Text: bodyText, TypeRef: bodyTypeRef}},
+		}
+		return true
+	}
+	return false
+}
+
 // MoveShape repositions the DMNShape bound to element id within a captured DMNDI
 // token stream, rewriting its <Bounds> x/y attributes in place (width and height
 // are preserved). It is the inverse of ParseDI: it matches local element and
