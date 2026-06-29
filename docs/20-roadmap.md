@@ -82,18 +82,19 @@ Decision Services, plus Service-Wrapper (HTTP + gRPC).
 
 dmn-js erzeugt und liest **Standard-DMN-XML**. Es gibt nichts „proprietär" zu adaptieren —
 die Engine muss exakt dieses XML lesen/schreiben können (das ist WP-02). dmn-js wird
-**unverändert** eingebettet (npm) und über additive Module angepasst — **nie geforkt**
-(ADR-0012; bpmn.io-Logo bleibt sichtbar). Frontend-Pakete leben getrennt vom Go-Modul unter
-`web/` mit eigener Toolchain/CI-Lane.
+**unverändert** eingebettet und angepasst — **nie geforkt** (ADR-0012; bpmn.io-Logo bleibt
+sichtbar). Der Editor ist in die bestehende `/ui`-Seite (`service/ui.go`) integriert und lädt
+dmn-js per CDN — wie die Swagger-UI unter `/docs`; **keine zweite Toolchain**.
 
-- **F-01** (Beta, optional): **Einsteiger-Editor** als separates Frontend (`web/`). Bettet
-  dmn-js ein (DRD + Decision-Table-Editor), schickt das Modell an den HTTP-Service und zeigt
-  Ergebnisse an. **Kein** Produktziel der Engine. Akzeptanzkriterium: in dmn-js erstelltes
-  Modell → `POST /v1/models` → Decision wählen → `POST /v1/models/{id}/evaluate` mit
-  Eingaben → Outputs sichtbar; alles offline lauffähig gegen ein lokales `temisd`.
-  Vorstufe existiert als read-only **Playground** in `service/ui.go` (Evaluator ohne Editor).
+- **F-01** (Beta, optional) ✅: **Editor in `/ui`** (`service/ui.go`). Bettet dmn-js per CDN ein
+  (read-only `dmn-navigated-viewer`, bearbeitbar `dmn-modeler`). Fluss: Datei hochladen/XML
+  einfügen → read-only Ansicht → „Bearbeiten" → editierbar → „Auf Server deployen"
+  (`POST /v1/models`) → Decision wählen → `POST /v1/models/{id}/evaluate` → Outputs sichtbar.
+  **Kein** Produktziel der Engine. End-to-End per Headless-Browser verifiziert. Grenze: dmn-js
+  rendert DMN 1.3 (1.4/1.5 wertet die Engine aus, zeichnet der Editor ggf. nicht).
 - **F-02** (optional, nach F-01): Einsteiger-UX-Module — reduzierte Palette,
   Decision-Table-Vorlagen, Inline-FEEL-Hilfe und ein **Diagnostics-Overlay**, das temis-
-  Diagnostics (`line/col`) auf die betroffenen Tabellenzellen mappt.
+  Diagnostics (`line/col`) auf die betroffenen Tabellenzellen mappt. Optional: dmn-js-Bundles
+  per `go:embed` für ein offline lauffähiges `/ui`.
 - Round-trip-Pflicht: Eine in dmn-js gespeicherte Datei muss von der Engine ladbar sein
   **und** eine von der Engine (un)veränderte Datei muss in dmn-js wieder öffnen.

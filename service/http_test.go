@@ -247,8 +247,12 @@ func TestPlaygroundUI(t *testing.T) {
 		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 			t.Errorf("%s content-type = %q, want text/html", path, ct)
 		}
-		if !strings.Contains(rec.Body.String(), "DMN Playground") {
-			t.Errorf("%s body does not look like the playground page", path)
+		body := rec.Body.String()
+		if !strings.Contains(body, "Temis — DMN Editor") {
+			t.Errorf("%s body does not look like the DMN editor page", path)
+		}
+		if !strings.Contains(body, "dmn-js") {
+			t.Errorf("%s body does not embed dmn-js", path)
 		}
 	}
 
