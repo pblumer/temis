@@ -1,4 +1,4 @@
-import { evaluate, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
+import { evaluate, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
 
 // renderEvaluatePanel brings the legacy /ui evaluate workflow into the own
 // modeler (feature parity before the root cutover, ADR-0016 WP-67): pick a
@@ -53,22 +53,52 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void
   decisionSel.addEventListener('change', renderInputs)
   renderInputs()
 
+  // mark flags a field by name with a message (or clears all when name is null).
+  const mark = (name: string | null, message?: string): void => {
+    for (const { field, input: box } of rows) {
+      const hit = name !== null && field.name === name
+      box.classList.toggle('eval-field-invalid', hit)
+      if (hit) box.title = message ?? 'ungültig'
+      else if (name === null) box.title = field.constraint ? 'erlaubte Werte: ' + field.constraint : ''
+    }
+  }
+
   const run = async (): Promise<void> => {
+    mark(null)
     const input: Record<string, unknown> = {}
+    let missing: string | null = null
     for (const { field, input: box } of rows) {
       const v = coerce(box.value)
-      if (v !== undefined) input[field.name] = v
+      if (v === undefined) {
+        if (field.required && missing === null) missing = field.name
+        continue
+      }
+      input[field.name] = v
+    }
+    if (missing !== null) {
+      mark(missing, 'Pflichtfeld')
+      result.className = 'eval-result eval-error'
+      result.textContent = 'Bitte das Pflichtfeld „' + missing + '" ausfüllen.'
+      return
     }
     runBtn.disabled = true
     result.textContent = 'wertet aus …'
     result.className = 'eval-result'
     try {
-      const res = await evaluate(model.modelId, decisionSel.value, input, true)
+      // strict: the engine checks types and allowed values, so a bad input is
+      // reported per field rather than producing a confusing result.
+      const res = await evaluate(model.modelId, decisionSel.value, input, true, true)
       showResult(result, res.outputs)
       if (res.trace) showTrace(result, res.trace)
     } catch (e) {
       result.className = 'eval-result eval-error'
-      result.textContent = (e as Error).message
+      if (e instanceof InputValidationError) {
+        const first = e.problems[0]
+        mark(first.input, first.message)
+        result.textContent = e.problems.map((p) => p.input + ': ' + p.message).join(' · ')
+      } else {
+        result.textContent = (e as Error).message
+      }
     } finally {
       runBtn.disabled = false
     }

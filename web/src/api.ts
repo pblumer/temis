@@ -123,17 +123,36 @@ export type EvalResult = {
   trace?: Trace
 }
 
+// InputProblem mirrors dmn.InputProblem: one structured input-validation failure
+// (strict mode), keyed by the input name.
+export type InputProblem = { input: string; code: string; message: string; expected?: string; got?: string }
+
+// InputValidationError carries the per-input problems from a strict evaluation, so
+// the caller can flag the offending fields.
+export class InputValidationError extends Error {
+  problems: InputProblem[]
+  constructor(problems: InputProblem[]) {
+    super('Eingaben passen nicht zum Schema')
+    this.name = 'InputValidationError'
+    this.problems = problems
+  }
+}
+
 // evaluate runs one decision of a cached model against the given input context
 // (POST /v1/models/{id}/evaluate). With explain, the result carries the decision
-// trace (which rules matched). Validation failures (RFC-7807 problem+json) are
-// surfaced as a readable error.
-export async function evaluate(modelId: string, decision: string, input: Record<string, unknown>, explain = false): Promise<EvalResult> {
+// trace (which rules matched). With strict, the engine validates inputs against
+// their declared types and allowed values, surfaced as an InputValidationError.
+export async function evaluate(modelId: string, decision: string, input: Record<string, unknown>, explain = false, strict = false): Promise<EvalResult> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision, input, explain }),
+    body: JSON.stringify({ decision, input, explain, strict }),
   })
-  if (!r.ok) throw new Error(await problemMessage(r, 'Auswertung fehlgeschlagen'))
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; problems?: InputProblem[]; detail?: string }
+    if (problem.code === 'INVALID_INPUT' && problem.problems?.length) throw new InputValidationError(problem.problems)
+    throw new Error(problem.detail || 'Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
+  }
   return (await r.json()) as EvalResult
 }
 

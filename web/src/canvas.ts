@@ -75,6 +75,8 @@ export type ModelerHandle = {
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
+  // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
+  zoom: (dir: 'in' | 'out' | 'fit') => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -227,6 +229,10 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onOpenBKM: (cb) => {
       openBKMCb = cb
+    },
+    zoom: (dir) => {
+      if (dir === 'fit') canvas.zoom('fit-viewport')
+      else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
     },
   }
 }
