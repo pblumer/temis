@@ -10,14 +10,14 @@ import (
 
 // exampleFS holds the bundled example DMN models, embedded so a freshly started
 // temisd serves them without any external files. They populate the cache when
-// the server is built with WithExamples, so the /ui model explorer is never
+// the server is built with WithExamples, so the modeler's model picker is never
 // empty on a new start.
 //
 //go:embed examples/*.dmn
 var exampleFS embed.FS
 
 // WithExamples preloads the bundled example DMN models into the cache at
-// construction, so they appear in GET /v1/models (and the /ui explorer) on a
+// construction, so they appear in GET /v1/models (and the modeler) on a
 // fresh start. Models that fail to compile are skipped silently — examples must
 // never prevent the server from starting.
 func WithExamples() Option {

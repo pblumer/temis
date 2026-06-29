@@ -149,19 +149,20 @@ Editor wieder — inklusive `DMNDI`-Diagramm-Layout.
    mit ihrem Wert beschriften; ungültige FEEL-Zellen über `diagnostics[].line/col` auf die
    betroffene Tabellenzelle mappen.
 
-### Eingebettetes Beispiel: die `/ui`-Seite
+### Eingebettetes Beispiel: der DMN-Modeler an `/`
 
-`temisd` liefert unter `GET /ui` (auch `GET /`) einen lauffähigen **DMN-Playground**, der
-genau diesen Fluss demonstriert — dmn-js per CDN eingebettet (read-only `dmn-navigated-viewer`,
-bearbeitbar `dmn-modeler`): XML einfügen/Datei laden → Ansicht → „Bearbeiten" → „Auf Server
-deployen" (`POST /v1/models`) → Decision wählen → auswerten (`explain:true`); das Ergebnis
-wird als **Graph** ins DRD zurückgespielt (angefragte Decision hervorgehoben,
-Zwischenergebnisse beschriftet). Quelle: `service/ui.go`. Als Referenz-Implementierung für
-eine eigene Integration gedacht.
+`temisd` liefert unter `GET /` einen lauffähigen, **eigenen DMN-Modeler** (ADR-0016, kein
+dmn-js, kein CDN, offline), der genau diesen Fluss demonstriert: Datei öffnen
+(`POST /v1/models`) → DRD-Canvas (eigene Renderer) bearbeiten — Knoten verschieben/umbenennen/
+typisieren, **Decision-Tables ansehen & editieren** (Zellen/Regeln, live FEEL-validiert) →
+**Speichern** zurück ins DMN-XML (`/save`, `/decisions/{d}/table`) → Decision auswerten
+(`/evaluate`). Das Frontend lebt in `web/` (Vite/TypeScript) und wird per `go:embed`
+ausgeliefert; es nutzt ausschließlich die `/v1`-Endpunkte. Die Alt-Pfade `/ui` und `/app/`
+leiten dauerhaft auf `/` um.
 
 ```sh
 go run ./cmd/temisd -addr :8080
-# Browser: http://localhost:8080/ui
+# Browser: http://localhost:8080/
 ```
 
 ### Round-Trip absichern
