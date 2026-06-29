@@ -22,8 +22,9 @@ const playgroundPage = `<!DOCTYPE html>
   <style>
     :root {
       --bg: #0f1115; --panel: #1a1d24; --border: #2b303b; --fg: #e6e9ef;
-      --muted: #98a2b3; --accent: #5b8def; --ok: #3fb950; --err: #f85149;
-      --warn: #d29922; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --muted: #98a2b3; --accent: #5b8def; --accent-fg: #ffffff; --ok: #3fb950;
+      --err: #f85149; --warn: #d29922;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
     body {
@@ -36,8 +37,14 @@ const playgroundPage = `<!DOCTYPE html>
     }
     header h1 { font-size: 18px; margin: 0; }
     header .sub { color: var(--muted); font-size: 13px; }
-    header a { color: var(--accent); text-decoration: none; margin-left: auto; }
+    header .spacer { flex: 1; }
+    header a { color: var(--accent); text-decoration: none; align-self: center; }
     header a:hover { text-decoration: underline; }
+    .brand-logo { height: 24px; width: auto; align-self: center; }
+    .theme-switch { display: flex; align-items: center; gap: 6px; align-self: center; }
+    .theme-switch label { margin: 0; font-size: 12px; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--muted); }
+    .theme-switch select { width: auto; background: var(--panel); padding: 5px 8px; cursor: pointer; }
     main { max-width: 1100px; margin: 0 auto; padding: 24px;
       display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
@@ -54,7 +61,7 @@ const playgroundPage = `<!DOCTYPE html>
     textarea { resize: vertical; min-height: 180px; }
     textarea#xml { min-height: 240px; }
     button {
-      background: var(--accent); color: #fff; border: none; border-radius: 6px;
+      background: var(--accent); color: var(--accent-fg); border: none; border-radius: 6px;
       padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
     }
     button.secondary { background: transparent; color: var(--accent);
@@ -86,8 +93,14 @@ const playgroundPage = `<!DOCTYPE html>
 </head>
 <body>
   <header>
-    <h1>Temis — DMN Playground</h1>
+    <img id="brandLogo" class="brand-logo" alt="" hidden>
+    <h1 id="brandTitle">Temis — DMN Playground</h1>
     <span class="sub">Modell laden · Decision auswerten — direkt im Browser</span>
+    <span class="spacer"></span>
+    <div id="themeSwitch" class="theme-switch" hidden>
+      <label for="themeSelect">Theme</label>
+      <select id="themeSelect"></select>
+    </div>
     <a href="/docs">API-Doku (Swagger UI) →</a>
   </header>
   <main>
@@ -143,6 +156,94 @@ const playgroundPage = `<!DOCTYPE html>
   <script>
     var modelId = null;
     var $ = function (id) { return document.getElementById(id); };
+
+    // --- Theme/Branding (CI-Anpassung) — Pendant zu web/src/branding.js (ADR-0016).
+    // Eingebaute Themes (dunkel/hell) plus optionales Deployment-Branding über
+    // window.TEMIS_BRANDING (Produktname, Logo, Firmen-Theme). Die Seite bleibt
+    // asset-frei; ein Reverse-Proxy kann das Branding-Global injizieren.
+    var THEME_KEY = 'temis.theme';
+    var THEME_VARS = ['--bg', '--panel', '--border', '--fg', '--muted',
+      '--accent', '--accent-fg', '--ok', '--err', '--warn'];
+    var THEMES_BUILTIN = {
+      'temis-dark': { label: 'Temis Dunkel', vars: {
+        '--bg': '#0f1115', '--panel': '#1a1d24', '--border': '#2b303b', '--fg': '#e6e9ef',
+        '--muted': '#98a2b3', '--accent': '#5b8def', '--accent-fg': '#ffffff',
+        '--ok': '#3fb950', '--err': '#f85149', '--warn': '#d29922' } },
+      'temis-light': { label: 'Temis Hell', base: null, vars: {
+        '--bg': '#ffffff', '--panel': '#f5f6f8', '--border': '#d8dde5', '--fg': '#1a1d24',
+        '--muted': '#5b6470', '--accent': '#2f6fe0', '--accent-fg': '#ffffff',
+        '--ok': '#1a7f37', '--err': '#cf222e', '--warn': '#9a6700' } }
+    };
+    var themeReg = {};
+
+    function resolveThemeVars(def, seen) {
+      seen = seen || {};
+      var baseId = def.base === undefined ? 'temis-dark' : def.base;
+      var base = {};
+      if (baseId && !seen[baseId] && THEMES_BUILTIN[baseId]) {
+        seen[baseId] = true;
+        base = resolveThemeVars(THEMES_BUILTIN[baseId], seen);
+      }
+      var out = {}, k, v = def.vars || {};
+      for (k in base) { if (base.hasOwnProperty(k)) { out[k] = base[k]; } }
+      for (k in v) { if (v.hasOwnProperty(k)) { out[k] = v[k]; } }
+      return out;
+    }
+
+    function registerTheme(id, def) {
+      themeReg[id] = { label: def.label || id, vars: resolveThemeVars(def) };
+    }
+
+    function applyTheme(id) {
+      var t = themeReg[id];
+      if (!t) { return false; }
+      var root = document.documentElement, i, k;
+      for (i = 0; i < THEME_VARS.length; i++) { root.style.removeProperty(THEME_VARS[i]); }
+      for (k in t.vars) { if (t.vars.hasOwnProperty(k)) { root.style.setProperty(k, t.vars[k]); } }
+      root.setAttribute('data-theme', id);
+      return true;
+    }
+
+    function storedTheme() { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } }
+    function storeTheme(id) { try { localStorage.setItem(THEME_KEY, id); } catch (e) { /* Privatmodus */ } }
+    function urlTheme() { try { return new URLSearchParams(window.location.search).get('theme'); } catch (e) { return null; } }
+
+    function initBranding() {
+      var id;
+      for (id in THEMES_BUILTIN) {
+        if (THEMES_BUILTIN.hasOwnProperty(id)) { registerTheme(id, THEMES_BUILTIN[id]); }
+      }
+      var cfg = window.TEMIS_BRANDING || {};
+      var companyId = null;
+      if (cfg.theme && typeof cfg.theme === 'object') {
+        companyId = cfg.theme.id || 'company';
+        registerTheme(companyId, cfg.theme);
+      }
+      if (cfg.brand) { $('brandTitle').textContent = cfg.brand; document.title = cfg.brand; }
+      if (cfg.subtitle) { var sub = document.querySelector('header .sub'); if (sub) { sub.textContent = cfg.subtitle; } }
+      if (cfg.logo) { var lg = $('brandLogo'); lg.src = cfg.logo; lg.alt = cfg.brand || 'Logo'; lg.hidden = false; }
+
+      var candidates = [urlTheme(), storedTheme(), cfg.defaultTheme, companyId, 'temis-dark'];
+      var active = 'temis-dark', c;
+      for (c = 0; c < candidates.length; c++) {
+        if (candidates[c] && themeReg[candidates[c]]) { active = candidates[c]; break; }
+      }
+      applyTheme(active);
+
+      if (cfg.allowUserSwitch !== false) {
+        var sel = $('themeSelect'), tid, o;
+        sel.innerHTML = '';
+        for (tid in themeReg) {
+          if (!themeReg.hasOwnProperty(tid)) { continue; }
+          o = document.createElement('option'); o.value = tid; o.textContent = themeReg[tid].label;
+          if (tid === active) { o.selected = true; }
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', function () { if (applyTheme(sel.value)) { storeTheme(sel.value); } });
+        $('themeSwitch').hidden = false;
+      }
+    }
+    initBranding();
 
     function authHeaders(extra) {
       var h = extra || {};

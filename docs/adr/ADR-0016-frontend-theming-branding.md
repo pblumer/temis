@@ -5,11 +5,12 @@
 - **Kontext-WP:** F-01
 
 ## Kontext
-Der Einsteiger-Editor (`web/`, ADR-0012) soll sich an die **Corporate Identity (CI)**
-einer Firma anpassen lassen — Farben, Logo, Produktname —, damit temis bei
-Kunden/Partnern im eigenen Look eingebettet werden kann. Die Oberfläche steuert ihr
-Aussehen bereits vollständig über **CSS-Custom-Properties** auf `:root` (`--bg`,
-`--accent`, …); die dmn-js-Zeichenfläche behält bewusst ihr eigenes (helles) Theme.
+Die Oberflächen von temis — der Einsteiger-Editor (`web/`, ADR-0012) und der vom Service
+ausgelieferte DMN-Playground (`service/ui.go`) — sollen sich an die **Corporate Identity
+(CI)** einer Firma anpassen lassen — Farben, Logo, Produktname —, damit temis bei
+Kunden/Partnern im eigenen Look eingebettet werden kann. Beide steuern ihr Aussehen bereits
+vollständig über **CSS-Custom-Properties** auf `:root` (`--bg`, `--accent`, …); die
+dmn-js-Zeichenfläche behält bewusst ihr eigenes (helles) Theme.
 
 Naheliegender Reflex wäre, Styles pro Kunde zu kopieren oder das Bundle je Deployment
 neu zu bauen. Beides skaliert schlecht und vermischt Auslieferung mit Build.
@@ -36,6 +37,10 @@ ADR-0006/0011) und additiv (dmn-js wird nicht angefasst, ADR-0012):
 - **Theme-Auswahl** in Reihenfolge: `?theme=` (URL) > gespeicherte Nutzerwahl >
   `defaultTheme` > Firmen-Theme > `temis-dark`. `allowUserSwitch: false` blendet den
   Umschalter aus (fest gebrandetes Deployment).
+- **Beide Oberflächen** teilen dasselbe Modell: `web/` lädt `branding.js` als Asset,
+  `service/ui.go` trägt eine inhaltsgleiche, kompakte Variante inline (die Playground-Seite
+  bleibt asset-frei/offline, ADR-0006-konform; das Branding-Global kann dort per
+  Reverse-Proxy injiziert werden).
 
 ## Konsequenzen
 - **Positiv:** CI-Anpassung ohne Fork und ohne kundenspezifischen Build; eine einzige
