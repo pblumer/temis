@@ -209,6 +209,36 @@ zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Einga
 > geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
 > (DRG-Verkettung).
 
+## Releases & Container
+
+Releases werden über einen **SemVer-Tag** geschnitten; die Pipeline
+(`.github/workflows/release.yml`) baucht daraus versionierte Binaries (`temisd` und
+`temis-mcp` für linux/macOS/windows × amd64/arm64, Version per `-ldflags` eingebrannt),
+einen **GitHub-Release** mit Notizen aus dem passenden `CHANGELOG.md`-Abschnitt und ein
+**Container-Image für `temisd`** auf GHCR.
+
+```sh
+git tag v1.2.3 && git push origin v1.2.3        # löst die Release-Pipeline aus
+```
+
+Image direkt nutzen (sobald ein Release existiert):
+
+```sh
+docker run --rm -p 8080:8080 ghcr.io/pblumer/temis/temisd:latest
+# Browser: http://localhost:8080/ui
+```
+
+Lokal bauen — der Build brennt die Version ein:
+
+```sh
+docker build --build-arg VERSION=v1.2.3 -t temisd:v1.2.3 .
+temisd -version    # → temisd v1.2.3
+```
+
+Das Image basiert auf `distroless/static` (kein Shell, non-root); `temisd` bettet UI,
+OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere Assets.
+Änderungen sammeln sich unter `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.

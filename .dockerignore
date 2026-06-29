@@ -1,0 +1,9 @@
+# Keep the build context small and the image reproducible.
+.git
+.github
+docs
+web/node_modules
+*.md
+!go.mod
+!go.sum
+coverage.out

@@ -31,21 +31,22 @@ func main() {
 		"require this bearer token on the HTTP endpoint (default $TEMIS_API_TOKEN; empty = open); ignored for stdio")
 	flag.Parse()
 
+	ver := version.Resolve()
 	if *showVersion {
-		fmt.Printf("temis-mcp %s\n", version.Version)
+		fmt.Printf("temis-mcp %s\n", ver)
 		return
 	}
 
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
 
-	srv := mcp.NewServer(dmn.New(), mcp.WithVersion(version.Version), mcp.WithHTTPToken(*token))
+	srv := mcp.NewServer(dmn.New(), mcp.WithVersion(ver), mcp.WithHTTPToken(*token))
 
 	if *httpAddr != "" {
 		if *token != "" {
 			log.Printf("temis-mcp: HTTP endpoint requires a bearer token")
 		}
-		log.Printf("temis-mcp %s: serving MCP over HTTP on %s (POST /mcp)", version.Version, *httpAddr)
+		log.Printf("temis-mcp %s: serving MCP over HTTP on %s (POST /mcp)", ver, *httpAddr)
 		if err := http.ListenAndServe(*httpAddr, srv.HTTPHandler()); err != nil {
 			fmt.Fprintf(os.Stderr, "temis-mcp: %v\n", err)
 			os.Exit(1)
@@ -53,7 +54,7 @@ func main() {
 		return
 	}
 
-	log.Printf("temis-mcp %s: serving MCP over stdio", version.Version)
+	log.Printf("temis-mcp %s: serving MCP over stdio", ver)
 	if err := srv.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "temis-mcp: %v\n", err)
 		os.Exit(1)

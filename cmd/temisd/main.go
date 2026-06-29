@@ -31,8 +31,9 @@ func main() {
 		"preload the bundled example DMN models so they appear in the /ui explorer on start")
 	flag.Parse()
 
+	ver := version.Resolve()
 	if *showVersion {
-		fmt.Printf("temisd %s\n", version.Version)
+		fmt.Printf("temisd %s\n", ver)
 		return
 	}
 
@@ -59,7 +60,7 @@ func main() {
 		log.Printf("temisd: GET /v1/models listing disabled")
 	}
 	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs",
-		version.Version, *addr, *addr, *addr)
+		ver, *addr, *addr, *addr)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
