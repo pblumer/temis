@@ -80,9 +80,60 @@ type Diagnostics []Diagnostic
 func (d Diagnostics) HasErrors() bool
 ```
 
-Regel: **Compile-Fehler** → über `Diagnostics` + ggf. `error`. **Evaluate** gibt nur bei
-echten Laufzeitproblemen (Limit überschritten, Kontext-Cancel) ein `error`; spec-konforme
-`null`-Ergebnisse sind **kein** Fehler.
+#### Compile- vs. Evaluate-Fehlergrenze (verbindlich)
+
+Diese Grenze ist **öffentliches Verhalten** und damit Teil des SemVer-Vertrags. Sie nach
+1.0 zu verschieben ist ein Breaking Change. Drei Mechanismen, klar getrennt:
+
+1. **`error`** — der Aufruf konnte nicht durchgeführt werden (kein verwertbares Ergebnis).
+2. **`Diagnostic` mit `SevError`** — ein Modell-/Logikproblem an einer *bestimmten Stelle*;
+   der umgebende Aufruf liefert trotzdem ein verwertbares (Teil-)Ergebnis.
+3. **FEEL-`null`** (+ optional `SevWarning`/`SevInfo`) — spec-konformes Ergebnis, **nie**
+   ein Fehler.
+
+**`Compile` (best effort, sammelnd):**
+
+| Situation | Mechanismus |
+|---|---|
+| Malformed XML, nicht dekodierbar | `error` (Abbruch, kein `Definitions`) |
+| Unbekannte FEEL-Variable, Typkonflikt, nicht unterstütztes Konstrukt in *einer* Decision | `Diagnostic{SevError}`; übrige Decisions kompilieren weiter |
+| Unbekannter/nicht unterstützter Namespace an einer Decision | `Diagnostic{SevError}`; Decision nicht ausführbar |
+| Decision kompiliert, aber mit Hinweis (z. B. ungenutzte Eingabe) | `Diagnostic{SevWarning/SevInfo}` |
+
+`Compile` gibt also **nur bei nicht-dekodierbarem Dokument** ein `error`. Alles andere
+landet in `Diagnostics`; `diags.HasErrors()` zeigt, ob ausführbare Decisions fehlen.
+Eine Decision mit `SevError`-Diagnostic ist im `Definitions` präsent, aber **nicht
+ausführbar**.
+
+**`Evaluate` (hart, fail-fast):** gibt ein `error` zurück, wenn —
+
+| Situation | Mechanismus |
+|---|---|
+| Angeforderte Decision wegen Compile-Fehler **nicht ausführbar** | `error` |
+| **Pflicht-Eingabe** (vom Modell referenziertes Input Data) fehlt | `error` |
+| Kontext gecancelt / Deadline | `error` (`ctx.Err()`) |
+| Ressourcenlimit erschöpft (ADR-0008) | `error` |
+| `UNIQUE`-Hit-Policy mit Mehrfachtreffer | `error` |
+| FEEL-Ausdruck ergibt spec-konform `null` (Typkonflikt zur Laufzeit, Division durch 0, …) | **kein** `error` → `null` + ggf. `Diags` |
+
+> **Verbindlich:** Der Aufrufer prüft nach `Compile` `diags.HasErrors()`, *bevor* er
+> `Decision`/`Evaluate` ruft. `Evaluate` wiederholt diese Prüfung nicht kulant, sondern
+> verweigert hart — eine nicht-ausführbare Decision oder eine fehlende Pflicht-Eingabe ist
+> ein Programmierfehler des Aufrufers, kein Datenfall, und soll nicht als stilles `null`
+> maskiert werden. (Spätere Promotion zu Decision-Graph-Chaining, WP-28, ändert daran
+> nichts: fehlt eine *erforderliche* Sub-Decision, ist das `error`, nicht `null`.)
+
+#### Stabilität von `Diagnostic.Code`
+
+`Code` ist die **maschinenlesbare, stabile** Fehlerklasse (z. B. `FEEL_TYPE_MISMATCH`,
+`UNKNOWN_VARIABLE`, `UNIQUE_MULTIPLE_MATCH`, `XML_MALFORMED`). Er kodiert die
+*Fehlerklasse*, **nicht** die Severity. Codes werden in einer Registry geführt und nur
+additiv erweitert; Umbenennung/Entfernung ist ein Breaking Change. `Message` ist
+menschenlesbar und **nicht** stabil — Aufrufer dürfen nur gegen `Code` programmieren.
+
+> **Folgeaufgabe (Bug):** `fromModelDiagnostics` erzeugt heute `Code = "MODEL_" + severity`
+> und verletzt damit diese Zusage (Severity statt Fehlerklasse). Vor 1.0 auf echte
+> Klassen-Codes umstellen.
 
 ### 1.5 Go ⇄ FEEL Typ-Mapping
 
