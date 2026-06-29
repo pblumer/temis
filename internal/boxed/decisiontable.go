@@ -37,11 +37,12 @@ func (e *MultipleMatchError) Error() string {
 // Per DMN, no matching rule yields null (an empty list for the collecting
 // policies). A Unique table with more than one match, or an Any table with
 // divergent outputs, is an evaluation error.
-func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, error) {
+func CompileTable(dt *model.DecisionTable, env *feel.Env, funcs map[string]*feel.Func) (feel.CompiledExpr, error) {
 	switch dt.HitPolicy {
-	case model.HitUnique, model.HitAny, model.HitFirst, model.HitRuleOrder, model.HitCollect:
+	case model.HitUnique, model.HitAny, model.HitFirst, model.HitRuleOrder,
+		model.HitCollect, model.HitPriority, model.HitOutputOrder:
 	default:
-		return nil, fmt.Errorf("hit policy %q is not supported yet (WP-27)", dt.HitPolicy)
+		return nil, fmt.Errorf("hit policy %q is not supported", dt.HitPolicy)
 	}
 	if dt.Aggregation != model.AggNone && len(dt.Outputs) != 1 {
 		return nil, fmt.Errorf("collect aggregation requires exactly one output, got %d", len(dt.Outputs))
@@ -54,10 +55,15 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 
 	for _, out := range dt.Outputs {
 		ct.outputNames = append(ct.outputNames, out.Name)
+		prio, err := parsePriorityList(out.AllowedValues)
+		if err != nil {
+			return nil, fmt.Errorf("output %q values %q: %w", out.Name, out.AllowedValues, err)
+		}
+		ct.priorities = append(ct.priorities, prio)
 	}
 
 	for i, in := range dt.Inputs {
-		ce, err := feel.CompileString(in.Expression, env)
+		ce, err := feel.CompileStringWith(in.Expression, env, funcs)
 		if err != nil {
 			return nil, fmt.Errorf("input %d expression %q: %w", i+1, in.Expression, err)
 		}
@@ -81,7 +87,7 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 			cr.tests = append(cr.tests, test)
 		}
 		for ci, entry := range r.OutputEntries {
-			out, err := compileOutput(entry, env)
+			out, err := compileOutput(entry, env, funcs)
 			if err != nil {
 				return nil, fmt.Errorf("rule %d output %d %q: %w", ri+1, ci+1, entry, err)
 			}
@@ -94,11 +100,11 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 }
 
 // compileOutput compiles an output cell; an empty cell evaluates to null.
-func compileOutput(entry string, env *feel.Env) (feel.CompiledExpr, error) {
+func compileOutput(entry string, env *feel.Env, funcs map[string]*feel.Func) (feel.CompiledExpr, error) {
 	if strings.TrimSpace(entry) == "" {
 		return feel.CompileString("null", env)
 	}
-	return feel.CompileString(entry, env)
+	return feel.CompileStringWith(entry, env, funcs)
 }
 
 type compiledRule struct {
@@ -109,6 +115,7 @@ type compiledRule struct {
 type compiledTable struct {
 	inputs      []feel.CompiledExpr
 	outputNames []string
+	priorities  [][]value.Value // per output: allowed values in priority order (P/O)
 	rules       []compiledRule
 	hitPolicy   model.HitPolicy
 	aggregation model.Aggregation
@@ -192,6 +199,12 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 		}
 		return ct.aggregate(s, matched)
 
+	case model.HitPriority:
+		return ct.prioritized(s, matched, false)
+
+	case model.HitOutputOrder:
+		return ct.prioritized(s, matched, true)
+
 	default:
 		return nil, fmt.Errorf("unsupported hit policy %q", ct.hitPolicy)
 	}
@@ -200,19 +213,38 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 // ruleOutput builds a matched rule's output: the bare value for a single output,
 // or a context keyed by output name for multiple outputs.
 func (ct *compiledTable) ruleOutput(s *feel.Scope, ri int) (value.Value, error) {
-	r := ct.rules[ri]
-	if len(ct.outputNames) == 1 {
-		return r.outputs[0](s)
+	cells, err := ct.ruleCells(s, ri)
+	if err != nil {
+		return nil, err
 	}
-	ctx := value.NewContext()
+	return ct.outputValue(cells), nil
+}
+
+// ruleCells evaluates a rule's output cells, one value per output column.
+func (ct *compiledTable) ruleCells(s *feel.Scope, ri int) ([]value.Value, error) {
+	r := ct.rules[ri]
+	cells := make([]value.Value, len(r.outputs))
 	for i, out := range r.outputs {
 		v, err := out(s)
 		if err != nil {
 			return nil, err
 		}
-		ctx.Put(ct.outputNames[i], v)
+		cells[i] = v
 	}
-	return ctx, nil
+	return cells, nil
+}
+
+// outputValue assembles evaluated output cells into a rule's result: the bare
+// value for a single output, or a context keyed by output name otherwise.
+func (ct *compiledTable) outputValue(cells []value.Value) value.Value {
+	if len(ct.outputNames) == 1 {
+		return cells[0]
+	}
+	ctx := value.NewContext()
+	for i, name := range ct.outputNames {
+		ctx.Put(name, cells[i])
+	}
+	return ctx
 }
 
 func (ct *compiledTable) collectList(s *feel.Scope, matched []int) (value.Value, error) {

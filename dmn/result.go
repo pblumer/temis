@@ -20,8 +20,10 @@ type Input map[string]any
 type Result struct {
 	// Outputs holds the requested decision's result, keyed by decision name.
 	Outputs map[string]any
-	// Decisions holds every decision evaluated to produce the result. Until DRG
-	// chaining (WP-28) this mirrors Outputs.
+	// Decisions holds every decision evaluated to produce the result, keyed by
+	// name: the requested decision plus each required decision the evaluator ran
+	// for it (WP-28). A required value supplied directly in the input is used as
+	// given and is not re-evaluated, so it does not appear here.
 	Decisions map[string]any
 	// Diags holds runtime diagnostics (e.g. a null produced by a recoverable
 	// error). Spec-conformant null results are not errors.
@@ -89,7 +91,7 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		}
 	}
 
-	vals, err := inputToValues(in)
+	base, err := inputToValues(in)
 	if err != nil {
 		return Result{}, &EvalError{
 			Code:       CodeRuntime,
@@ -99,15 +101,15 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		}
 	}
 
-	out, err := c.expr(c.env.NewScope(vals))
+	ev := newEvaluator(base)
+	out, err := ev.eval(c)
 	if err != nil {
 		return Result{}, c.classifyRuntime(err)
 	}
 
-	result := fromValue(out)
 	return Result{
-		Outputs:   map[string]any{c.name: result},
-		Decisions: map[string]any{c.name: result},
+		Outputs:   map[string]any{c.name: fromValue(out)},
+		Decisions: ev.decisions,
 	}, nil
 }
 

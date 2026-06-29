@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/decision-service"
+             name="DecisionService" id="def_ds">
+  <inputData id="id_age" name="Applicant Age">
+    <variable name="Applicant Age" typeRef="number"/>
+  </inputData>
+
+  <decision id="id_elig" name="Eligibility">
+    <variable name="Eligibility" typeRef="string"/>
+    <informationRequirement><requiredInput href="#id_age"/></informationRequirement>
+    <literalExpression><text>if Applicant Age &gt;= 18 then "ELIGIBLE" else "INELIGIBLE"</text></literalExpression>
+  </decision>
+
+  <decision id="id_route" name="Routing">
+    <variable name="Routing" typeRef="string"/>
+    <informationRequirement><requiredDecision href="#id_elig"/></informationRequirement>
+    <literalExpression><text>if Eligibility = "ELIGIBLE" then "ACCEPT" else "DECLINE"</text></literalExpression>
+  </decision>
+
+  <!-- Eligibility is encapsulated: the service computes it internally. -->
+  <decisionService id="id_approval" name="Approval">
+    <outputDecision href="#id_route"/>
+    <encapsulatedDecision href="#id_elig"/>
+    <inputData href="#id_age"/>
+  </decisionService>
+
+  <!-- Eligibility is an input decision: the caller supplies it, the service
+       does not compute it. -->
+  <decisionService id="id_routeonly" name="Routing Only">
+    <outputDecision href="#id_route"/>
+    <inputDecision href="#id_elig"/>
+  </decisionService>
+</definitions>

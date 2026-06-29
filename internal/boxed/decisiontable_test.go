@@ -41,7 +41,7 @@ func envForVars(vars map[string]value.Value) *feel.Env {
 func evalT(t *testing.T, dt *model.DecisionTable, vars map[string]value.Value) value.Value {
 	t.Helper()
 	env := envForVars(vars)
-	ce, err := CompileTable(dt, env)
+	ce, err := CompileTable(dt, env, nil)
 	if err != nil {
 		t.Fatalf("compile table: %v", err)
 	}
@@ -55,7 +55,7 @@ func evalT(t *testing.T, dt *model.DecisionTable, vars map[string]value.Value) v
 func evalErr(t *testing.T, dt *model.DecisionTable, vars map[string]value.Value) error {
 	t.Helper()
 	env := envForVars(vars)
-	ce, err := CompileTable(dt, env)
+	ce, err := CompileTable(dt, env, nil)
 	if err != nil {
 		t.Fatalf("compile table: %v", err)
 	}
@@ -200,19 +200,19 @@ func TestMultipleOutputsAndDash(t *testing.T) {
 
 func TestCompileErrors(t *testing.T) {
 	// unsupported hit policy
-	if _, err := CompileTable(mkTable(model.HitPriority, model.AggNone, []string{"x"}, []string{"o"}), feel.NewEnv("x")); err == nil {
-		t.Error("PRIORITY should be unsupported")
+	if _, err := CompileTable(mkTable(model.HitPolicy("Z"), model.AggNone, []string{"x"}, []string{"o"}), feel.NewEnv("x"), nil); err == nil {
+		t.Error("an unknown hit policy should be unsupported")
 	}
 	// aggregation with multiple outputs
 	bad := mkTable(model.HitCollect, model.AggSum, []string{"x"}, []string{"a", "b"},
 		r{[]string{"-"}, []string{"1", "2"}})
-	if _, err := CompileTable(bad, feel.NewEnv("x")); err == nil {
+	if _, err := CompileTable(bad, feel.NewEnv("x"), nil); err == nil {
 		t.Error("aggregation with two outputs should error")
 	}
 	// wrong number of input entries
 	mism := mkTable(model.HitUnique, model.AggNone, []string{"x", "y"}, []string{"o"},
 		r{[]string{"-"}, []string{"1"}}) // only one input entry for two inputs
-	if _, err := CompileTable(mism, feel.NewEnv("x", "y")); err == nil {
+	if _, err := CompileTable(mism, feel.NewEnv("x", "y"), nil); err == nil {
 		t.Error("mismatched input entries should error")
 	}
 }
@@ -228,17 +228,17 @@ func TestEmptyOutputCellIsNull(t *testing.T) {
 func TestMoreCompileErrors(t *testing.T) {
 	// malformed input expression
 	if _, err := CompileTable(mkTable(model.HitUnique, model.AggNone, []string{"1 +"}, []string{"o"},
-		r{[]string{"-"}, []string{"1"}}), feel.NewEnv()); err == nil {
+		r{[]string{"-"}, []string{"1"}}), feel.NewEnv(), nil); err == nil {
 		t.Error("malformed input expression should error")
 	}
 	// malformed output expression
 	if _, err := CompileTable(mkTable(model.HitUnique, model.AggNone, []string{"x"}, []string{"o"},
-		r{[]string{"-"}, []string{"1 +"}}), feel.NewEnv("x")); err == nil {
+		r{[]string{"-"}, []string{"1 +"}}), feel.NewEnv("x"), nil); err == nil {
 		t.Error("malformed output expression should error")
 	}
 	// wrong number of output entries
 	if _, err := CompileTable(mkTable(model.HitUnique, model.AggNone, []string{"x"}, []string{"o"},
-		r{[]string{"-"}, []string{"1", "2"}}), feel.NewEnv("x")); err == nil {
+		r{[]string{"-"}, []string{"1", "2"}}), feel.NewEnv("x"), nil); err == nil {
 		t.Error("mismatched output entries should error")
 	}
 }
@@ -280,7 +280,7 @@ func TestDishFixtureEndToEnd(t *testing.T) {
 	}
 
 	env := feel.NewEnv("Season", "Guest Count")
-	ce, err := CompileTable(dish, env)
+	ce, err := CompileTable(dish, env, nil)
 	if err != nil {
 		t.Fatalf("compile dish table: %v", err)
 	}

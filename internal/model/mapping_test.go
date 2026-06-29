@@ -57,7 +57,7 @@ func TestMapBKMAndKnowledgeRequirement(t *testing.T) {
 		KnowledgeRequirts: []dmnxml.KnowledgeRequirt{
 			{RequiredKnowledge: &dmnxml.Ref{Href: "#bkm_rate"}},
 		},
-		LiteralExpression: &dmnxml.LiteralExpression{Text: "Rate Table(age)"},
+		Expression: dmnxml.Expression{LiteralExpression: &dmnxml.LiteralExpression{Text: "Rate Table(age)"}},
 	}}
 
 	m, _, err := model.FromXML(def)
@@ -78,12 +78,12 @@ func TestMapCollectWithAggregation(t *testing.T) {
 	def.Decisions = []dmnxml.Decision{{
 		ID:   "d1",
 		Name: "Totals",
-		DecisionTable: &dmnxml.DecisionTable{
+		Expression: dmnxml.Expression{DecisionTable: &dmnxml.DecisionTable{
 			HitPolicy:   "COLLECT",
 			Aggregation: "SUM",
 			Outputs:     []dmnxml.Output{{Name: "Amount", AllowedValues: &dmnxml.Text{Value: "[0..100]"}}},
 			Rules:       []dmnxml.Rule{{InputEntries: []string{"-"}, OutputEntries: []string{"10"}}},
-		},
+		}},
 	}}
 
 	m, _, err := model.FromXML(def)
@@ -144,8 +144,8 @@ func TestHitPolicyVariants(t *testing.T) {
 	for raw, want := range cases {
 		def := defWithNS(ns15)
 		def.Decisions = []dmnxml.Decision{{
-			ID:            "d",
-			DecisionTable: &dmnxml.DecisionTable{HitPolicy: raw},
+			ID:         "d",
+			Expression: dmnxml.Expression{DecisionTable: &dmnxml.DecisionTable{HitPolicy: raw}},
 		}}
 		m, _, err := model.FromXML(def)
 		if err != nil {
