@@ -224,6 +224,9 @@ components:
         input:
           type: object
           additionalProperties: true
+        explain:
+          type: boolean
+          description: When true, the response also carries a decision trace.
     EvaluateStatelessRequest:
       type: object
       required: [xml, decision]
@@ -233,6 +236,9 @@ components:
         input:
           type: object
           additionalProperties: true
+        explain:
+          type: boolean
+          description: When true, the response also carries a decision trace.
     EvaluateResponse:
       type: object
       properties:
@@ -245,6 +251,52 @@ components:
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/Diagnostic" }
+        trace:
+          $ref: "#/components/schemas/Trace"
+    Trace:
+      type: object
+      description: >
+        Structured explanation of the evaluation, present only when the request
+        set explain=true. Derived from the actual evaluation (ADR-0012/WP-51).
+      properties:
+        tables:
+          type: array
+          items: { $ref: "#/components/schemas/TableTrace" }
+    TableTrace:
+      type: object
+      properties:
+        hitPolicy: { type: string, description: "U/A/F/R/C" }
+        aggregation: { type: string, description: "SUM/MIN/MAX/COUNT or empty" }
+        matched:
+          type: array
+          items: { type: integer }
+          description: 0-based indices of the rules that matched.
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              expression: { type: string }
+              value: {}
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              id: { type: string }
+              matched: { type: boolean }
+              outputs:
+                type: array
+                items: {}
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    input: { type: string }
+                    entry: { type: string }
+                    matched: { type: boolean }
     Diagnostic:
       type: object
       properties:

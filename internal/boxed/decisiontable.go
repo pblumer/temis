@@ -50,6 +50,7 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 			return nil, fmt.Errorf("input %d expression %q: %w", i+1, in.Expression, err)
 		}
 		ct.inputs = append(ct.inputs, ce)
+		ct.inputExprs = append(ct.inputExprs, in.Expression)
 	}
 
 	unaryEnv := env.Derive(feel.InputVar)
@@ -60,7 +61,7 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env) (feel.CompiledExpr, er
 		if len(r.OutputEntries) != len(dt.Outputs) {
 			return nil, fmt.Errorf("rule %d has %d output entries, want %d", ri+1, len(r.OutputEntries), len(dt.Outputs))
 		}
-		cr := compiledRule{}
+		cr := compiledRule{index: ri, id: r.ID, inputEntries: r.InputEntries}
 		for ci, entry := range r.InputEntries {
 			test, err := feel.CompileUnaryTest(entry, unaryEnv)
 			if err != nil {
@@ -90,12 +91,16 @@ func compileOutput(entry string, env *feel.Env) (feel.CompiledExpr, error) {
 }
 
 type compiledRule struct {
-	tests   []feel.CompiledExpr // one per input column (unary test, references "?")
-	outputs []feel.CompiledExpr // one per output column
+	index        int                 // 0-based row position, for tracing
+	id           string              // model rule id, for tracing
+	inputEntries []string            // raw unary-test texts, for tracing
+	tests        []feel.CompiledExpr // one per input column (unary test, references "?")
+	outputs      []feel.CompiledExpr // one per output column
 }
 
 type compiledTable struct {
 	inputs      []feel.CompiledExpr
+	inputExprs  []string // raw input-column expressions, for tracing
 	outputNames []string
 	rules       []compiledRule
 	hitPolicy   model.HitPolicy
@@ -103,6 +108,13 @@ type compiledTable struct {
 }
 
 func (ct *compiledTable) evaluate(s *feel.Scope) (value.Value, error) {
+	// Tracing is opt-in: a nil recorder means the normal, allocation-free path.
+	rec, _ := s.Trace().(*Recorder)
+	var tt *TableTrace
+	if rec != nil {
+		tt = &TableTrace{HitPolicy: string(ct.hitPolicy), Aggregation: string(ct.aggregation)}
+	}
+
 	// Evaluate each input column once and pre-build the scope its unary tests
 	// run in (the decision scope plus "?" bound to the column's input value).
 	colScopes := make([]*feel.Scope, len(ct.inputs))
@@ -112,30 +124,47 @@ func (ct *compiledTable) evaluate(s *feel.Scope) (value.Value, error) {
 			return nil, err
 		}
 		colScopes[i] = s.Extend(v)
+		if tt != nil {
+			tt.Inputs = append(tt.Inputs, InputTrace{Expression: ct.inputExprs[i], Value: v})
+		}
 	}
 
 	var matched []int
 	for ri, r := range ct.rules {
 		ok := true
+		var conds []ConditionTrace
 		for ci, test := range r.tests {
 			m, err := feel.Matches(test, colScopes[ci])
 			if err != nil {
 				return nil, err
 			}
+			if tt != nil {
+				conds = append(conds, ConditionTrace{Input: ct.inputExprs[ci], Entry: r.inputEntries[ci], Matched: m})
+			}
 			if !m {
 				ok = false
-				break
+				break // short-circuit: cells after a miss are not evaluated (and not traced)
 			}
 		}
 		if ok {
 			matched = append(matched, ri)
 		}
+		if tt != nil {
+			tt.Rules = append(tt.Rules, RuleTrace{Index: r.index, ID: r.id, Matched: ok, Conditions: conds})
+		}
+	}
+	if tt != nil {
+		tt.Matched = append(tt.Matched, matched...)
 	}
 
-	return ct.applyHitPolicy(s, matched)
+	out, err := ct.applyHitPolicy(s, matched, tt)
+	if rec != nil {
+		rec.add(*tt)
+	}
+	return out, err
 }
 
-func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Value, error) {
+func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int, tt *TableTrace) (value.Value, error) {
 	switch ct.hitPolicy {
 	case model.HitUnique:
 		if len(matched) == 0 {
@@ -144,24 +173,24 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 		if len(matched) > 1 {
 			return nil, fmt.Errorf("UNIQUE hit policy: %d rules matched", len(matched))
 		}
-		return ct.ruleOutput(s, matched[0])
+		return ct.ruleOutput(s, matched[0], tt)
 
 	case model.HitFirst:
 		if len(matched) == 0 {
 			return value.Null, nil
 		}
-		return ct.ruleOutput(s, matched[0])
+		return ct.ruleOutput(s, matched[0], tt)
 
 	case model.HitAny:
 		if len(matched) == 0 {
 			return value.Null, nil
 		}
-		first, err := ct.ruleOutput(s, matched[0])
+		first, err := ct.ruleOutput(s, matched[0], tt)
 		if err != nil {
 			return nil, err
 		}
 		for _, ri := range matched[1:] {
-			v, err := ct.ruleOutput(s, ri)
+			v, err := ct.ruleOutput(s, ri, tt)
 			if err != nil {
 				return nil, err
 			}
@@ -172,13 +201,13 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 		return first, nil
 
 	case model.HitRuleOrder:
-		return ct.collectList(s, matched)
+		return ct.collectList(s, matched, tt)
 
 	case model.HitCollect:
 		if ct.aggregation == model.AggNone {
-			return ct.collectList(s, matched)
+			return ct.collectList(s, matched, tt)
 		}
-		return ct.aggregate(s, matched)
+		return ct.aggregate(s, matched, tt)
 
 	default:
 		return nil, fmt.Errorf("unsupported hit policy %q", ct.hitPolicy)
@@ -186,27 +215,35 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int) (value.Val
 }
 
 // ruleOutput builds a matched rule's output: the bare value for a single output,
-// or a context keyed by output name for multiple outputs.
-func (ct *compiledTable) ruleOutput(s *feel.Scope, ri int) (value.Value, error) {
+// or a context keyed by output name for multiple outputs. When tracing, it
+// records the per-output values against the rule that produced them.
+func (ct *compiledTable) ruleOutput(s *feel.Scope, ri int, tt *TableTrace) (value.Value, error) {
 	r := ct.rules[ri]
-	if len(ct.outputNames) == 1 {
-		return r.outputs[0](s)
-	}
-	ctx := value.NewContext()
+	vals := make([]value.Value, len(r.outputs))
 	for i, out := range r.outputs {
 		v, err := out(s)
 		if err != nil {
 			return nil, err
 		}
-		ctx.Put(ct.outputNames[i], v)
+		vals[i] = v
+	}
+	if tt != nil {
+		tt.Rules[ri].Outputs = vals
+	}
+	if len(ct.outputNames) == 1 {
+		return vals[0], nil
+	}
+	ctx := value.NewContext()
+	for i := range vals {
+		ctx.Put(ct.outputNames[i], vals[i])
 	}
 	return ctx, nil
 }
 
-func (ct *compiledTable) collectList(s *feel.Scope, matched []int) (value.Value, error) {
+func (ct *compiledTable) collectList(s *feel.Scope, matched []int, tt *TableTrace) (value.Value, error) {
 	elems := make([]value.Value, 0, len(matched))
 	for _, ri := range matched {
-		v, err := ct.ruleOutput(s, ri)
+		v, err := ct.ruleOutput(s, ri, tt)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +252,7 @@ func (ct *compiledTable) collectList(s *feel.Scope, matched []int) (value.Value,
 	return value.NewList(elems...), nil
 }
 
-func (ct *compiledTable) aggregate(s *feel.Scope, matched []int) (value.Value, error) {
+func (ct *compiledTable) aggregate(s *feel.Scope, matched []int, tt *TableTrace) (value.Value, error) {
 	if ct.aggregation == model.AggCount {
 		return value.NumberFromInt64(int64(len(matched))), nil
 	}
@@ -224,7 +261,7 @@ func (ct *compiledTable) aggregate(s *feel.Scope, matched []int) (value.Value, e
 	}
 	vals := make([]value.Value, 0, len(matched))
 	for _, ri := range matched {
-		v, err := ct.ruleOutput(s, ri)
+		v, err := ct.ruleOutput(s, ri, tt)
 		if err != nil {
 			return nil, err
 		}

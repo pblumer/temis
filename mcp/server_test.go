@@ -229,6 +229,36 @@ func TestEvaluateStatelessByXML(t *testing.T) {
 	}
 }
 
+func TestEvaluateWithTrace(t *testing.T) {
+	xml, _ := json.Marshal(dishXML(t))
+
+	// No explain → no trace key in the payload.
+	plain := run(t, newServer(), call(1, "evaluate",
+		`{"xml":`+string(xml)+`,"decision":"Dish","input":{"Season":"Winter","Guest Count":8}}`))[0].payload(t)
+	if _, ok := plain["trace"]; ok {
+		t.Errorf("trace should be absent without explain")
+	}
+
+	// explain:true → trace present with the matched rule.
+	out := run(t, newServer(), call(2, "evaluate",
+		`{"xml":`+string(xml)+`,"decision":"Dish","input":{"Season":"Winter","Guest Count":8},"explain":true}`))[0].payload(t)
+	trace, ok := out["trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("trace missing or wrong type: %v", out["trace"])
+	}
+	tables, _ := trace["tables"].([]any)
+	if len(tables) != 1 {
+		t.Fatalf("want one traced table, got %v", trace["tables"])
+	}
+	tbl, _ := tables[0].(map[string]any)
+	if tbl["hitPolicy"] != "U" {
+		t.Errorf("hitPolicy = %v, want U", tbl["hitPolicy"])
+	}
+	if matched, _ := tbl["matched"].([]any); len(matched) != 1 {
+		t.Errorf("matched = %v, want one rule", tbl["matched"])
+	}
+}
+
 func TestDescribeDecision(t *testing.T) {
 	s := newServer()
 	xml, _ := json.Marshal(dishXML(t))

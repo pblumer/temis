@@ -40,6 +40,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-22 | Date/Time/Duration + temporale Built-ins, Komponentenzugriff, `@`-Literale | ✅ |
 | WP-32 | HTTP-Service (`temisd`): `/v1/models`, `/v1/evaluate`, OpenAPI | ✅ |
 | WP-50 | Agent-First: MCP-Server (`temis-mcp`) über stdio | ✅ |
+| WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
 > ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
@@ -167,8 +168,14 @@ Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Ein
 { "command": "go", "args": ["run", "./cmd/temis-mcp"] }   // oder das gebaute Binary
 ```
 
-> Nächste Agent-First-Bausteine (Roadmap-Etappe „Agent-First"): **WP-51**
-> Entscheidungsspur (welche Regel warum gefeuert hat) und **WP-52** typisiertes
+**Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
+`explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine
+`trace` — welche Regel(n) gefeuert haben, welche Bedingungen erfüllt/verfehlt waren und
+welche Outputs beigetragen haben. So *begründet* ein Agent eine Entscheidung, statt sie
+nur abzulesen. Die Spur stammt aus der echten Auswertung; der Default-Pfad ohne `explain`
+bleibt unverändert schnell.
+
+> Nächster Agent-First-Baustein (Roadmap-Etappe „Agent-First"): **WP-52** — typisiertes
 > Eingabe-Schema mit strenger Validierung.
 
 ## Entwicklung

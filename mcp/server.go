@@ -150,7 +150,9 @@ var tools = []toolSpec{
 		Name: "evaluate",
 		Description: "Evaluate a decision and return its outputs deterministically. " +
 			"Supply either modelId (for a cached model) or xml (compiled on the fly). " +
-			"The result is reproducible: the same inputs always yield the same outputs.",
+			"The result is reproducible: the same inputs always yield the same outputs. " +
+			"Set explain=true to also get a trace of which rules matched and why — use " +
+			"it to justify the decision, not just read it.",
 		InputSchema: obj(map[string]any{
 			"modelId":  str("A modelId from load_model. Provide this or xml."),
 			"xml":      str("A DMN 1.5 XML document to compile and evaluate in one call. Provide this or modelId."),
@@ -158,6 +160,10 @@ var tools = []toolSpec{
 			"input": map[string]any{
 				"type":        "object",
 				"description": "The evaluation context: input-data name → value. Names the model does not reference are ignored; missing referenced names evaluate to null.",
+			},
+			"explain": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include a decision trace (matched rules, satisfied/violated conditions, contributing outputs) so the decision can be justified.",
 			},
 		}, "decision"),
 	},
@@ -256,6 +262,7 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 		XML      string         `json:"xml"`
 		Decision string         `json:"decision"`
 		Input    map[string]any `json:"input"`
+		Explain  bool           `json:"explain"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return toolError("invalid arguments: " + err.Error()), nil
@@ -286,7 +293,11 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
-	res, err := dec.Evaluate(ctx, dmn.Input(a.Input))
+	var opts []dmn.EvalOption
+	if a.Explain {
+		opts = append(opts, dmn.WithTrace())
+	}
+	res, err := dec.Evaluate(ctx, dmn.Input(a.Input), opts...)
 	if err != nil {
 		return toolError("evaluation failed: " + err.Error()), nil
 	}
@@ -294,6 +305,7 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 		Outputs:     res.Outputs,
 		Decisions:   res.Decisions,
 		Diagnostics: toDiagnosticDTOs(res.Diags),
+		Trace:       res.Trace,
 	})
 }
 
@@ -377,6 +389,7 @@ type evaluateResponse struct {
 	Outputs     map[string]any  `json:"outputs"`
 	Decisions   map[string]any  `json:"decisions"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
+	Trace       *dmn.Trace      `json:"trace,omitempty"`
 }
 
 type diagnosticDTO struct {

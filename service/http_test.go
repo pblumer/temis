@@ -164,6 +164,36 @@ func TestEvaluateStateless(t *testing.T) {
 	}
 }
 
+func TestEvaluateWithTrace(t *testing.T) {
+	h := newTestServer(t)
+
+	// Without explain: no trace in the response.
+	plain := mustJSON(t, evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+	})
+	if resp := decode[evaluateResponse](t, do(t, h, "POST", "/v1/evaluate", "application/json", plain)); resp.Trace != nil {
+		t.Errorf("trace should be absent without explain, got %+v", resp.Trace)
+	}
+
+	// With explain: trace present, hit policy U, one matched rule producing Roastbeef.
+	withTrace := mustJSON(t, evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+		Explain:  true,
+	})
+	resp := decode[evaluateResponse](t, do(t, h, "POST", "/v1/evaluate", "application/json", withTrace))
+	if resp.Trace == nil || len(resp.Trace.Tables) != 1 {
+		t.Fatalf("want one traced table, got %+v", resp.Trace)
+	}
+	tbl := resp.Trace.Tables[0]
+	if tbl.HitPolicy != "U" || len(tbl.Matched) != 1 {
+		t.Errorf("trace table = %+v, want hit policy U with one match", tbl)
+	}
+}
+
 func TestErrorResponses(t *testing.T) {
 	h := newTestServer(t)
 	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID

@@ -133,18 +133,21 @@ type modelSummary struct {
 type evaluateModelRequest struct {
 	Decision string         `json:"decision"`
 	Input    map[string]any `json:"input"`
+	Explain  bool           `json:"explain,omitempty"`
 }
 
 type evaluateStatelessRequest struct {
 	XML      string         `json:"xml"`
 	Decision string         `json:"decision"`
 	Input    map[string]any `json:"input"`
+	Explain  bool           `json:"explain,omitempty"`
 }
 
 type evaluateResponse struct {
 	Outputs     map[string]any  `json:"outputs"`
 	Decisions   map[string]any  `json:"decisions"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
+	Trace       *dmn.Trace      `json:"trace,omitempty"`
 }
 
 type diagnosticDTO struct {
@@ -234,7 +237,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input)
+	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -254,15 +257,17 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input)
+	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// evaluate runs a decision and writes the result or an appropriate problem.
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any) {
+// evaluate runs a decision and writes the result or an appropriate problem. When
+// explain is set the response carries the decision trace (which rules matched and
+// why).
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any, explain bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -272,7 +277,11 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		writeProblem(w, http.StatusNotFound, "DECISION_NOT_FOUND", err.Error())
 		return
 	}
-	res, err := dec.Evaluate(ctx, dmn.Input(input))
+	var opts []dmn.EvalOption
+	if explain {
+		opts = append(opts, dmn.WithTrace())
+	}
+	res, err := dec.Evaluate(ctx, dmn.Input(input), opts...)
 	if err != nil {
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
@@ -281,6 +290,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		Outputs:     res.Outputs,
 		Decisions:   res.Decisions,
 		Diagnostics: toDiagnosticDTOs(res.Diags),
+		Trace:       res.Trace,
 	})
 }
 

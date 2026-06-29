@@ -3,6 +3,8 @@ package dmn
 import (
 	"context"
 	"fmt"
+
+	"github.com/pblumer/temis/internal/boxed"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -21,6 +23,23 @@ type Result struct {
 	// Diags holds runtime diagnostics (e.g. a null produced by a recoverable
 	// error). Spec-conformant null results are not errors.
 	Diags Diagnostics
+	// Trace is the structured explanation of this evaluation, present only when
+	// the call requested it via WithTrace; nil otherwise.
+	Trace *Trace
+}
+
+// EvalOption tunes a single Evaluate call.
+type EvalOption func(*evalConfig)
+
+type evalConfig struct {
+	trace bool
+}
+
+// WithTrace makes Evaluate attach a structured explanation (which rules matched
+// and why) to Result.Trace. It is opt-in: without it, evaluation takes the
+// allocation-free path and Result.Trace stays nil (ADR-0012, WP-51).
+func WithTrace() EvalOption {
+	return func(c *evalConfig) { c.trace = true }
 }
 
 // Evaluate runs the decision against in and returns its result. Compilation has
@@ -38,7 +57,7 @@ type Result struct {
 // map[string]any. A spec-conformant null becomes nil and is not an error; only
 // genuine runtime failures (a context cancellation, an exhausted limit, a
 // UNIQUE table with multiple matches) return a non-nil error.
-func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, error) {
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -46,19 +65,35 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		return Result{}, fmt.Errorf("dmn: decision %q has no executable logic", c.name)
 	}
 
+	var cfg evalConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	vals, err := inputToValues(in)
 	if err != nil {
 		return Result{}, err
 	}
 
-	out, err := c.expr(c.env.NewScope(vals))
+	scope := c.env.NewScope(vals)
+	var rec *boxed.Recorder
+	if cfg.trace {
+		rec = boxed.NewRecorder()
+		scope = scope.WithTrace(rec)
+	}
+
+	out, err := c.expr(scope)
 	if err != nil {
 		return Result{}, fmt.Errorf("dmn: evaluate decision %q: %w", c.name, err)
 	}
 
 	result := fromValue(out)
-	return Result{
+	res := Result{
 		Outputs:   map[string]any{c.name: result},
 		Decisions: map[string]any{c.name: result},
-	}, nil
+	}
+	if cfg.trace {
+		res.Trace = traceFromRecorder(rec)
+	}
+	return res, nil
 }

@@ -58,10 +58,46 @@ type Result struct {
     Outputs   map[string]any   // Name → Ergebnis (FEEL→Go zurückkonvertiert)
     Decisions map[string]any   // alle ausgewerteten Zwischen-Decisions
     Diags     Diagnostics      // Laufzeit-Warnungen (z.B. null aus Fehler)
+    Trace     *Trace           // strukturierte Erklärung; nur bei WithTrace, sonst nil
 }
 
-func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, error)
+// Evaluate ist variadisch erweiterbar; ohne Optionen unverändert (abwärtskompatibel).
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
+
+type EvalOption func(*evalConfig)
+func WithTrace() EvalOption   // opt-in: füllt Result.Trace
 ```
+
+#### Entscheidungsspur (`Trace`) — opt-in, ADR-0012/WP-51
+
+`WithTrace()` lässt `Evaluate` eine **strukturierte, aus der echten Auswertung
+abgeleitete** Erklärung anhängen (kein nachträgliches Rationalisat). Der Default-Pfad
+ohne Option bleibt allokationsarm (Performance-Budget, ADR-0011). Die `Trace`-Typen
+sind die einzige `dmn`-Oberfläche mit JSON-Tags: HTTP- und MCP-Adapter serialisieren sie
+verbatim, die Feldnamen sind damit Teil des Wire-Vertrags.
+
+```go
+type Trace struct {
+    Tables []TableTrace            // je ausgewerteter Decision Table ein Eintrag
+}
+type TableTrace struct {
+    HitPolicy   string             // U/A/F/R/C
+    Aggregation string             // SUM/MIN/MAX/COUNT oder "" (kein/Plain-Collect)
+    Inputs      []TraceInput       // Eingabespalten + ausgewertete Werte
+    Rules       []TraceRule        // jede Regel mit ihren Bedingungsergebnissen
+    Matched     []int              // Indizes (0-basiert) der getroffenen Regeln
+}
+type TraceInput     struct { Expression string; Value any }
+type TraceRule      struct {
+    Index int; ID string; Matched bool
+    Conditions []TraceCondition    // bis einschließlich der ersten verfehlten (Short-Circuit)
+    Outputs    []any               // nur gesetzt, wenn die Regel zum Ergebnis beigetragen hat
+}
+type TraceCondition struct { Input, Entry string; Matched bool }
+```
+
+HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
+dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
 
 ### 1.4 Diagnostics & Fehler
 
@@ -174,8 +210,8 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | `POST` | `/v1/models` | DMN-XML hochladen → kompilieren, gibt `modelId` + Diagnostics |
 | `GET` | `/v1/models` | Liste aller gecachten Modelle (`modelId`, Decisions, Inputs) — abschaltbar |
 | `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
-| `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...} }` → `Result` |
-| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache) |
+| `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...}, "explain"?: bool }` → `Result` (+ `trace` bei `explain`) |
+| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache); `explain` analog |
 | `GET` | `/docs` | Interaktive Swagger-UI-Testseite (lädt `/openapi.yaml`) |
 | `GET` | `/openapi.yaml` | Eingebettetes OpenAPI-3-Dokument |
 | `GET` | `/healthz`, `/readyz` | Liveness/Readiness |

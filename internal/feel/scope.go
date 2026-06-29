@@ -7,8 +7,27 @@ import "github.com/pblumer/temis/internal/value"
 // architecture §5.2), so evaluation is an array index rather than a map lookup.
 // A Scope is read-only during evaluation and therefore safe to share across
 // goroutines.
+//
+// A Scope may carry an opaque trace sink (WithTrace). The execution core treats
+// it as an untyped value and never inspects it; a consumer that wants an
+// explanation attaches its own recorder and type-asserts it back where it
+// records (e.g. the decision-table evaluator). The default scope carries no sink
+// (nil), so non-traced evaluation stays allocation-free.
 type Scope struct {
-	vars []value.Value
+	vars  []value.Value
+	trace any
+}
+
+// Trace returns the scope's opaque trace sink, or nil when tracing is off.
+func (s *Scope) Trace() any { return s.trace }
+
+// WithTrace returns a shallow copy of the scope carrying the given trace sink.
+// The variable slots are shared (they are read-only), so this is cheap and is
+// done once per traced evaluation at the root scope.
+func (s *Scope) WithTrace(sink any) *Scope {
+	ns := *s
+	ns.trace = sink
+	return &ns
 }
 
 // at returns the value in slot i, or null if i is out of range (defensive; the
@@ -94,7 +113,7 @@ func (s *Scope) Extend(extra ...value.Value) *Scope {
 	vars := make([]value.Value, len(s.vars)+len(extra))
 	copy(vars, s.vars)
 	copy(vars[len(s.vars):], extra)
-	return &Scope{vars: vars}
+	return &Scope{vars: vars, trace: s.trace}
 }
 
 // NewScope builds a runtime Scope from named input values, placing each into its
