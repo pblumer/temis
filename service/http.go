@@ -129,14 +129,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
-	mux.HandleFunc("GET /{$}", s.handleUI)
-	mux.HandleFunc("GET /ui", s.handleUI)
-	mux.HandleFunc("GET /og-image.png", s.handleOGImage)
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
-	// Own DMN modeler frontend (ADR-0016), embedded — no CDN, offline. Served as
-	// a subtree under /app/; /ui keeps the legacy dmn-js editor until WP-67.
-	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(webui.Assets())))
+	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
+	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
+	// /ui and /app/ paths redirect here so old links keep working. This catch-all
+	// also serves the SPA's assets (assets/, feel.wasm, wasm_exec.js). It is
+	// registered method-agnostically so it does not overlap the gRPC handler's own
+	// path prefix below (a method-specific "GET /" would tie with it and panic);
+	// more specific routes still take precedence.
+	mux.Handle("/", http.FileServerFS(webui.Assets()))
+	mux.HandleFunc("GET /ui", redirectTo("/"))
+	mux.HandleFunc("GET /app/", redirectTo("/"))
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
 
@@ -293,7 +297,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetModelXML returns a cached model's raw DMN XML, so a client (the /ui
+// handleGetModelXML returns a cached model's raw DMN XML, so a client (the
 // editor) can reopen a model that was previously deployed to the server.
 func (s *Server) handleGetModelXML(w http.ResponseWriter, r *http.Request) {
 	sm, ok := s.lookup(r.PathValue("id"))
@@ -446,6 +450,14 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// redirectTo permanently redirects to target. It keeps the retired /ui and /app/
+// paths pointing at the modeler's new home at the site root (ADR-0016 WP-67).
+func redirectTo(target string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	}
 }
 
 // evaluate runs a decision and writes the result or an appropriate problem. When

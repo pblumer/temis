@@ -321,73 +321,42 @@ func TestDocsAndSpec(t *testing.T) {
 	}
 }
 
-func TestPlaygroundUI(t *testing.T) {
+// TestModelerAtRoot checks the WP-67 cutover: the site root serves the own
+// modeler SPA (not the retired dmn-js page), the SPA's embedded assets are
+// reachable, and the legacy /ui and /app/ paths redirect to the root.
+func TestModelerAtRoot(t *testing.T) {
 	h := newTestServer(t)
 
-	for _, path := range []string{"/", "/ui"} {
-		rec := do(t, h, "GET", path, "", nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("GET %s = %d, want 200", path, rec.Code)
-		}
-		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-			t.Errorf("%s content-type = %q, want text/html", path, ct)
-		}
-		body := rec.Body.String()
-		if !strings.Contains(body, "Temis — DMN Editor") {
-			t.Errorf("%s body does not look like the DMN editor page", path)
-		}
-		if !strings.Contains(body, "dmn-js") {
-			t.Errorf("%s body does not embed dmn-js", path)
+	rec := do(t, h, "GET", "/", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("/ content-type = %q, want text/html", ct)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Temis Modeler") {
+		t.Errorf("/ body does not look like the own modeler page")
+	}
+	if strings.Contains(body, "dmn-js") {
+		t.Error("/ still embeds dmn-js; the cutover should have removed it")
+	}
+
+	// The embedded SPA assets are served from the same root.
+	if rec := do(t, h, "GET", "/wasm_exec.js", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("GET /wasm_exec.js = %d, want 200 (SPA runtime not served at root)", rec.Code)
+	}
+
+	// Legacy paths redirect to the new home.
+	for _, path := range []string{"/ui", "/app/"} {
+		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusMovedPermanently {
+			t.Errorf("GET %s = %d, want 301 redirect to /", path, rec.Code)
 		}
 	}
 
 	// The root pattern must not swallow unknown paths into a 200.
 	if rec := do(t, h, "GET", "/does-not-exist", "", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("GET /does-not-exist = %d, want 404", rec.Code)
-	}
-}
-
-func TestLinkPreview(t *testing.T) {
-	h := newTestServer(t)
-
-	// The page carries Open Graph / Twitter tags for link unfurling, and the
-	// __OG_BASE__ placeholder is replaced with the request's absolute origin.
-	body := do(t, h, "GET", "/", "", nil).Body.String()
-	for _, want := range []string{
-		`property="og:title"`,
-		`property="og:image"`,
-		`name="twitter:card" content="summary_large_image"`,
-		`http://example.com/og-image.png`, // httptest default host, made absolute
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("page missing link-preview marker %q", want)
-		}
-	}
-	if strings.Contains(body, "__OG_BASE__") {
-		t.Error("og base placeholder was not substituted")
-	}
-
-	// The preview image is served as PNG, publicly, with a real PNG payload.
-	rec := do(t, h, "GET", "/og-image.png", "", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /og-image.png = %d, want 200", rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
-		t.Errorf("og-image content-type = %q, want image/png", ct)
-	}
-	if !bytes.HasPrefix(rec.Body.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
-		t.Error("og-image body is not a PNG")
-	}
-
-	// Reverse-proxy headers drive the absolute URL so previews resolve behind a
-	// TLS terminator.
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("X-Forwarded-Proto", "https")
-	req.Header.Set("X-Forwarded-Host", "temis.example.com")
-	prox := httptest.NewRecorder()
-	h.ServeHTTP(prox, req)
-	if !strings.Contains(prox.Body.String(), "https://temis.example.com/og-image.png") {
-		t.Error("og:image did not honor X-Forwarded-Proto/Host")
 	}
 }
 
@@ -420,7 +389,7 @@ func TestTokenAuth(t *testing.T) {
 	}
 
 	// Discovery and probes stay public even with a token configured.
-	for _, path := range []string{"/", "/ui", "/docs", "/openapi.yaml", "/healthz"} {
+	for _, path := range []string{"/", "/docs", "/openapi.yaml", "/healthz"} {
 		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with token configured = %d, want 200", path, rec.Code)
 		}

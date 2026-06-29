@@ -125,6 +125,10 @@ live (Syntax + unbekannte Variablen, `line:col`), offline, ohne Roundtrip
 - [x] **FEEL-Validierungs-Spike** — `cmd/feel-wasm` + `web/feel-spike`, headless verifiziert.
 - [ ] Neue Roadmap-WPs: Client-Modell + 1.5-`dmn-moddle`-Deskriptoren, Command-Stack, Decision-
   Table-Editor, DRD-Canvas, FEEL-Integration, `go:embed`-Auslieferung.
-- [ ] **Migration `service/ui.go`:** CDN-dmn-js → eigener, eingebetteter Modeler.
+- [x] **Migration `service/ui.go`:** CDN-dmn-js → eigener, eingebetteter Modeler. **Cutover
+  vollzogen (WP-67):** `service/ui.go` (CDN-dmn-js, bpmn.io-Logo) gelöscht; der eigene Modeler
+  wird per `go:embed` an der **Wurzel `/`** ausgeliefert (Vite-`base: './'`), `/ui` und `/app/`
+  leiten dauerhaft (301) auf `/` um. Headless an `/` verifiziert: kein bpmn.io-Logo, **0
+  Fremd-Host-Requests** (offline, kein CDN), DRD + editierbare Decision-Tables funktionsfähig.
 - [x] **ADR-0006** auf `superseded by ADR-0016` gesetzt; **ADR-0012** (dmn-js per CDN) als
   überholt markiert; Index aktualisiert.

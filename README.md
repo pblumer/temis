@@ -120,16 +120,17 @@ liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die
 hinterlegten Decisions einsehen kann, schaltet den Endpunkt mit
 `-list-models=false` ab — er antwortet dann mit `404`, als gäbe es ihn nicht.
 
-**Web-UI (DMN-Playground):** Der Server liefert unter `GET /ui` (auch `GET /`) eine
-eigenständige, abhängigkeitsfreie Bedienoberfläche: DMN-XML einfügen oder als Datei
-laden → **Modell laden** liest Decisions und Inputs aus → Eingabewerte eintragen →
-**Auswerten**. Outputs, Decisions und Diagnostics werden direkt angezeigt; ein optionaler
-Bearer-Token kann gesetzt werden. Die Seite enthält kein externes Asset (kein CDN) und
-funktioniert daher offline; sie nutzt ausschließlich die `/v1`-Endpunkte.
+**Web-UI (eigener DMN-Modeler):** Der Server liefert unter `GET /` einen
+eigenständigen, abhängigkeitsfreien DMN-Modeler (ADR-0016, kein dmn-js, kein CDN,
+offline): DRD-Canvas mit eigenen Renderern, Knoten verschieben/umbenennen/typisieren
+(FEEL-validiert), **Decision-Tables ansehen & editieren** (Zellen, Regeln, FEEL-Validierung),
+Datei öffnen, **Auswerten** sowie **Speichern** zurück ins DMN-XML — alles über die
+`/v1`-Endpunkte. Ein optionaler Bearer-Token kann gesetzt werden. Die Alt-Pfade `/ui`
+und `/app/` leiten dauerhaft auf `/` um.
 
 ```sh
 go run ./cmd/temisd -addr :8080
-# Browser: http://localhost:8080/ui
+# Browser: http://localhost:8080/
 ```
 
 **Interaktive API-Doku (Swagger UI):** Der Server liefert zusätzlich eine dynamische
@@ -234,7 +235,7 @@ Image direkt nutzen (sobald ein Release existiert):
 
 ```sh
 docker run --rm -p 8080:8080 ghcr.io/pblumer/temis/temisd:latest
-# Browser: http://localhost:8080/ui
+# Browser: http://localhost:8080/
 ```
 
 Lokal bauen — der Build brennt die Version ein:

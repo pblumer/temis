@@ -28,7 +28,7 @@ func main() {
 	maxIterations := flag.Int("max-iterations", 0, "limit on total comprehension iterations per evaluation (0 = default)")
 	maxListSize := flag.Int("max-list-size", 0, "limit on the size of any single produced list (0 = default)")
 	examples := flag.Bool("examples", true,
-		"preload the bundled example DMN models so they appear in the /ui explorer on start")
+		"preload the bundled example DMN models so they appear in the modeler on start")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -59,7 +59,7 @@ func main() {
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
 	}
-	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
+	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)

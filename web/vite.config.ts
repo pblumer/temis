@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite'
 
-// The app is served by temisd under /app/ (go:embed, WP-60), so assets must be
-// referenced relative to that base. No CDN — everything is bundled and embedded.
+// The app is served by temisd at the site root (go:embed; ADR-0016 WP-67 cutover
+// replaced the legacy dmn-js /ui). A relative base makes the bundled assets
+// resolve from any mount point (root, or the /app/ redirect). No CDN — everything
+// is embedded and offline.
 export default defineConfig({
-  base: '/app/',
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
