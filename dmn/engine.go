@@ -17,14 +17,14 @@ type Engine struct {
 	cfg config
 }
 
-// config carries Engine options. Concrete fields (limits, clock, locale) are
-// added alongside the features that consume them (WP-22/WP-34); the type exists
-// now so the New/Option signatures stay stable.
-type config struct{}
+// config carries Engine options. Concrete fields are added alongside the
+// features that consume them; the type and the Option signature stay stable.
+type config struct {
+	limits    Limits
+	limitsSet bool
+}
 
-// Option configures an Engine passed to New. No options are defined yet; the
-// type is fixed so callers and the constructor signature remain stable as
-// configuration lands in later work packages.
+// Option configures an Engine passed to New (e.g. WithLimits).
 type Option func(*config)
 
 // New returns an Engine configured with the given options.
@@ -45,6 +45,16 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
+	// A configured compile timeout bounds pathological models; it applies only
+	// when the caller's context carries no earlier deadline of its own.
+	if d := e.cfg.limits.CompileTimeout; d > 0 {
+		if _, ok := ctx.Deadline(); !ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, d)
+			defer cancel()
+		}
+	}
+	lim := e.cfg.feelLimits()
 
 	raw, err := dmnxml.Decode(xml)
 	if err != nil {
@@ -69,7 +79,11 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	items := buildItemTypes(m)
 
 	for _, dec := range m.Decisions {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		cd, dd := compileDecision(m, dec, funcs, items)
+		cd.limits = lim
 		diags = append(diags, dd...)
 		defs.order = append(defs.order, cd)
 		if cd.id != "" {
@@ -82,6 +96,9 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 
 	diags = append(diags, wireRequirements(defs, m)...)
 	diags = append(diags, compileServices(defs, m)...)
+	for _, cs := range defs.serviceOrder {
+		cs.limits = lim
+	}
 	diags = append(diags, typecheckModel(m, funcs, items)...)
 
 	return defs, diags, nil

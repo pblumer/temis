@@ -38,6 +38,9 @@ type CompiledDecision struct {
 	// (input data only, not required decisions). Evaluate fails hard when any is
 	// absent from the supplied Input.
 	reqInputs []string
+	// limits are the resource bounds enforced for an evaluation rooted at this
+	// decision (WP-34), resolved from the engine configuration at compile time.
+	limits feel.Limits
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error

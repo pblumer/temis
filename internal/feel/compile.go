@@ -558,13 +558,10 @@ func FuncValue(params []string, body CompiledExpr) CompiledExpr {
 			Arity: arity,
 			Call: func(args []value.Value) (value.Value, error) {
 				st := captured.st
-				if st != nil {
-					if st.depth >= st.maxDepth {
-						return nil, fmt.Errorf("feel: call depth limit %d exceeded", st.maxDepth)
-					}
-					st.depth++
-					defer func() { st.depth-- }()
+				if err := st.enterCall(); err != nil {
+					return nil, err
 				}
+				defer st.leaveCall()
 				vals := make([]value.Value, arity)
 				for i := range vals {
 					if i < len(args) {
