@@ -84,7 +84,7 @@ Erweiterungen über `package dmn` (ADR-0011); kein `internal/`-Zugriff von auße
 
 | WP | Titel | Abhängt von | Akzeptanzkriterium |
 |---|---|---|---|
-| WP-40 | TCK-Runner | WP-21, WP-28 | Liest offizielle TCK-`.dmn` + Testdefinitionen, führt Cases aus, Report grün/rot. |
+| WP-40 ✅ | TCK-Runner | WP-21, WP-28 | **done** — `internal/tck`: liest das offizielle TCK-`testCases`-XML (namespace-/xsi-tolerant) + zugehöriges `.dmn` (via `<modelName>`), führt jeden Case über die öffentliche `dmn`-API aus (DRG-Chaining inkl.) und vergleicht je `resultNode` Ist↔Soll. Wertdekodierung für Skalare (xsd/feel-Typen → Decimal/Bool/String/Temporal), `<list>` und `<component>`-Contexts; Vergleich in der kanonischen Engine-Go-Darstellung. `Report` (Passed/Failed/OK/Summary); `Run`/`RunFile`. Per-Case-Fehler (Mismatch/Eval-Error) brechen die Suite nicht ab. Tests inkl. Demo-Modell (Tabelle + DRG-Chaining + Context-Output) und Fehlerpfade. (Offizielles Korpus + ≥95%-Quote → WP-41.) |
 | WP-41 | TCK-Konformität | WP-40, alle Beta-WP | **Zielquote:** ≥ 95 % der anwendbaren TCK-Cases grün; jede Ausnahme dokumentiert mit Begründung. |
 | WP-42 | Performance-Budget | WP-10 | Benchmark-Suite erfüllt Budgets aus `50-testing-strategy.md`; Regressionen brechen CI. |
 | WP-43 | API-Stabilisierung | WP-10, WP-32 | Public API als `v1` markiert, `// Deprecated`-Policy, semver. Keine breaking changes danach ohne Major. |
