@@ -117,6 +117,17 @@ const playgroundPage = `<!DOCTYPE html>
     .temis-badge.final { background: #1f6feb; }
     .djs-element.temis-eval .djs-visual > :first-child { stroke: #2da44e !important; stroke-width: 3px !important; }
     .djs-element.temis-final .djs-visual > :first-child { stroke: #1f6feb !important; stroke-width: 3px !important; }
+    /* Per-decision variable scope (expandable): the input data and upstream
+       decisions a decision can see, with the values they held at evaluation. */
+    .scope-item { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; padding: 6px 10px; }
+    .scope-item > summary { cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+    .scope-item .dec { font-family: var(--mono); color: var(--accent); }
+    .scope-item .dec.final { color: #4f8bff; font-weight: 600; }
+    .scope-item .val { font-family: var(--mono); }
+    .scope-vars { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+    .scope-vars .row2 { display: flex; justify-content: space-between; gap: 12px;
+      font-family: var(--mono); font-size: 12.5px; padding: 2px 0; }
+    .scope-vars .vk { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -177,8 +188,8 @@ const playgroundPage = `<!DOCTYPE html>
       </div>
       <div id="resultBox" style="display:none">
         <h2 style="margin-top:20px">Ergebnis</h2>
-        <p class="muted" id="resultIntro">Durchlaufene Decisions — links im Diagramm markiert (★ = angefragte):</p>
-        <table class="out-table" id="outTable"><tbody></tbody></table>
+        <p class="muted" id="resultIntro">Durchlaufene Decisions — links im Diagramm markiert (★ = angefragte). Aufklappen (oder Knoten anklicken) zeigt den Variablen-Scope:</p>
+        <div id="decisionList"></div>
         <div id="diags"></div>
         <details>
           <summary>Rohe Antwort</summary>
@@ -465,7 +476,7 @@ const playgroundPage = `<!DOCTYPE html>
           setStatus($('evalStatus'), errorText(r.resp, r.body), 'err');
           return;
         }
-        renderResult(r.body, decision);
+        renderResult(r.body, decision, input);
         setStatus($('evalStatus'), 'OK', 'ok');
       }).catch(function (e) { setStatus($('evalStatus'), 'Fehler: ' + (e.message || e), 'err'); });
     }
@@ -479,34 +490,26 @@ const playgroundPage = `<!DOCTYPE html>
       return String(v);
     }
 
-    function renderResult(res, finalDecision) {
+    function renderResult(res, finalDecision, evalInput) {
       $('resultBox').style.display = 'block';
       $('rawResult').textContent = JSON.stringify(res, null, 2);
-      var tb = $('outTable').querySelector('tbody'); tb.innerHTML = '';
-      // Show every decision that was traversed (with DRG chaining this includes
-      // the intermediate decisions, not just the requested one).
-      var decisions = res.decisions || res.outputs || {};
-      var keys = Object.keys(decisions);
-      if (!keys.length) {
-        var tr = document.createElement('tr');
-        var td = document.createElement('td'); td.colSpan = 2; td.className = 'muted';
-        td.textContent = 'Keine Decisions ausgewertet.'; tr.appendChild(td); tb.appendChild(tr);
-      }
-      keys.forEach(function (k) {
-        var tr = document.createElement('tr');
-        var kt = document.createElement('td'); kt.textContent = (k === finalDecision) ? (k + ' ★') : k;
-        var vt = document.createElement('td'); vt.textContent = fmt(decisions[k]);
-        tr.appendChild(kt); tr.appendChild(vt); tb.appendChild(tr);
-      });
       renderDiags(res.diagnostics || []);
-      annotateGraph(res, finalDecision);
+      // One DRD pass: annotate the graph, render the per-decision scope (which
+      // needs the DRD connections) and wire node clicks to the scope list.
+      withDrd(function (viewer) {
+        var reg = null;
+        if (viewer) { try { reg = viewer.get('elementRegistry'); } catch (e) { /* ignore */ } }
+        annotateOn(viewer, res, finalDecision);
+        renderScope(reg, res, finalDecision, evalInput);
+        bindNodeClick(viewer);
+      });
     }
 
     // Run cb with the DRD view's viewer, switching to the DRD view first if a
     // decision-table/literal view is currently open. Falls back to the active
     // viewer when the views API is unavailable.
     function withDrd(cb) {
-      if (!dmn || !dmn.getActiveViewer) { return; }
+      if (!dmn || !dmn.getActiveViewer) { cb(null); return; }
       var av = dmn.getActiveView && dmn.getActiveView();
       if (av && av.type === 'drd') { cb(dmn.getActiveViewer()); return; }
       var views = (dmn.getViews && dmn.getViews()) || [];
@@ -530,40 +533,125 @@ const playgroundPage = `<!DOCTYPE html>
       });
     }
 
+    // Find the DRD element for a decision by its name (or id).
+    function decisionElement(reg, name) {
+      if (!reg) { return null; }
+      return reg.filter(function (e) {
+        var bo = e.businessObject;
+        return bo && bo.$type === 'dmn:Decision' && (bo.name === name || e.id === name);
+      })[0] || null;
+    }
+
     // Annotate the DRD: outline every traversed decision and badge it with the
     // value it produced; the requested ("final") decision is highlighted apart.
-    function annotateGraph(res, finalDecision) {
-      withDrd(function (viewer) {
-        if (!viewer) { return; }
-        var reg, overlays, canvas;
-        try { reg = viewer.get('elementRegistry'); overlays = viewer.get('overlays'); canvas = viewer.get('canvas'); }
-        catch (e) { return; }
-        annotatedIds.forEach(function (id) {
-          try { canvas.removeMarker(id, 'temis-eval'); canvas.removeMarker(id, 'temis-final'); } catch (e) { /* ignore */ }
-        });
-        try { overlays.clear(); } catch (e) { /* ignore */ }
-        annotatedIds = [];
-
-        var decisions = res.decisions || {};
-        Object.keys(decisions).forEach(function (name) {
-          var el = reg.filter(function (e) {
-            var bo = e.businessObject;
-            return bo && bo.$type === 'dmn:Decision' && (bo.name === name || e.id === name);
-          })[0];
-          if (!el) { return; }
-          var isFinal = (name === finalDecision);
-          try { canvas.addMarker(el.id, isFinal ? 'temis-final' : 'temis-eval'); } catch (e) { /* ignore */ }
-          annotatedIds.push(el.id);
-
-          var full = fmt(decisions[name]);
-          var text = (full.length > 40) ? (full.slice(0, 39) + '…') : full;
-          var div = document.createElement('div');
-          div.className = 'temis-badge' + (isFinal ? ' final' : '');
-          div.title = name + ' = ' + full;
-          div.textContent = text;
-          try { overlays.add(el.id, { position: { bottom: -8, left: 0 }, html: div }); } catch (e) { /* ignore */ }
-        });
+    function annotateOn(viewer, res, finalDecision) {
+      if (!viewer) { return; }
+      var reg, overlays, canvas;
+      try { reg = viewer.get('elementRegistry'); overlays = viewer.get('overlays'); canvas = viewer.get('canvas'); }
+      catch (e) { return; }
+      annotatedIds.forEach(function (id) {
+        try { canvas.removeMarker(id, 'temis-eval'); canvas.removeMarker(id, 'temis-final'); } catch (e) { /* ignore */ }
       });
+      try { overlays.clear(); } catch (e) { /* ignore */ }
+      annotatedIds = [];
+
+      var decisions = res.decisions || {};
+      Object.keys(decisions).forEach(function (name) {
+        var el = decisionElement(reg, name);
+        if (!el) { return; }
+        var isFinal = (name === finalDecision);
+        try { canvas.addMarker(el.id, isFinal ? 'temis-final' : 'temis-eval'); } catch (e) { /* ignore */ }
+        annotatedIds.push(el.id);
+
+        var full = fmt(decisions[name]);
+        var text = (full.length > 40) ? (full.slice(0, 39) + '…') : full;
+        var div = document.createElement('div');
+        div.className = 'temis-badge' + (isFinal ? ' final' : '');
+        div.title = name + ' = ' + full;
+        div.textContent = text;
+        try { overlays.add(el.id, { position: { bottom: -8, left: 0 }, html: div }); } catch (e) { /* ignore */ }
+      });
+    }
+
+    // depsOf returns a decision's direct scope: the input data and upstream
+    // decisions it requires, read from the DRD's incoming connections.
+    function depsOf(reg, name) {
+      var deps = [];
+      var el = decisionElement(reg, name);
+      if (!el || !el.incoming) { return deps; }
+      el.incoming.forEach(function (conn) {
+        var src = conn.source;
+        if (!src || !src.businessObject) { return; }
+        var t = src.businessObject.$type, nm = src.businessObject.name || src.id;
+        if (t === 'dmn:InputData') { deps.push({ name: nm, kind: 'input' }); }
+        else if (t === 'dmn:Decision') { deps.push({ name: nm, kind: 'decision' }); }
+      });
+      return deps;
+    }
+
+    function scopeRow(label, value) {
+      var r = document.createElement('div'); r.className = 'row2';
+      var a = document.createElement('span'); a.className = 'vk'; a.textContent = label;
+      var b = document.createElement('span'); b.textContent = value;
+      r.appendChild(a); r.appendChild(b);
+      return r;
+    }
+
+    // Render the traversed decisions as an expandable list; each entry shows the
+    // variable scope that decision saw (its inputs + upstream decision values).
+    function renderScope(reg, res, finalDecision, evalInput) {
+      var box = $('decisionList'); box.innerHTML = '';
+      var decisions = res.decisions || {};
+      var keys = Object.keys(decisions);
+      if (!keys.length) {
+        var p = document.createElement('p'); p.className = 'muted';
+        p.textContent = 'Keine Decisions ausgewertet.'; box.appendChild(p); return;
+      }
+      keys.forEach(function (name) {
+        var det = document.createElement('details'); det.className = 'scope-item'; det.dataset.name = name;
+        var sum = document.createElement('summary');
+        var isFinal = (name === finalDecision);
+        var dec = document.createElement('span'); dec.className = 'dec' + (isFinal ? ' final' : '');
+        dec.textContent = isFinal ? (name + ' ★') : name;
+        var val = document.createElement('span'); val.className = 'val'; val.textContent = fmt(decisions[name]);
+        sum.appendChild(dec); sum.appendChild(val); det.appendChild(sum);
+
+        var vars = document.createElement('div'); vars.className = 'scope-vars';
+        var deps = depsOf(reg, name);
+        if (!deps.length) {
+          var m = document.createElement('div'); m.className = 'muted';
+          m.textContent = 'Keine eingehenden Variablen.'; vars.appendChild(m);
+        } else {
+          deps.forEach(function (d) {
+            var v;
+            if (d.kind === 'input') {
+              v = (evalInput && (d.name in evalInput)) ? fmt(evalInput[d.name]) : '—';
+            } else {
+              v = (d.name in decisions) ? fmt(decisions[d.name]) : '—';
+            }
+            vars.appendChild(scopeRow(d.name + (d.kind === 'input' ? ' (Eingabe)' : ' (Decision)'), v));
+          });
+        }
+        det.appendChild(vars); box.appendChild(det);
+      });
+    }
+
+    // Clicking a decision node opens (and scrolls to) its scope entry. Bound once
+    // per viewer instance; a fresh diagram re-binds on the next evaluation.
+    function bindNodeClick(viewer) {
+      if (!viewer || viewer.__temisClickBound) { return; }
+      var eb;
+      try { eb = viewer.get('eventBus'); } catch (e) { return; }
+      eb.on('element.click', function (ev) {
+        var el = ev.element;
+        if (!el || !el.businessObject || el.businessObject.$type !== 'dmn:Decision') { return; }
+        var name = el.businessObject.name || el.id;
+        var items = document.querySelectorAll('#decisionList .scope-item');
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].dataset.name === name) { items[i].open = true; items[i].scrollIntoView({ block: 'nearest' }); }
+        }
+      });
+      viewer.__temisClickBound = true;
     }
 
     function renderDiags(diags) {
