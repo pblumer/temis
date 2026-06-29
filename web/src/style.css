@@ -298,3 +298,23 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 }
 .dt-rm:hover { background: #fff4f4; border-color: var(--line); color: #c0392b; }
 .dt-rm-spacer { display: inline-block; height: 18px; }
+
+/* Literal-expression editor. */
+.lit-modal { width: min(680px, 94vw); }
+.lit-type-label { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 600; }
+.lit-type { min-width: 150px; }
+.lit-body { padding: 16px 18px; }
+.lit-text {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  box-sizing: border-box;
+  font: 14px/1.5 ui-monospace, SFMono-Regular, monospace;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fcfdff;
+  color: var(--fg);
+}
+.lit-text:focus { outline: none; border-color: var(--accent); background: #fff; }
+.lit-invalid { border-color: #e5484d; background: #fff4f4; }

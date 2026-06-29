@@ -12,6 +12,7 @@ export type GraphNode = {
   dataType?: string
   varName?: string
   hasTable?: boolean
+  hasLiteral?: boolean
   x?: number
   y?: number
   width?: number
@@ -186,6 +187,30 @@ export async function saveTable(modelId: string, decision: string, edit: TableEd
     body: JSON.stringify(edit),
   })
   if (!r.ok) throw new Error(await problemMessage(r, 'Tabelle speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// LiteralView mirrors dmn.LiteralView: a decision's literal FEEL expression.
+export type LiteralView = { decisionId: string; name: string; text: string; typeRef?: string }
+
+// getLiteral fetches a decision's literal expression, or null when the decision
+// has no literal logic (HTTP 404 — e.g. it is undecided or a decision table).
+export async function getLiteral(modelId: string, decision: string): Promise<LiteralView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/literal')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Ausdruck laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as LiteralView
+}
+
+// saveLiteral sets (or creates) a decision's literal expression (POST), recompiles
+// the model and returns the saved model's detail with its new id.
+export async function saveLiteral(modelId: string, decision: string, text: string, typeRef: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/literal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, typeRef }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Ausdruck speichern fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

@@ -227,6 +227,35 @@ func TestCreateDecisionTableEndpoint(t *testing.T) {
 	}
 }
 
+// TestLiteralEndpoints checks reading and editing a decision's literal expression
+// through the endpoints.
+func TestLiteralEndpoints(t *testing.T) {
+	h := newTestServer(t)
+	xml := readFile(t, "../dmn/testdata/models/pricing_15.dmn")
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	lv := decode[dmn.LiteralView](t, do(t, h, "GET", "/v1/models/"+id+"/decisions/id_net/literal", "", nil))
+	if lv.Text != "Unit Price * Quantity" {
+		t.Errorf("literal text = %q, want 'Unit Price * Quantity'", lv.Text)
+	}
+
+	body := mustJSON(t, saveLiteralRequest{Text: "Unit Price * Quantity * 2", TypeRef: "number"})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/decisions/id_net/literal", "application/json", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST literal = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+	got := decode[dmn.LiteralView](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/decisions/id_net/literal", "", nil))
+	if got.Text != "Unit Price * Quantity * 2" {
+		t.Errorf("saved literal = %q, want the edited expression", got.Text)
+	}
+
+	// An unknown decision has no literal — 404.
+	if rec := do(t, h, "GET", "/v1/models/"+id+"/decisions/nope/literal", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET literal for unknown decision = %d, want 404", rec.Code)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)

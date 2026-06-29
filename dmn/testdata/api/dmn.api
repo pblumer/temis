@@ -52,6 +52,8 @@ func (d *Definitions) Index() ModelIndex
 
 func (d *Definitions) InputSchema(idOrName string) ([]InputField, error)
 
+func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
+
 func (d *Definitions) ModelName() string
 
 func (d *Definitions) Service(idOrName string) (*CompiledService, error)
@@ -83,6 +85,8 @@ func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, erro
 func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
 
 func New(opts ...Option) *Engine
+
+func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
 
 func WithLimits(l Limits) Option
 
@@ -158,6 +162,8 @@ type GraphNode struct {
 	VarName	string	`json:"varName,omitempty"`
 
 	HasTable	bool	`json:"hasTable,omitempty"`
+
+	HasLiteral	bool	`json:"hasLiteral,omitempty"`
 	X		float64	`json:"x,omitempty"`
 	Y		float64	`json:"y,omitempty"`
 	Width		float64	`json:"width,omitempty"`
@@ -202,6 +208,13 @@ type Limits struct {
 	MaxIterations	int
 	MaxListSize	int
 	CompileTimeout	time.Duration
+}
+
+type LiteralView struct {
+	DecisionID	string	`json:"decisionId"`
+	Name		string	`json:"name"`
+	Text		string	`json:"text"`
+	TypeRef		string	`json:"typeRef,omitempty"`
 }
 
 type ModelIndex struct {

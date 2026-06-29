@@ -4,6 +4,7 @@ import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel } from './evaluate'
 import { openTableOverlay } from './table'
+import { openLiteralOverlay } from './literal'
 import './style.css'
 
 // WP-65: the modeler now loads a REAL model from temis and draws its decision
@@ -119,6 +120,34 @@ async function boot(root: HTMLElement): Promise<void> {
       status.textContent = (e as Error).message
     }
   }
+
+  // namesFor gathers the in-scope variable names for a decision's expression (the
+  // other nodes' names) and the decision's own title, from the live graph.
+  const namesFor = (decisionId: string): { names: string[]; title: string } => {
+    const nodes = handle?.graph().nodes ?? []
+    const self = nodes.find((n) => n.id === decisionId)
+    const names = nodes.filter((n) => n.id !== decisionId).map((n) => n.name ?? '').filter((s) => s !== '')
+    return { names, title: self?.name ?? '' }
+  }
+  const openLiteral = (modelId: string, decisionId: string, fresh = false): void => {
+    const { names, title } = namesFor(decisionId)
+    void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh })
+  }
+  // createLiteral persists pending structural edits (so the decision exists), then
+  // opens an empty literal editor for it; saving creates the expression.
+  const createLiteral = async (decisionId: string): Promise<void> => {
+    const current = models[Number(select.value)]
+    if (!current) return
+    status.textContent = 'legt Ausdruck an …'
+    try {
+      const baseId = await persistGraph(current.modelId)
+      await reselect(baseId)
+      status.textContent = ''
+      openLiteral(baseId, decisionId, true)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
   saveBtn.addEventListener('click', () => void save())
 
   // reselect refreshes the model list and switches the picker to modelId (e.g.
@@ -199,6 +228,8 @@ async function boot(root: HTMLElement): Promise<void> {
       })
       handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId)))
       handle.onCreateTable((decisionId) => void createTable(decisionId))
+      handle.onOpenLiteral((decisionId) => openLiteral(model.modelId, decisionId))
+      handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
