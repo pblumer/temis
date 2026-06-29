@@ -1,10 +1,12 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel } from './evaluate'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
+import { openTypeManager } from './typemanager'
+import { FEEL_TYPES } from './feeltypes'
 import './style.css'
 
 // WP-65: the modeler now loads a REAL model from temis and draws its decision
@@ -24,6 +26,7 @@ async function boot(root: HTMLElement): Promise<void> {
         <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
         <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
         <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
+        <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
         <span id="typeEditor" class="type-editor" style="display:none">
           <label for="datatype">Typ</label>
           <select id="datatype"></select>
@@ -55,13 +58,21 @@ async function boot(root: HTMLElement): Promise<void> {
   const openBtn = root.querySelector<HTMLButtonElement>('#open')
   const fileInput = root.querySelector<HTMLInputElement>('#file')
   const evalHost = root.querySelector<HTMLElement>('#eval')
+  const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!select || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !evalHost || !typeEditor || !datatype) return
+  if (!select || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
-  // Built-in FEEL types for the InputData type editor; "" clears the type.
-  const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and time', 'days and time duration', 'years and months duration']
-  datatype.innerHTML = FEEL_TYPES.map((t) => `<option value="${t}">${t || '— Typ —'}</option>`).join('')
+  // The type options offered in the InputData/table/literal pickers: the built-in
+  // FEEL types plus the current model's custom item definitions (refreshed per
+  // model in show()).
+  let typeOptions: string[] = FEEL_TYPES
+  const renderTypeEditor = (selected?: string): void => {
+    const opts = selected && !typeOptions.includes(selected) ? [...typeOptions, selected] : typeOptions
+    datatype.innerHTML = opts.map((t) => `<option value="${t}">${t || '— Typ —'}</option>`).join('')
+    if (selected !== undefined) datatype.value = selected
+  }
+  renderTypeEditor()
   datatype.addEventListener('change', () => handle?.setSelectedType(datatype.value))
 
   let handle: ModelerHandle | null = null
@@ -131,8 +142,15 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   const openLiteral = (modelId: string, decisionId: string, fresh = false): void => {
     const { names, title } = namesFor(decisionId)
-    void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh })
+    void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions })
   }
+
+  // Typen: open the custom-type manager; each save/delete switches to the saved
+  // revision (which refreshes typeOptions via show()).
+  typesBtn.addEventListener('click', () => {
+    const current = models[Number(select.value)]
+    if (current) void openTypeManager(current.modelId, (newId) => reselect(newId))
+  })
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
   const createLiteral = async (decisionId: string): Promise<void> => {
@@ -220,20 +238,26 @@ async function boot(root: HTMLElement): Promise<void> {
     status.textContent = 'lädt …'
     dirty = false
     try {
+      // Refresh the type options for this model (built-in + its custom types).
+      try {
+        typeOptions = [...FEEL_TYPES, ...(await listTypes(model.modelId)).map((t) => t.name)]
+      } catch {
+        typeOptions = FEEL_TYPES
+      }
       const graph = await getGraph(model.modelId)
       handle = renderGraph(canvas, layout(graph))
       handle.onChange(() => {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId)))
+      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId), typeOptions))
       handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onOpenLiteral((decisionId) => openLiteral(model.modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
-          datatype.value = sel.dataType ?? ''
+          renderTypeEditor(sel.dataType ?? '')
         } else {
           typeEditor.style.display = 'none'
         }

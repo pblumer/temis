@@ -318,3 +318,30 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 }
 .lit-text:focus { outline: none; border-color: var(--accent); background: #fff; }
 .lit-invalid { border-color: #e5484d; background: #fff4f4; }
+
+/* Custom-type manager. */
+.tm-modal { width: min(720px, 94vw); }
+.tm-body { padding: 16px 18px; }
+.tm-list { border-collapse: collapse; width: 100%; font-size: 13px; margin-bottom: 6px; }
+.tm-list th, .tm-list td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+.tm-list .tm-head th { background: #f1f5f9; font-weight: 600; }
+.tm-actions { white-space: nowrap; width: 1%; }
+.tm-icon { border: 1px solid transparent; background: transparent; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 5px; }
+.tm-icon:hover { background: #eef2f9; border-color: var(--line); }
+.tm-ro { font: 11px/1 ui-monospace, monospace; color: var(--muted); }
+.tm-sep { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+.tm-form { display: grid; gap: 10px; }
+.tm-form-row { display: flex; align-items: center; gap: 10px; }
+.tm-label { width: 110px; color: var(--muted); font-weight: 600; font-size: 13px; }
+.tm-field {
+  flex: 1;
+  font: 13px/1.3 system-ui, sans-serif;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.tm-field:focus { outline: none; border-color: var(--accent); }
+.tm-invalid { border-color: #e5484d; background: #fff4f4; }
+.tm-form-actions { display: flex; justify-content: flex-end; }

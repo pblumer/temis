@@ -190,6 +190,36 @@ export async function saveTable(modelId: string, decision: string, edit: TableEd
   return (await r.json()) as ModelDetail
 }
 
+// ItemType mirrors dmn.ItemType: a model's named type (a base FEEL type with an
+// optional collection flag and allowed-values constraint). structured types
+// (with components) are read-only in the simple editor.
+export type ItemType = { name: string; typeRef?: string; isCollection?: boolean; allowedValues?: string; structured?: boolean }
+
+export async function listTypes(modelId: string): Promise<ItemType[]> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/types')
+  if (!r.ok) throw new Error('Typen laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return ((await r.json()) as { types?: ItemType[] }).types ?? []
+}
+
+// saveType creates or updates a custom type and returns the saved model's detail
+// (with its new id).
+export async function saveType(modelId: string, t: ItemType): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/types', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(t),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Typ speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// deleteType removes a custom type and returns the saved model's detail.
+export async function deleteType(modelId: string, name: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/types/' + encodeURIComponent(name), { method: 'DELETE' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Typ löschen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
 // LiteralView mirrors dmn.LiteralView: a decision's literal FEEL expression.
 export type LiteralView = { decisionId: string; name: string; text: string; typeRef?: string }
 
