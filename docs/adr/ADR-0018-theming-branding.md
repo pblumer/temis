@@ -1,4 +1,4 @@
-# ADR-0017: Theming/Branding der UI über CSS-Variablen + Deployment-Hook
+# ADR-0018: Theming/Branding der UI über CSS-Variablen + Deployment-Hook
 
 - **Status:** accepted
 - **Datum:** 2026-06-29

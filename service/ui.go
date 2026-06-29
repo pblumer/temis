@@ -319,7 +319,7 @@ const playgroundPage = `<!DOCTYPE html>
 
     var $ = function (id) { return document.getElementById(id); };
 
-    // --- Theme/Branding (CI-Anpassung), siehe ADR-0017.
+    // --- Theme/Branding (CI-Anpassung), siehe ADR-0018.
     // Eingebaute Themes (dunkel/hell) plus optionales Deployment-Branding über
     // window.TEMIS_BRANDING (Produktname, Logo, Firmen-Theme). Die Seite bleibt
     // asset-frei; ein Reverse-Proxy kann das Branding-Global injizieren.

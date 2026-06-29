@@ -21,4 +21,5 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0014 | MCP über Standardbibliothek implementieren (kein offizielles Go-MCP-SDK) | accepted |
 | 0015 | Remote-MCP über nativen Streamable-HTTP-Transport (`temis-mcp -http`) | accepted |
 | 0016 | Eigener DMN-Modeler durch Fork des MIT-Kerns (Loslösung von dmn-js, 1.5, BPMN-Synergie) | accepted |
-| 0017 | Theming/Branding der UI über CSS-Variablen + Deployment-Hook | accepted |
+| 0017 | Statische Typprüfung ist advisory (Warnung), FEEL bleibt dynamisch | accepted |
+| 0018 | Theming/Branding der UI über CSS-Variablen + Deployment-Hook | accepted |
