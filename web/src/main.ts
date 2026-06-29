@@ -1,27 +1,26 @@
-import { APP_NAME, SCAFFOLD_WP } from './build-info'
+import { APP_NAME } from './build-info'
+import { mountCanvas } from './canvas'
 import './style.css'
 
-// WP-60 scaffold: proves the toolchain end-to-end — TS is type-checked, bundled
-// by Vite, the output is committed + embedded via go:embed, and temisd serves it
-// at /app/ with no CDN (works offline). The real modeler (DRD canvas, decision
-// table editor) lands on top of this in WP-61+ (ADR-0016).
+// WP-61: the page now renders a real diagram-js canvas from the forked MIT core
+// (diagram-js + its MIT deps), bundled and embedded — no dmn-js, no bpmn.io
+// logo, no CDN, offline. The decision-table editor, real DMN renderers and the
+// modeling interactions build on this core in WP-64/65 (ADR-0016).
 function render(root: HTMLElement): void {
-  const probe = document.createElement('p')
-  probe.className = 'probe'
-  probe.textContent = 'OK'
-
   root.innerHTML = `
     <main>
       <h1>${APP_NAME}</h1>
-      <p class="sub">Eigener DMN-Modeler · embedded build · kein CDN, offline (ADR-0016)</p>
-      <p class="wp">${SCAFFOLD_WP}</p>
+      <p class="sub">Eigener DMN-Modeler · diagram-js (MIT) · kein dmn-js, kein CDN, offline (ADR-0016)</p>
+      <div id="canvas" class="canvas"></div>
       <p class="hint">
-        Gerüst steht. Hier entsteht der eigene Modeler auf dem geforkten MIT-Kern
-        (diagram-js/table-js/dmn-moddle): DRD-Canvas, Decision-Table-Editor und
-        FEEL-Validierung gegen die echte temis-Engine.
+        WP-61: Der geforkte MIT-Kern (diagram-js) rendert den Canvas — ohne dmn-js
+        und ohne bpmn.io-Logo. Oben ein Platzhalter-Graph als Beweis; echte
+        DMN-Formen (Decision/InputData/Requirements) und Modellier-Interaktionen
+        folgen in WP-64/65.
       </p>
     </main>`
-  root.querySelector('main')?.appendChild(probe)
+  const c = root.querySelector<HTMLElement>('#canvas')
+  if (c) mountCanvas(c)
 }
 
 const root = document.getElementById('app')
