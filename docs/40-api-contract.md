@@ -258,9 +258,15 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
   OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
 
-## 3. gRPC-Service (`service/dmn.proto`)
+## 3. gRPC-Service (`proto/dmn/v1/engine.proto`, WP-33)
+
+Implementiert über **ConnectRPC** (ADR-0020): die Handler sprechen gRPC, gRPC-Web und
+das Connect-Protokoll und laufen im selben `service.Server`/Mux **auf demselben Port**
+wie der REST-Service (`temisd`); Engine und Modell-Cache sind geteilt. Klartext-HTTP/2
+(h2c) ist aktiv, sodass voller gRPC und der bidi-Stream auch ohne TLS funktionieren.
 
 ```proto
+package dmn.v1;
 service DmnEngine {
   rpc Compile(CompileRequest) returns (CompileResponse);
   rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
@@ -268,9 +274,19 @@ service DmnEngine {
 }
 ```
 
-- `Input`/`Output` als `google.protobuf.Struct` (deckt das Go⇄FEEL-Mapping ab).
-- Decimal-genaue Zahlen als String-Feld transportieren, um JSON-/proto-float-Verlust zu
+- `Evaluate`/`EvaluateBatch` wählen das Modell per `model_id` (zuvor kompiliert) **oder**
+  inline `xml` (stateless, wird gecacht); `decision`, `explain`, `strict` analog zu §2.
+- `EvaluateBatch` ist ein **bidirektionaler Stream**: je Request genau eine Response, in
+  Reihenfolge — Pipelining vieler Auswertungen über eine Verbindung.
+- `Input`/`Output`/`trace` als `google.protobuf.Struct` (deckt das Go⇄FEEL-Mapping ab).
+- Decimal-genaue Zahlen als String transportieren, um JSON-/proto-float-Verlust zu
   vermeiden (ADR-0007-Konsequenz).
+- Der optionale Bearer-Token (§2) gilt per Interceptor für **jeden** RPC (sonst
+  `CodeUnauthenticated`). Fehler-Mapping: fehlendes Modell/Decision → `NotFound`,
+  Schema-Verletzung (`strict`) → `InvalidArgument`, sonstige Auswertungsfehler →
+  `FailedPrecondition`.
+- Generierter Code (`internal/gen/dmnv1/`) ist committet; `make proto` regeneriert,
+  eine CI-Lane prüft auf Drift (ADR-0020).
 
 ## 4. Versionierung & Stabilität (SemVer, WP-43)
 

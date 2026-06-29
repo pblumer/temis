@@ -5,7 +5,11 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help
+
+# Pinned codegen tools (ADR-0020). go-1.23-compatible versions.
+CONNECT_VERSION ?= v1.18.1
+PROTOC_GEN_GO_VERSION ?= v1.36.6
 
 all: verify
 
@@ -66,6 +70,24 @@ fuzz:
 		echo "=== fuzz $$fn ($$pkg) for $(FUZZTIME) ==="; \
 		$(GO) test -run='^$$' -fuzz="^$$fn$$" -fuzztime=$(FUZZTIME) $$pkg; \
 	done
+
+## proto-tools: install the pinned protobuf/connect codegen plugins into GOBIN
+proto-tools:
+	$(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+	$(GO) install connectrpc.com/connect/cmd/protoc-gen-connect-go@$(CONNECT_VERSION)
+
+## proto: regenerate the gRPC code from proto/ (needs buf + the proto-tools on PATH)
+proto:
+	buf generate
+
+## proto-check: fail if the committed gRPC code is stale (no-op-friendly if buf absent)
+proto-check:
+	@if command -v buf >/dev/null 2>&1; then \
+		buf generate && git diff --exit-code -- internal/gen \
+			|| { echo "generated proto code is stale; run 'make proto'"; exit 1; }; \
+	else \
+		echo "buf not found; skipping proto drift check (install: https://buf.build)"; \
+	fi
 
 ## build: compile all packages and binaries
 build:

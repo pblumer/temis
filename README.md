@@ -153,6 +153,15 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
+**gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als
+**gRPC**-Dienst an — über **ConnectRPC** (ADR-0020), auf **demselben Port** wie REST,
+mit geteilter Engine und geteiltem Modell-Cache. RPCs: `Compile`, `Evaluate` (per
+`model_id` oder inline `xml`, mit `explain`/`strict`) und `EvaluateBatch` (bidirektionaler
+Stream fürs Pipelining). Es spricht gRPC, gRPC-Web und das Connect-Protokoll; Klartext-
+HTTP/2 (h2c) ist aktiv, sodass voller gRPC auch ohne TLS läuft. Der optionale Bearer-Token
+gilt per Interceptor für jeden RPC. Contract: `proto/dmn/v1/engine.proto`, `docs/40-api-contract.md §3`.
+Generierter Go-Code ist committet (`internal/gen/dmnv1/`); `make proto` regeneriert ihn.
+
 ### Für KI-Agenten (`temis-mcp`, MCP über stdio & HTTP)
 
 temis ist bewusst als **Verifikationswerkzeug für KI-Agenten** ausgelegt (ADR-0013):
