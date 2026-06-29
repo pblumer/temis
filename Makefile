@@ -50,6 +50,10 @@ tck:
 build:
 	$(GO) build $(PKGS)
 
+## feel-spike: build the FEEL-WASM spike (ADR-0016 Gate 2) into web/feel-spike/
+feel-spike:
+	./web/feel-spike/build.sh
+
 ## tidy: tidy go.mod/go.sum
 tidy:
 	$(GO) mod tidy

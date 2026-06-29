@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<!--
+  ADR-0016 Gate-2 spike: live FEEL validation against the real temis engine,
+  compiled to WebAssembly. No external assets, no server round-trip — type in a
+  cell and the same parser/compiler that later evaluates the model tells you
+  (per keystroke) whether the FEEL is valid, with a 1-based line:col diagnostic.
+
+  Build first:  ./web/feel-spike/build.sh   (or: make feel-spike)
+  Serve:        go run ./cmd/feel-spike-serve  (or any static server on this dir)
+-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>temis · FEEL-Live-Validierung (WASM-Spike)</title>
+  <style>
+    :root { --ok:#15803d; --okbg:#f0fdf4; --err:#b91c1c; --errbg:#fef2f2; --muted:#64748b; --line:#e2e8f0; }
+    * { box-sizing: border-box; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; color: #0f172a; background: #f8fafc; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .status { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+    label { display: block; font-weight: 600; font-size: 13px; margin: 0 0 6px; }
+    .hint { font-weight: 400; color: var(--muted); }
+    input[type=text] {
+      width: 100%; padding: 9px 11px; font: 14px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+      border: 2px solid var(--line); border-radius: 8px; background: #fff; outline: none;
+    }
+    input:focus { border-color: #94a3b8; }
+    .cell { margin-bottom: 22px; }
+    .cell.ok input { border-color: var(--ok); background: var(--okbg); }
+    .cell.err input { border-color: var(--err); background: var(--errbg); }
+    .msg { min-height: 18px; font-size: 12.5px; margin-top: 6px; font-family: ui-monospace, monospace; }
+    .cell.ok .msg { color: var(--ok); }
+    .cell.err .msg { color: var(--err); }
+    .names { margin-bottom: 28px; }
+    .names input { font-family: system-ui, sans-serif; }
+    footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+    code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>FEEL-Live-Validierung gegen die echte temis-Engine</h1>
+  <p class="sub">ADR-0016 · Gate-2-Spike — temis-FEEL als WebAssembly, im Browser, offline, ohne Server-Roundtrip.</p>
+  <p class="status" id="status">Lade WASM-Engine …</p>
+
+  <div class="names">
+    <label for="names">Decision-Inputs <span class="hint">(kommagetrennt — wie aus <code>describe_decision</code>)</span></label>
+    <input type="text" id="names" value="Season, Guest Count" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="cell" id="cell-unary">
+    <label for="unary">Eingabe-Zelle <span class="hint">— Unary Test, z. B. <code>&gt; 10</code>, <code>[1..5]</code>, <code>"Winter", "Spring"</code></span></label>
+    <input type="text" id="unary" value="&gt; 10" autocomplete="off" spellcheck="false" disabled>
+    <div class="msg" id="msg-unary"></div>
+  </div>
+
+  <div class="cell" id="cell-output">
+    <label for="output">Ausgabe-Zelle <span class="hint">— FEEL-Ausdruck, z. B. <code>Guest Count * 2</code>, <code>if Season = "Winter" then "Stew" else "Salad"</code></span></label>
+    <input type="text" id="output" value="Guest Count * 2" autocomplete="off" spellcheck="false" disabled>
+    <div class="msg" id="msg-output"></div>
+  </div>
+
+  <footer>
+    Jede Validierung läuft synchron im selben Parser/Compiler, der das Modell später auswertet —
+    inklusive Unbekannte-Variable-Erkennung (probier <code>Guests * 2</code>) und <code>line:col</code>-Diagnose.
+    Kein CDN, kein Backend. Das ist der Mehrwert, den dmn-js prinzipiell nicht liefern kann.
+  </footer>
+</main>
+
+<script src="wasm_exec.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // Non-streaming instantiate so it works regardless of the static server's
+  // MIME type for .wasm (instantiateStreaming requires application/wasm).
+  async function loadWasm() {
+    const go = new Go();
+    const bytes = await (await fetch("feel.wasm")).arrayBuffer();
+    const { instance } = await WebAssembly.instantiate(bytes, go.importObject);
+    go.run(instance); // registers window.temisFeel* and blocks on select{}
+  }
+
+  function render(cellId, msgId, res) {
+    const cell = $(cellId), msg = $(msgId);
+    cell.classList.remove("ok", "err");
+    if (res.ok) {
+      cell.classList.add("ok");
+      msg.textContent = "✓ gültiges FEEL";
+    } else {
+      cell.classList.add("err");
+      const at = (res.line || res.col) ? `${res.line}:${res.col} — ` : "";
+      msg.textContent = "✗ " + at + res.message;
+    }
+  }
+
+  function wire() {
+    const names = $("names"), unary = $("unary"), output = $("output");
+    const validateAll = () => {
+      const n = names.value;
+      render("cell-unary", "msg-unary", window.temisFeelValidateUnary(unary.value, n));
+      render("cell-output", "msg-output", window.temisFeelValidate(output.value, n));
+    };
+    [names, unary, output].forEach((el) => el.addEventListener("input", validateAll));
+    unary.disabled = output.disabled = false;
+    $("status").textContent = "WASM-Engine geladen — tippe in eine Zelle.";
+    validateAll();
+  }
+
+  loadWasm().then(wire).catch((e) => {
+    $("status").textContent = "WASM konnte nicht geladen werden: " + e.message +
+      " — zuerst ./web/feel-spike/build.sh ausführen und die Seite über einen Webserver öffnen (nicht file://).";
+  });
+</script>
+</body>
+</html>
