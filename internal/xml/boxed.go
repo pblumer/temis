@@ -80,6 +80,87 @@ func (r *Row) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return decodeExprSeq(d, start, &r.Cells)
 }
 
+// MarshalXML encodes a <list>, emitting its element expressions in document
+// order. It mirrors UnmarshalXML; without it the default marshaler emits the Go
+// field names (<ID>, <Items>) instead of valid DMN child elements, which then
+// fail to re-decode (see ADR-0016 / WP-62 round-trip fidelity).
+func (l List) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name = xml.Name{Local: "list"}
+	start.Attr = nil
+	if l.ID != "" {
+		start.Attr = []xml.Attr{{Name: xml.Name{Local: "id"}, Value: l.ID}}
+	}
+	if err := e.EncodeToken(start); err != nil {
+		return err
+	}
+	if err := encodeExprSeq(e, l.Items); err != nil {
+		return err
+	}
+	return e.EncodeToken(start.End())
+}
+
+// MarshalXML encodes a relation <row>, emitting its cell expressions in order.
+// Mirrors UnmarshalXML; without it the default marshaler emits <Cells> wrappers.
+func (r Row) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name = xml.Name{Local: "row"}
+	start.Attr = nil
+	if err := e.EncodeToken(start); err != nil {
+		return err
+	}
+	if err := encodeExprSeq(e, r.Cells); err != nil {
+		return err
+	}
+	return e.EncodeToken(start.End())
+}
+
+// encodeExprSeq marshals a sequence of boxed expressions as their proper DMN
+// child elements (no per-item wrapper) — the inverse of decodeExprSeq.
+func encodeExprSeq(e *xml.Encoder, items []Expression) error {
+	for i := range items {
+		if err := encodeExprElement(e, &items[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// encodeExprElement marshals the single active child of a boxed Expression under
+// its DMN element name — the inverse of decodeExprElement.
+func encodeExprElement(e *xml.Encoder, x *Expression) error {
+	switch {
+	case x.LiteralExpression != nil:
+		return e.EncodeElement(x.LiteralExpression, named("literalExpression"))
+	case x.DecisionTable != nil:
+		return e.EncodeElement(x.DecisionTable, named("decisionTable"))
+	case x.Context != nil:
+		return e.EncodeElement(x.Context, named("context"))
+	case x.Invocation != nil:
+		return e.EncodeElement(x.Invocation, named("invocation"))
+	case x.FunctionDefinition != nil:
+		return e.EncodeElement(x.FunctionDefinition, named("functionDefinition"))
+	case x.List != nil:
+		return e.EncodeElement(x.List, named("list"))
+	case x.Relation != nil:
+		return e.EncodeElement(x.Relation, named("relation"))
+	case x.Conditional != nil:
+		return e.EncodeElement(x.Conditional, named("conditional"))
+	case x.For != nil:
+		return e.EncodeElement(x.For, named("for"))
+	case x.Every != nil:
+		return e.EncodeElement(x.Every, named("every"))
+	case x.Some != nil:
+		return e.EncodeElement(x.Some, named("some"))
+	case x.Filter != nil:
+		return e.EncodeElement(x.Filter, named("filter"))
+	default:
+		return nil // empty slot: nothing to emit
+	}
+}
+
+func named(local string) xml.StartElement {
+	return xml.StartElement{Name: xml.Name{Local: local}}
+}
+
 // decodeExprSeq reads child elements of start until its matching end tag,
 // decoding each recognised boxed-expression element into out in order and
 // skipping anything else.

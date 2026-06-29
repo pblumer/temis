@@ -26,3 +26,49 @@ func Encode(def *Definitions) ([]byte, error) {
 	out = append(out, body...)
 	return out, nil
 }
+
+// MarshalXML encodes a decision-table <rule>, emitting one wrapper element per
+// entry. The struct stores entries as []string with `inputEntry>text`-style path
+// tags, which decode correctly but, under the default marshaler, collapse all
+// texts into a single shared wrapper (<inputEntry><text>a</text><text>b</text>…)
+// and materialise an empty <annotationEntry/> for the empty slice — structurally
+// invalid DMN even though it re-decodes to the same model. This restores
+// byte-structural round-trip fidelity (ADR-0016 / WP-62): one <inputEntry> per
+// input, one <outputEntry> per output, <annotationEntry> only when present.
+func (r Rule) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name = xml.Name{Local: "rule"}
+	start.Attr = nil
+	if r.ID != "" {
+		start.Attr = []xml.Attr{{Name: xml.Name{Local: "id"}, Value: r.ID}}
+	}
+	if err := e.EncodeToken(start); err != nil {
+		return err
+	}
+	for _, group := range []struct {
+		parent string
+		texts  []string
+	}{
+		{"inputEntry", r.InputEntries},
+		{"outputEntry", r.OutputEntries},
+		{"annotationEntry", r.Annotations},
+	} {
+		for _, text := range group.texts {
+			if err := encodeTextEntry(e, group.parent, text); err != nil {
+				return err
+			}
+		}
+	}
+	return e.EncodeToken(start.End())
+}
+
+// encodeTextEntry emits <parent><text>text</text></parent>.
+func encodeTextEntry(e *xml.Encoder, parent, text string) error {
+	p := named(parent)
+	if err := e.EncodeToken(p); err != nil {
+		return err
+	}
+	if err := e.EncodeElement(text, named("text")); err != nil {
+		return err
+	}
+	return e.EncodeToken(p.End())
+}

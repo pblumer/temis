@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/pblumer/temis/dmn"
+	webui "github.com/pblumer/temis/web"
 )
 
 // maxBodyBytes caps request bodies to keep a single request from exhausting
@@ -116,6 +117,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /og-image.png", s.handleOGImage)
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	// Own DMN modeler frontend (ADR-0016), embedded — no CDN, offline. Served as
+	// a subtree under /app/; /ui keeps the legacy dmn-js editor until WP-67.
+	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(webui.Assets())))
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
 	return mux

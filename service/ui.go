@@ -185,6 +185,24 @@ const playgroundPage = `<!DOCTYPE html>
     .scope-vars .row2 { display: flex; justify-content: space-between; gap: 12px;
       font-family: var(--mono); font-size: 12.5px; padding: 2px 0; }
     .scope-vars .vk { color: var(--muted); }
+    /* Decision-table view rendered from the evaluation trace (explain=true):
+       every rule with its cells, the matched rule(s) highlighted, and the cell
+       that ruled out each non-matching rule marked. */
+    .dtables { margin: 8px 0 4px; }
+    .dtable-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; margin: 8px 0 14px; }
+    .dtable { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+    .dtable caption { text-align: left; padding: 6px 10px; color: var(--muted);
+      font-family: system-ui, sans-serif; font-size: 12px; }
+    .dtable th, .dtable td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; white-space: nowrap; }
+    .dtable thead th { background: #20242e; color: var(--fg); font-weight: 600; }
+    .dtable .colhint { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+    .dtable .out-col { color: var(--accent); }
+    .dtable td.rn { color: var(--muted); text-align: right; }
+    .dtable tr.hit td { background: rgba(63, 185, 80, .12); }
+    .dtable tr.hit td.rn { color: var(--ok); font-weight: 600; }
+    .dtable td.fail { color: var(--err); }
+    .dtable td.skip { color: var(--muted); opacity: .55; }
+    .dtable td.out { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -263,6 +281,7 @@ const playgroundPage = `<!DOCTYPE html>
         <h2 style="margin-top:20px">Ergebnis</h2>
         <p class="muted" id="resultIntro">Durchlaufene Decisions — links im Diagramm markiert (★ = angefragte). Aufklappen (oder Knoten anklicken) zeigt den Variablen-Scope:</p>
         <div id="decisionList"></div>
+        <div id="dtables" class="dtables"></div>
         <div id="diags"></div>
         <details>
           <summary>Rohe Antwort</summary>
@@ -813,6 +832,7 @@ const playgroundPage = `<!DOCTYPE html>
     function renderResult(res, finalDecision, evalInput) {
       $('resultBox').style.display = 'block';
       $('rawResult').textContent = JSON.stringify(res, null, 2);
+      renderTableTraces(res);
       renderDiags(res.diagnostics || []);
       // One DRD pass: annotate the graph, render the per-decision scope (which
       // needs the DRD connections) and wire node clicks to the scope list.
@@ -823,6 +843,84 @@ const playgroundPage = `<!DOCTYPE html>
         renderScope(reg, res, finalDecision, evalInput);
         bindNodeClick(viewer);
       });
+    }
+
+    // Render each evaluated decision table from the trace (explain=true): one
+    // table per dmn:DecisionTable, every rule as a row, the matched rule(s)
+    // highlighted, and—for a non-matching rule—the input cell that ruled it out
+    // marked. The engine reports conditions only up to the first failure
+    // (short-circuit), so later cells of a non-matching rule show muted ("—").
+    function renderTableTraces(res) {
+      var box = $('dtables'); box.innerHTML = '';
+      var tables = (res.trace && res.trace.tables) || [];
+      if (!tables.length) { return; }
+      var h = document.createElement('h3');
+      h.textContent = tables.length > 1 ? 'Decision Tables (Auswertung)' : 'Decision Table (Auswertung)';
+      h.style.cssText = 'font-size:13px;margin:18px 0 2px';
+      box.appendChild(h);
+      tables.forEach(function (t) { box.appendChild(renderOneTable(t)); });
+    }
+
+    function th(text, cls) {
+      var el = document.createElement('th');
+      if (cls) { el.className = cls; }
+      el.appendChild(document.createTextNode(text));
+      return el;
+    }
+
+    function renderOneTable(t) {
+      var inputs = t.inputs || [], rules = t.rules || [];
+      var nOut = 0; // output columns = widest rule's outputs (only matched rules carry outputs)
+      rules.forEach(function (r) { if (r.outputs && r.outputs.length > nOut) { nOut = r.outputs.length; } });
+
+      var wrap = document.createElement('div'); wrap.className = 'dtable-wrap';
+      var tbl = document.createElement('table'); tbl.className = 'dtable';
+
+      var cap = document.createElement('caption');
+      cap.textContent = 'Hit Policy ' + (t.hitPolicy || 'U') + (t.aggregation ? ' (' + t.aggregation + ')' : '') +
+        ' · ' + rules.length + ' Regeln · ' + ((t.matched && t.matched.length) || 0) + ' Treffer';
+      tbl.appendChild(cap);
+
+      var thead = document.createElement('thead'), hr = document.createElement('tr');
+      hr.appendChild(th('#', 'rn'));
+      inputs.forEach(function (inp) {
+        var c = th(inp.expression || '');
+        var hint = document.createElement('span'); hint.className = 'colhint';
+        hint.textContent = '= ' + fmt(inp.value);
+        c.appendChild(hint);
+        hr.appendChild(c);
+      });
+      for (var oi = 0; oi < nOut; oi++) { hr.appendChild(th(nOut > 1 ? ('Output ' + (oi + 1)) : 'Output', 'out-col')); }
+      thead.appendChild(hr); tbl.appendChild(thead);
+
+      var tbody = document.createElement('tbody');
+      rules.forEach(function (r) {
+        var tr = document.createElement('tr');
+        if (r.matched) { tr.className = 'hit'; }
+        var rn = document.createElement('td'); rn.className = 'rn';
+        rn.textContent = String((r.index != null ? r.index : 0) + 1);
+        tr.appendChild(rn);
+        var conds = r.conditions || [];
+        inputs.forEach(function (_, ci) {
+          var td = document.createElement('td'), c = conds[ci];
+          if (c) {
+            td.textContent = c.entry || '-';
+            if (!c.matched) { td.className = 'fail'; td.title = 'Bedingung nicht erfüllt'; }
+          } else {
+            td.textContent = '—'; td.className = 'skip';
+            td.title = 'nicht ausgewertet (vorherige Bedingung verfehlt)';
+          }
+          tr.appendChild(td);
+        });
+        for (var k = 0; k < nOut; k++) {
+          var od = document.createElement('td'); od.className = 'out';
+          od.textContent = (r.outputs && r.outputs.length > k) ? fmt(r.outputs[k]) : '';
+          tr.appendChild(od);
+        }
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody); wrap.appendChild(tbl);
+      return wrap;
     }
 
     // Run cb with the DRD view's viewer, switching to the DRD view first if a
