@@ -15,18 +15,32 @@ type Definitions struct {
 	// encoding/xml does not emit XMLName.Space when marshalling, so Encode
 	// populates this field to round-trip the default namespace; on decode the
 	// declaration is consumed as a namespace and this field stays empty.
-	Xmlns     string        `xml:"xmlns,attr,omitempty"`
-	ID        string        `xml:"id,attr,omitempty"`
-	Name      string        `xml:"name,attr,omitempty"`
-	Namespace string        `xml:"namespace,attr,omitempty"`
-	ExprLang  string        `xml:"expressionLanguage,attr,omitempty"`
-	TypeLang  string        `xml:"typeLanguage,attr,omitempty"`
-	ItemDefs  []ItemDef     `xml:"itemDefinition"`
-	InputData []InputData   `xml:"inputData"`
-	BKMs      []BKM         `xml:"businessKnowledgeModel"`
-	Decisions []Decision    `xml:"decision"`
-	DMNDI     *Raw          `xml:"DMNDI"`
-	Unknown   []UnknownElem `xml:",any"`
+	Xmlns     string            `xml:"xmlns,attr,omitempty"`
+	ID        string            `xml:"id,attr,omitempty"`
+	Name      string            `xml:"name,attr,omitempty"`
+	Namespace string            `xml:"namespace,attr,omitempty"`
+	ExprLang  string            `xml:"expressionLanguage,attr,omitempty"`
+	TypeLang  string            `xml:"typeLanguage,attr,omitempty"`
+	ItemDefs  []ItemDef         `xml:"itemDefinition"`
+	InputData []InputData       `xml:"inputData"`
+	BKMs      []BKM             `xml:"businessKnowledgeModel"`
+	Decisions []Decision        `xml:"decision"`
+	Services  []DecisionService `xml:"decisionService"`
+	DMNDI     *Raw              `xml:"DMNDI"`
+	Unknown   []UnknownElem     `xml:",any"`
+}
+
+// DecisionService mirrors <decisionService>: the decisions it exposes
+// (outputDecision), the ones it evaluates internally (encapsulatedDecision) and
+// the ones it expects the caller to supply (inputDecision / inputData), all by
+// href.
+type DecisionService struct {
+	ID                    string `xml:"id,attr,omitempty"`
+	Name                  string `xml:"name,attr,omitempty"`
+	OutputDecisions       []Ref  `xml:"outputDecision"`
+	EncapsulatedDecisions []Ref  `xml:"encapsulatedDecision"`
+	InputDecisions        []Ref  `xml:"inputDecision"`
+	InputData             []Ref  `xml:"inputData"`
 }
 
 // ItemDef mirrors <itemDefinition>. Nested components are captured one level

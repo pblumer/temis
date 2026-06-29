@@ -60,6 +60,9 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		m.Decisions = append(m.Decisions, dec)
 		diags = append(diags, dd...)
 	}
+	for _, ds := range def.Services {
+		m.Services = append(m.Services, mapService(ds))
+	}
 
 	for _, u := range def.Unknown {
 		diags = append(diags, Diagnostic{
@@ -274,6 +277,29 @@ func mapFunctionDef(fn *dmnxml.FunctionDefinition) *FunctionDef {
 		fd.Parameters = append(fd.Parameters, FunctionParam{Name: p.Name, TypeRef: strings.TrimSpace(p.TypeRef)})
 	}
 	return fd
+}
+
+func mapService(ds dmnxml.DecisionService) *DecisionService {
+	return &DecisionService{
+		ID:                    ds.ID,
+		Name:                  ds.Name,
+		OutputDecisions:       localRefs(ds.OutputDecisions),
+		EncapsulatedDecisions: localRefs(ds.EncapsulatedDecisions),
+		InputDecisions:        localRefs(ds.InputDecisions),
+		InputData:             localRefs(ds.InputData),
+	}
+}
+
+// localRefs resolves a list of href references to their local identifiers,
+// dropping empties.
+func localRefs(refs []dmnxml.Ref) []string {
+	var out []string
+	for _, r := range refs {
+		if id := localRef(r.Href); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func mapBKM(b dmnxml.BKM) *BKM {

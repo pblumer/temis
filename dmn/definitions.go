@@ -10,10 +10,13 @@ import (
 // Definitions is a compiled DMN model: the set of decisions a document declares,
 // each ready to evaluate. It is immutable after Compile and safe to share.
 type Definitions struct {
-	model  *model.Definitions
-	byID   map[string]*CompiledDecision
-	byName map[string]*CompiledDecision
-	order  []*CompiledDecision
+	model         *model.Definitions
+	byID          map[string]*CompiledDecision
+	byName        map[string]*CompiledDecision
+	order         []*CompiledDecision
+	servicesByID  map[string]*CompiledService
+	servicesByNam map[string]*CompiledService
+	serviceOrder  []*CompiledService
 }
 
 // CompiledDecision is a single decision's compiled logic. It is immutable and

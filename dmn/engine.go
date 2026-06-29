@@ -79,6 +79,7 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	}
 
 	diags = append(diags, wireRequirements(defs, m)...)
+	diags = append(diags, compileServices(defs, m)...)
 
 	return defs, diags, nil
 }

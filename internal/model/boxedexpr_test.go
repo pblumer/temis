@@ -171,6 +171,32 @@ func TestMapChildNil(t *testing.T) {
 	}
 }
 
+func TestMapDecisionService(t *testing.T) {
+	def := defWithNS(ns15)
+	def.Services = []dmnxml.DecisionService{{
+		ID:                    "svc1",
+		Name:                  "Approval",
+		OutputDecisions:       []dmnxml.Ref{{Href: "#d_out"}},
+		EncapsulatedDecisions: []dmnxml.Ref{{Href: "#d_enc"}},
+		InputDecisions:        []dmnxml.Ref{{Href: "#d_in"}},
+		InputData:             []dmnxml.Ref{{Href: "#data"}},
+	}}
+	m, _, err := model.FromXML(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Services) != 1 {
+		t.Fatalf("got %d services, want 1", len(m.Services))
+	}
+	s := m.Services[0]
+	if s.Name != "Approval" || len(s.OutputDecisions) != 1 || s.OutputDecisions[0] != "d_out" {
+		t.Errorf("service output mapped wrong: %+v", s)
+	}
+	if len(s.EncapsulatedDecisions) != 1 || len(s.InputDecisions) != 1 || len(s.InputData) != 1 {
+		t.Errorf("service refs mapped wrong: %+v", s)
+	}
+}
+
 func TestLogicNilWhenNoExpression(t *testing.T) {
 	dec := &model.Decision{ID: "d"}
 	if dec.Logic() != nil {

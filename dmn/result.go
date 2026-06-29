@@ -3,8 +3,6 @@ package dmn
 import (
 	"context"
 	"fmt"
-
-	"github.com/pblumer/temis/internal/value"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -55,61 +53,14 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		return Result{}, err
 	}
 
-	decisions := map[string]any{}
-	cache := make(map[*CompiledDecision]value.Value)
-	visiting := make(map[*CompiledDecision]bool)
-
-	var eval func(d *CompiledDecision) (value.Value, error)
-	eval = func(d *CompiledDecision) (value.Value, error) {
-		if v, ok := cache[d]; ok {
-			return v, nil
-		}
-		if visiting[d] {
-			return nil, fmt.Errorf("dmn: dependency cycle at decision %q", label(d))
-		}
-		if d.expr == nil {
-			return nil, fmt.Errorf("dmn: required decision %q has no executable logic", label(d))
-		}
-		visiting[d] = true
-
-		// The decision evaluates against the input data plus its required
-		// decisions' results, injected by name. A required value the caller
-		// supplied directly is honoured as-is rather than recomputed.
-		vals := make(map[string]value.Value, len(base)+len(d.requires))
-		for k, v := range base {
-			vals[k] = v
-		}
-		for _, req := range d.requires {
-			if v, ok := base[req.name]; ok && req.name != "" {
-				vals[req.name] = v
-				continue
-			}
-			rv, err := eval(req)
-			if err != nil {
-				return nil, err
-			}
-			vals[req.name] = rv
-		}
-
-		out, err := d.expr(d.env.NewScope(vals))
-		if err != nil {
-			return nil, fmt.Errorf("dmn: evaluate decision %q: %w", d.name, err)
-		}
-		visiting[d] = false
-		cache[d] = out
-		if d.name != "" {
-			decisions[d.name] = fromValue(out)
-		}
-		return out, nil
-	}
-
-	out, err := eval(c)
+	ev := newEvaluator(base)
+	out, err := ev.eval(c)
 	if err != nil {
 		return Result{}, err
 	}
 
 	return Result{
 		Outputs:   map[string]any{c.name: fromValue(out)},
-		Decisions: decisions,
+		Decisions: ev.decisions,
 	}, nil
 }

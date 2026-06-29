@@ -63,6 +63,18 @@ type InputData struct {
 	TypeRef string `json:",omitempty"`
 }
 
+// DecisionService is a reusable evaluation unit: it exposes its OutputDecisions,
+// evaluates EncapsulatedDecisions internally and expects InputDecisions and
+// InputData from the caller. All fields hold local element identifiers.
+type DecisionService struct {
+	ID                    string
+	Name                  string
+	OutputDecisions       []string `json:",omitempty"`
+	EncapsulatedDecisions []string `json:",omitempty"`
+	InputDecisions        []string `json:",omitempty"`
+	InputData             []string `json:",omitempty"`
+}
+
 // BKM is a business knowledge model node: a reusable function callable by
 // invocation or by name. EncapsulatedLogic carries its parameters and body
 // (nil when the model declares none).

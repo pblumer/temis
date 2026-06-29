@@ -20,6 +20,9 @@
 // Evaluating a decision automatically evaluates the decisions it requires and
 // feeds their results in by name, so the caller supplies only the leaf input
 // data; a required result passed in directly is used as given. Result.Decisions
-// reports every decision evaluated. Decision services arrive in a later work
-// package; see docs/20-roadmap.md.
+// reports every decision evaluated.
+//
+// A [Definitions.Service] returns a compiled decision service, whose Evaluate
+// runs its output decisions (and any encapsulated decisions) while treating its
+// input decisions as caller-supplied boundaries.
 package dmn
