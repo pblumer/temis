@@ -56,9 +56,29 @@ const playgroundPage = `<!DOCTYPE html>
     header .sub { color: var(--muted); font-size: 13px; }
     header a { color: var(--accent); text-decoration: none; margin-left: auto; }
     header a:hover { text-decoration: underline; }
-    main { max-width: 1400px; margin: 0 auto; padding: 24px;
-      display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; }
-    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+    main { max-width: 1600px; margin: 0 auto; padding: 24px;
+      display: grid; grid-template-columns: 230px 1.4fr 1fr; gap: 24px; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+    /* VS Code-style explorer for models stored on the server. */
+    .explorer { background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px; align-self: start; }
+    .explorer .head { display: flex; align-items: center; justify-content: space-between;
+      text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+      font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+    .explorer .head button { background: transparent; color: var(--accent); border: none;
+      padding: 2px 6px; font-size: 13px; cursor: pointer; }
+    .tree { font-family: var(--mono); font-size: 12.5px; }
+    .tree .empty { color: var(--muted); font-family: inherit; font-size: 13px; }
+    .tree .model > .label { display: flex; align-items: center; gap: 6px; padding: 3px 4px;
+      border-radius: 4px; cursor: pointer; color: var(--fg); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
+    .tree .model > .label:hover { background: #20283a; }
+    .tree .model.active > .label { background: #1f6feb33; color: #cfe0ff; }
+    .tree .model .chev { color: var(--muted); width: 10px; display: inline-block; }
+    .tree .model .ico { color: var(--accent); }
+    .tree .decs { margin: 0 0 4px 18px; }
+    .tree .decs .dec { color: var(--muted); padding: 2px 4px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
     .panel { background: var(--panel); border: 1px solid var(--border);
       border-radius: 10px; padding: 16px; }
     .panel h2 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase;
@@ -137,6 +157,14 @@ const playgroundPage = `<!DOCTYPE html>
     <a href="/docs">API-Doku (Swagger UI) →</a>
   </header>
   <main>
+    <aside class="explorer">
+      <div class="head">
+        <span>Server-Modelle</span>
+        <button id="refreshModels" title="Liste aktualisieren">⟳</button>
+      </div>
+      <div id="modelTree" class="tree"><div class="empty">— wird geladen —</div></div>
+    </aside>
+
     <section class="panel">
       <h2>1 · Modell</h2>
       <div class="row">
@@ -145,6 +173,8 @@ const playgroundPage = `<!DOCTYPE html>
         <span id="modeBadge" class="badge read">schreibgeschützt</span>
         <button id="modeToggle" class="secondary" disabled>Bearbeiten</button>
       </div>
+      <label for="modelName">Modellname</label>
+      <input type="text" id="modelName" placeholder="z. B. Rabattlogik — benennt das Modell (statt des Felds im Diagramm)">
       <div id="dmnCanvas">
         <div id="dmnHint">Lade dmn-js …</div>
       </div>
@@ -264,10 +294,106 @@ const playgroundPage = `<!DOCTYPE html>
       return loadScript(CDN + 'dmn-modeler.production.min.js');
     }).then(function () {
       DmnModeler = window.DmnJS;
-      $('dmnHint').textContent = 'Datei hochladen oder DMN-XML einfügen.';
+      $('dmnHint').textContent = 'Datei hochladen, leeres Modell anlegen („Neu") oder links ein Server-Modell wählen.';
     }).catch(function (e) {
       $('dmnHint').textContent = 'dmn-js konnte nicht geladen werden: ' + e.message;
     });
+
+    // --- server model explorer (left sidebar) ---
+
+    // Short, readable id suffix for models that declare no name.
+    function shortId(id) {
+      var hex = String(id).replace(/^sha256:/, '');
+      return 'modell-' + hex.slice(0, 8);
+    }
+
+    function modelLabel(m) {
+      return (m.name && m.name.trim()) ? m.name.trim() : shortId(m.modelId);
+    }
+
+    // GET /v1/models and render the tree; called on load and after each deploy.
+    function refreshModels() {
+      fetch('/v1/models', { headers: authHeaders({}) }).then(function (resp) {
+        if (!resp.ok) { return { models: [] }; } // listing disabled or error → empty
+        return resp.json();
+      }).then(function (body) {
+        renderModelTree((body && body.models) || []);
+      }).catch(function () { renderModelTree([]); });
+    }
+
+    function renderModelTree(models) {
+      var tree = $('modelTree');
+      tree.innerHTML = '';
+      if (!models.length) {
+        var e = document.createElement('div'); e.className = 'empty';
+        e.textContent = 'Noch keine Modelle deployed.'; tree.appendChild(e); return;
+      }
+      models.forEach(function (m) {
+        var wrap = document.createElement('div'); wrap.className = 'model'; wrap.dataset.id = m.modelId;
+        if (m.modelId === modelId) { wrap.className += ' active'; }
+
+        var label = document.createElement('div'); label.className = 'label';
+        var chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '▸';
+        var ico = document.createElement('span'); ico.className = 'ico'; ico.textContent = '◧';
+        var nm = document.createElement('span'); nm.textContent = modelLabel(m) + '.dmn';
+        nm.title = modelLabel(m) + '  (' + m.modelId + ')';
+        label.appendChild(chev); label.appendChild(ico); label.appendChild(nm);
+        wrap.appendChild(label);
+
+        var decs = document.createElement('div'); decs.className = 'decs'; decs.style.display = 'none';
+        (m.decisions || []).forEach(function (d) {
+          var row = document.createElement('div'); row.className = 'dec'; row.textContent = '› ' + d; row.title = d;
+          decs.appendChild(row);
+        });
+        wrap.appendChild(decs);
+
+        // Click the chevron to expand decisions; click the name to open the model.
+        chev.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var open = decs.style.display !== 'none';
+          decs.style.display = open ? 'none' : 'block';
+          chev.textContent = open ? '▸' : '▾';
+        });
+        nm.addEventListener('click', function () { loadServerModel(m.modelId); });
+        tree.appendChild(wrap);
+      });
+    }
+
+    // Open a server-stored model in the editor: fetch its XML, render it
+    // read-only, and wire up evaluation against the already-cached model.
+    function loadServerModel(id) {
+      setStatus($('loadStatus'), 'Lade Server-Modell …', null);
+      fetch('/v1/models/' + encodeURIComponent(id) + '/xml', { headers: authHeaders({}) })
+        .then(function (resp) { if (!resp.ok) { throw new Error('HTTP ' + resp.status); } return resp.text(); })
+        .then(function (xml) {
+          $('xml').value = xml; $('file').value = '';
+          return renderDiagram(xml, 'read');
+        })
+        .then(function () {
+          resetDeployState();
+          // It is already on the server — fetch its index so evaluation works
+          // immediately without re-deploying, and mark it active in the tree.
+          modelId = id;
+          return fetch('/v1/models/' + encodeURIComponent(id), { headers: authHeaders({}) });
+        })
+        .then(function (resp) { return resp.ok ? resp.json() : null; })
+        .then(function (idx) {
+          if (idx) { fillIndex(idx); }
+          markActiveModel();
+          setStatus($('loadStatus'), 'Server-Modell geladen (schreibgeschützt).', 'ok');
+        })
+        .catch(function (e) { setStatus($('loadStatus'), 'Fehler: ' + (e.message || e), 'err'); });
+    }
+
+    function markActiveModel() {
+      var items = $('modelTree').querySelectorAll('.model');
+      for (var i = 0; i < items.length; i++) {
+        var on = items[i].dataset.id === modelId;
+        items[i].className = on ? 'model active' : 'model';
+      }
+    }
+
+    $('refreshModels').addEventListener('click', refreshModels);
 
     function updateModeUI() {
       var badge = $('modeBadge');
@@ -294,16 +420,43 @@ const playgroundPage = `<!DOCTYPE html>
           var v = dmn.getActiveViewer && dmn.getActiveViewer();
           try { if (v && v.get('canvas')) { v.get('canvas').zoom('fit-viewport'); } } catch (e) { /* ignore */ }
           mode = newMode; lastXML = xml; loaded = true; updateModeUI();
+          syncModelNameField();
           resolve();
         }).catch(reject);
       });
     }
 
-    // Resolve to the current model XML — serialized from the editor when in
-    // write mode, otherwise the last imported XML.
+    // The DMN definitions moddle element, or null. dmn-js exposes it on both the
+    // viewer and the modeler.
+    function getDefs() {
+      if (!dmn || !dmn.getDefinitions) { return null; }
+      try { return dmn.getDefinitions(); } catch (e) { return null; }
+    }
+
+    // Mirror the model's name into the comfortable "Modellname" field. (The
+    // in-canvas dmn-js name label is awkward to edit, so this is the place to
+    // rename a model.)
+    function syncModelNameField() {
+      var d = getDefs();
+      $('modelName').value = (d && d.name) ? d.name : '';
+    }
+
+    // Write the "Modellname" field back onto the model before it is serialized,
+    // so the name travels with the DMN XML (deploy, download, server list).
+    function applyModelName() {
+      var d = getDefs();
+      if (!d) { return; }
+      d.name = $('modelName').value.trim();
+    }
+
+    // Resolve to the current model XML, serialized from the live editor so the
+    // model name (and any edits) are included; falls back to the last import.
     function getCurrentXML() {
-      if (mode === 'write' && dmn && dmn.saveXML) {
-        return dmn.saveXML({ format: true }).then(function (r) { return r.xml; });
+      applyModelName();
+      if (dmn && dmn.saveXML) {
+        return dmn.saveXML({ format: true })
+          .then(function (r) { return r.xml; })
+          .catch(function () { return lastXML || ''; });
       }
       return Promise.resolve(lastXML || '');
     }
@@ -389,8 +542,10 @@ const playgroundPage = `<!DOCTYPE html>
       }).then(asJson).then(function (r) {
         if (!r.resp.ok) { setStatus($('loadStatus'), errorText(r.resp, r.body), 'err'); return; }
         modelId = r.body.modelId;
+        if (r.body.name) { $('modelName').value = r.body.name; }
         fillIndex(r.body);
         setStatus($('loadStatus'), 'Deployed — ' + (r.body.decisions || []).length + ' Decision(s).', 'ok');
+        refreshModels(); // the new model now appears in the server list
       }).catch(function (e) { setStatus($('loadStatus'), 'Fehler: ' + (e.message || e), 'err'); });
     });
 
@@ -664,6 +819,9 @@ const playgroundPage = `<!DOCTYPE html>
         box.appendChild(el);
       });
     }
+
+    // Populate the server-model explorer on first load.
+    refreshModels();
   </script>
 </body>
 </html>

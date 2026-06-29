@@ -71,6 +71,7 @@ func WithModelListing(enabled bool) Option {
 // any diagnostics produced while compiling it.
 type storedModel struct {
 	id    string
+	xml   []byte // the raw DMN XML as uploaded, served back for the editor
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
 	diags dmn.Diagnostics
@@ -98,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
 	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
+	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
@@ -114,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 
 type modelResponse struct {
 	ModelID     string                      `json:"modelId"`
+	Name        string                      `json:"name,omitempty"`
 	Decisions   []string                    `json:"decisions"`
 	Inputs      []string                    `json:"inputs"`
 	Schema      map[string][]dmn.InputField `json:"schema,omitempty"`
@@ -142,6 +145,7 @@ type modelListResponse struct {
 
 type modelSummary struct {
 	ModelID   string   `json:"modelId"`
+	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
 }
@@ -195,6 +199,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, modelResponse{
 		ModelID:     sm.id,
+		Name:        sm.defs.ModelName(),
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
@@ -217,6 +222,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 	for _, sm := range s.models {
 		summaries = append(summaries, modelSummary{
 			ModelID:   sm.id,
+			Name:      sm.defs.ModelName(),
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
 		})
@@ -238,11 +244,25 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, modelResponse{
 		ModelID:     sm.id,
+		Name:        sm.defs.ModelName(),
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
+}
+
+// handleGetModelXML returns a cached model's raw DMN XML, so a client (the /ui
+// editor) can reopen a model that was previously deployed to the server.
+func (s *Server) handleGetModelXML(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(sm.xml)
 }
 
 // handleEvaluateModel evaluates a decision of a cached model.
@@ -346,7 +366,7 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 	if err != nil {
 		return nil, err
 	}
-	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
+	sm := &storedModel{id: id, xml: xml, defs: defs, index: defs.Index(), diags: diags}
 
 	s.mu.Lock()
 	s.models[id] = sm

@@ -90,6 +90,28 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/xml:
+    get:
+      summary: Get a cached model's raw DMN XML
+      description: Returns the DMN document exactly as uploaded, so a client can reopen it in an editor.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The model's DMN XML
+          content:
+            application/xml:
+              schema: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/models/{id}/evaluate:
     post:
       summary: Evaluate a decision of a cached model
@@ -197,6 +219,7 @@ components:
       type: object
       properties:
         modelId: { type: string, example: "sha256:..." }
+        name: { type: string, description: The DMN definitions' name, if any. }
         decisions:
           type: array
           items: { type: string }
@@ -207,6 +230,7 @@ components:
       type: object
       properties:
         modelId: { type: string, example: "sha256:..." }
+        name: { type: string, description: The DMN definitions' name, if any. }
         decisions:
           type: array
           items: { type: string }
