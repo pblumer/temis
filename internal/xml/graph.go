@@ -299,6 +299,74 @@ func removeBKM(in []BKM, id string) []BKM {
 	return in
 }
 
+// CreateDecisionTable gives a logic-less decision a fresh decision table: one
+// input column per information requirement (the required element's name as the
+// input expression, carrying its declared type) and a single output named after
+// the decision (or its variable), hit policy UNIQUE, no rules yet. It reports
+// false when the decision is unknown or already carries logic.
+func (d *Definitions) CreateDecisionTable(decisionID string) bool {
+	i := indexDecision(d.Decisions, decisionID)
+	if i < 0 {
+		return false
+	}
+	dec := &d.Decisions[i]
+	if dec.present() {
+		return false
+	}
+
+	dt := &DecisionTable{HitPolicy: "UNIQUE"}
+	for _, ir := range dec.InformationRequirts {
+		name, typeRef := d.elementNameType(infoReqSource(ir))
+		if name == "" {
+			continue
+		}
+		dt.Inputs = append(dt.Inputs, Input{Label: name, InputExpression: InputExpression{Text: name, TypeRef: typeRef}})
+	}
+
+	outName, outType := dec.Name, ""
+	if dec.Variable != nil {
+		if dec.Variable.Name != "" {
+			outName = dec.Variable.Name
+		}
+		outType = dec.Variable.TypeRef
+	}
+	dt.Outputs = append(dt.Outputs, Output{Name: outName, TypeRef: outType})
+
+	dec.DecisionTable = dt
+	return true
+}
+
+// present reports whether any boxed-expression child is set — i.e. the holder
+// already carries logic.
+func (e Expression) present() bool {
+	return e.LiteralExpression != nil || e.DecisionTable != nil || e.Context != nil ||
+		e.Invocation != nil || e.FunctionDefinition != nil || e.List != nil ||
+		e.Relation != nil || e.Conditional != nil || e.For != nil || e.Every != nil ||
+		e.Some != nil || e.Filter != nil
+}
+
+// elementNameType resolves an inputData or decision id to its name and declared
+// variable type ("" when none).
+func (d *Definitions) elementNameType(id string) (name, typeRef string) {
+	for _, in := range d.InputData {
+		if in.ID == id {
+			if in.Variable != nil {
+				typeRef = in.Variable.TypeRef
+			}
+			return in.Name, typeRef
+		}
+	}
+	for _, dec := range d.Decisions {
+		if dec.ID == id {
+			if dec.Variable != nil {
+				typeRef = dec.Variable.TypeRef
+			}
+			return dec.Name, typeRef
+		}
+	}
+	return "", ""
+}
+
 // --- DMNDI shape surgery ---
 
 // UpsertShape sets the bounds of the DMNShape bound to id, or appends a new

@@ -160,6 +160,69 @@ func toEdit(tv dmn.TableView) []dmn.TableRule {
 	return rules
 }
 
+// TestCreateDecisionTable adds an undecided decision wired to two inputs, gives it
+// a table, and checks the table's input columns are derived from its requirements
+// (with a single output named after the decision) and that it compiles cleanly.
+func TestCreateDecisionTable(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+
+	// Add an undecided "Pairing" decision requiring Season and Guest Count.
+	wired := graphEdit(t, src)
+	wired.Nodes = append(wired.Nodes, dmn.GraphNodeEdit{ID: "id_pairing", Type: "decision", Name: "Pairing", X: 600, Y: 260, Width: 150, Height: 70})
+	wired.Edges = append(wired.Edges,
+		dmn.GraphEdgeEdit{Type: "informationRequirement", Source: "id_season", Target: "id_pairing"},
+		dmn.GraphEdgeEdit{Type: "informationRequirement", Source: "id_guests", Target: "id_pairing"},
+	)
+	withDecision, err := dmn.ApplyGraph(src, wired)
+	if err != nil {
+		t.Fatalf("ApplyGraph: %v", err)
+	}
+
+	out, err := dmn.CreateDecisionTable(withDecision, "id_pairing")
+	if err != nil {
+		t.Fatalf("CreateDecisionTable: %v", err)
+	}
+
+	defs, diags, err := dmn.New().Compile(context.Background(), out)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if diags.HasErrors() {
+		t.Fatalf("new table has compile errors: %+v", diags)
+	}
+	tv, ok := defs.DecisionTable("Pairing")
+	if !ok {
+		t.Fatal("Pairing has no table after create")
+	}
+	if tv.HitPolicy != "U" {
+		t.Errorf("hit policy = %q, want U", tv.HitPolicy)
+	}
+	gotInputs := []string{}
+	for _, in := range tv.Inputs {
+		gotInputs = append(gotInputs, in.Expression)
+	}
+	if len(gotInputs) != 2 || gotInputs[0] != "Season" || gotInputs[1] != "Guest Count" {
+		t.Errorf("input columns = %v, want [Season, Guest Count] from requirements", gotInputs)
+	}
+	if len(tv.Outputs) != 1 || tv.Outputs[0].Name != "Pairing" {
+		t.Errorf("outputs = %+v, want one named Pairing", tv.Outputs)
+	}
+	if len(tv.Rules) != 0 {
+		t.Errorf("new table should start with no rules, got %d", len(tv.Rules))
+	}
+}
+
+// TestCreateDecisionTableRejectsDecided errors when the decision already has logic.
+func TestCreateDecisionTableRejectsDecided(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+	if _, err := dmn.CreateDecisionTable(src, "id_dish"); err == nil {
+		t.Error("expected error creating a table for a decision that already has one")
+	}
+	if _, err := dmn.CreateDecisionTable(src, "nope"); err == nil {
+		t.Error("expected error for unknown decision")
+	}
+}
+
 // TestGraphMarksTableDecisions checks the graph flags decisions whose logic is a
 // decision table, so the client knows which nodes open a table on double-click.
 func TestGraphMarksTableDecisions(t *testing.T) {

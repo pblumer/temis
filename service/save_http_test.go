@@ -165,6 +165,43 @@ func TestSaveGraphAddNode(t *testing.T) {
 	}
 }
 
+// TestCreateDecisionTableEndpoint adds an undecided decision, gives it a table via
+// the endpoint, and checks the saved model's table has the requirement-derived
+// column.
+func TestCreateDecisionTableEndpoint(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+
+	// Add an undecided "Pairing" decision requiring Season.
+	g := decode[dmn.Graph](t, do(t, h, "GET", "/v1/models/"+id+"/graph", "", nil))
+	edit := dmn.GraphEdit{}
+	for _, n := range g.Nodes {
+		edit.Nodes = append(edit.Nodes, dmn.GraphNodeEdit{ID: n.ID, Type: n.Type, Name: n.Name, DataType: n.DataType, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height})
+	}
+	for _, e := range g.Edges {
+		edit.Edges = append(edit.Edges, dmn.GraphEdgeEdit(e))
+	}
+	edit.Nodes = append(edit.Nodes, dmn.GraphNodeEdit{ID: "id_pairing", Type: "decision", Name: "Pairing", X: 600, Y: 260, Width: 150, Height: 70})
+	edit.Edges = append(edit.Edges, dmn.GraphEdgeEdit{Type: "informationRequirement", Source: "id_season", Target: "id_pairing"})
+	withDec := decode[modelResponse](t, do(t, h, "POST", "/v1/models/"+id+"/graph", "application/json", mustJSON(t, edit))).ModelID
+
+	rec := do(t, h, "POST", "/v1/models/"+withDec+"/decisions/id_pairing/create-table", "", nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST create-table = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	created := decode[modelResponse](t, rec)
+
+	tv := decode[dmn.TableView](t, do(t, h, "GET", "/v1/models/"+created.ModelID+"/decisions/id_pairing/table", "", nil))
+	if len(tv.Inputs) != 1 || tv.Inputs[0].Expression != "Season" {
+		t.Errorf("created table inputs = %+v, want one 'Season' column", tv.Inputs)
+	}
+
+	// Creating a table for a decision that already has one is rejected.
+	if rec := do(t, h, "POST", "/v1/models/"+id+"/decisions/id_dish/create-table", "", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("create-table on a decided decision = %d, want 400", rec.Code)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)

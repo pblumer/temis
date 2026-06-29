@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
@@ -339,6 +340,36 @@ func (s *Server) handleGetDecisionTable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, table)
+}
+
+// handleCreateDecisionTable gives an undecided decision a fresh decision table
+// (columns derived from its requirements), recompiles and caches the model, and
+// returns the new id. It is a 404/400 when the decision is unknown or already has
+// logic (ADR-0016).
+func (s *Server) handleCreateDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	patched, err := dmn.CreateDecisionTable(sm.xml, r.PathValue("decision"))
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "TABLE_CREATE_FAILED", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
 }
 
 // handleSaveDecisionTable rewrites a decision's decision-table rules and caches

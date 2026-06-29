@@ -136,6 +136,23 @@ func dropTrailingEmpty(in []string) []string {
 	return in[:end]
 }
 
+// CreateDecisionTable gives a logic-less decision a fresh decision table and
+// returns the updated XML. The table's input columns are derived from the
+// decision's information requirements (so a decision wired into the DRG gets its
+// inputs for free), with a single output named after the decision; it starts
+// with no rules, to be filled via the table editor. It errors when the decision
+// is unknown or already has logic.
+func CreateDecisionTable(src []byte, decisionID string) ([]byte, error) {
+	def, err := dmnxml.Decode(src)
+	if err != nil {
+		return nil, err
+	}
+	if !def.CreateDecisionTable(decisionID) {
+		return nil, fmt.Errorf("dmn: cannot create a table for decision %q (unknown or already has logic)", decisionID)
+	}
+	return dmnxml.Encode(def)
+}
+
 // decisionModel resolves a decision by id or name to the underlying model
 // element, or nil when none matches.
 func (d *Definitions) decisionModel(idOrName string) *model.Decision {

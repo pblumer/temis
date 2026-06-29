@@ -62,6 +62,9 @@ export type ModelerHandle = {
   // onOpenTable fires with a decision's id when the user double-clicks a decision
   // whose logic is a decision table (to open its table view).
   onOpenTable: (cb: (decisionId: string) => void) => void
+  // onCreateTable fires with a decision's id when the user asks (via the context
+  // pad) to give a table-less decision a fresh decision table.
+  onCreateTable: (cb: (decisionId: string) => void) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -88,7 +91,13 @@ const EDGE_TYPES = new Set(['dmn:informationRequirement', 'dmn:knowledgeRequirem
 // Build an editable DMN diagram into the container with temis' own renderers on
 // the diagram-js MIT core — no dmn-js. A fresh diagram is built per call (the
 // container is cleared first), so switching models starts a clean undo history.
+// The currently mounted diagram, destroyed when the next one is built so its
+// command stack and DOM/document listeners don't linger and fire stray commands
+// (e.g. re-adding a shape) into the new diagram after a model switch.
+let current: Diagram | null = null
+
 export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
+  if (current) current.destroy()
   container.innerHTML = ''
   const diagram = new Diagram({
     canvas: { container },
@@ -98,6 +107,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       MoveCanvasModule, ZoomScrollModule,
     ],
   })
+  current = diagram
   const canvas = diagram.get<Canvas>('canvas')
   const factory = diagram.get<ElementFactory>('elementFactory')
   const commandStack = diagram.get<CommandStack>('commandStack')
@@ -134,6 +144,11 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean } }) => {
     const el = e.element
     if (el && el.type === 'dmn:decision' && el.hasTable) openTableCb(el.id)
+  })
+
+  let createTableCb = (_decisionId: string): void => {}
+  eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
+    if (e.element) createTableCb(e.element.id)
   })
 
   let selectCb = (_sel: Selected): void => {}
@@ -179,6 +194,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onOpenTable: (cb) => {
       openTableCb = cb
+    },
+    onCreateTable: (cb) => {
+      createTableCb = cb
     },
   }
 }

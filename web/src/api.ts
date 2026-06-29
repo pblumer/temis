@@ -146,7 +146,22 @@ export async function getTable(modelId: string, decision: string): Promise<Table
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Decision Table laden fehlgeschlagen (HTTP ' + r.status + ')')
-  return (await r.json()) as TableView
+  const tv = (await r.json()) as TableView
+  // A freshly created table can have no columns/rules yet; Go serialises empty
+  // slices as null, so normalise to arrays for the editor.
+  tv.inputs = tv.inputs ?? []
+  tv.outputs = tv.outputs ?? []
+  tv.rules = tv.rules ?? []
+  return tv
+}
+
+// createDecisionTable gives an undecided decision a fresh decision table (columns
+// derived from its requirements server-side) and returns the saved model's
+// detail with its new id.
+export async function createDecisionTable(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-table', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Tabelle anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
 }
 
 // TableEdit is the editable payload for a decision table: its rule rows (columns
