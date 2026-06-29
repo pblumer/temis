@@ -102,6 +102,75 @@ func TestMapBKMEncapsulatedLogic(t *testing.T) {
 	}
 }
 
+func TestMapListAndRelation(t *testing.T) {
+	m := decisionWith(dmnxml.Expression{List: &dmnxml.List{
+		ID: "l1",
+		Items: []dmnxml.Expression{
+			{LiteralExpression: &dmnxml.LiteralExpression{Text: "1"}},
+			{LiteralExpression: &dmnxml.LiteralExpression{Text: "2"}},
+		},
+	}})
+	if l := m.Decisions[0].List; l == nil || len(l.Items) != 2 {
+		t.Fatalf("list mapped wrong: %+v", l)
+	}
+
+	m = decisionWith(dmnxml.Expression{Relation: &dmnxml.Relation{
+		Columns: []dmnxml.Column{{Name: "a"}, {Name: "b"}},
+		Rows: []dmnxml.Row{
+			{Cells: []dmnxml.Expression{{LiteralExpression: &dmnxml.LiteralExpression{Text: "1"}}, {LiteralExpression: &dmnxml.LiteralExpression{Text: "2"}}}},
+		},
+	}})
+	rel := m.Decisions[0].Relation
+	if rel == nil || len(rel.Columns) != 2 || rel.Columns[0] != "a" {
+		t.Fatalf("relation columns mapped wrong: %+v", rel)
+	}
+	if len(rel.Rows) != 1 || len(rel.Rows[0].Cells) != 2 {
+		t.Errorf("relation rows mapped wrong: %+v", rel.Rows)
+	}
+}
+
+func TestMapConditionalIteratorFilter(t *testing.T) {
+	lit := func(s string) *dmnxml.ChildExpr {
+		return &dmnxml.ChildExpr{Expression: dmnxml.Expression{LiteralExpression: &dmnxml.LiteralExpression{Text: s}}}
+	}
+
+	m := decisionWith(dmnxml.Expression{Conditional: &dmnxml.Conditional{If: lit("c"), Then: lit("t"), Else: lit("e")}})
+	if c := m.Decisions[0].Conditional; c == nil || c.If == nil || c.Then == nil || c.Else == nil {
+		t.Fatalf("conditional mapped wrong: %+v", c)
+	}
+
+	m = decisionWith(dmnxml.Expression{For: &dmnxml.Iterator{IteratorVariable: "x", In: lit("[1]"), Return: lit("x")}})
+	if f := m.Decisions[0].For; f == nil || f.IteratorVariable != "x" || f.In == nil || f.Return == nil {
+		t.Fatalf("for mapped wrong: %+v", f)
+	}
+
+	m = decisionWith(dmnxml.Expression{Every: &dmnxml.Iterator{IteratorVariable: "x", In: lit("[1]"), Satisfies: lit("x > 0")}})
+	if q := m.Decisions[0].Quantified; q == nil || q.Kind != "every" || q.Satisfies == nil {
+		t.Fatalf("every mapped wrong: %+v", q)
+	}
+
+	m = decisionWith(dmnxml.Expression{Some: &dmnxml.Iterator{IteratorVariable: "x", In: lit("[1]"), Satisfies: lit("x > 0")}})
+	if q := m.Decisions[0].Quantified; q == nil || q.Kind != "some" {
+		t.Fatalf("some mapped wrong: %+v", q)
+	}
+
+	m = decisionWith(dmnxml.Expression{Filter: &dmnxml.Filter{In: lit("[1]"), Match: lit("item > 0")}})
+	if f := m.Decisions[0].Filter; f == nil || f.In == nil || f.Match == nil {
+		t.Fatalf("filter mapped wrong: %+v", f)
+	}
+}
+
+func TestMapChildNil(t *testing.T) {
+	// A conditional with no else holder maps Else to nil.
+	m := decisionWith(dmnxml.Expression{Conditional: &dmnxml.Conditional{
+		If:   &dmnxml.ChildExpr{Expression: dmnxml.Expression{LiteralExpression: &dmnxml.LiteralExpression{Text: "c"}}},
+		Then: &dmnxml.ChildExpr{Expression: dmnxml.Expression{LiteralExpression: &dmnxml.LiteralExpression{Text: "t"}}},
+	}})
+	if c := m.Decisions[0].Conditional; c.Else != nil {
+		t.Errorf("missing else should map to nil, got %+v", c.Else)
+	}
+}
+
 func TestLogicNilWhenNoExpression(t *testing.T) {
 	dec := &model.Decision{ID: "d"}
 	if dec.Logic() != nil {

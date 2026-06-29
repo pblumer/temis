@@ -18,6 +18,12 @@ type Decision struct {
 	Context           *ContextExpr       `json:",omitempty"`
 	Invocation        *Invocation        `json:",omitempty"`
 	FunctionDef       *FunctionDef       `json:",omitempty"`
+	List              *ListExpr          `json:",omitempty"`
+	Relation          *RelationExpr      `json:",omitempty"`
+	Conditional       *Conditional       `json:",omitempty"`
+	For               *ForExpr           `json:",omitempty"`
+	Quantified        *Quantified        `json:",omitempty"`
+	Filter            *FilterExpr        `json:",omitempty"`
 }
 
 // Logic returns the decision's executable logic, or nil if it has none.
@@ -33,6 +39,18 @@ func (d *Decision) Logic() Expression {
 		return d.Invocation
 	case d.FunctionDef != nil:
 		return d.FunctionDef
+	case d.List != nil:
+		return d.List
+	case d.Relation != nil:
+		return d.Relation
+	case d.Conditional != nil:
+		return d.Conditional
+	case d.For != nil:
+		return d.For
+	case d.Quantified != nil:
+		return d.Quantified
+	case d.Filter != nil:
+		return d.Filter
 	default:
 		return nil
 	}

@@ -10,6 +10,12 @@ func (*DecisionTable) isExpression()     {}
 func (*ContextExpr) isExpression()       {}
 func (*Invocation) isExpression()        {}
 func (*FunctionDef) isExpression()       {}
+func (*ListExpr) isExpression()          {}
+func (*RelationExpr) isExpression()      {}
+func (*Conditional) isExpression()       {}
+func (*ForExpr) isExpression()           {}
+func (*Quantified) isExpression()        {}
+func (*FilterExpr) isExpression()        {}
 
 // ContextExpr is a boxed context: an ordered list of entries. When the final
 // entry has no name it is the result cell, whose expression — evaluated with the
@@ -54,4 +60,58 @@ type FunctionDef struct {
 type FunctionParam struct {
 	Name    string
 	TypeRef string `json:",omitempty"`
+}
+
+// ListExpr is a boxed list: its items evaluate to the elements of a FEEL list,
+// in order.
+type ListExpr struct {
+	ID    string       `json:",omitempty"`
+	Items []Expression `json:",omitempty"`
+}
+
+// RelationExpr is a boxed relation: a table of named columns whose rows evaluate
+// to a list of contexts (one per row, keyed by column name).
+type RelationExpr struct {
+	ID      string        `json:",omitempty"`
+	Columns []string      `json:",omitempty"`
+	Rows    []RelationRow `json:",omitempty"`
+}
+
+// RelationRow is one relation row: cell expressions aligned with the columns.
+type RelationRow struct {
+	Cells []Expression `json:",omitempty"`
+}
+
+// Conditional is a boxed if/then/else (DMN 1.4+).
+type Conditional struct {
+	ID   string `json:",omitempty"`
+	If   Expression
+	Then Expression
+	Else Expression
+}
+
+// ForExpr is a boxed iterator (DMN 1.4+): IteratorVariable ranges over In,
+// collecting Return into a list.
+type ForExpr struct {
+	ID               string `json:",omitempty"`
+	IteratorVariable string
+	In               Expression
+	Return           Expression
+}
+
+// Quantified is a boxed some/every (DMN 1.4+): IteratorVariable ranges over In,
+// testing Satisfies. Kind is "some" or "every".
+type Quantified struct {
+	ID               string `json:",omitempty"`
+	Kind             string
+	IteratorVariable string
+	In               Expression
+	Satisfies        Expression
+}
+
+// FilterExpr is a boxed filter (DMN 1.4+): the In collection filtered by Match.
+type FilterExpr struct {
+	ID    string `json:",omitempty"`
+	In    Expression
+	Match Expression
 }

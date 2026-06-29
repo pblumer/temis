@@ -88,6 +88,13 @@ type Expression struct {
 	Context            *Context            `xml:"context"`
 	Invocation         *Invocation         `xml:"invocation"`
 	FunctionDefinition *FunctionDefinition `xml:"functionDefinition"`
+	List               *List               `xml:"list"`
+	Relation           *Relation           `xml:"relation"`
+	Conditional        *Conditional        `xml:"conditional"`
+	For                *Iterator           `xml:"for"`
+	Every              *Iterator           `xml:"every"`
+	Some               *Iterator           `xml:"some"`
+	Filter             *Filter             `xml:"filter"`
 }
 
 // Context mirrors a boxed <context>: an ordered list of context entries. A final

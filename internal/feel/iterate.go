@@ -1,6 +1,9 @@
 package feel
 
-import "github.com/pblumer/temis/internal/value"
+import (
+	"github.com/pblumer/temis/internal/feel/builtins"
+	"github.com/pblumer/temis/internal/value"
+)
 
 // itemVar is the implicit name bound to the current element inside a filter
 // predicate (e.g. nums[item > 2]). Context elements additionally expose their
@@ -184,16 +187,30 @@ func integerOf(v value.Value) (int64, bool) {
 // from the end) while any other F is a per-element boolean predicate.
 func (c *compiler) compileFilter(n *FilterExpr) CompiledExpr {
 	x := c.compile(n.X)
+	f := c.compileFilterPredicate(n.Filter)
+	return filterClosure(x, f)
+}
 
+// compileFilterPredicate compiles a filter predicate against the current env
+// extended with the implicit element variable item; the element's context keys
+// resolve dynamically while it is the innermost implicit scope.
+func (c *compiler) compileFilterPredicate(pred Expr) CompiledExpr {
 	filterEnv := c.env.Append(itemVar)
 	itemSlot, _ := filterEnv.slot(itemVar)
 	var f CompiledExpr
 	c.withEnv(filterEnv, func() {
 		c.implicit = append(c.implicit, itemSlot)
-		f = c.compile(n.Filter)
+		f = c.compile(pred)
 		c.implicit = c.implicit[:len(c.implicit)-1]
 	})
+	return f
+}
 
+// filterClosure is the runtime of a filter: x is the collection, f the predicate
+// compiled against an env extended with the implicit item slot (so the predicate
+// reads the current element via s.Extend). A numeric predicate selects by index
+// (1-based, negative from the end); any other predicate is a per-element boolean.
+func filterClosure(x, f CompiledExpr) CompiledExpr {
 	return func(s *Scope) (value.Value, error) {
 		xv, err := x(s)
 		if err != nil {
@@ -201,8 +218,6 @@ func (c *compiler) compileFilter(n *FilterExpr) CompiledExpr {
 		}
 		elems := asElements(xv)
 
-		// Probe with item bound to null: a numeric result selects by index,
-		// anything else is a boolean predicate evaluated per element.
 		probe, err := f(s.Extend(value.Null))
 		if err != nil {
 			return nil, err
@@ -223,6 +238,92 @@ func (c *compiler) compileFilter(n *FilterExpr) CompiledExpr {
 		}
 		return value.NewList(out...), nil
 	}
+}
+
+// ForOne builds a boxed `for` over a single iterator: coll yields the domain
+// (list/range/single value, per the iteration rules) and body — compiled against
+// an env with the iterator variable appended as its trailing slot — runs for each
+// element, collecting the results into a list (WP-26).
+func ForOne(coll, body CompiledExpr) CompiledExpr {
+	return func(s *Scope) (value.Value, error) {
+		cv, err := coll(s)
+		if err != nil {
+			return nil, err
+		}
+		var out []value.Value
+		for _, e := range iterateDomain(cv) {
+			v, err := body(s.Extend(e))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, v)
+		}
+		return value.NewList(out...), nil
+	}
+}
+
+// QuantifyOne builds a boxed `some` (some=true) or `every` (some=false) over a
+// single iterator, applying FEEL's three-valued semantics: some is true on any
+// satisfied element, every false on any unsatisfied one, with unknowns otherwise
+// yielding null (WP-26). pred is compiled against an env with the iterator
+// variable appended as its trailing slot.
+func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
+	return func(s *Scope) (value.Value, error) {
+		cv, err := coll(s)
+		if err != nil {
+			return nil, err
+		}
+		sawTrue, sawFalse, sawNull := false, false, false
+		for _, e := range iterateDomain(cv) {
+			v, err := pred(s.Extend(e))
+			if err != nil {
+				return nil, err
+			}
+			switch v {
+			case value.True:
+				sawTrue = true
+			case value.False:
+				sawFalse = true
+			default:
+				sawNull = true
+			}
+		}
+		if some {
+			switch {
+			case sawTrue:
+				return value.True, nil
+			case sawNull:
+				return value.Null, nil
+			default:
+				return value.False, nil
+			}
+		}
+		switch {
+		case sawFalse:
+			return value.False, nil
+		case sawNull:
+			return value.Null, nil
+		default:
+			return value.True, nil
+		}
+	}
+}
+
+// BoxedFilter compiles a boxed filter: coll is the already-compiled collection
+// and matchSrc the FEEL predicate text, compiled against env extended with the
+// implicit element variable item (its context keys resolve directly, e.g.
+// `age > 18`). A numeric predicate selects by index (WP-26).
+func BoxedFilter(coll CompiledExpr, matchSrc string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
+	pred, err := ParseWithNames(matchSrc, nameOracle(funcs))
+	if err != nil {
+		return nil, err
+	}
+	c := &compiler{env: env, builtins: builtins.Default(), funcs: funcs}
+	f := c.compileFilterPredicate(pred)
+	if c.err != nil {
+		return nil, c.err
+	}
+	return filterClosure(coll, f), nil
 }
 
 // asElements views a value as a list of elements for filtering: a list as-is,

@@ -125,6 +125,18 @@ func mapDecision(d dmnxml.Decision) (*Decision, []Diagnostic) {
 		dec.Invocation = logic
 	case *FunctionDef:
 		dec.FunctionDef = logic
+	case *ListExpr:
+		dec.List = logic
+	case *RelationExpr:
+		dec.Relation = logic
+	case *Conditional:
+		dec.Conditional = logic
+	case *ForExpr:
+		dec.For = logic
+	case *Quantified:
+		dec.Quantified = logic
+	case *FilterExpr:
+		dec.Filter = logic
 	}
 	return dec, diags
 }
@@ -149,9 +161,87 @@ func mapExpression(x dmnxml.Expression) Expression {
 		return mapInvocation(x.Invocation)
 	case x.FunctionDefinition != nil:
 		return mapFunctionDef(x.FunctionDefinition)
+	case x.List != nil:
+		return mapList(x.List)
+	case x.Relation != nil:
+		return mapRelation(x.Relation)
+	case x.Conditional != nil:
+		return mapConditional(x.Conditional)
+	case x.For != nil:
+		return mapFor(x.For)
+	case x.Every != nil:
+		return mapQuantified("every", x.Every)
+	case x.Some != nil:
+		return mapQuantified("some", x.Some)
+	case x.Filter != nil:
+		return mapFilter(x.Filter)
 	default:
 		return nil
 	}
+}
+
+func mapList(l *dmnxml.List) *ListExpr {
+	le := &ListExpr{ID: l.ID}
+	for _, it := range l.Items {
+		le.Items = append(le.Items, mapExpression(it))
+	}
+	return le
+}
+
+func mapRelation(r *dmnxml.Relation) *RelationExpr {
+	re := &RelationExpr{ID: r.ID}
+	for _, c := range r.Columns {
+		re.Columns = append(re.Columns, c.Name)
+	}
+	for _, row := range r.Rows {
+		mr := RelationRow{}
+		for _, cell := range row.Cells {
+			mr.Cells = append(mr.Cells, mapExpression(cell))
+		}
+		re.Rows = append(re.Rows, mr)
+	}
+	return re
+}
+
+func mapConditional(c *dmnxml.Conditional) *Conditional {
+	return &Conditional{
+		ID:   c.ID,
+		If:   mapChild(c.If),
+		Then: mapChild(c.Then),
+		Else: mapChild(c.Else),
+	}
+}
+
+func mapFor(it *dmnxml.Iterator) *ForExpr {
+	return &ForExpr{
+		ID:               it.ID,
+		IteratorVariable: it.IteratorVariable,
+		In:               mapChild(it.In),
+		Return:           mapChild(it.Return),
+	}
+}
+
+func mapQuantified(kind string, it *dmnxml.Iterator) *Quantified {
+	return &Quantified{
+		ID:               it.ID,
+		Kind:             kind,
+		IteratorVariable: it.IteratorVariable,
+		In:               mapChild(it.In),
+		Satisfies:        mapChild(it.Satisfies),
+	}
+}
+
+func mapFilter(f *dmnxml.Filter) *FilterExpr {
+	return &FilterExpr{ID: f.ID, In: mapChild(f.In), Match: mapChild(f.Match)}
+}
+
+// mapChild maps the single expression a holder element wraps, or nil when the
+// holder is absent.
+func mapChild(c *dmnxml.ChildExpr) Expression {
+	if c == nil {
+		return nil
+	}
+	return mapExpression(c.Expression)
 }
 
 func mapContext(c *dmnxml.Context) *ContextExpr {

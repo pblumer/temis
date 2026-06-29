@@ -27,6 +27,18 @@ func Compile(expr model.Expression, env *feel.Env, funcs map[string]*feel.Func) 
 		return compileInvocation(e, env, funcs)
 	case *model.FunctionDef:
 		return compileFunctionDef(e, env, funcs)
+	case *model.ListExpr:
+		return compileList(e, env, funcs)
+	case *model.RelationExpr:
+		return compileRelation(e, env, funcs)
+	case *model.Conditional:
+		return compileConditional(e, env, funcs)
+	case *model.ForExpr:
+		return compileFor(e, env, funcs)
+	case *model.Quantified:
+		return compileQuantified(e, env, funcs)
+	case *model.FilterExpr:
+		return compileFilter(e, env, funcs)
 	case nil:
 		return nil, fmt.Errorf("no executable logic")
 	default:

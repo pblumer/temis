@@ -53,15 +53,20 @@ func CompileString(src string, env *Env) (CompiledExpr, error) {
 // parser's name oracle covers both the built-ins and the function names, so a
 // multi-word function name (e.g. a BKM named "Rate Table") assembles correctly.
 func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
-	var names NameSet = builtins.Default()
-	if len(funcs) > 0 {
-		names = unionNames{builtins.Default(), funcNames(funcs)}
-	}
-	expr, err := ParseWithNames(src, names)
+	expr, err := ParseWithNames(src, nameOracle(funcs))
 	if err != nil {
 		return nil, err
 	}
 	return CompileWith(expr, env, funcs)
+}
+
+// nameOracle returns the parser name oracle covering the built-ins and any
+// user-function names, so multi-word names from either source assemble.
+func nameOracle(funcs map[string]*Func) NameSet {
+	if len(funcs) == 0 {
+		return builtins.Default()
+	}
+	return unionNames{builtins.Default(), funcNames(funcs)}
 }
 
 type compiler struct {
@@ -302,9 +307,14 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 }
 
 func (c *compiler) compileIf(n *IfExpr) CompiledExpr {
-	cond := c.compile(n.Cond)
-	then := c.compile(n.Then)
-	els := c.compile(n.Else)
+	return IfThenElse(c.compile(n.Cond), c.compile(n.Then), c.compile(n.Else))
+}
+
+// IfThenElse builds a FEEL conditional: then runs only when cond is exactly the
+// boolean true, otherwise els runs (so a null or non-boolean condition takes the
+// else branch). It is the shared runtime of the literal `if` and the boxed
+// <conditional> (WP-26).
+func IfThenElse(cond, then, els CompiledExpr) CompiledExpr {
 	return func(s *Scope) (value.Value, error) {
 		cv, err := cond(s)
 		if err != nil {
