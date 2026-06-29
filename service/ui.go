@@ -360,27 +360,43 @@ const playgroundPage = `<!DOCTYPE html>
     }
 
     // Open a server-stored model in the editor: fetch its XML, render it
-    // read-only, and wire up evaluation against the already-cached model.
+    // read-only and wire up evaluation against the already-cached model. The
+    // model is evaluable even when dmn-js cannot draw it (it renders only DMN
+    // 1.3) — the diagram is then skipped but evaluation still works.
     function loadServerModel(id) {
       setStatus($('loadStatus'), 'Lade Server-Modell …', null);
+      var rendered = false;
+      var theXML = '';
       fetch('/v1/models/' + encodeURIComponent(id) + '/xml', { headers: authHeaders({}) })
         .then(function (resp) { if (!resp.ok) { throw new Error('HTTP ' + resp.status); } return resp.text(); })
         .then(function (xml) {
-          $('xml').value = xml; $('file').value = '';
-          return renderDiagram(xml, 'read');
+          theXML = xml; $('xml').value = xml; $('file').value = '';
+          // renderDiagram may reject for DMN 1.4/1.5; swallow so eval still wires up.
+          return renderDiagram(xml, 'read').then(function () { rendered = true; }, function () { rendered = false; });
         })
         .then(function () {
           resetDeployState();
-          // It is already on the server — fetch its index so evaluation works
-          // immediately without re-deploying, and mark it active in the tree.
+          if (!rendered) {
+            if (dmn) { try { dmn.destroy(); } catch (e) { /* ignore */ } dmn = null; }
+            loaded = false; lastXML = theXML; updateModeUI();
+            $('dmnHint').style.display = 'flex';
+            $('dmnHint').textContent = 'Diagramm nicht darstellbar (dmn-js zeigt nur DMN 1.3). Auswertung ist möglich.';
+          }
+          // Already on the server — fetch its index so evaluation works without
+          // re-deploying.
           modelId = id;
           return fetch('/v1/models/' + encodeURIComponent(id), { headers: authHeaders({}) });
         })
         .then(function (resp) { return resp.ok ? resp.json() : null; })
         .then(function (idx) {
-          if (idx) { fillIndex(idx); }
+          if (idx) {
+            fillIndex(idx);
+            if (idx.name) { $('modelName').value = idx.name; } // display name (e.g. file stem)
+          }
           markActiveModel();
-          setStatus($('loadStatus'), 'Server-Modell geladen (schreibgeschützt).', 'ok');
+          setStatus($('loadStatus'), rendered
+            ? 'Server-Modell geladen (schreibgeschützt).'
+            : 'Geladen — Auswertung möglich (Diagramm nicht darstellbar).', 'ok');
         })
         .catch(function (e) { setStatus($('loadStatus'), 'Fehler: ' + (e.message || e), 'err'); });
     }

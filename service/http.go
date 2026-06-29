@@ -45,6 +45,10 @@ type Server struct {
 	// thereby the decisions in them). Defaults to true.
 	listModels bool
 
+	// loadExamplesOnInit preloads the bundled example models at construction
+	// (set via WithExamples).
+	loadExamplesOnInit bool
+
 	mu     sync.RWMutex
 	models map[string]*storedModel
 }
@@ -71,6 +75,7 @@ func WithModelListing(enabled bool) Option {
 // any diagnostics produced while compiling it.
 type storedModel struct {
 	id    string
+	name  string // display name: the DMN definitions name, or a preset for examples
 	xml   []byte // the raw DMN XML as uploaded, served back for the editor
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
@@ -86,6 +91,9 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	s := &Server{engine: engine, models: map[string]*storedModel{}, listModels: true}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.loadExamplesOnInit {
+		s.loadExamples(context.Background())
 	}
 	return s
 }
@@ -199,7 +207,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, modelResponse{
 		ModelID:     sm.id,
-		Name:        sm.defs.ModelName(),
+		Name:        sm.name,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
@@ -222,7 +230,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 	for _, sm := range s.models {
 		summaries = append(summaries, modelSummary{
 			ModelID:   sm.id,
-			Name:      sm.defs.ModelName(),
+			Name:      sm.name,
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
 		})
@@ -244,7 +252,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, modelResponse{
 		ModelID:     sm.id,
-		Name:        sm.defs.ModelName(),
+		Name:        sm.name,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
@@ -366,7 +374,7 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 	if err != nil {
 		return nil, err
 	}
-	sm := &storedModel{id: id, xml: xml, defs: defs, index: defs.Index(), diags: diags}
+	sm := &storedModel{id: id, name: defs.ModelName(), xml: xml, defs: defs, index: defs.Index(), diags: diags}
 
 	s.mu.Lock()
 	s.models[id] = sm
