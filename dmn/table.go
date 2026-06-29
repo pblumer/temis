@@ -72,12 +72,18 @@ func (d *Definitions) DecisionTable(idOrName string) (TableView, bool) {
 	return v, true
 }
 
-// TableEdit is the editable payload for a decision table: its rule rows. The
-// columns and hit policy are not changed by this edit (they keep the original
-// table's structure), so the decision logic stays consistent — only the rows are
-// rewritten (ADR-0016, table editing).
+// TableEdit is the editable payload for a decision table. Rules are always
+// rewritten. HitPolicy, when non-empty, sets the policy (Aggregation applies to
+// Collect). Inputs/Outputs replace the columns only when ReplaceColumns is set —
+// so a rules-only edit (ReplaceColumns false) keeps the existing columns, while
+// the modeler's full editor sends the columns and sets the flag (ADR-0016).
 type TableEdit struct {
-	Rules []TableRule `json:"rules"`
+	HitPolicy      string        `json:"hitPolicy,omitempty"`
+	Aggregation    string        `json:"aggregation,omitempty"`
+	Inputs         []TableInput  `json:"inputs,omitempty"`
+	Outputs        []TableOutput `json:"outputs,omitempty"`
+	Rules          []TableRule   `json:"rules"`
+	ReplaceColumns bool          `json:"replaceColumns,omitempty"`
 }
 
 // ApplyTableEdit rewrites the rule rows of a decision's decision table in a DMN
@@ -90,18 +96,98 @@ func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
+
+	var inputs []dmnxml.Input
+	var outputs []dmnxml.Output
+	if edit.ReplaceColumns {
+		for _, in := range edit.Inputs {
+			inputs = append(inputs, dmnxml.Input{
+				Label:           strings.TrimSpace(in.Label),
+				InputExpression: dmnxml.InputExpression{Text: strings.TrimSpace(in.Expression), TypeRef: strings.TrimSpace(in.TypeRef)},
+			})
+		}
+		for _, out := range edit.Outputs {
+			outputs = append(outputs, dmnxml.Output{
+				Name:    strings.TrimSpace(out.Name),
+				Label:   strings.TrimSpace(out.Label),
+				TypeRef: strings.TrimSpace(out.TypeRef),
+			})
+		}
+	}
+
+	// Align each rule's entries with the column counts (when columns are known),
+	// so an added/removed column leaves a consistent table.
+	nIn, nOut := -1, -1
+	if edit.ReplaceColumns {
+		nIn, nOut = len(inputs), len(outputs)
+	}
 	rules := make([]dmnxml.Rule, len(edit.Rules))
 	for i, r := range edit.Rules {
 		rules[i] = dmnxml.Rule{
-			InputEntries:  normalizeInputEntries(r.InputEntries),
-			OutputEntries: trimEntries(r.OutputEntries),
+			InputEntries:  fit(normalizeInputEntries(r.InputEntries), nIn, "-"),
+			OutputEntries: fit(trimEntries(r.OutputEntries), nOut, ""),
 			Annotations:   dropTrailingEmpty(trimEntries(r.Annotations)),
 		}
 	}
-	if !def.SetDecisionTableRules(decisionID, rules) {
+
+	if !def.UpdateDecisionTable(decisionID, hitPolicyXML(edit.HitPolicy), aggregationFor(edit), inputs, outputs, rules, edit.ReplaceColumns) {
 		return nil, fmt.Errorf("dmn: decision %q has no decision table", decisionID)
 	}
 	return dmnxml.Encode(def)
+}
+
+// fit pads or truncates entries to n elements (filling with pad); n < 0 leaves
+// the slice unchanged.
+func fit(entries []string, n int, pad string) []string {
+	if n < 0 {
+		return entries
+	}
+	out := make([]string, n)
+	for i := range out {
+		if i < len(entries) {
+			out[i] = entries[i]
+		} else {
+			out[i] = pad
+		}
+	}
+	return out
+}
+
+// hitPolicyXML maps the single-letter (or word) hit policy to the DMN XML word,
+// or "" to leave the policy unchanged.
+func hitPolicyXML(p string) string {
+	switch strings.ToUpper(strings.TrimSpace(p)) {
+	case "U", "UNIQUE":
+		return "UNIQUE"
+	case "A", "ANY":
+		return "ANY"
+	case "P", "PRIORITY":
+		return "PRIORITY"
+	case "F", "FIRST":
+		return "FIRST"
+	case "R", "RULE ORDER", "RULE_ORDER":
+		return "RULE ORDER"
+	case "O", "OUTPUT ORDER", "OUTPUT_ORDER":
+		return "OUTPUT ORDER"
+	case "C", "COLLECT":
+		return "COLLECT"
+	default:
+		return ""
+	}
+}
+
+// aggregationFor returns the Collect aggregation, only when the policy is Collect
+// (it is meaningless and invalid for the other policies).
+func aggregationFor(edit TableEdit) string {
+	if hitPolicyXML(edit.HitPolicy) != "COLLECT" {
+		return ""
+	}
+	switch strings.ToUpper(strings.TrimSpace(edit.Aggregation)) {
+	case "SUM", "COUNT", "MIN", "MAX":
+		return strings.ToUpper(strings.TrimSpace(edit.Aggregation))
+	default:
+		return ""
+	}
 }
 
 // normalizeInputEntries trims each input cell and maps an empty cell to "-", the

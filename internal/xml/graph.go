@@ -115,18 +115,22 @@ func (d *Definitions) UpsertBKM(id, name string) {
 // requiredDecision. It returns the ids of the requirement elements that were
 // removed, so their DMNDI edges can be dropped.
 func (d *Definitions) ReconcileRequirements(edges []ReqEdge, typeOf map[string]string) (removed []string) {
-	want := map[string]map[string]ReqEdge{} // target -> source -> edge
+	// Group desired edges by target, preserving their order and de-duplicating, so
+	// the rebuilt requirement lists (and the XML) are deterministic.
+	want := map[string][]ReqEdge{}
+	seen := map[string]bool{}
 	for _, e := range edges {
-		if want[e.Target] == nil {
-			want[e.Target] = map[string]ReqEdge{}
+		key := e.Target + "\x00" + e.Source
+		if seen[key] {
+			continue
 		}
-		want[e.Target][e.Source] = e
+		seen[key] = true
+		want[e.Target] = append(want[e.Target], e)
 	}
 
 	for di := range d.Decisions {
 		dec := &d.Decisions[di]
-		w := want[dec.ID]
-		newInfo, newKnow, gone := reconcileTarget(dec.ID, dec.InformationRequirts, dec.KnowledgeRequirts, w, typeOf)
+		newInfo, newKnow, gone := reconcileTarget(dec.ID, dec.InformationRequirts, dec.KnowledgeRequirts, want[dec.ID], typeOf)
 		dec.InformationRequirts, dec.KnowledgeRequirts = newInfo, newKnow
 		removed = append(removed, gone...)
 	}
@@ -140,9 +144,10 @@ func (d *Definitions) ReconcileRequirements(edges []ReqEdge, typeOf map[string]s
 	return removed
 }
 
-// reconcileTarget rebuilds one target's requirement lists from the desired source
-// set, preserving existing requirement elements where the edge still exists.
-func reconcileTarget(target string, info []InformationRequirt, know []KnowledgeRequirt, want map[string]ReqEdge, typeOf map[string]string) (newInfo []InformationRequirt, newKnow []KnowledgeRequirt, removed []string) {
+// reconcileTarget rebuilds one target's requirement lists from the desired edges
+// (in order), preserving existing requirement elements where the edge still
+// exists and minting new ones otherwise.
+func reconcileTarget(target string, info []InformationRequirt, know []KnowledgeRequirt, want []ReqEdge, typeOf map[string]string) (newInfo []InformationRequirt, newKnow []KnowledgeRequirt, removed []string) {
 	infoBySrc := map[string]InformationRequirt{}
 	for _, ir := range info {
 		if src := infoReqSource(ir); src != "" {
@@ -158,7 +163,8 @@ func reconcileTarget(target string, info []InformationRequirt, know []KnowledgeR
 
 	keptInfo := map[string]bool{}
 	keptKnow := map[string]bool{}
-	for src, e := range want {
+	for _, e := range want {
+		src := e.Source
 		switch e.Kind {
 		case "knowledgeRequirement":
 			if kr, ok := knowBySrc[src]; ok {

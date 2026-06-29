@@ -58,6 +58,31 @@ func TestSaveModelPersistsEdits(t *testing.T) {
 	}
 }
 
+// TestSaveDecisionTableColumns edits a table's columns + hit policy through the
+// endpoint and checks the saved revision reflects the new structure.
+func TestSaveDecisionTableColumns(t *testing.T) {
+	h := newTestServer(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+	tv := decode[dmn.TableView](t, do(t, h, "GET", "/v1/models/"+id+"/decisions/Dish/table", "", nil))
+
+	edit := dmn.TableEdit{
+		ReplaceColumns: true,
+		HitPolicy:      "F",
+		Inputs:         []dmn.TableInput{{Expression: "Season", TypeRef: "string"}},
+		Outputs:        []dmn.TableOutput{{Name: "Dish", TypeRef: "string"}, {Name: "Price", TypeRef: "number"}},
+		Rules:          []dmn.TableRule{{InputEntries: []string{`"Fall"`}, OutputEntries: []string{`"Ribs"`, `9`}}},
+	}
+	rec := do(t, h, "POST", "/v1/models/"+id+"/decisions/"+tv.DecisionID+"/table", "application/json", mustJSON(t, edit))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST table columns = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+	got := decode[dmn.TableView](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/decisions/Dish/table", "", nil))
+	if got.HitPolicy != "F" || len(got.Inputs) != 1 || len(got.Outputs) != 2 || got.Outputs[1].Name != "Price" {
+		t.Errorf("saved table = %+v, want First / 1 input / Dish+Price outputs", got)
+	}
+}
+
 // TestGetDecisionTable checks the decision-table endpoint returns the table view
 // for a table decision, and 404 for a non-table decision.
 func TestGetDecisionTable(t *testing.T) {

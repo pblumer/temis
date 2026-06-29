@@ -232,7 +232,12 @@ type Result struct {
 type Severity int
 
 type TableEdit struct {
-	Rules []TableRule `json:"rules"`
+	HitPolicy	string		`json:"hitPolicy,omitempty"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TableInput	`json:"inputs,omitempty"`
+	Outputs		[]TableOutput	`json:"outputs,omitempty"`
+	Rules		[]TableRule	`json:"rules"`
+	ReplaceColumns	bool		`json:"replaceColumns,omitempty"`
 }
 
 type TableInput struct {

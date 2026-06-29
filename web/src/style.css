@@ -255,3 +255,46 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .dt-save:hover { filter: brightness(1.05); }
 .dt-status { font-size: 13px; color: var(--muted); }
 .dt-status.dt-error { color: #e5484d; }
+/* Editable hit-policy + column headers. */
+.dt-policy-sel, .dt-agg-sel {
+  font: 12px/1 ui-monospace, monospace;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.dt-colhead { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+.dt-head-field {
+  width: 100%;
+  font: 600 13px/1.3 ui-monospace, monospace;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--fg);
+}
+.dt-head-field:focus { outline: none; border-color: var(--accent); }
+.dt-head-invalid { border-color: #e5484d !important; background: #fff4f4; }
+.dt-type-sel {
+  width: 100%;
+  font: 11px/1 ui-monospace, monospace;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+}
+.dt-colhead .dt-rm { align-self: flex-end; }
+.dt-rm {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.dt-rm:hover { background: #fff4f4; border-color: var(--line); color: #c0392b; }
+.dt-rm-spacer { display: inline-block; height: 18px; }
