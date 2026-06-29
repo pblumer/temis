@@ -131,6 +131,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleGetLiteral))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleSaveLiteral))
+	mux.HandleFunc("GET /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleGetBKM))
+	mux.HandleFunc("POST /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleSaveBKM))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
@@ -412,6 +414,44 @@ func (s *Server) handleGetDecisionTable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, table)
+}
+
+// handleGetBKM returns a business knowledge model's encapsulated-logic view, or
+// 404 when there is no such BKM.
+func (s *Server) handleGetBKM(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	bkm, ok := sm.defs.BKMFunction(r.PathValue("bkm"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "BKM_NOT_FOUND", "no business knowledge model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, bkm)
+}
+
+// handleSaveBKM sets a business knowledge model's function (parameters + literal
+// body), recompiles and caches the model, and returns the new id with any compile
+// diagnostics.
+func (s *Server) handleSaveBKM(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.BKMFunctionEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetBKMFunction(sm.xml, r.PathValue("bkm"), edit)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "BKM_SAVE_FAILED", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
 }
 
 // handleGetLiteral returns a decision's literal-expression view, or 404 when the

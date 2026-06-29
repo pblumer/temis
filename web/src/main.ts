@@ -5,6 +5,7 @@ import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel } from './evaluate'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
+import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { FEEL_TYPES } from './feeltypes'
 import './style.css'
@@ -254,6 +255,7 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onOpenLiteral((decisionId) => openLiteral(model.modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
+      handle.onOpenBKM((bkmId) => void openBKMOverlay(model.modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''

@@ -72,6 +72,9 @@ export type ModelerHandle = {
   // onCreateLiteral fires with a decision's id when the user asks (via the context
   // pad) to give an undecided decision a literal expression.
   onCreateLiteral: (cb: (decisionId: string) => void) => void
+  // onOpenBKM fires with a business knowledge model's id when the user asks (via
+  // the context pad) to edit its function.
+  onOpenBKM: (cb: (bkmId: string) => void) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -164,6 +167,10 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   eventBus.on('dmn.createLiteral', (e: { element?: Shape }) => {
     if (e.element) createLiteralCb(e.element.id)
   })
+  let openBKMCb = (_bkmId: string): void => {}
+  eventBus.on('dmn.openBKM', (e: { element?: Shape }) => {
+    if (e.element) openBKMCb(e.element.id)
+  })
 
   let selectCb = (_sel: Selected): void => {}
   const reportSelection = (): void => {
@@ -217,6 +224,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onCreateLiteral: (cb) => {
       createLiteralCb = cb
+    },
+    onOpenBKM: (cb) => {
+      openBKMCb = cb
     },
   }
 }

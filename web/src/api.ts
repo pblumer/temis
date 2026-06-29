@@ -231,6 +231,31 @@ export async function deleteType(modelId: string, name: string): Promise<ModelDe
   return (await r.json()) as ModelDetail
 }
 
+// BKMView mirrors dmn.BKMView: a business knowledge model's function (formal
+// parameters + literal body). simple=false means a boxed body (read-only here).
+export type BKMParam = { name: string; typeRef?: string }
+export type BKMView = { bkmId: string; name: string; params: BKMParam[]; bodyText: string; bodyTypeRef?: string; simple: boolean }
+export type BKMFunctionEdit = { params: BKMParam[]; bodyText: string; bodyTypeRef: string }
+
+export async function getBKM(modelId: string, bkm: string): Promise<BKMView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/bkm/' + encodeURIComponent(bkm))
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('BKM laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as BKMView
+}
+
+// saveBKM sets a BKM's function (parameters + literal body), recompiles the model
+// and returns the saved detail with its new id.
+export async function saveBKM(modelId: string, bkm: string, edit: BKMFunctionEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/bkm/' + encodeURIComponent(bkm), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'BKM speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
 // LiteralView mirrors dmn.LiteralView: a decision's literal FEEL expression.
 export type LiteralView = { decisionId: string; name: string; text: string; typeRef?: string }
 

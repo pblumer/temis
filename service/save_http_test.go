@@ -289,6 +289,33 @@ func TestTypeEndpoints(t *testing.T) {
 	}
 }
 
+// TestBKMEndpoints checks reading and editing a BKM's function via the endpoints.
+func TestBKMEndpoints(t *testing.T) {
+	h := newTestServer(t)
+	xml := readFile(t, "../dmn/testdata/models/bkm_invocation_15.dmn")
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	v := decode[dmn.BKMView](t, do(t, h, "GET", "/v1/models/"+id+"/bkm/id_rate", "", nil))
+	if !v.Simple || len(v.Params) != 1 || v.Params[0].Name != "total" {
+		t.Fatalf("BKM view = %+v, want simple with param total", v)
+	}
+
+	body := mustJSON(t, dmn.BKMFunctionEdit{Params: []dmn.BKMParam{{Name: "total", TypeRef: "number"}}, BodyText: "if total > 500 then 0.5 else 0.0", BodyTypeRef: "number"})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/bkm/id_rate", "application/json", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST bkm = %d, want 201 (body %s)", rec.Code, rec.Body)
+	}
+	saved := decode[modelResponse](t, rec)
+	got := decode[dmn.BKMView](t, do(t, h, "GET", "/v1/models/"+saved.ModelID+"/bkm/id_rate", "", nil))
+	if got.BodyText != "if total > 500 then 0.5 else 0.0" {
+		t.Errorf("saved BKM body = %q, want the edited expression", got.BodyText)
+	}
+
+	if rec := do(t, h, "GET", "/v1/models/"+id+"/bkm/nope", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET unknown BKM = %d, want 404", rec.Code)
+	}
+}
+
 // TestSaveModelUnknownModel checks saving against a missing model is a 404.
 func TestSaveModelUnknownModel(t *testing.T) {
 	h := newTestServer(t)
