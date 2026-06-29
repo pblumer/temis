@@ -1,6 +1,6 @@
 # ADR-0016: Eigener DMN-Modeler durch Fork des MIT-Kerns, Loslösung von dmn-js
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-06-29
 - **Kontext-WP:** F-02 (Folge-WPs: Modell/1.5-XML im Client, FEEL-Editor-Spike, DRD-Canvas)
 - **Ersetzt:** ADR-0006; löst die in ADR-0012 gewählte dmn-js-CDN-Integration ab
@@ -33,10 +33,12 @@ Rules, Palette, Context-Pad …), `table-js` (Grid), `moddle`/`moddle-xml`/`dmn-
 (XML ⇄ Objektmodell). „Von dmn-js lösen" heißt hier: den **bpmn.io-lizenzierten dmn-js-
 Wrapper wegwerfen** (mitsamt Logo-Klausel) und den **MIT-Kern forken**.
 
-> **Annahme, die die Entscheidung trägt:** `diagram-js`, `table-js`, `moddle`/`dmn-moddle`,
-> `min-dom`, `tiny-svg`, `didi` sind MIT-lizenziert; die Logo-Pflicht lebt ausschließlich im
-> dmn-js-Paket. Diese Annahme ist **vor Acceptance per Lizenz-Audit zu bestätigen** (siehe
-> Konsequenzen) — fällt sie, wird neu bewertet (Option 2 oder 3).
+> **Annahme, die die Entscheidung trägt — bestätigt (2026-06-29).** Lizenz-Audit über die
+> npm-Registry: `diagram-js` (15.18.0), `table-js` (9.4.0), `dmn-moddle` (12.0.1), `moddle`
+> (8.1.0), `moddle-xml` (12.0.0), `min-dom` (5.3.0), `tiny-svg` (4.1.4), `didi` (11.0.0) sind
+> **alle MIT**. Nur `dmn-js` (17.8.1) trägt „SEE LICENSE IN LICENSE" (bpmn.io-Lizenz mit
+> Logo-Klausel) — und genau dieser Wrapper wird verworfen. Die Strategie ist damit
+> lizenzrechtlich sauber.
 
 ## Optionen
 
@@ -80,9 +82,11 @@ einem Fork des MIT-Kerns, vollständig gelöst vom Projekt dmn-js.
   (4) DRD-Canvas iterativ (Render/Selektion/Move → Connect/Rules → Palette/Context-Pad →
   Routing/Snapping). FEEL-Integration als Querschnitt von Tag 1.
 
-**Acceptance-Gate:** Dieses ADR bleibt `proposed`, bis (a) das **Lizenz-Audit** die MIT-
-Annahme bestätigt und (b) ein **FEEL-Validierungs-Spike** (Tabellen-Zelle live gegen temis)
-das Backend-Zusammenspiel belegt. Erst dann `accepted`.
+**Acceptance-Gate — beide erfüllt (2026-06-29), Status `accepted`:** (a) das **Lizenz-Audit**
+hat die MIT-Annahme bestätigt (siehe oben); (b) der **FEEL-Validierungs-Spike** ist gebaut
+und headless verifiziert — temis-FEEL läuft als WASM im Browser und validiert Tabellenzellen
+live (Syntax + unbekannte Variablen, `line:col`), offline, ohne Roundtrip
+(`cmd/feel-wasm`, `web/feel-spike`, Smoke-Test 6/6).
 
 ## Konsequenzen
 
@@ -116,11 +120,11 @@ das Backend-Zusammenspiel belegt. Erst dann `accepted`.
   falls eine Policy auch das ausschließt, ist Option 3 die Rückfallebene).
 
 **Folgeaufgaben**
-- **Lizenz-Audit** diagram-js/table-js/dmn-moddle/moddle/min-dom/tiny-svg/didi (Acceptance-
-  Gate); Ergebnis hier nachtragen.
-- **FEEL-Validierungs-Spike** (1–2 Tage): Tabellen-Zelle live gegen temis-FEEL.
-- Neue Roadmap-WPs: Client-Modell + 1.5-`dmn-moddle`-Deskriptoren, Command-Stack, Decision-
+- [x] **Lizenz-Audit** diagram-js/table-js/dmn-moddle/moddle/min-dom/tiny-svg/didi — alle MIT
+  (Ergebnis oben dokumentiert).
+- [x] **FEEL-Validierungs-Spike** — `cmd/feel-wasm` + `web/feel-spike`, headless verifiziert.
+- [ ] Neue Roadmap-WPs: Client-Modell + 1.5-`dmn-moddle`-Deskriptoren, Command-Stack, Decision-
   Table-Editor, DRD-Canvas, FEEL-Integration, `go:embed`-Auslieferung.
-- **Migration `service/ui.go`:** CDN-dmn-js → eigener, eingebetteter Modeler.
-- **ADR-0006** auf `superseded by ADR-0016` setzen; **ADR-0012** Integration (dmn-js per CDN)
-  ist damit überholt — Status entsprechend markieren.
+- [ ] **Migration `service/ui.go`:** CDN-dmn-js → eigener, eingebetteter Modeler.
+- [x] **ADR-0006** auf `superseded by ADR-0016` gesetzt; **ADR-0012** (dmn-js per CDN) als
+  überholt markiert; Index aktualisiert.
