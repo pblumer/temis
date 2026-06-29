@@ -44,11 +44,16 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 
-> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
-> ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
-> (Boxed Context/Invocation/Function & BKM), **WP-28** (DRG-Verkettung für Multi-Decision-
-> Modelle) und **WP-34/35** (Limits, Modell-Cache). Die öffentliche `dmn/`- und HTTP-API ist
-> bis zur `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
+> **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
+> sind inzwischen u. a. **WP-23–26** (Boxed Context/Invocation/Function, BKM, DRG-Verkettung,
+> Decision Services), **WP-27** (alle Hit Policies inkl. PRIORITY/OUTPUT ORDER), **WP-30/31**
+> (Typsystem, `instance of`, Item-Definition-Constraints), **WP-34/35** (Ressourcenlimits,
+> LRU-Modell-Cache), **WP-40** (TCK-Runner), **WP-42** (Performance-Budget-Gate),
+> **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
+> Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
+> Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
+> Offen u. a.: **WP-33** (gRPC) und **WP-41** (offizielles TCK-Korpus). Voller Live-Status:
+> `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 
@@ -204,6 +209,36 @@ zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Einga
 > geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
 > (DRG-Verkettung).
 
+## Releases & Container
+
+Releases werden über einen **SemVer-Tag** geschnitten; die Pipeline
+(`.github/workflows/release.yml`) baucht daraus versionierte Binaries (`temisd` und
+`temis-mcp` für linux/macOS/windows × amd64/arm64, Version per `-ldflags` eingebrannt),
+einen **GitHub-Release** mit Notizen aus dem passenden `CHANGELOG.md`-Abschnitt und ein
+**Container-Image für `temisd`** auf GHCR.
+
+```sh
+git tag v1.2.3 && git push origin v1.2.3        # löst die Release-Pipeline aus
+```
+
+Image direkt nutzen (sobald ein Release existiert):
+
+```sh
+docker run --rm -p 8080:8080 ghcr.io/pblumer/temis/temisd:latest
+# Browser: http://localhost:8080/ui
+```
+
+Lokal bauen — der Build brennt die Version ein:
+
+```sh
+docker build --build-arg VERSION=v1.2.3 -t temisd:v1.2.3 .
+temisd -version    # → temisd v1.2.3
+```
+
+Das Image basiert auf `distroless/static` (kein Shell, non-root); `temisd` bettet UI,
+OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere Assets.
+Änderungen sammeln sich unter `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.
@@ -237,9 +272,10 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/10-architecture.md` | Paketstruktur, Compile/Evaluate-Pipeline, interne Schnittstellen |
 | `docs/20-roadmap.md` | MVP / Beta / 1.0 mit Arbeitspaketen & Akzeptanzkriterien **(Live-Status)** |
 | `docs/30-feel-spec.md` | FEEL-Bauplan (Grammatik, Typen, Built-ins) |
-| `docs/40-api-contract.md` | stabile Go- + HTTP/gRPC-API |
-| `docs/50-testing-strategy.md` | Test-Pyramide, TCK, Benchmarks |
+| `docs/40-api-contract.md` | stabile Go- + HTTP/gRPC-API (SemVer-/Deprecation-Policy) |
+| `docs/50-testing-strategy.md` | Test-Pyramide, Fuzzing, TCK, Benchmarks |
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
+| `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken

@@ -27,8 +27,22 @@
 
 ## 3. Property-/Fuzz-Tests
 
-- `go test -fuzz` für: Lexer, Parser, XML-Decoder. **Invariante:** kein Panic, kein
-  Hang (Timeout), kein OOM bei beliebigem Input.
+- `go test -fuzz` (WP-44). **Invariante:** kein Panic, kein Hang (Timeout), kein OOM
+  bei beliebigem Input. Die Fuzz-Ziele decken jede Schicht ab, die untrusted Input
+  sieht:
+  - `internal/feel.FuzzLexer`, `FuzzParser` — Lexer/Parser akzeptieren jeden String
+    ohne Panic; Fehler kommen als `*ParseError`, erfolgreiche ASTs rendern panikfrei.
+  - `internal/feel.FuzzBoundedEvaluation` — kompiliert **und** wertet FEEL unter engen
+    `Limits` aus; dank ADR-0008-Schranken (Rekursion/Iteration/Listengröße) terminiert
+    selbst feindlicher Input (z. B. `for i in 1..1000000000 …`) statt zu hängen.
+  - `internal/value.FuzzParseNumber`, `FuzzParseDuration` — Decimal-/Dauer-Parser.
+  - `internal/xml.FuzzDecode` — DMN-XML-Decoder (+ anschließendes Encode).
+  - `dmn.FuzzCompile` — End-to-End über die **öffentliche** API: `Compile` und dann
+    `Decision`/`Evaluate` jeder Decision unter engen `Limits`. Malformed Input ergibt
+    Fehler/Diagnostics, nie einen Panic.
+- `make fuzz` läuft alle Ziele je `FUZZTIME` (Default 10s) crash-frei; Failing-Inputs
+  würden als Seed-Corpus unter `testdata/fuzz/<FuzzName>/` persistiert und so zum
+  Regressionstest. Nicht Teil von `make verify` (zeitgebunden, separat ausgeführt).
 - Property: `parse(print(ast)) ≡ ast` für FEEL-Ausdrücke (Round-trip), wo ein Printer
   existiert.
 
@@ -50,22 +64,30 @@
   geführt.
 - CI bricht, wenn die TCK-Quote unter den eingefrorenen Stand fällt (Regressionsschutz).
 
-## 6. Benchmarks & Performance-Budget (CI-Gate ab WP-42)
+## 6. Benchmarks & Performance-Budget (CI-Gate, WP-42)
 
-Benchmarks mit `go test -bench -benchmem`. Gemessen werden:
+Benchmarks in `dmn/bench_test.go` (`go test -bench -benchmem`). Das CI-Gate ist
+`TestPerformanceBudget` (`dmn/budget_test.go`), ausgeführt von `make budget`
+**ohne** Race-Detektor (der Zeiten & Allokationen verfälscht) und Teil von
+`make verify`. Die Budgets sind in WP-42 fixiert (Richtwert ≈ gemessen × Headroom):
 
-| Szenario | Metrik | Budget (Richtwert, in WP-42 final fixiert) |
-|---|---|---|
-| Compile mittlere Decision Table (10 Regeln, 4 Inputs) | ns/op | einmalig, unkritisch (Ziel < 1 ms) |
-| Evaluate dieselbe Table (warm) | ns/op | **niedriger einstelliger µs-Bereich** |
-| Evaluate, Allokationen | allocs/op | **niedrige zweistellige Zahl**, stabil |
-| FEEL-Arithmetik-Ausdruck | ns/op | Sub-µs |
-| DRG mit 10 verketteten Decisions | µs/op | linear skalierend, kein Map-Overhead im Hot Path |
+| Szenario | Metrik | Budget (Gate) | gemessen (Referenz) |
+|---|---|---|---|
+| Compile Decision Table (10 Regeln, 4 Inputs) | ns/op · allocs | ≤ 5 ms · ≤ 5000 | ~0,27 ms · 2056 (einmalig, unkritisch) |
+| Evaluate dieselbe Table (warm) | ns/op · allocs | ≤ 80 µs · ≤ 60 | ~4,3 µs · 41 |
+| FEEL-Arithmetik-Ausdruck (über öffentl. API) | ns/op · allocs | ≤ 60 µs · ≤ 40 | ~4,5 µs · 26 |
+| DRG mit 10 verketteten Decisions | ns/op · allocs | ≤ 150 µs · ≤ 130 | ~8,2 µs · 74 (≈ linear) |
 
 Regeln:
-- **`benchstat`** vergleicht gegen gespeicherte Baseline (`testdata/bench/baseline.txt`).
-- Eine Regression über Schwelle (z. B. > 10 % ns/op oder mehr allocs/op) **bricht CI**.
-- Bei bewusster Regression: Baseline-Update + Begründung im Commit/ADR.
+- **`allocs/op`** ist der primäre, maschinenunabhängige Wächter (deterministisch);
+  eine zusätzliche, bewusst großzügige **`ns/op`**-Decke fängt nur katastrophale
+  oder Komplexitäts-Regressionen, nicht das Timing-Rauschen geteilter CI-Runner.
+- Überschreitet ein Szenario sein Budget, **bricht CI** (`TestPerformanceBudget`).
+- Bei bewusster Regression: Budget in `dmn/budget_test.go` anheben + Begründung im
+  Commit/ADR.
+- Der reine FEEL-Ausdruckskern bleibt sub-µs (`internal/feel` `BenchmarkEval`); die
+  µs-Zahlen oben enthalten den öffentlichen Evaluate-Pfad (Input-Marshaling,
+  Decimal-Arithmetik, Ergebnis-Konvertierung).
 
 ## 7. Race & Parallelität
 
