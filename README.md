@@ -43,6 +43,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
+| WP-60 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
 > ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
@@ -220,6 +221,8 @@ make help          # alle Make-Targets
 dmn/                 # öffentliche API (Engine, Compile/Evaluate — WP-10)
 service/             # HTTP-Service-Adapter (temisd, WP-32)
 mcp/                 # MCP-Server-Adapter für KI-Agenten (temis-mcp, WP-50)
+vcs/                 # DMN-Modelle aus Git lesen (Provider-Interface, WP-60)
+  github/            #   erster Provider: GitHub-REST über reine stdlib (ADR-0016)
 internal/
   xml/               # DMN-XML ⇄ Modell (namespace-tolerant)
   model/             # versionsneutrales Domänenmodell

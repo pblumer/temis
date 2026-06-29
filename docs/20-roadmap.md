@@ -78,6 +78,24 @@ Erweiterungen über `package dmn` (ADR-0011); kein `internal/`-Zugriff von auße
 
 ---
 
+## Etappe Git-gestützte Modelle — „Modelle leben versioniert im Repo" (ADR-0016)
+
+**Ziel:** DMN-Dateien aus einem Git-Repository lesen und bearbeiten und dabei den
+Git-Workflow (Branch, Commit, Merge/PR) mitnehmen — als SaaS zuerst über GitHub,
+grundsätzlich über jeden Remote (via Provider-Interface). Kern als Library (`package vcs`),
+Oberflächen als dünne Wrapper darüber (ADR-0005). **Keine neue Dependency** (Goldene
+Regel 6): GitHub-Adapter über reine Standardbibliothek.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-60 ✅ | Git-Modellquelle: Lesen & Browsen | WP-10 | **done** — `package vcs`: `Reader`-Interface (`ListBranches`/`ListCommits`/`ListFiles`/`ReadFile`, je an explizitem Ref = Branch/Tag/Commit) + Sentinels `ErrNotFound`/`ErrUnauthorized`; `Models` bindet `Reader`+`dmn.Engine` (`List` filtert auf `.dmn`, `Load` liest+kompiliert). Erster Provider `vcs/github.Client` über GitHub-REST mit **reiner Standardbibliothek** (`net/http`, optionaler Bearer-Token, Link-Header-Pagination, raw-Media-Type, GHE via `WithBaseURL`). Tests: In-Memory-Fake-`Reader` + `httptest`-GitHub-Fake inkl. **E2E** (`dish_15.dmn` aus (Fake-)GitHub@ref → Compile → Evaluate → `Roastbeef`); Coverage beider Pakete ≥ 90 %. (Schreiben → WP-61; Wrapper → WP-62/63/64.) |
+| WP-61 | Git-Modellquelle: Schreiben (Commit/Branch/PR) | WP-60 | `vcs.Writer`: `Commit` (Datei auf Branch schreiben), `CreateBranch`, `OpenPullRequest`; GitHub-Adapter über Git-Data/PR-API. 3-Wege-/XML-Merge bleibt dem Provider (GitHub-PR-Merge) überlassen. Optimistic-Concurrency über Blob-/Branch-SHA. Tests gegen `httptest`-Fake. |
+| WP-62 | HTTP-Endpunkte für Git-Modelle (`temisd`) | WP-60 | Dünne `/v1`-Endpunkte über `vcs`: Branches/Commits/DMN-Dateien eines Repos@Ref auflisten, laden, auswerten (später committen). Auth-/Token-Herkunft je Repo entscheiden. RFC-7807-Fehler, `httptest`-Suite. |
+| WP-63 | MCP-Tools für Git-Modelle (`temis-mcp`) | WP-60 | Agent-First: Tools `list_repo_models`/`load_repo_model` (Repo@Ref durchsuchen, DMN laden/auswerten), konsistent zur bestehenden Tool-Oberfläche. |
+| WP-64 | Git-Browser in `/ui` | WP-62 | Optional: Branch/Datei im dmn-js-Playground wählen → laden → editieren → (WP-61) committen. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.
