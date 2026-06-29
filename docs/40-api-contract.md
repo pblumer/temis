@@ -121,6 +121,7 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | Methode | Pfad | Zweck |
 |---|---|---|
 | `POST` | `/v1/models` | DMN-XML hochladen → kompilieren, gibt `modelId` + Diagnostics |
+| `GET` | `/v1/models` | Liste aller gecachten Modelle (`modelId`, Decisions, Inputs) — abschaltbar |
 | `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
 | `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...} }` → `Result` |
 | `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache) |
@@ -129,6 +130,10 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | `GET` | `/healthz`, `/readyz` | Liveness/Readiness |
 
 - Modelle werden serverseitig gecacht (WP-35), Key = Hash des XML.
+- **Modell-Listing abschaltbar:** `GET /v1/models` listet alle gecachten Modelle.
+  Mit `temisd -list-models=false` (oder `service.WithModelListing(false)`) lässt sich
+  der Endpunkt deaktivieren, damit niemand die hinterlegten Decisions einsehen kann; er
+  antwortet dann `404` mit `code: NOT_FOUND`. Standard: aktiviert.
 - Fehlerantworten: RFC-7807 `application/problem+json` mit stabilem `code`.
 - Limits (WP-34) gelten pro Request.
 - **Optionaler Token-Schutz:** Mit `temisd -token <token>` (oder `TEMIS_API_TOKEN`)

@@ -71,6 +71,54 @@ func TestCreateModelAndIndex(t *testing.T) {
 	}
 }
 
+func TestListModels(t *testing.T) {
+	h := newTestServer(t)
+
+	// Empty cache lists nothing.
+	rec := do(t, h, "GET", "/v1/models", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/models = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+	if list := decode[modelListResponse](t, rec); list.Count != 0 || len(list.Models) != 0 {
+		t.Errorf("empty cache listed %d models, want 0", list.Count)
+	}
+
+	// After caching a model it shows up with its decisions.
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+	rec = do(t, h, "GET", "/v1/models", "", nil)
+	list := decode[modelListResponse](t, rec)
+	if list.Count != 1 || len(list.Models) != 1 {
+		t.Fatalf("listed %d models, want 1", list.Count)
+	}
+	if list.Models[0].ModelID != id {
+		t.Errorf("listed id = %q, want %q", list.Models[0].ModelID, id)
+	}
+	if !contains(list.Models[0].Decisions, "Dish") {
+		t.Errorf("decisions = %v, want to contain Dish", list.Models[0].Decisions)
+	}
+}
+
+func TestModelListingCanBeDisabled(t *testing.T) {
+	h := NewServer(nil, WithModelListing(false)).Handler()
+	// Cache a model so there would be something to list.
+	if rec := do(t, h, "POST", "/v1/models", "application/xml", dishXML(t)); rec.Code != http.StatusCreated {
+		t.Fatalf("POST /v1/models = %d, want 201", rec.Code)
+	}
+	// The listing responds 404 with the stable code when disabled.
+	rec := do(t, h, "GET", "/v1/models", "", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET /v1/models with listing disabled = %d, want 404", rec.Code)
+	}
+	if p := decode[problem](t, rec); p.Code != "NOT_FOUND" {
+		t.Errorf("code = %q, want NOT_FOUND", p.Code)
+	}
+	// Fetching a specific model by id still works.
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", dishXML(t))).ModelID
+	if rec := do(t, h, "GET", "/v1/models/"+id, "", nil); rec.Code != http.StatusOK {
+		t.Errorf("GET /v1/models/{id} with listing disabled = %d, want 200", rec.Code)
+	}
+}
+
 func TestModelUploadIsIdempotent(t *testing.T) {
 	h := newTestServer(t)
 	xml := dishXML(t)
