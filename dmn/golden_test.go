@@ -18,8 +18,8 @@ import (
 // The suite intentionally spans the supported surface: UNIQUE/FIRST/COLLECT hit
 // policies, single- and multi-output tables (the latter returning a context),
 // COLLECT SUM aggregation, literal expressions with decimal arithmetic and
-// string built-ins, and a decision that consumes another decision's result as
-// an input (until DRG chaining in WP-28, the caller supplies it).
+// string built-ins, and a decision that consumes another decision's result
+// supplied directly (DRG chaining is covered separately in graph_test.go).
 //
 // Numbers come back as their exact decimal string (ADR-0007), so e.g. an output
 // cell of 0.10 is the value "0.1" once reduced to canonical form.

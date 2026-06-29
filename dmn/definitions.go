@@ -23,6 +23,10 @@ type CompiledDecision struct {
 	id, name string
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
+	// requires are the decisions this one consumes directly; the evaluator runs
+	// them first and feeds their results in by name (WP-28). Resolved after all
+	// decisions compile.
+	requires []*CompiledDecision
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error

@@ -3,6 +3,8 @@ package dmn
 import (
 	"context"
 	"fmt"
+
+	"github.com/pblumer/temis/internal/value"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -15,8 +17,10 @@ type Input map[string]any
 type Result struct {
 	// Outputs holds the requested decision's result, keyed by decision name.
 	Outputs map[string]any
-	// Decisions holds every decision evaluated to produce the result. Until DRG
-	// chaining (WP-28) this mirrors Outputs.
+	// Decisions holds every decision evaluated to produce the result, keyed by
+	// name: the requested decision plus each required decision the evaluator ran
+	// for it (WP-28). A required value supplied directly in the input is used as
+	// given and is not re-evaluated, so it does not appear here.
 	Decisions map[string]any
 	// Diags holds runtime diagnostics (e.g. a null produced by a recoverable
 	// error). Spec-conformant null results are not errors.
@@ -46,19 +50,66 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		return Result{}, fmt.Errorf("dmn: decision %q has no executable logic", c.name)
 	}
 
-	vals, err := inputToValues(in)
+	base, err := inputToValues(in)
 	if err != nil {
 		return Result{}, err
 	}
 
-	out, err := c.expr(c.env.NewScope(vals))
-	if err != nil {
-		return Result{}, fmt.Errorf("dmn: evaluate decision %q: %w", c.name, err)
+	decisions := map[string]any{}
+	cache := make(map[*CompiledDecision]value.Value)
+	visiting := make(map[*CompiledDecision]bool)
+
+	var eval func(d *CompiledDecision) (value.Value, error)
+	eval = func(d *CompiledDecision) (value.Value, error) {
+		if v, ok := cache[d]; ok {
+			return v, nil
+		}
+		if visiting[d] {
+			return nil, fmt.Errorf("dmn: dependency cycle at decision %q", label(d))
+		}
+		if d.expr == nil {
+			return nil, fmt.Errorf("dmn: required decision %q has no executable logic", label(d))
+		}
+		visiting[d] = true
+
+		// The decision evaluates against the input data plus its required
+		// decisions' results, injected by name. A required value the caller
+		// supplied directly is honoured as-is rather than recomputed.
+		vals := make(map[string]value.Value, len(base)+len(d.requires))
+		for k, v := range base {
+			vals[k] = v
+		}
+		for _, req := range d.requires {
+			if v, ok := base[req.name]; ok && req.name != "" {
+				vals[req.name] = v
+				continue
+			}
+			rv, err := eval(req)
+			if err != nil {
+				return nil, err
+			}
+			vals[req.name] = rv
+		}
+
+		out, err := d.expr(d.env.NewScope(vals))
+		if err != nil {
+			return nil, fmt.Errorf("dmn: evaluate decision %q: %w", d.name, err)
+		}
+		visiting[d] = false
+		cache[d] = out
+		if d.name != "" {
+			decisions[d.name] = fromValue(out)
+		}
+		return out, nil
 	}
 
-	result := fromValue(out)
+	out, err := eval(c)
+	if err != nil {
+		return Result{}, err
+	}
+
 	return Result{
-		Outputs:   map[string]any{c.name: result},
-		Decisions: map[string]any{c.name: result},
+		Outputs:   map[string]any{c.name: fromValue(out)},
+		Decisions: decisions,
 	}, nil
 }

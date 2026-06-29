@@ -78,6 +78,8 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 		}
 	}
 
+	diags = append(diags, wireRequirements(defs, m)...)
+
 	return defs, diags, nil
 }
 
@@ -143,9 +145,9 @@ func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string
 
 // envNames returns the variable names visible to a decision's expressions: the
 // names of its required input data and required decisions, resolved from their
-// local identifiers. Duplicates and unresolved references are dropped. Wiring
-// required-decision results automatically is the job of the DRG evaluator
-// (WP-28); until then the caller supplies them as inputs.
+// local identifiers. Duplicates and unresolved references are dropped. The DRG
+// evaluator fills the required-decision slots automatically by evaluating those
+// decisions first (WP-28; see Evaluate).
 func envNames(m *model.Definitions, dec *model.Decision) []string {
 	byID := make(map[string]string, len(m.InputData)+len(m.Decisions))
 	for _, in := range m.InputData {

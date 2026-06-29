@@ -17,6 +17,9 @@
 //	res, err := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
 //	fmt.Println(res.Outputs["Dish"])
 //
-// Decision-graph chaining, decision services and the remaining hit policies
-// arrive in later work packages; see docs/20-roadmap.md.
+// Evaluating a decision automatically evaluates the decisions it requires and
+// feeds their results in by name, so the caller supplies only the leaf input
+// data; a required result passed in directly is used as given. Result.Decisions
+// reports every decision evaluated. Decision services arrive in a later work
+// package; see docs/20-roadmap.md.
 package dmn
