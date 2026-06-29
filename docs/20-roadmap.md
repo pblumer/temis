@@ -81,10 +81,19 @@ Decision Services, plus Service-Wrapper (HTTP + gRPC).
 ## dmn-js-Integration (querschnittlich, ab MVP relevant)
 
 dmn-js erzeugt und liest **Standard-DMN-XML**. Es gibt nichts „proprietär" zu adaptieren —
-die Engine muss exakt dieses XML lesen/schreiben können (das ist WP-02). Für ein optionales
-Test-Frontend:
+die Engine muss exakt dieses XML lesen/schreiben können (das ist WP-02). dmn-js wird
+**unverändert** eingebettet (npm) und über additive Module angepasst — **nie geforkt**
+(ADR-0012; bpmn.io-Logo bleibt sichtbar). Frontend-Pakete leben getrennt vom Go-Modul unter
+`web/` mit eigener Toolchain/CI-Lane.
 
-- **F-01** (Beta, optional): Minimal-Webseite, die dmn-js einbettet, Modell an den
-  HTTP-Service schickt und Ergebnisse anzeigt. Rein zu Demo-Zwecken, **kein** Produktziel.
+- **F-01** (Beta, optional): **Einsteiger-Editor** als separates Frontend (`web/`). Bettet
+  dmn-js ein (DRD + Decision-Table-Editor), schickt das Modell an den HTTP-Service und zeigt
+  Ergebnisse an. **Kein** Produktziel der Engine. Akzeptanzkriterium: in dmn-js erstelltes
+  Modell → `POST /v1/models` → Decision wählen → `POST /v1/models/{id}/evaluate` mit
+  Eingaben → Outputs sichtbar; alles offline lauffähig gegen ein lokales `temisd`.
+  Vorstufe existiert als read-only **Playground** in `service/ui.go` (Evaluator ohne Editor).
+- **F-02** (optional, nach F-01): Einsteiger-UX-Module — reduzierte Palette,
+  Decision-Table-Vorlagen, Inline-FEEL-Hilfe und ein **Diagnostics-Overlay**, das temis-
+  Diagnostics (`line/col`) auf die betroffenen Tabellenzellen mappt.
 - Round-trip-Pflicht: Eine in dmn-js gespeicherte Datei muss von der Engine ladbar sein
   **und** eine von der Engine (un)veränderte Datei muss in dmn-js wieder öffnen.

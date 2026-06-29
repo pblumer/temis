@@ -1,0 +1,53 @@
+// A small, valid DMN 1.3 diagram (DRD + decision table) that dmn-js opens on
+// first load, so beginners start with something concrete instead of a blank
+// canvas. It mirrors the classic "dish" example in miniature: one input
+// (Season), one decision (Greeting) with a UNIQUE-hit decision table.
+export const STARTER_DMN = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             id="Definitions_temis_starter"
+             name="Beispiel"
+             namespace="http://temis/examples">
+  <decision id="Decision_Greeting" name="Begruessung">
+    <informationRequirement id="ir_season">
+      <requiredInput href="#InputData_Season" />
+    </informationRequirement>
+    <decisionTable id="DecisionTable_1" hitPolicy="UNIQUE">
+      <input id="Input_1" label="Jahreszeit">
+        <inputExpression id="InputExpression_1" typeRef="string">
+          <text>Season</text>
+        </inputExpression>
+      </input>
+      <output id="Output_1" label="Gruss" name="Greeting" typeRef="string" />
+      <rule id="Rule_1">
+        <inputEntry id="IE_1"><text>"Winter"</text></inputEntry>
+        <outputEntry id="OE_1"><text>"Heisse Suppe!"</text></outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <inputEntry id="IE_2"><text>"Summer"</text></inputEntry>
+        <outputEntry id="OE_2"><text>"Kaltes Eis!"</text></outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <inputEntry id="IE_3"><text>-</text></inputEntry>
+        <outputEntry id="OE_3"><text>"Schoenes Essen!"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <inputData id="InputData_Season" name="Season" />
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="DMNDiagram_1">
+      <dmndi:DMNShape id="Shape_Decision" dmnElementRef="Decision_Greeting">
+        <dc:Bounds height="80" width="180" x="160" y="100" />
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="Shape_Input" dmnElementRef="InputData_Season">
+        <dc:Bounds height="45" width="125" x="188" y="280" />
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="Edge_ir_season" dmnElementRef="ir_season">
+        <di:waypoint x="250" y="280" />
+        <di:waypoint x="250" y="180" />
+      </dmndi:DMNEdge>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>`;
