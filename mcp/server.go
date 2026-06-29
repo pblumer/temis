@@ -6,7 +6,7 @@
 // decision and get a deterministic, reproducible answer back.
 //
 // The protocol is JSON-RPC 2.0 over the stdio transport, implemented with the
-// standard library alone (no MCP SDK dependency — goldene Regel 6). The server
+// standard library alone (no MCP SDK dependency — see ADR-0013). The server
 // offers four tools: list_models, load_model, describe_decision and evaluate.
 // Compiled models are cached in memory keyed by the SHA-256 of their XML, so
 // re-loading the same document is idempotent and returns the same model id.

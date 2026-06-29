@@ -121,7 +121,8 @@ In-Process-Batches nicht).
   (Entscheidungsspur in `Result`) und **WP-52** (Agent-Schema & strenge Validierung).
 - `docs/60-ai-agent-guide.md` um die Unterscheidung **Agent-als-Contributor** (baut
   temis) vs. **Agent-als-Konsument** (nutzt temis zur Laufzeit) ergänzen.
-- Folge-ADR: Wahl von MCP-SDK und Transport (stdio vs. HTTP/SSE) inkl.
-  Abhängigkeitsbegründung.
+- ~~Folge-ADR: Wahl von MCP-SDK und Transport (stdio vs. HTTP/SSE) inkl.
+  Abhängigkeitsbegründung.~~ → **erledigt in ADR-0013** (Eigenbau über Standard­
+  bibliothek, stdio; kein SDK).
 - `docs/40-api-contract.md`: Entscheidungsspur als Teil der `Result`-Oberfläche
   spezifizieren (Form, Stabilität, opt-in-Schalter).
