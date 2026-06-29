@@ -2,7 +2,10 @@ package dmn
 
 import (
 	"context"
+	"errors"
 	"strconv"
+
+	"github.com/pblumer/temis/internal/boxed"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -47,11 +50,13 @@ type Result struct {
 //     here is a caller bug, not a data case, and is not masked as a null.
 //   - CodeMissingInput: a required input data value the model references is
 //     absent from in. Also a caller bug; not masked as a null.
+//   - CodeUniqueMultiple: a UNIQUE hit-policy table matched more than one rule
+//     (classified from a typed cause in internal/boxed).
 //   - CodeRuntime: the context was cancelled or its deadline passed, or the
 //     expression failed at runtime in a way not yet exposed as a typed cause.
-//     CodeLimitExceeded and CodeUniqueMultiple are reserved for once those
-//     causes are typed (a follow-up); until then such failures fall under
-//     CodeRuntime rather than being claimed under a more specific code.
+//     CodeLimitExceeded is reserved for the resource-limit path (ADR-0008): once
+//     limits are wired and their breach is typed, those failures move from
+//     CodeRuntime to CodeLimitExceeded.
 //
 // A spec-conformant FEEL null (a runtime type mismatch, division by zero, …) is
 // NOT an error: it becomes a nil output in Result, optionally with a
@@ -96,12 +101,7 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 
 	out, err := c.expr(c.env.NewScope(vals))
 	if err != nil {
-		return Result{}, &EvalError{
-			Code:       CodeRuntime,
-			DecisionID: c.id,
-			Message:    "evaluating decision",
-			Err:        err,
-		}
+		return Result{}, c.classifyRuntime(err)
 	}
 
 	result := fromValue(out)
@@ -109,4 +109,26 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input) (Result, erro
 		Outputs:   map[string]any{c.name: result},
 		Decisions: map[string]any{c.name: result},
 	}, nil
+}
+
+// classifyRuntime maps a runtime error from the compiled expression to a typed
+// EvalError. Causes that are exposed as typed errors get a specific code; the
+// rest fall back to the honest CodeRuntime placeholder rather than claiming a
+// more precise classification the cause does not support.
+func (c *CompiledDecision) classifyRuntime(err error) *EvalError {
+	var mm *boxed.MultipleMatchError
+	if errors.As(err, &mm) {
+		return &EvalError{
+			Code:       CodeUniqueMultiple,
+			DecisionID: c.id,
+			Message:    "UNIQUE hit policy matched multiple rules",
+			Err:        err,
+		}
+	}
+	return &EvalError{
+		Code:       CodeRuntime,
+		DecisionID: c.id,
+		Message:    "evaluating decision",
+		Err:        err,
+	}
 }

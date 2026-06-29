@@ -86,6 +86,43 @@ func TestEvaluateContextCancelled(t *testing.T) {
 	}
 }
 
+// uniqueModel is a single-input UNIQUE decision table with two overlapping
+// rules, so any input below 20 matches both rules — a UNIQUE violation.
+const uniqueModel = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" id="d1" name="U" namespace="ex">
+  <inputData id="id_x" name="x"/>
+  <decision id="id_pick" name="Pick">
+    <informationRequirement><requiredInput href="#id_x"/></informationRequirement>
+    <decisionTable hitPolicy="UNIQUE">
+      <input id="i1"><inputExpression><text>x</text></inputExpression></input>
+      <output id="o1" name="out"/>
+      <rule id="r1"><inputEntry><text>&lt; 10</text></inputEntry><outputEntry><text>"a"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry><text>&lt; 20</text></inputEntry><outputEntry><text>"b"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>`
+
+func TestEvaluateUniqueMultipleMatch(t *testing.T) {
+	eng := New()
+	defs, diags, err := eng.Compile(context.Background(), []byte(uniqueModel))
+	if err != nil || diags.HasErrors() {
+		t.Fatalf("compile: err=%v diags=%+v", err, diags)
+	}
+	dec, err := defs.Decision("Pick")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+
+	_, err = dec.Evaluate(context.Background(), Input{"x": 5})
+	var ee *EvalError
+	if !errors.As(err, &ee) {
+		t.Fatalf("error = %v (%T), want *EvalError", err, err)
+	}
+	if ee.Code != CodeUniqueMultiple {
+		t.Errorf("Code = %q, want %q", ee.Code, CodeUniqueMultiple)
+	}
+}
+
 // TestCompileDiagnosticCodes checks that the public Compile path surfaces the
 // stable error-class codes (not the old MODEL_<severity> form) for the
 // diagnostics internal/model emits.
