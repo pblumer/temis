@@ -84,7 +84,7 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 // diagnostic for the failure.
 func compileDecision(m *model.Definitions, dec *model.Decision) (*CompiledDecision, Diagnostics) {
 	env := feel.NewEnv(envNames(m, dec)...)
-	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env}
+	cd := &CompiledDecision{id: dec.ID, name: dec.Name, env: env, inputs: buildInputSchema(m, dec)}
 
 	switch {
 	case dec.LiteralExpression != nil:

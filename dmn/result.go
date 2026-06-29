@@ -32,7 +32,8 @@ type Result struct {
 type EvalOption func(*evalConfig)
 
 type evalConfig struct {
-	trace bool
+	trace  bool
+	strict bool
 }
 
 // WithTrace makes Evaluate attach a structured explanation (which rules matched
@@ -40,6 +41,14 @@ type evalConfig struct {
 // allocation-free path and Result.Trace stays nil (ADR-0012, WP-51).
 func WithTrace() EvalOption {
 	return func(c *evalConfig) { c.trace = true }
+}
+
+// WithStrictInput makes Evaluate validate the input against the decision's
+// declared schema first and fail with an *InputError if it does not conform —
+// instead of silently coercing a wrong-typed or misnamed value into a null or a
+// non-match (ADR-0012, WP-52). Without it, evaluation is lenient as before.
+func WithStrictInput() EvalOption {
+	return func(c *evalConfig) { c.strict = true }
 }
 
 // Evaluate runs the decision against in and returns its result. Compilation has
@@ -68,6 +77,12 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 	var cfg evalConfig
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+
+	if cfg.strict {
+		if probs := c.ValidateInput(in); len(probs) > 0 {
+			return Result{}, &InputError{Problems: probs}
+		}
 	}
 
 	vals, err := inputToValues(in)

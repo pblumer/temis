@@ -99,6 +99,35 @@ type TraceCondition struct { Input, Entry string; Matched bool }
 HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
 dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
 
+#### Eingabe-Schema & strenge Validierung — ADR-0012/WP-52
+
+Selbstbeschreibung der erwarteten Inputs samt Typen, plus präzise, maschinenlesbare
+Validierungsfehler statt stillschweigend falscher Defaults.
+
+```go
+type InputField struct { Name string; Type string; Required bool }   // Type "" = undeklariert/Custom
+func (c *CompiledDecision) InputSchema() []InputField
+func (d *Definitions)      InputSchema(idOrName string) ([]InputField, error)
+
+type InputProblem struct { Input, Code, Message, Expected, Got string }  // Code: TYPE_MISMATCH | UNKNOWN_INPUT | MISSING_INPUT
+func (c *CompiledDecision) ValidateInput(in Input) []InputProblem        // leeres Ergebnis = gültig
+
+func WithStrictInput() EvalOption   // Evaluate validiert zuerst; bei Verstoß → *InputError{Problems}
+type InputError struct { Problems []InputProblem }
+```
+
+Der Typ wird aus dem `typeRef` der InputData-Variablen abgeleitet, ersatzweise aus dem
+`typeRef` der Decision-Table-Input-Clause gleichen Namens (dmn-js-Stil). Kanonische
+FEEL-Typen: `string`, `number`, `boolean`, `date`, `time`, `date and time`, `duration`;
+unbekannte/Custom-Typen (Item Definitions, WP-31) erzeugen `""` und damit keine
+Constraint. `null` ist nie ein Typkonflikt (Abwesenheit ist `MISSING_INPUT`).
+
+HTTP: Auswerten akzeptiert `"strict": true`; bei Verstoß `422` mit
+`code: INVALID_INPUT` und der Liste unter `problems`. Die Modell-Antwort
+(`POST /v1/models`, `GET /v1/models/{id}`) trägt zusätzlich `schema` (Decision-Name →
+`InputField[]`). MCP: `describe_decision` liefert das typisierte Schema; `evaluate`
+akzeptiert `"strict": true`.
+
 ### 1.4 Diagnostics & Fehler
 
 ```go
@@ -210,8 +239,8 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 | `POST` | `/v1/models` | DMN-XML hochladen → kompilieren, gibt `modelId` + Diagnostics |
 | `GET` | `/v1/models` | Liste aller gecachten Modelle (`modelId`, Decisions, Inputs) — abschaltbar |
 | `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
-| `POST` | `/v1/models/{id}/evaluate` | `{ "decision": "...", "input": {...}, "explain"?: bool }` → `Result` (+ `trace` bei `explain`) |
-| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache); `explain` analog |
+| `POST` | `/v1/models/{id}/evaluate` | `{ "decision", "input", "explain"?, "strict"? }` → `Result` (+ `trace` bei `explain`; `422 INVALID_INPUT` + `problems` bei `strict`) |
+| `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache); `explain`/`strict` analog |
 | `GET` | `/docs` | Interaktive Swagger-UI-Testseite (lädt `/openapi.yaml`) |
 | `GET` | `/openapi.yaml` | Eingebettetes OpenAPI-3-Dokument |
 | `GET` | `/healthz`, `/readyz` | Liveness/Readiness |

@@ -268,8 +268,35 @@ func TestDescribeDecision(t *testing.T) {
 	if desc["decision"] != "Dish" {
 		t.Errorf("decision: want Dish, got %v", desc["decision"])
 	}
-	if !contains(toStrings(desc["inputs"]), "Guest Count") {
-		t.Errorf("inputs should include Guest Count: %v", desc["inputs"])
+	// inputs is now a typed schema: [{name, type, required}, ...].
+	types := map[string]string{}
+	for _, raw := range desc["inputs"].([]any) {
+		f := raw.(map[string]any)
+		types[f["name"].(string)], _ = f["type"].(string)
+	}
+	if types["Season"] != "string" || types["Guest Count"] != "number" {
+		t.Errorf("typed inputs = %v, want Season:string, Guest Count:number", desc["inputs"])
+	}
+}
+
+func TestEvaluateStrictInput(t *testing.T) {
+	xml, _ := json.Marshal(dishXML(t))
+	// Guest Count as a string violates the number type → strict must reject it
+	// with a structured problem, not silently evaluate.
+	r := run(t, newServer(), call(1, "evaluate",
+		`{"xml":`+string(xml)+`,"decision":"Dish","input":{"Season":"Winter","Guest Count":"8"},"strict":true}`))[0]
+	cr := r.call(t)
+	if !cr.IsError {
+		t.Fatalf("strict mistyped input should be an isError result, got %+v", cr)
+	}
+	var body struct {
+		Problems []dmn.InputProblem `json:"problems"`
+	}
+	if err := json.Unmarshal([]byte(cr.Content[0].Text), &body); err != nil {
+		t.Fatalf("decode problems: %v (text %q)", err, cr.Content[0].Text)
+	}
+	if len(body.Problems) != 1 || body.Problems[0].Code != "TYPE_MISMATCH" || body.Problems[0].Input != "Guest Count" {
+		t.Errorf("problems = %+v, want one TYPE_MISMATCH on Guest Count", body.Problems)
 	}
 }
 

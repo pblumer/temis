@@ -41,6 +41,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-32 | HTTP-Service (`temisd`): `/v1/models`, `/v1/evaluate`, OpenAPI | ✅ |
 | WP-50 | Agent-First: MCP-Server (`temis-mcp`) über stdio | ✅ |
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
+| WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
 > ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
@@ -175,8 +176,18 @@ welche Outputs beigetragen haben. So *begründet* ein Agent eine Entscheidung, s
 nur abzulesen. Die Spur stammt aus der echten Auswertung; der Default-Pfad ohne `explain`
 bleibt unverändert schnell.
 
-> Nächster Agent-First-Baustein (Roadmap-Etappe „Agent-First"): **WP-52** — typisiertes
-> Eingabe-Schema mit strenger Validierung.
+**Typisiertes Eingabe-Schema & strenge Validierung (kein stilles Falschergebnis).**
+Jede Decision beschreibt ihre erwarteten Inputs samt FEEL-Typ selbst (`describe_decision`
+über MCP, `schema` in der HTTP-Modell-Antwort, `CompiledDecision.InputSchema()` in der
+Library). Mit `strict: true` (bzw. `dmn.WithStrictInput()`) prüft die Engine die Eingabe
+vorab und liefert **präzise, maschinenlesbare** Fehler — „input \"Guest Count\" expects
+number, got string" (`TYPE_MISMATCH`), unbekannte (`UNKNOWN_INPUT`) oder fehlende
+(`MISSING_INPUT`) Felder — statt eine falsch getippte Eingabe still zu `null`/Nichttreffer
+zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Eingabe stimmt.
+
+> Damit sind alle drei Agent-First-Säulen aus ADR-0012 umgesetzt (WP-50/51/52). Weiter
+> geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
+> (DRG-Verkettung).
 
 ## Entwicklung
 

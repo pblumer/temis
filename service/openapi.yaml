@@ -213,9 +213,21 @@ components:
         inputs:
           type: array
           items: { type: string }
+        schema:
+          type: object
+          description: Per-decision typed input schema (decision name → input fields).
+          additionalProperties:
+            type: array
+            items: { $ref: "#/components/schemas/InputField" }
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/Diagnostic" }
+    InputField:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, description: "Canonical FEEL type, or empty if undeclared." }
+        required: { type: boolean }
     EvaluateModelRequest:
       type: object
       required: [decision]
@@ -227,6 +239,9 @@ components:
         explain:
           type: boolean
           description: When true, the response also carries a decision trace.
+        strict:
+          type: boolean
+          description: When true, validate input against the typed schema; 422 INVALID_INPUT on violation.
     EvaluateStatelessRequest:
       type: object
       required: [xml, decision]
@@ -239,6 +254,9 @@ components:
         explain:
           type: boolean
           description: When true, the response also carries a decision trace.
+        strict:
+          type: boolean
+          description: When true, validate input against the typed schema; 422 INVALID_INPUT on violation.
     EvaluateResponse:
       type: object
       properties:
@@ -314,3 +332,15 @@ components:
         status: { type: integer }
         detail: { type: string }
         code: { type: string }
+        problems:
+          type: array
+          description: Structured input-validation failures (code INVALID_INPUT).
+          items: { $ref: "#/components/schemas/InputProblem" }
+    InputProblem:
+      type: object
+      properties:
+        input: { type: string }
+        code: { type: string, enum: [TYPE_MISMATCH, UNKNOWN_INPUT, MISSING_INPUT] }
+        message: { type: string }
+        expected: { type: string }
+        got: { type: string }

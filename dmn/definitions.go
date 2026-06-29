@@ -23,6 +23,7 @@ type CompiledDecision struct {
 	id, name string
 	env      *feel.Env
 	expr     feel.CompiledExpr // nil when the decision has no executable logic
+	inputs   []InputField      // declared input schema, for self-description and validation
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error

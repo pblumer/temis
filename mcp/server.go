@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -138,9 +139,9 @@ var tools = []toolSpec{
 	},
 	{
 		Name: "describe_decision",
-		Description: "Describe a decision of a cached model: its name and the input-data " +
-			"names the model declares. Use this to learn what to pass to evaluate. " +
-			"(Per-decision input types arrive with WP-52.)",
+		Description: "Describe a decision of a cached model: its name and the typed inputs " +
+			"it expects (name, FEEL type, required). Use this to learn exactly what to " +
+			"pass to evaluate.",
 		InputSchema: obj(map[string]any{
 			"modelId":  str("The modelId returned by load_model."),
 			"decision": str("The decision name or id to describe."),
@@ -164,6 +165,10 @@ var tools = []toolSpec{
 			"explain": map[string]any{
 				"type":        "boolean",
 				"description": "When true, include a decision trace (matched rules, satisfied/violated conditions, contributing outputs) so the decision can be justified.",
+			},
+			"strict": map[string]any{
+				"type":        "boolean",
+				"description": "When true, validate the input against the decision's typed schema first and fail with the precise problems (wrong type, unknown or missing input) instead of silently coercing it.",
 			},
 		}, "decision"),
 	},
@@ -252,7 +257,7 @@ func (s *Server) toolDescribeDecision(raw json.RawMessage) (any, *rpcError) {
 		"modelId":    sm.id,
 		"decision":   dec.Name(),
 		"decisionId": dec.ID(),
-		"inputs":     sm.index.Inputs,
+		"inputs":     dec.InputSchema(),
 	})
 }
 
@@ -263,6 +268,7 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 		Decision string         `json:"decision"`
 		Input    map[string]any `json:"input"`
 		Explain  bool           `json:"explain"`
+		Strict   bool           `json:"strict"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return toolError("invalid arguments: " + err.Error()), nil
@@ -297,8 +303,22 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 	if a.Explain {
 		opts = append(opts, dmn.WithTrace())
 	}
+	if a.Strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
 	res, err := dec.Evaluate(ctx, dmn.Input(a.Input), opts...)
 	if err != nil {
+		var ie *dmn.InputError
+		if errors.As(err, &ie) {
+			b, _ := json.MarshalIndent(map[string]any{
+				"error":    "input validation failed",
+				"problems": ie.Problems,
+			}, "", "  ")
+			return map[string]any{
+				"content": []any{map[string]any{"type": "text", "text": string(b)}},
+				"isError": true,
+			}, nil
+		}
 		return toolError("evaluation failed: " + err.Error()), nil
 	}
 	return toolText(evaluateResponse{
