@@ -103,5 +103,6 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 }
 .toolbar .tbtn:disabled { color: #c2c9d4; cursor: default; }
 .toolbar .tbtn:not(:disabled):hover { background: #f1f4f9; }
+.toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
 .toolbar .status { color: var(--muted); margin-left: 4px; }
 code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }

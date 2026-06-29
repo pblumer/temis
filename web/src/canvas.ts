@@ -17,6 +17,10 @@ import { dmnContextPadModule } from './dmn-context-pad'
 import { dmnLabelEditingModule } from './dmn-label-editing'
 import type { Laid } from './layout'
 
+// What the toolbar needs to know about the current selection to offer the type
+// editor: the selected InputData's id and current type, or null otherwise.
+export type Selected = { id: string; dataType?: string } | null
+
 // Handle to the live diagram: nodes are selectable and draggable, every change
 // goes through the command stack, so undo/redo work (ADR-0016, WP-63/65).
 export type ModelerHandle = {
@@ -25,7 +29,27 @@ export type ModelerHandle = {
   canUndo: () => boolean
   canRedo: () => boolean
   onChange: (cb: () => void) => void
+  // onSelect reports the selected InputData (for the type editor) or null.
+  onSelect: (cb: (sel: Selected) => void) => void
+  // setSelectedType sets the selected InputData's FEEL type (undoable); "" clears it.
+  setSelectedType: (dataType: string) => void
 }
+
+// Undoable type change on an InputData; redraws the pill via the returned element.
+class UpdateTypeHandler {
+  execute(ctx: { element: Shape & { dataType?: string }; dataType: string; old?: string }): Shape[] {
+    ctx.old = ctx.element.dataType
+    ctx.element.dataType = ctx.dataType || undefined
+    return [ctx.element]
+  }
+  revert(ctx: { element: Shape & { dataType?: string }; old?: string }): Shape[] {
+    ctx.element.dataType = ctx.old
+    return [ctx.element]
+  }
+}
+
+type SelectionService = { get: () => Shape[] }
+const isInputData = (el: Shape | undefined): boolean => !!el && el.type === 'dmn:inputData'
 
 // Build an editable DMN diagram into the container with temis' own renderers on
 // the diagram-js MIT core — no dmn-js. A fresh diagram is built per call (the
@@ -44,6 +68,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const factory = diagram.get<ElementFactory>('elementFactory')
   const commandStack = diagram.get<CommandStack>('commandStack')
   const eventBus = diagram.get<EventBus>('eventBus')
+  const selection = diagram.get<SelectionService>('selection')
+  commandStack.registerHandler('element.updateType', UpdateTypeHandler)
 
   const byId: Record<string, Shape> = {}
   for (const n of laid.nodes) {
@@ -66,6 +92,16 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let changeCb = (): void => {}
   eventBus.on('commandStack.changed', () => changeCb())
 
+  let selectCb = (_sel: Selected): void => {}
+  const reportSelection = (): void => {
+    const sel = selection.get()
+    const one = sel.length === 1 ? sel[0] : undefined
+    selectCb(isInputData(one) ? { id: one!.id, dataType: (one as Shape & { dataType?: string }).dataType } : null)
+  }
+  eventBus.on('selection.changed', reportSelection)
+  // A type change keeps the same element selected; refresh the editor's value.
+  eventBus.on('commandStack.changed', reportSelection)
+
   return {
     undo: () => commandStack.undo(),
     redo: () => commandStack.redo(),
@@ -73,6 +109,14 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     canRedo: () => commandStack.canRedo(),
     onChange: (cb) => {
       changeCb = cb
+    },
+    onSelect: (cb) => {
+      selectCb = cb
+    },
+    setSelectedType: (dataType) => {
+      const sel = selection.get()
+      const one = sel.length === 1 ? sel[0] : undefined
+      if (isInputData(one)) commandStack.execute('element.updateType', { element: one, dataType })
     },
   }
 }

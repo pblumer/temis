@@ -18,6 +18,10 @@ async function boot(root: HTMLElement): Promise<void> {
         <select id="model"></select>
         <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
         <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
+        <span id="typeEditor" class="type-editor" style="display:none">
+          <label for="datatype">Typ</label>
+          <select id="datatype"></select>
+        </span>
         <span id="status" class="status"></span>
       </div>
       <div id="canvas" class="canvas"></div>
@@ -34,7 +38,14 @@ async function boot(root: HTMLElement): Promise<void> {
   const status = root.querySelector<HTMLElement>('#status')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
-  if (!select || !canvas || !status || !undoBtn || !redoBtn) return
+  const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
+  const datatype = root.querySelector<HTMLSelectElement>('#datatype')
+  if (!select || !canvas || !status || !undoBtn || !redoBtn || !typeEditor || !datatype) return
+
+  // Built-in FEEL types for the InputData type editor; "" clears the type.
+  const FEEL_TYPES = ['', 'string', 'number', 'boolean', 'date', 'time', 'date and time', 'days and time duration', 'years and months duration']
+  datatype.innerHTML = FEEL_TYPES.map((t) => `<option value="${t}">${t || '— Typ —'}</option>`).join('')
+  datatype.addEventListener('change', () => handle?.setSelectedType(datatype.value))
 
   let handle: ModelerHandle | null = null
   const syncButtons = (): void => {
@@ -78,6 +89,14 @@ async function boot(root: HTMLElement): Promise<void> {
       const graph = await getGraph(model.modelId)
       handle = renderGraph(canvas, layout(graph))
       handle.onChange(syncButtons)
+      handle.onSelect((sel) => {
+        if (sel) {
+          typeEditor.style.display = ''
+          datatype.value = sel.dataType ?? ''
+        } else {
+          typeEditor.style.display = 'none'
+        }
+      })
       syncButtons()
       status.textContent = `${graph.nodes.length} Knoten · ${graph.edges.length} Kanten`
     } catch (e) {
