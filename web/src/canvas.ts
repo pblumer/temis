@@ -21,6 +21,18 @@ import type { Laid } from './layout'
 // editor: the selected InputData's id and current type, or null otherwise.
 export type Selected = { id: string; dataType?: string } | null
 
+// NodeState is the current persistable state of one diagram node, read back from
+// the live shapes for Edit→Save (ADR-0016): id and type plus the editable
+// name/type/position. x/y are the shape's top-left, matching DMNDI bounds.
+export type NodeState = {
+  id: string
+  type: string
+  name?: string
+  dataType?: string
+  x: number
+  y: number
+}
+
 // Handle to the live diagram: nodes are selectable and draggable, every change
 // goes through the command stack, so undo/redo work (ADR-0016, WP-63/65).
 export type ModelerHandle = {
@@ -33,6 +45,8 @@ export type ModelerHandle = {
   onSelect: (cb: (sel: Selected) => void) => void
   // setSelectedType sets the selected InputData's FEEL type (undoable); "" clears it.
   setSelectedType: (dataType: string) => void
+  // nodes returns the current state of every node, for persisting edits.
+  nodes: () => NodeState[]
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -118,5 +132,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       const one = sel.length === 1 ? sel[0] : undefined
       if (isInputData(one)) commandStack.execute('element.updateType', { element: one, dataType })
     },
+    nodes: () => Object.values(byId).map((s) => {
+      const shape = s as Shape & { name?: string; dataType?: string }
+      return { id: shape.id, type: shape.type.replace(/^dmn:/, ''), name: shape.name, dataType: shape.dataType, x: shape.x, y: shape.y }
+    }),
   }
 }

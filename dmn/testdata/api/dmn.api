@@ -72,6 +72,8 @@ func (s *CompiledService) Name() string
 
 func (s Severity) String() string
 
+func ApplyEdits(src []byte, edits []NodeEdit) ([]byte, error)
+
 func New(opts ...Option) *Engine
 
 func WithLimits(l Limits) Option
@@ -173,6 +175,14 @@ type Limits struct {
 type ModelIndex struct {
 	Decisions	[]string
 	Inputs		[]string
+}
+
+type NodeEdit struct {
+	ID		string		`json:"id"`
+	Name		*string		`json:"name,omitempty"`
+	DataType	*string		`json:"dataType,omitempty"`
+	X		*float64	`json:"x,omitempty"`
+	Y		*float64	`json:"y,omitempty"`
 }
 
 type Option func(*config)

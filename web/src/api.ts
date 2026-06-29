@@ -33,3 +33,22 @@ export async function getGraph(modelId: string): Promise<Graph> {
   if (!r.ok) throw new Error('Graph laden fehlgeschlagen (HTTP ' + r.status + ')')
   return (await r.json()) as Graph
 }
+
+// NodeEdit is one node's persistable edit; omitted fields stay unchanged. x/y are
+// only honoured for models that carry DMNDI (otherwise positions auto-lay-out).
+export type NodeEdit = { id: string; name?: string; dataType?: string; x?: number; y?: number }
+
+// saveModel patches the model's DMN XML with the given node edits (positions,
+// names, types), recompiles it server-side and returns the SAVED model's id —
+// the content hash changes, so the caller switches to the new revision. Decision
+// logic and untouched diagram interchange are preserved (ADR-0016, Edit→Save).
+export async function saveModel(modelId: string, nodes: NodeEdit[]): Promise<string> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes }),
+  })
+  if (!r.ok) throw new Error('Speichern fehlgeschlagen (HTTP ' + r.status + ')')
+  const body = (await r.json()) as { modelId: string }
+  return body.modelId
+}

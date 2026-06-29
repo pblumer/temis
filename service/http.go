@@ -120,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
 	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
 	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
+	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
@@ -172,6 +173,10 @@ type modelSummary struct {
 	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
+}
+
+type saveModelRequest struct {
+	Nodes []dmn.NodeEdit `json:"nodes"`
 }
 
 type evaluateModelRequest struct {
@@ -298,6 +303,43 @@ func (s *Server) handleGetModelGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sm.defs.Graph())
+}
+
+// handleSaveModel applies modeler edits (positions, names, types) to a cached
+// model's XML, recompiles the patched document and caches it under its new
+// content hash. It responds 201 with the saved model's id and index, so the
+// client can switch to the persisted revision. The original model stays cached.
+// Because edits patch the existing XML, all decision logic and the untouched
+// DMNDI are preserved (ADR-0016, Edit→Save).
+func (s *Server) handleSaveModel(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req saveModelRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyEdits(sm.xml, req.Nodes)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
 }
 
 // handleEvaluateModel evaluates a decision of a cached model.
