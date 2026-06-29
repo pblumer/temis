@@ -164,9 +164,17 @@ export async function createDecisionTable(modelId: string, decision: string): Pr
   return (await r.json()) as ModelDetail
 }
 
-// TableEdit is the editable payload for a decision table: its rule rows (columns
-// and hit policy are preserved server-side).
-export type TableEdit = { rules: TableRule[] }
+// TableEdit is the editable payload for a decision table. Rules are always
+// written; hitPolicy/aggregation set the policy; inputs/outputs replace the
+// columns only when replaceColumns is set (the full editor sends everything).
+export type TableEdit = {
+  rules: TableRule[]
+  hitPolicy?: string
+  aggregation?: string
+  inputs?: TableInput[]
+  outputs?: TableOutput[]
+  replaceColumns?: boolean
+}
 
 // saveTable rewrites a decision's table rules (POST), recompiles the model and
 // returns the saved model's detail — incl. its new id and any compile

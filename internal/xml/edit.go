@@ -54,16 +54,25 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 	return false
 }
 
-// SetDecisionTableRules replaces the rule rows of the decision-table logic of the
-// decision identified by id. The table's columns (inputs/outputs) and hit policy
-// are left untouched — only the rows change. It reports whether a matching
+// UpdateDecisionTable rewrites the decision-table logic of the decision
+// identified by id. Rules are always replaced. A non-empty hitPolicy sets the
+// policy and aggregation; columns are replaced only when replaceColumns is set
+// (otherwise the existing inputs/outputs are kept). It reports whether a matching
 // decision with decision-table logic was found.
-func (d *Definitions) SetDecisionTableRules(id string, rules []Rule) bool {
+func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
 	for i := range d.Decisions {
 		if d.Decisions[i].ID == id {
 			dt := d.Decisions[i].DecisionTable
 			if dt == nil {
 				return false
+			}
+			if hitPolicy != "" {
+				dt.HitPolicy = hitPolicy
+				dt.Aggregation = aggregation
+			}
+			if replaceColumns {
+				dt.Inputs = inputs
+				dt.Outputs = outputs
 			}
 			dt.Rules = rules
 			return true

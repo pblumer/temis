@@ -126,6 +126,58 @@ func TestApplyTableEditEmptyInputIsAny(t *testing.T) {
 	}
 }
 
+// TestApplyTableEditColumns replaces a table's columns and hit policy (not just
+// rules) and checks the recompiled table reflects the new structure.
+func TestApplyTableEditColumns(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+	tv, _ := mustTable(t, src)
+
+	// Drop the "Guest Count" input, add a "Price" output, switch to Collect/SUM.
+	edit := dmn.TableEdit{
+		ReplaceColumns: true,
+		HitPolicy:      "C",
+		Aggregation:    "SUM",
+		Inputs:         []dmn.TableInput{{Label: "Season", Expression: "Season", TypeRef: "string"}},
+		Outputs:        []dmn.TableOutput{{Name: "Dish", TypeRef: "string"}, {Name: "Price", TypeRef: "number"}},
+		Rules: []dmn.TableRule{
+			{InputEntries: []string{`"Fall"`}, OutputEntries: []string{`"Spareribs"`, `20`}},
+		},
+	}
+	out, err := dmn.ApplyTableEdit(src, tv.DecisionID, edit)
+	if err != nil {
+		t.Fatalf("ApplyTableEdit: %v", err)
+	}
+	got, _ := mustTable(t, out)
+	if got.HitPolicy != "C" || got.Aggregation != "SUM" {
+		t.Errorf("policy = %q/%q, want C/SUM", got.HitPolicy, got.Aggregation)
+	}
+	if len(got.Inputs) != 1 || got.Inputs[0].Expression != "Season" {
+		t.Errorf("inputs = %+v, want one Season", got.Inputs)
+	}
+	if len(got.Outputs) != 2 || got.Outputs[1].Name != "Price" {
+		t.Errorf("outputs = %+v, want Dish + Price", got.Outputs)
+	}
+	// The rule's entries were aligned with the new column counts (1 in, 2 out).
+	if len(got.Rules) != 1 || len(got.Rules[0].InputEntries) != 1 || len(got.Rules[0].OutputEntries) != 2 {
+		t.Errorf("rule not aligned with new columns: %+v", got.Rules)
+	}
+}
+
+// TestApplyTableEditRulesOnly checks a rules-only edit (ReplaceColumns false)
+// leaves the columns intact.
+func TestApplyTableEditRulesOnly(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+	tv, _ := mustTable(t, src)
+	out, err := dmn.ApplyTableEdit(src, tv.DecisionID, dmn.TableEdit{Rules: toEdit(tv)})
+	if err != nil {
+		t.Fatalf("ApplyTableEdit: %v", err)
+	}
+	got, _ := mustTable(t, out)
+	if len(got.Inputs) != len(tv.Inputs) || len(got.Outputs) != len(tv.Outputs) {
+		t.Errorf("rules-only edit changed columns: in %d->%d, out %d->%d", len(tv.Inputs), len(got.Inputs), len(tv.Outputs), len(got.Outputs))
+	}
+}
+
 // TestApplyTableEditNoTable errors for a decision without a decision table.
 func TestApplyTableEditNoTable(t *testing.T) {
 	src := readModel(t, "pricing_15.dmn") // "Net Total" is a literal expression
