@@ -25,4 +25,14 @@
 // A [Definitions.Service] returns a compiled decision service, whose Evaluate
 // runs its output decisions (and any encapsulated decisions) while treating its
 // input decisions as caller-supplied boundaries.
+//
+// # Stability
+//
+// The exported surface of this package is the SemVer-stable v1 contract
+// (ADR-0011, ADR-0019). Additive changes ship in a minor release; a breaking
+// change requires a major version. A symbol scheduled for removal is first
+// marked // Deprecated: and dropped no earlier than the next major. Everything
+// under internal/ is exempt and may change at any time. See
+// docs/40-api-contract.md §4; the surface is frozen by a golden test
+// (apisurface_test.go).
 package dmn

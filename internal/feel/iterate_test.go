@@ -78,8 +78,8 @@ func TestNestedFilter(t *testing.T) {
 
 func TestUnsupportedConstructsReport(t *testing.T) {
 	for _, src := range []string{
-		"function(x) external x",
-		"x instance of number",
+		"function(x) external x",  // external functions
+		"x instance of bogustype", // unknown type in instance of
 	} {
 		env := NewEnv("x")
 		if _, err := CompileString(src, env); err == nil {

@@ -1,0 +1,195 @@
+const (
+	CodeXMLMalformed	= "XML_MALFORMED"
+
+	CodeUnknownNamespace	= "UNKNOWN_NAMESPACE"
+
+	CodeUnknownElement	= "UNKNOWN_ELEMENT"
+
+	CodeNoLogic	= "DECISION_NO_LOGIC"
+
+	CodeFEELCompile	= "FEEL_COMPILE_ERROR"
+
+	CodeNotExecutable	= "DECISION_NOT_EXECUTABLE"
+
+	CodeMissingInput	= "MISSING_REQUIRED_INPUT"
+
+	CodeLimitExceeded	= "LIMIT_EXCEEDED"
+
+	CodeUniqueMultiple	= "UNIQUE_MULTIPLE_MATCH"
+
+	CodeDecisionCycle	= "DECISION_CYCLE"
+
+	CodeServiceOutputUnresolved	= "SERVICE_OUTPUT_UNRESOLVED"
+
+	CodeTypeError	= "TYPE_ERROR"
+
+	CodeRuntime	= "RUNTIME_ERROR"
+)
+
+const (
+	SevError	Severity	= iota
+	SevWarning
+	SevInfo
+)
+
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
+
+func (c *CompiledDecision) ID() string
+
+func (c *CompiledDecision) InputSchema() []InputField
+
+func (c *CompiledDecision) Name() string
+
+func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
+
+func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
+
+func (d *Definitions) Index() ModelIndex
+
+func (d *Definitions) InputSchema(idOrName string) ([]InputField, error)
+
+func (d *Definitions) ModelName() string
+
+func (d *Definitions) Service(idOrName string) (*CompiledService, error)
+
+func (d Diagnostics) HasErrors() bool
+
+func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnostics, error)
+
+func (e *EvalError) Error() string
+
+func (e *EvalError) Unwrap() error
+
+func (e *InputError) Error() string
+
+func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error)
+
+func (s *CompiledService) ID() string
+
+func (s *CompiledService) Name() string
+
+func (s Severity) String() string
+
+func New(opts ...Option) *Engine
+
+func WithLimits(l Limits) Option
+
+func WithStrictInput() EvalOption
+
+func WithTrace() EvalOption
+
+type CompiledDecision struct {
+	// contains filtered or unexported fields
+}
+
+type CompiledService struct {
+	// contains filtered or unexported fields
+}
+
+type Definitions struct {
+	// contains filtered or unexported fields
+}
+
+type Diagnostic struct {
+	Severity	Severity
+
+	Code		string
+	Message		string
+	DecisionID	string
+	Line, Col	int
+}
+
+type Diagnostics []Diagnostic
+
+type Engine struct {
+	// contains filtered or unexported fields
+}
+
+type EvalError struct {
+	Code		string
+	DecisionID	string
+	Message		string
+	Err		error
+}
+
+type EvalOption func(*evalConfig)
+
+type Input map[string]any
+
+type InputError struct {
+	Problems []InputProblem
+}
+
+type InputField struct {
+	Name		string	`json:"name"`
+	Type		string	`json:"type,omitempty"`
+	Required	bool	`json:"required"`
+
+	Constraint	string	`json:"constraint,omitempty"`
+}
+
+type InputProblem struct {
+	Input		string	`json:"input"`
+	Code		string	`json:"code"`
+	Message		string	`json:"message"`
+	Expected	string	`json:"expected,omitempty"`
+	Got		string	`json:"got,omitempty"`
+}
+
+type Limits struct {
+	MaxCallDepth	int
+	MaxIterations	int
+	MaxListSize	int
+	CompileTimeout	time.Duration
+}
+
+type ModelIndex struct {
+	Decisions	[]string
+	Inputs		[]string
+}
+
+type Option func(*config)
+
+type Result struct {
+	Outputs	map[string]any
+
+	Decisions	map[string]any
+
+	Diags	Diagnostics
+
+	Trace	*Trace
+}
+
+type Severity int
+
+type TableTrace struct {
+	HitPolicy	string		`json:"hitPolicy"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TraceInput	`json:"inputs"`
+	Rules		[]TraceRule	`json:"rules"`
+	Matched		[]int		`json:"matched"`
+}
+
+type Trace struct {
+	Tables []TableTrace `json:"tables"`
+}
+
+type TraceCondition struct {
+	Input	string	`json:"input"`
+	Entry	string	`json:"entry"`
+	Matched	bool	`json:"matched"`
+}
+
+type TraceInput struct {
+	Expression	string	`json:"expression"`
+	Value		any	`json:"value"`
+}
+
+type TraceRule struct {
+	Index		int			`json:"index"`
+	ID		string			`json:"id,omitempty"`
+	Matched		bool			`json:"matched"`
+	Conditions	[]TraceCondition	`json:"conditions"`
+
+	Outputs	[]any	`json:"outputs,omitempty"`
+}

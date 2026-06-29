@@ -3,13 +3,14 @@
 
 GO      ?= go
 PKGS    ?= ./...
+FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench tck build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz build tidy clean help
 
 all: verify
 
-## verify: full gate — formatting, vet, lint, race tests, bench & tck smoke
-verify: fmt-check vet lint test bench tck
+## verify: full gate — formatting, vet, lint, race tests, bench, budget & tck
+verify: fmt-check vet lint test bench budget tck
 
 ## fmt: format all Go sources in place
 fmt:
@@ -42,9 +43,29 @@ test:
 bench:
 	$(GO) test -run=^$$ -bench=. -benchmem $(PKGS)
 
+## budget: performance-budget CI gate, run without the race detector (WP-42, docs/50-testing-strategy.md §6)
+budget:
+	$(GO) test -run '^TestPerformanceBudget$$' -count=1 ./dmn/
+
 ## tck: run the TCK runner package (tolerant while no cases exist yet)
 tck:
 	$(GO) test ./internal/tck/...
+
+## fuzz: run every fuzz target for FUZZTIME each, asserting no crash (WP-44, docs/50-testing-strategy.md §3)
+fuzz:
+	@set -e; \
+	for spec in \
+		"./dmn:FuzzCompile" \
+		"./internal/xml:FuzzDecode" \
+		"./internal/value:FuzzParseNumber" \
+		"./internal/value:FuzzParseDuration" \
+		"./internal/feel:FuzzLexer" \
+		"./internal/feel:FuzzParser" \
+		"./internal/feel:FuzzBoundedEvaluation"; do \
+		pkg=$${spec%%:*}; fn=$${spec##*:}; \
+		echo "=== fuzz $$fn ($$pkg) for $(FUZZTIME) ==="; \
+		$(GO) test -run='^$$' -fuzz="^$$fn$$" -fuzztime=$(FUZZTIME) $$pkg; \
+	done
 
 ## build: compile all packages and binaries
 build:

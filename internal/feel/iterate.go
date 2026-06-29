@@ -50,7 +50,7 @@ func (c *compiler) compileForExpr(n *ForExpr) CompiledExpr {
 				return err
 			}
 			out = append(out, v)
-			return nil
+			return sc.st.checkItems(len(out))
 		})
 		if err != nil {
 			return nil, err
@@ -120,37 +120,45 @@ func iterate(s *Scope, iters []compiledIter, i int, yield func(*Scope) error) er
 	if err != nil {
 		return err
 	}
-	for _, e := range iterateDomain(dv) {
-		if err := iterate(s.Extend(e), iters, i+1, yield); err != nil {
-			return err
-		}
-	}
-	return nil
+	return forEachDomain(s.st, dv, func(e value.Value) error {
+		return iterate(s.Extend(e), iters, i+1, yield)
+	})
 }
 
-// iterateDomain yields the elements a for/some/every clause ranges over: a list
-// is taken element-wise, a numeric range expands to its integer steps (ascending
-// or descending, both ends inclusive), null is empty, and any other single value
-// is treated as a one-element domain.
-func iterateDomain(v value.Value) []value.Value {
+// forEachDomain invokes fn for each element a for/some/every clause ranges over:
+// each element of a list, each integer step of a numeric range (ascending or
+// descending, both ends inclusive), nothing for null, and the single value
+// otherwise. It charges one iteration step per element against the limit and
+// streams ranges lazily, so a hostile range (e.g. 1..1e12) is refused by the
+// iteration limit rather than materialised (ADR-0008, WP-34).
+func forEachDomain(st *evalState, v value.Value, fn func(value.Value) error) error {
 	switch x := v.(type) {
 	case value.List:
-		return x.Elements
-	case value.Range:
-		return rangeSteps(x)
-	case nil:
+		for _, e := range x.Elements {
+			if err := st.step(); err != nil {
+				return err
+			}
+			if err := fn(e); err != nil {
+				return err
+			}
+		}
 		return nil
+	case value.Range:
+		return forEachRange(st, x, fn)
 	default:
 		if value.IsNull(v) {
 			return nil
 		}
-		return []value.Value{v}
+		if err := st.step(); err != nil {
+			return err
+		}
+		return fn(v)
 	}
 }
 
-// rangeSteps expands an integer numeric range into its successive values. A
-// non-integer or unbounded range yields nothing.
-func rangeSteps(r value.Range) []value.Value {
+// forEachRange streams an integer numeric range one value at a time, charging an
+// iteration step per value. A non-integer or unbounded range yields nothing.
+func forEachRange(st *evalState, r value.Range, fn func(value.Value) error) error {
 	lo, ok := integerOf(r.Low)
 	if !ok {
 		return nil
@@ -159,17 +167,22 @@ func rangeSteps(r value.Range) []value.Value {
 	if !ok {
 		return nil
 	}
-	var out []value.Value
-	if lo <= hi {
-		for i := lo; i <= hi; i++ {
-			out = append(out, value.NumberFromInt64(i))
+	step := int64(1)
+	if lo > hi {
+		step = -1
+	}
+	for i := lo; ; i += step {
+		if err := st.step(); err != nil {
+			return err
 		}
-	} else {
-		for i := lo; i >= hi; i-- {
-			out = append(out, value.NumberFromInt64(i))
+		if err := fn(value.NumberFromInt64(i)); err != nil {
+			return err
+		}
+		if i == hi {
+			break
 		}
 	}
-	return out
+	return nil
 }
 
 // integerOf returns v as an int64 when it is an integral number.
@@ -228,12 +241,18 @@ func filterClosure(x, f CompiledExpr) CompiledExpr {
 
 		var out []value.Value
 		for _, e := range elems {
+			if err := s.st.step(); err != nil {
+				return nil, err
+			}
 			r, err := f(s.Extend(e))
 			if err != nil {
 				return nil, err
 			}
 			if r == value.True {
 				out = append(out, e)
+				if err := s.st.checkItems(len(out)); err != nil {
+					return nil, err
+				}
 			}
 		}
 		return value.NewList(out...), nil
@@ -251,12 +270,16 @@ func ForOne(coll, body CompiledExpr) CompiledExpr {
 			return nil, err
 		}
 		var out []value.Value
-		for _, e := range iterateDomain(cv) {
+		err = forEachDomain(s.st, cv, func(e value.Value) error {
 			v, err := body(s.Extend(e))
 			if err != nil {
-				return nil, err
+				return err
 			}
 			out = append(out, v)
+			return s.st.checkItems(len(out))
+		})
+		if err != nil {
+			return nil, err
 		}
 		return value.NewList(out...), nil
 	}
@@ -274,10 +297,10 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 			return nil, err
 		}
 		sawTrue, sawFalse, sawNull := false, false, false
-		for _, e := range iterateDomain(cv) {
+		err = forEachDomain(s.st, cv, func(e value.Value) error {
 			v, err := pred(s.Extend(e))
 			if err != nil {
-				return nil, err
+				return err
 			}
 			switch v {
 			case value.True:
@@ -287,6 +310,10 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 			default:
 				sawNull = true
 			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 		if some {
 			switch {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/pblumer/temis/internal/boxed"
+	"github.com/pblumer/temis/internal/feel"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -147,7 +148,7 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 		}
 	}
 
-	ev := newEvaluator(base)
+	ev := newEvaluator(base, c.limits)
 	if cfg.trace {
 		ev.rec = boxed.NewRecorder()
 	}
@@ -177,6 +178,15 @@ func (c *CompiledDecision) classifyRuntime(err error) *EvalError {
 			Code:       CodeUniqueMultiple,
 			DecisionID: c.id,
 			Message:    "UNIQUE hit policy matched multiple rules",
+			Err:        err,
+		}
+	}
+	var le *feel.LimitError
+	if errors.As(err, &le) {
+		return &EvalError{
+			Code:       CodeLimitExceeded,
+			DecisionID: c.id,
+			Message:    "resource limit exceeded: " + le.Limit,
 			Err:        err,
 		}
 	}
