@@ -17,13 +17,19 @@ type Graph struct {
 // when the model has a diagram (omitted otherwise, so the client falls back to
 // auto-layout).
 type GraphNode struct {
-	ID     string  `json:"id"`
-	Type   string  `json:"type"`
-	Name   string  `json:"name"`
-	X      float64 `json:"x,omitempty"`
-	Y      float64 `json:"y,omitempty"`
-	Width  float64 `json:"width,omitempty"`
-	Height float64 `json:"height,omitempty"`
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// DataType is the node's resolved FEEL type (the InputData's type, or a
+	// decision's output type), for showing the data contract. "" when unknown.
+	DataType string `json:"dataType,omitempty"`
+	// VarName is a decision's output-variable name (how its result is referenced
+	// downstream); defaults to the decision name. Empty for non-decisions.
+	VarName string  `json:"varName,omitempty"`
+	X       float64 `json:"x,omitempty"`
+	Y       float64 `json:"y,omitempty"`
+	Width   float64 `json:"width,omitempty"`
+	Height  float64 `json:"height,omitempty"`
 }
 
 // GraphEdge is one requirement, directed from the required (upstream) element to
@@ -46,25 +52,46 @@ func (d *Definitions) Graph() Graph {
 	if d.model.Diagram != nil {
 		shapes = d.model.Diagram.Shapes
 	}
-	add := func(id, typ, name string) {
+	add := func(id, typ, name, dataType, varName string) {
 		if id == "" {
 			return
 		}
 		known[id] = true
-		n := GraphNode{ID: id, Type: typ, Name: name}
+		n := GraphNode{ID: id, Type: typ, Name: name, DataType: dataType, VarName: varName}
 		if b, ok := shapes[id]; ok {
 			n.X, n.Y, n.Width, n.Height = b.X, b.Y, b.Width, b.Height
 		}
 		g.Nodes = append(g.Nodes, n)
 	}
+
+	// Resolve input types from what the decisions actually expect (typeRef or
+	// the decision-table input clause) — the same resolution as the typed input
+	// schema (WP-52), so a type declared only on a table column still shows up.
+	inputType := map[string]string{}
+	for _, cd := range d.order {
+		for _, f := range cd.inputs {
+			if f.Type != "" {
+				inputType[f.Name] = f.Type
+			}
+		}
+	}
+
 	for _, in := range d.model.InputData {
-		add(in.ID, "inputData", in.Name)
+		t := inputType[in.Name]
+		if t == "" {
+			t = canonicalType(in.TypeRef)
+		}
+		add(in.ID, "inputData", in.Name, t, "")
 	}
 	for _, b := range d.model.BKMs {
-		add(b.ID, "businessKnowledgeModel", b.Name)
+		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "")
 	}
 	for _, dec := range d.model.Decisions {
-		add(dec.ID, "decision", dec.Name)
+		varName := dec.VariableName
+		if varName == "" {
+			varName = dec.Name // DMN convention: result referenced by the decision name
+		}
+		add(dec.ID, "decision", dec.Name, decisionOutputType(dec), varName)
 	}
 
 	edge := func(typ, source, target string) {
@@ -90,4 +117,20 @@ func (d *Definitions) Graph() Graph {
 		}
 	}
 	return g
+}
+
+// decisionOutputType resolves a decision's result type for display: the declared
+// variable type, else a single decision-table output's type, else a literal
+// expression's type. Multi-output tables (a context result) yield "".
+func decisionOutputType(dec *model.Decision) string {
+	if dec.VariableTypeRef != "" {
+		return canonicalType(dec.VariableTypeRef)
+	}
+	if dt := dec.DecisionTable; dt != nil && len(dt.Outputs) == 1 {
+		return canonicalType(dt.Outputs[0].TypeRef)
+	}
+	if dec.LiteralExpression != nil {
+		return canonicalType(dec.LiteralExpression.TypeRef)
+	}
+	return ""
 }

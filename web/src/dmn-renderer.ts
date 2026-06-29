@@ -24,17 +24,40 @@ const FILL_INPUT = '#eef3ff'
 const FILL_BKM = '#edfaf1'
 const TEXT = '#1f2632'
 
-type Named = { name?: string }
+type Named = { name?: string; dataType?: string; varName?: string }
+const SUBTLE = '#7a8597'
 
-function text(parent: SVGElement, content: string, w: number, h: number): void {
+function drawText(parent: SVGElement, content: string, cx: number, cy: number, size: number, color: string, weight: string): void {
   const t = create('text')
   attr(t, {
-    x: w / 2, y: h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-    'font-family': 'system-ui, -apple-system, sans-serif', 'font-size': '13',
-    'font-weight': '500', fill: TEXT,
+    x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    'font-family': 'system-ui, -apple-system, sans-serif', 'font-size': String(size),
+    'font-weight': weight, fill: color,
   })
   t.textContent = content
   append(parent, t)
+}
+
+// label draws the element name and, below it, a subtle second line carrying the
+// data contract: the type on an InputData, the output variable (name : type) on
+// a Decision — so it's visible how a decision's result is referenced (ADR-0016).
+function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): void {
+  const name = shape.name ?? shape.id
+  let sub = ''
+  if (shape.type === 'dmn:inputData') {
+    sub = shape.dataType ?? ''
+  } else if (shape.type === 'dmn:decision') {
+    const vn = shape.varName ?? name
+    sub = '▸ ' + vn + (shape.dataType ? ' : ' + shape.dataType : '')
+  } else if (shape.dataType) {
+    sub = shape.dataType
+  }
+  if (sub) {
+    drawText(parent, name, w / 2, h / 2 - 9, 13, TEXT, '500')
+    drawText(parent, sub, w / 2, h / 2 + 10, 10.5, SUBTLE, '400')
+  } else {
+    drawText(parent, name, w / 2, h / 2, 13, TEXT, '500')
+  }
 }
 
 // decisionIcon draws the small type badge in the top-left corner of a decision
@@ -95,7 +118,7 @@ export default class DmnRenderer extends BaseRenderer {
     if (shape.type === 'dmn:decision' || shape.type === undefined) {
       decisionIcon(parent)
     }
-    text(parent, (shape as Shape & Named).name ?? shape.id, w, h)
+    label(parent, shape as Shape & Named, w, h)
     return visual
   }
 

@@ -2,9 +2,20 @@
 // model authority (ADR-0016): the browser fetches the decision requirements
 // graph rather than parsing DMN XML itself.
 
-// x/y/width/height are present only when the model carries DMNDI; absent → the
-// client auto-lays-out the graph.
-export type GraphNode = { id: string; type: string; name: string; x?: number; y?: number; width?: number; height?: number }
+// dataType is the node's resolved FEEL type; varName a decision's output-variable
+// name. x/y/width/height are present only when the model carries DMNDI (absent →
+// the client auto-lays-out the graph).
+export type GraphNode = {
+  id: string
+  type: string
+  name: string
+  dataType?: string
+  varName?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+}
 export type GraphEdge = { type: string; source: string; target: string }
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 

@@ -1,6 +1,10 @@
 package dmn_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pblumer/temis/dmn"
+)
 
 // TestGraphChaining checks Graph() exposes the DRG nodes (with their kinds) and
 // the requirement edges, including a decision→decision chain.
@@ -63,6 +67,31 @@ func TestGraphNoDMNDIBounds(t *testing.T) {
 		if n.Width != 0 || n.Height != 0 || n.X != 0 || n.Y != 0 {
 			t.Errorf("node %q has bounds %+v, want none (no DMNDI)", n.Name, n)
 		}
+	}
+}
+
+// TestGraphDataContract checks the resolved data contract on nodes: a decision's
+// output type (from its literal expression here) and variable name, and an
+// input's type resolved from the decision-table input clause.
+func TestGraphDataContract(t *testing.T) {
+	byName := func(g dmn.Graph) map[string]dmn.GraphNode {
+		m := map[string]dmn.GraphNode{}
+		for _, n := range g.Nodes {
+			m[n.Name] = n
+		}
+		return m
+	}
+
+	pricing := byName(compileModel(t, "pricing_15.dmn").Graph())
+	if n := pricing["Net Total"]; n.DataType != "number" || n.VarName != "Net Total" {
+		t.Errorf("Net Total = {type:%q var:%q}, want {number, Net Total}", n.DataType, n.VarName)
+	}
+
+	// loan: "Credit Score" has no inputData typeRef; its number type is declared
+	// only on the decision-table input clause and must still resolve.
+	loan := byName(compileModel(t, "loan_15.dmn").Graph())
+	if n := loan["Credit Score"]; n.DataType != "number" {
+		t.Errorf("Credit Score type = %q, want number (resolved from table clause)", n.DataType)
 	}
 }
 
