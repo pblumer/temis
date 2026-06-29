@@ -76,6 +76,8 @@ func (s Severity) String() string
 
 func ApplyEdits(src []byte, edits []NodeEdit) ([]byte, error)
 
+func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
+
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
 
 func New(opts ...Option) *Engine
@@ -133,6 +135,17 @@ type GraphEdge struct {
 	Target	string	`json:"target"`
 }
 
+type GraphEdgeEdit struct {
+	Type	string	`json:"type"`
+	Source	string	`json:"source"`
+	Target	string	`json:"target"`
+}
+
+type GraphEdit struct {
+	Nodes	[]GraphNodeEdit	`json:"nodes"`
+	Edges	[]GraphEdgeEdit	`json:"edges"`
+}
+
 type GraphNode struct {
 	ID	string	`json:"id"`
 	Type	string	`json:"type"`
@@ -147,6 +160,17 @@ type GraphNode struct {
 	Y		float64	`json:"y,omitempty"`
 	Width		float64	`json:"width,omitempty"`
 	Height		float64	`json:"height,omitempty"`
+}
+
+type GraphNodeEdit struct {
+	ID		string	`json:"id"`
+	Type		string	`json:"type"`
+	Name		string	`json:"name"`
+	DataType	string	`json:"dataType,omitempty"`
+	X		float64	`json:"x"`
+	Y		float64	`json:"y"`
+	Width		float64	`json:"width"`
+	Height		float64	`json:"height"`
 }
 
 type Input map[string]any

@@ -85,6 +85,25 @@ export async function saveModel(modelId: string, nodes: NodeEdit[]): Promise<str
   return body.modelId
 }
 
+// GraphEdit is the desired full graph for a structural save: every node and edge
+// currently on the canvas (not a delta — the server reconciles to this set).
+export type GraphNodeEdit = { id: string; type: string; name?: string; dataType?: string; x: number; y: number; width: number; height: number }
+export type GraphEdgeEdit = { type: string; source: string; target: string }
+export type GraphEdit = { nodes: GraphNodeEdit[]; edges: GraphEdgeEdit[] }
+
+// saveGraph persists the modeler's structural edits (added/removed/moved/renamed
+// nodes and edges) by reconciling the model to the given graph (POST), recompiles
+// it and returns the saved model's detail with its new id.
+export async function saveGraph(modelId: string, edit: GraphEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/graph', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
 // EvalResult mirrors the service evaluateResponse: the root decision's outputs
 // plus every evaluated decision's result, and any diagnostics.
 export type EvalResult = {

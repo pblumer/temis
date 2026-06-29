@@ -9,7 +9,8 @@ import type Canvas from 'diagram-js/lib/core/Canvas'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type CommandStack from 'diagram-js/lib/command/CommandStack'
-import type { Shape } from 'diagram-js/lib/model/Types'
+import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
+import type { Shape, Connection } from 'diagram-js/lib/model/Types'
 import 'diagram-js/assets/diagram-js.css'
 import { dmnRendererModule } from './dmn-renderer'
 import { dmnRulesModule } from './dmn-rules'
@@ -22,8 +23,8 @@ import type { Laid } from './layout'
 export type Selected = { id: string; dataType?: string } | null
 
 // NodeState is the current persistable state of one diagram node, read back from
-// the live shapes for Edit→Save (ADR-0016): id and type plus the editable
-// name/type/position. x/y are the shape's top-left, matching DMNDI bounds.
+// the live shapes for the structural save (ADR-0016): id and type plus the
+// editable name/type and the bounds. x/y are the shape's top-left (DMNDI bounds).
 export type NodeState = {
   id: string
   type: string
@@ -31,7 +32,17 @@ export type NodeState = {
   dataType?: string
   x: number
   y: number
+  width: number
+  height: number
 }
+
+// EdgeState is one requirement edge, directed from the required (source) to the
+// requiring (target) element — the DMN arrow direction.
+export type EdgeState = { type: string; source: string; target: string }
+
+// GraphState is the live decision requirements graph read off the canvas, the
+// payload for a structural save (persists added/removed nodes and edges).
+export type GraphState = { nodes: NodeState[]; edges: EdgeState[] }
 
 // Handle to the live diagram: nodes are selectable and draggable, every change
 // goes through the command stack, so undo/redo work (ADR-0016, WP-63/65).
@@ -45,8 +56,9 @@ export type ModelerHandle = {
   onSelect: (cb: (sel: Selected) => void) => void
   // setSelectedType sets the selected InputData's FEEL type (undoable); "" clears it.
   setSelectedType: (dataType: string) => void
-  // nodes returns the current state of every node, for persisting edits.
-  nodes: () => NodeState[]
+  // graph returns the live decision requirements graph (nodes + edges) for a
+  // structural save — reflecting nodes/edges added or removed on the canvas.
+  graph: () => GraphState
   // onOpenTable fires with a decision's id when the user double-clicks a decision
   // whose logic is a decision table (to open its table view).
   onOpenTable: (cb: (decisionId: string) => void) => void
@@ -68,6 +80,11 @@ class UpdateTypeHandler {
 type SelectionService = { get: () => Shape[] }
 const isInputData = (el: Shape | undefined): boolean => !!el && el.type === 'dmn:inputData'
 
+// The element types that are DRG nodes vs requirement edges, for reading the
+// live graph back off the canvas.
+const NODE_TYPES = new Set(['dmn:inputData', 'dmn:decision', 'dmn:businessKnowledgeModel'])
+const EDGE_TYPES = new Set(['dmn:informationRequirement', 'dmn:knowledgeRequirement'])
+
 // Build an editable DMN diagram into the container with temis' own renderers on
 // the diagram-js MIT core — no dmn-js. A fresh diagram is built per call (the
 // container is cleared first), so switching models starts a clean undo history.
@@ -85,6 +102,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const factory = diagram.get<ElementFactory>('elementFactory')
   const commandStack = diagram.get<CommandStack>('commandStack')
   const eventBus = diagram.get<EventBus>('eventBus')
+  const elementRegistry = diagram.get<ElementRegistry>('elementRegistry')
   const selection = diagram.get<SelectionService>('selection')
   commandStack.registerHandler('element.updateType', UpdateTypeHandler)
 
@@ -144,10 +162,21 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       const one = sel.length === 1 ? sel[0] : undefined
       if (isInputData(one)) commandStack.execute('element.updateType', { element: one, dataType })
     },
-    nodes: () => Object.values(byId).map((s) => {
-      const shape = s as Shape & { name?: string; dataType?: string }
-      return { id: shape.id, type: shape.type.replace(/^dmn:/, ''), name: shape.name, dataType: shape.dataType, x: shape.x, y: shape.y }
-    }),
+    graph: () => {
+      const nodes: NodeState[] = []
+      const edges: EdgeState[] = []
+      for (const el of elementRegistry.getAll()) {
+        const type = (el as { type?: string }).type ?? ''
+        if (NODE_TYPES.has(type)) {
+          const s = el as Shape & { name?: string; dataType?: string }
+          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name, dataType: s.dataType, x: s.x ?? 0, y: s.y ?? 0, width: s.width ?? 0, height: s.height ?? 0 })
+        } else if (EDGE_TYPES.has(type)) {
+          const c = el as Connection
+          if (c.source && c.target) edges.push({ type: type.replace(/^dmn:/, ''), source: c.source.id, target: c.target.id })
+        }
+      }
+      return { nodes, edges }
+    },
     onOpenTable: (cb) => {
       openTableCb = cb
     },
