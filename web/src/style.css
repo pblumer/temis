@@ -26,9 +26,34 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .hint { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; margin-top: 20px; }
 .probe { color: var(--accent); font-weight: 600; }
 .canvas {
-  height: 380px;
+  height: 440px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: 10px;
+  background-color: #fcfdff;
+  background-image: radial-gradient(#e3e8f0 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
   overflow: hidden;
 }
+/* Subtle depth for DMN shapes (light-DOM SVG from diagram-js). */
+.canvas .djs-shape {
+  filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.10));
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  font-size: 13px;
+}
+.toolbar label { color: var(--muted); font-weight: 600; }
+.toolbar select {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.toolbar .status { color: var(--muted); }
+code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }

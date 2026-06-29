@@ -109,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
 	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
+	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
@@ -275,6 +276,18 @@ func (s *Server) handleGetModelXML(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(sm.xml)
+}
+
+// handleGetModelGraph returns a cached model's decision requirements graph
+// (nodes + requirement edges), so the own modeler frontend can draw it without
+// parsing DMN XML in the browser (ADR-0016).
+func (s *Server) handleGetModelGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, sm.defs.Graph())
 }
 
 // handleEvaluateModel evaluates a decision of a cached model.

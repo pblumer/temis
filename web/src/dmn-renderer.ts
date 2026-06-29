@@ -13,7 +13,16 @@ type Point = { x: number; y: number }
 // layout follow in the full WP-65 / WP-62-JS.
 
 const HIGH_PRIORITY = 1500
-const STROKE = '#1f2430'
+
+// A small, cohesive DMN palette — dark consistent borders, lightly tinted fills
+// per element kind, one muted accent for edges. Tuned for a clean, intentional
+// look rather than wireframe boxes.
+const STROKE = '#2b313c'
+const EDGE = '#5b6675'
+const FILL_DECISION = '#ffffff'
+const FILL_INPUT = '#eef3ff'
+const FILL_BKM = '#edfaf1'
+const TEXT = '#1f2632'
 
 type Named = { name?: string }
 
@@ -21,7 +30,8 @@ function text(parent: SVGElement, content: string, w: number, h: number): void {
   const t = create('text')
   attr(t, {
     x: w / 2, y: h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-    'font-family': 'system-ui, sans-serif', 'font-size': '13', fill: STROKE,
+    'font-family': 'system-ui, -apple-system, sans-serif', 'font-size': '13',
+    'font-weight': '500', fill: TEXT,
   })
   t.textContent = content
   append(parent, t)
@@ -29,11 +39,11 @@ function text(parent: SVGElement, content: string, w: number, h: number): void {
 
 function arrowHead(from: Point, to: Point): SVGElement {
   const a = Math.atan2(to.y - from.y, to.x - from.x)
-  const s = 10
-  const spread = 0.42
+  const s = 9
+  const spread = 0.4
   const p = (off: number) => `${to.x - s * Math.cos(a - off)},${to.y - s * Math.sin(a - off)}`
   const head = create('polygon')
-  attr(head, { points: `${to.x},${to.y} ${p(spread)} ${p(-spread)}`, fill: STROKE, stroke: STROKE })
+  attr(head, { points: `${to.x},${to.y} ${p(spread)} ${p(-spread)}`, fill: EDGE, stroke: EDGE })
   return head
 }
 
@@ -55,15 +65,15 @@ export default class DmnRenderer extends BaseRenderer {
 
     if (shape.type === 'dmn:inputData') {
       visual = create('rect')
-      attr(visual, { x: 0, y: 0, width: w, height: h, rx: h / 2, ry: h / 2, stroke: STROKE, 'stroke-width': 2, fill: '#eef4ff' })
+      attr(visual, { x: 0, y: 0, width: w, height: h, rx: h / 2, ry: h / 2, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_INPUT })
     } else if (shape.type === 'dmn:businessKnowledgeModel') {
       const c = 14
       visual = create('path')
-      attr(visual, { d: `M${c},0 L${w},0 L${w},${h - c} L${w - c},${h} L0,${h} L0,${c} Z`, stroke: STROKE, 'stroke-width': 2, fill: '#eafaf0' })
+      attr(visual, { d: `M${c},0 L${w},0 L${w},${h - c} L${w - c},${h} L0,${h} L0,${c} Z`, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_BKM })
     } else {
-      // dmn:decision (default)
+      // dmn:decision (default) — sharp DMN rectangle, just softened corners
       visual = create('rect')
-      attr(visual, { x: 0, y: 0, width: w, height: h, stroke: STROKE, 'stroke-width': 2, fill: '#ffffff' })
+      attr(visual, { x: 0, y: 0, width: w, height: h, rx: 3, ry: 3, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_DECISION })
     }
 
     append(parent, visual)
@@ -77,7 +87,7 @@ export default class DmnRenderer extends BaseRenderer {
     const dashed = connection.type !== 'dmn:informationRequirement'
     attr(line, {
       points: wps.map((p) => `${p.x},${p.y}`).join(' '),
-      stroke: STROKE, 'stroke-width': 1.5, fill: 'none',
+      stroke: EDGE, 'stroke-width': 1.5, fill: 'none',
       ...(dashed ? { 'stroke-dasharray': '6 4' } : {}),
     })
     append(parent, line)
