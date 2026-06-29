@@ -1,7 +1,12 @@
 # ADR-0006: dmn-js als Editor/Viewer, Standard-DMN-XML als Schnittstelle
 
-- **Status:** accepted
+- **Status:** superseded by ADR-0016
 - **Datum:** 2026-06-11
+
+> **Überholt durch ADR-0016:** Statt dmn-js unverändert einzubetten, baut temis einen eigenen
+> DMN-Modeler auf einem Fork des MIT-Kerns (diagram-js/table-js/dmn-moddle) — u. a. für
+> 1.5-Authoring und ohne bpmn.io-Logo-Pflicht. Der Integrationsvertrag *Standard-DMN-XML*
+> bleibt gültig.
 
 ## Kontext
 Frontend/Editor ist dmn-js (bpmn.io). Es liest/schreibt Standard-DMN-XML inkl. DMNDI.

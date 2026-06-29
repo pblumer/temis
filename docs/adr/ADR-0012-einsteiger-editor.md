@@ -1,8 +1,13 @@
 # ADR-0012: F-01 wird zum Einsteiger-Editor (separates Frontend, dmn-js unverändert)
 
-- **Status:** accepted
+- **Status:** superseded by ADR-0016
 - **Datum:** 2026-06-29
 - **Kontext-WP:** F-01
+
+> **Überholt durch ADR-0016:** Die hier gewählte Integration „dmn-js per CDN unverändert in
+> `/ui`" wird abgelöst durch einen eigenen, eingebetteten DMN-Modeler (Fork des MIT-Kerns,
+> 1.5-fähig, ohne Logo-Pflicht). Das Argument gegen einen **dmn-js**-Fork bleibt korrekt —
+> ADR-0016 forkt bewusst nicht dmn-js, sondern dessen MIT-Unterbau.
 
 ## Kontext
 ADR-0006 legt fest: dmn-js ist Editor/Viewer, Schnittstelle ist Standard-DMN-XML, im
