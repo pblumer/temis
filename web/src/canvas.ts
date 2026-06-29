@@ -1,20 +1,44 @@
 import Diagram from 'diagram-js'
+import MoveModule from 'diagram-js/lib/features/move'
+import ModelingModule from 'diagram-js/lib/features/modeling'
+import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
+import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
+import type EventBus from 'diagram-js/lib/core/EventBus'
+import type CommandStack from 'diagram-js/lib/command/CommandStack'
 import type { Shape } from 'diagram-js/lib/model/Types'
 import 'diagram-js/assets/diagram-js.css'
 import { dmnRendererModule } from './dmn-renderer'
+import { dmnRulesModule } from './dmn-rules'
 import type { Laid } from './layout'
 
-// Render a laid-out DRG into the container with temis' own DMN renderers on the
-// diagram-js MIT core (ADR-0016) — no dmn-js. A fresh diagram is built per call
-// (the viewer has no modeling/undo module yet), so the container is cleared
-// first; editing interactions land in the full WP-65.
-export function renderGraph(container: HTMLElement, laid: Laid): void {
+// Handle to the live diagram: nodes are selectable and draggable, every change
+// goes through the command stack, so undo/redo work (ADR-0016, WP-63/65).
+export type ModelerHandle = {
+  undo: () => void
+  redo: () => void
+  canUndo: () => boolean
+  canRedo: () => boolean
+  onChange: (cb: () => void) => void
+}
+
+// Build an editable DMN diagram into the container with temis' own renderers on
+// the diagram-js MIT core — no dmn-js. A fresh diagram is built per call (the
+// container is cleared first), so switching models starts a clean undo history.
+export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   container.innerHTML = ''
-  const diagram = new Diagram({ canvas: { container }, modules: [dmnRendererModule] })
+  const diagram = new Diagram({
+    canvas: { container },
+    modules: [
+      dmnRendererModule, dmnRulesModule,
+      ModelingModule, MoveModule, MoveCanvasModule, ZoomScrollModule,
+    ],
+  })
   const canvas = diagram.get<Canvas>('canvas')
   const factory = diagram.get<ElementFactory>('elementFactory')
+  const commandStack = diagram.get<CommandStack>('commandStack')
+  const eventBus = diagram.get<EventBus>('eventBus')
 
   const byId: Record<string, Shape> = {}
   for (const n of laid.nodes) {
@@ -31,4 +55,19 @@ export function renderGraph(container: HTMLElement, laid: Laid): void {
   }
 
   canvas.zoom('fit-viewport')
+
+  // The shapes added above must not be undoable — only user edits are. The
+  // command stack is empty here because addShape/addConnection bypass it.
+  let changeCb = (): void => {}
+  eventBus.on('commandStack.changed', () => changeCb())
+
+  return {
+    undo: () => commandStack.undo(),
+    redo: () => commandStack.redo(),
+    canUndo: () => commandStack.canUndo(),
+    canRedo: () => commandStack.canRedo(),
+    onChange: (cb) => {
+      changeCb = cb
+    },
+  }
 }

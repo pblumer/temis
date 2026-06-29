@@ -55,5 +55,17 @@ h1 { font-size: 24px; margin: 0 0 4px; }
   background: #fff;
   color: var(--fg);
 }
-.toolbar .status { color: var(--muted); }
+.toolbar .tbtn {
+  font: 15px/1 system-ui, sans-serif;
+  min-width: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+}
+.toolbar .tbtn:disabled { color: #c2c9d4; cursor: default; }
+.toolbar .tbtn:not(:disabled):hover { background: #f1f4f9; }
+.toolbar .status { color: var(--muted); margin-left: 4px; }
 code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }

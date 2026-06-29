@@ -1,7 +1,7 @@
 import { APP_NAME } from './build-info'
 import { listModels, getGraph, type ModelSummary } from './api'
 import { layout } from './layout'
-import { renderGraph } from './canvas'
+import { renderGraph, type ModelerHandle } from './canvas'
 import './style.css'
 
 // WP-65: the modeler now loads a REAL model from temis and draws its decision
@@ -16,21 +16,44 @@ async function boot(root: HTMLElement): Promise<void> {
       <div class="toolbar">
         <label for="model">Modell</label>
         <select id="model"></select>
+        <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
+        <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
         <span id="status" class="status"></span>
       </div>
       <div id="canvas" class="canvas"></div>
       <p class="hint">
-        WP-65: Die DRG wird über <code>/v1/models/{id}/graph</code> aus der Engine
-        geladen und mit eigenen Renderern gezeichnet — mit dem <strong>authored
-        DMNDI-Layout</strong>, wo vorhanden (sonst Auto-Layout). Selektion/Move/Connect
-        und Modellier-Interaktionen folgen.
+        WP-65: Die DRG kommt über <code>/v1/models/{id}/graph</code> aus der Engine
+        (authored DMNDI-Layout, wo vorhanden, sonst Auto-Layout). <strong>Knoten sind
+        anklickbar und verschiebbar</strong>; jede Änderung läuft über den Command-Stack,
+        also Undo/Redo (Buttons oder Strg/Cmd+Z). Connect/Rules/Palette folgen.
       </p>
     </main>`
 
   const select = root.querySelector<HTMLSelectElement>('#model')
   const canvas = root.querySelector<HTMLElement>('#canvas')
   const status = root.querySelector<HTMLElement>('#status')
-  if (!select || !canvas || !status) return
+  const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
+  const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
+  if (!select || !canvas || !status || !undoBtn || !redoBtn) return
+
+  let handle: ModelerHandle | null = null
+  const syncButtons = (): void => {
+    undoBtn.disabled = !handle?.canUndo()
+    redoBtn.disabled = !handle?.canRedo()
+  }
+  undoBtn.addEventListener('click', () => handle?.undo())
+  redoBtn.addEventListener('click', () => handle?.redo())
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return
+    const k = e.key.toLowerCase()
+    if (k === 'z' && !e.shiftKey) {
+      e.preventDefault()
+      handle?.undo()
+    } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+      e.preventDefault()
+      handle?.redo()
+    }
+  })
 
   let models: ModelSummary[] = []
   try {
@@ -53,7 +76,9 @@ async function boot(root: HTMLElement): Promise<void> {
     status.textContent = 'lädt …'
     try {
       const graph = await getGraph(model.modelId)
-      renderGraph(canvas, layout(graph))
+      handle = renderGraph(canvas, layout(graph))
+      handle.onChange(syncButtons)
+      syncButtons()
       status.textContent = `${graph.nodes.length} Knoten · ${graph.edges.length} Kanten`
     } catch (e) {
       status.textContent = (e as Error).message
