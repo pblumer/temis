@@ -121,6 +121,7 @@ const playgroundPage = `<!DOCTYPE html>
     <section class="panel">
       <h2>1 · Modell</h2>
       <div class="row">
+        <button id="newFile" class="secondary">Neu</button>
         <input type="file" id="file" accept=".dmn,.xml,application/xml,text/xml" class="grow">
         <span id="modeBadge" class="badge read">schreibgeschützt</span>
         <button id="modeToggle" class="secondary" disabled>Bearbeiten</button>
@@ -180,6 +181,22 @@ const playgroundPage = `<!DOCTYPE html>
 
   <script>
     var CDN = 'https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/';
+    // Minimal blank DMN 1.3 model (one decision with an empty decision table)
+    // used by the "Neu" button to start from scratch. Kept on one line so the
+    // surrounding Go raw string needs no escaping.
+    var BLANK_DMN = '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" ' +
+      'xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" ' +
+      'xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/" ' +
+      'id="definitions_new" name="neues_Modell" namespace="http://temis/new">' +
+      '<decision id="Decision_1" name="Entscheidung_1">' +
+      '<decisionTable id="DecisionTable_1" hitPolicy="UNIQUE">' +
+      '<output id="Output_1" label="Ausgabe" name="Ausgabe" typeRef="string"/>' +
+      '</decisionTable></decision>' +
+      '<dmndi:DMNDI><dmndi:DMNDiagram id="DMNDiagram_1">' +
+      '<dmndi:DMNShape id="DMNShape_Decision_1" dmnElementRef="Decision_1">' +
+      '<dc:Bounds height="80" width="180" x="160" y="100"/>' +
+      '</dmndi:DMNShape></dmndi:DMNDiagram></dmndi:DMNDI></definitions>';
     var DmnViewer = null, DmnModeler = null; // captured from window.DmnJS per bundle
     var dmn = null;                           // current dmn-js instance
     var mode = 'read';                        // 'read' | 'write'
@@ -269,14 +286,43 @@ const playgroundPage = `<!DOCTYPE html>
       return Promise.resolve(lastXML || '');
     }
 
+    // A freshly loaded model invalidates any previous deploy/evaluation: drop the
+    // model id and clear the evaluation panel so stale decisions/results vanish.
+    function resetDeployState() {
+      modelId = null;
+      var sel = $('decision');
+      sel.innerHTML = '<option value="">— erst deployen —</option>';
+      $('eval').disabled = true;
+      $('evalStateless').disabled = true;
+      $('evalHint').style.display = 'block';
+      $('inputTable').querySelector('tbody').innerHTML = '';
+      $('inputPills').innerHTML = '';
+      $('indexBox').style.display = 'none';
+      $('resultBox').style.display = 'none';
+      $('evalStatus').textContent = '';
+    }
+
     function loadFromText(text) {
       if (!DmnViewer) { setStatus($('loadStatus'), 'dmn-js lädt noch …', 'err'); return; }
       renderDiagram(text, 'read').then(function () {
+        resetDeployState();
         setStatus($('loadStatus'), 'Geladen (schreibgeschützt). Zum Ändern „Bearbeiten".', 'ok');
       }).catch(function (e) {
         setStatus($('loadStatus'), 'Kein gültiges DMN: ' + (e.message || e), 'err');
       });
     }
+
+    $('newFile').addEventListener('click', function () {
+      if (!DmnModeler) { setStatus($('loadStatus'), 'dmn-js lädt noch …', 'err'); return; }
+      $('file').value = '';
+      $('xml').value = '';
+      renderDiagram(BLANK_DMN, 'write').then(function () {
+        resetDeployState();
+        setStatus($('loadStatus'), 'Neues, leeres Modell — bearbeiten und dann deployen.', 'ok');
+      }).catch(function (e) {
+        setStatus($('loadStatus'), 'Fehler: ' + (e.message || e), 'err');
+      });
+    });
 
     $('file').addEventListener('change', function (ev) {
       var f = ev.target.files[0];
@@ -400,7 +446,12 @@ const playgroundPage = `<!DOCTYPE html>
           body: JSON.stringify(payload)
         });
       }).then(asJson).then(function (r) {
-        if (!r.resp.ok) { setStatus($('evalStatus'), errorText(r.resp, r.body), 'err'); return; }
+        if (!r.resp.ok) {
+          // Hide any prior result so a stale success isn't shown next to the error.
+          $('resultBox').style.display = 'none';
+          setStatus($('evalStatus'), errorText(r.resp, r.body), 'err');
+          return;
+        }
         renderResult(r.body);
         setStatus($('evalStatus'), 'OK', 'ok');
       }).catch(function (e) { setStatus($('evalStatus'), 'Fehler: ' + (e.message || e), 'err'); });
