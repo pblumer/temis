@@ -47,6 +47,14 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		HasDMNDI:   def.DMNDI != nil,
 	}
 
+	if di := dmnxml.ParseDI(def.DMNDI); di != nil {
+		shapes := make(map[string]Bounds, len(di.Shapes))
+		for _, s := range di.Shapes {
+			shapes[s.Ref] = Bounds{X: s.X, Y: s.Y, Width: s.Width, Height: s.Height}
+		}
+		m.Diagram = &Diagram{Shapes: shapes}
+	}
+
 	for _, it := range def.ItemDefs {
 		m.ItemDefinitions = append(m.ItemDefinitions, mapItemDef(it))
 	}
@@ -94,6 +102,7 @@ func mapDecision(d dmnxml.Decision) (*Decision, []Diagnostic) {
 	dec := &Decision{
 		ID:              d.ID,
 		Name:            d.Name,
+		VariableName:    variableName(d.Variable),
 		VariableTypeRef: variableTypeRef(d.Variable),
 	}
 
@@ -418,6 +427,15 @@ func variableTypeRef(v *dmnxml.Variable) string {
 		return ""
 	}
 	return strings.TrimSpace(v.TypeRef)
+}
+
+// variableName returns the decision/BKM output variable's name (how downstream
+// expressions reference its result), or "" when no <variable> is declared.
+func variableName(v *dmnxml.Variable) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(v.Name)
 }
 
 func textValue(t *dmnxml.Text) string {

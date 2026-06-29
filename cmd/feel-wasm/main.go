@@ -71,8 +71,37 @@ func validateUnary(_ js.Value, args []js.Value) any {
 	return diag(err)
 }
 
+// nameOracle is a NameSet that knows exactly one name, so the parser can
+// assemble it (including multi-word names and names containing FEEL keywords).
+type nameOracle string
+
+func (o nameOracle) Has(name string) bool { return name == string(o) }
+
+// validateName checks whether a string is a valid, unambiguous FEEL variable
+// name — i.e. the engine, told this name exists, parses the string back to
+// exactly that single name reference. This permits spaces and keyword-words
+// (e.g. "Profit and Loss") while rejecting FEEL operator characters (e.g.
+// "test-rule" parses as test − rule, not a name). It is the engine's own rule,
+// not a regex.
+func validateName(_ js.Value, args []js.Value) any {
+	name := strings.TrimSpace(args[0].String())
+	if name == "" {
+		return map[string]any{"ok": false, "message": "Name darf nicht leer sein"}
+	}
+	expr, err := feel.ParseWithNames(name, nameOracle(name))
+	if err != nil {
+		return map[string]any{"ok": false, "message": "kein gültiger FEEL-Name"}
+	}
+	ref, ok := expr.(*feel.NameRef)
+	if !ok || ref.Name != name {
+		return map[string]any{"ok": false, "message": "kein eindeutiger FEEL-Name — Sonderzeichen wie - / . + * sind nicht erlaubt"}
+	}
+	return map[string]any{"ok": true}
+}
+
 func main() {
 	js.Global().Set("temisFeelValidate", js.FuncOf(validateOutput))
 	js.Global().Set("temisFeelValidateUnary", js.FuncOf(validateUnary))
+	js.Global().Set("temisFeelValidateName", js.FuncOf(validateName))
 	select {} // keep the Go runtime alive so the exported funcs stay callable
 }

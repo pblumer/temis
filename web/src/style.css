@@ -26,9 +26,83 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .hint { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; margin-top: 20px; }
 .probe { color: var(--accent); font-weight: 600; }
 .canvas {
-  height: 380px;
+  height: 440px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: 10px;
+  background-color: #fcfdff;
+  background-image: radial-gradient(#e3e8f0 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
   overflow: hidden;
 }
+/* Subtle depth for DMN shapes (light-DOM SVG from diagram-js). */
+.canvas .djs-shape {
+  filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.10));
+}
+/* Inline rename box (diagram-js-direct-editing ships no CSS). */
+.canvas .djs-direct-editing-parent {
+  box-sizing: border-box;
+}
+.canvas .djs-direct-editing-content {
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 4px 6px;
+  outline: none;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.12);
+}
+/* Inline rename: flag a name the FEEL engine would not accept. */
+.canvas .djs-direct-editing-content.name-invalid {
+  border-color: #e5484d;
+  background: #fff4f4;
+}
+/* Context pad (popup actions right of a selected element) — dmn-js-like feel. */
+.canvas .djs-context-pad .entry {
+  width: 24px;
+  height: 24px;
+  margin: 2px;
+  border-radius: 5px;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px;
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.10);
+  cursor: pointer;
+}
+.canvas .djs-context-pad .entry:hover {
+  background-color: #eef2f9;
+  border-color: #c6cfdd;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  font-size: 13px;
+}
+.toolbar label { color: var(--muted); font-weight: 600; }
+.toolbar select {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+}
+.toolbar .tbtn {
+  font: 15px/1 system-ui, sans-serif;
+  min-width: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+}
+.toolbar .tbtn:disabled { color: #c2c9d4; cursor: default; }
+.toolbar .tbtn:not(:disabled):hover { background: #f1f4f9; }
+.toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar .status { color: var(--muted); margin-left: 4px; }
+code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }

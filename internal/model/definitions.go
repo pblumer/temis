@@ -52,4 +52,8 @@ type Definitions struct {
 	BKMs            []*BKM             `json:",omitempty"`
 	Decisions       []*Decision        `json:",omitempty"`
 	Services        []*DecisionService `json:",omitempty"`
+
+	// Diagram carries the DMNDI element bounds when the model has a diagram, for
+	// tooling that draws the DRG with the authored layout. Nil when absent.
+	Diagram *Diagram `json:",omitempty"`
 }

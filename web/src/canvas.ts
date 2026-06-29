@@ -1,36 +1,140 @@
 import Diagram from 'diagram-js'
+import MoveModule from 'diagram-js/lib/features/move'
+import ModelingModule from 'diagram-js/lib/features/modeling'
+import ContextPadModule from 'diagram-js/lib/features/context-pad'
+import ConnectModule from 'diagram-js/lib/features/connect'
+import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
+import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
+import type EventBus from 'diagram-js/lib/core/EventBus'
+import type CommandStack from 'diagram-js/lib/command/CommandStack'
+import type { Shape } from 'diagram-js/lib/model/Types'
 import 'diagram-js/assets/diagram-js.css'
+import { dmnRendererModule } from './dmn-renderer'
+import { dmnRulesModule } from './dmn-rules'
+import { dmnContextPadModule } from './dmn-context-pad'
+import { dmnLabelEditingModule } from './dmn-label-editing'
+import type { Laid } from './layout'
 
-// WP-61 proof: render a canvas with the forked MIT core (diagram-js) alone —
-// no dmn-js, no bpmn.io logo, no CDN (everything is bundled + embedded). This
-// draws a throwaway placeholder graph (a decision fed by an input) just to prove
-// the canvas, element factory and default renderer work end-to-end. Real DMN
-// shapes (Decision/InputData/BKM/KnowledgeSource + requirement edges) and the
-// modeling interactions land on top of this core in WP-65.
-export function mountCanvas(container: HTMLElement): void {
-  const diagram = new Diagram({ canvas: { container } })
+// What the toolbar needs to know about the current selection to offer the type
+// editor: the selected InputData's id and current type, or null otherwise.
+export type Selected = { id: string; dataType?: string } | null
+
+// NodeState is the current persistable state of one diagram node, read back from
+// the live shapes for Edit→Save (ADR-0016): id and type plus the editable
+// name/type/position. x/y are the shape's top-left, matching DMNDI bounds.
+export type NodeState = {
+  id: string
+  type: string
+  name?: string
+  dataType?: string
+  x: number
+  y: number
+}
+
+// Handle to the live diagram: nodes are selectable and draggable, every change
+// goes through the command stack, so undo/redo work (ADR-0016, WP-63/65).
+export type ModelerHandle = {
+  undo: () => void
+  redo: () => void
+  canUndo: () => boolean
+  canRedo: () => boolean
+  onChange: (cb: () => void) => void
+  // onSelect reports the selected InputData (for the type editor) or null.
+  onSelect: (cb: (sel: Selected) => void) => void
+  // setSelectedType sets the selected InputData's FEEL type (undoable); "" clears it.
+  setSelectedType: (dataType: string) => void
+  // nodes returns the current state of every node, for persisting edits.
+  nodes: () => NodeState[]
+}
+
+// Undoable type change on an InputData; redraws the pill via the returned element.
+class UpdateTypeHandler {
+  execute(ctx: { element: Shape & { dataType?: string }; dataType: string; old?: string }): Shape[] {
+    ctx.old = ctx.element.dataType
+    ctx.element.dataType = ctx.dataType || undefined
+    return [ctx.element]
+  }
+  revert(ctx: { element: Shape & { dataType?: string }; old?: string }): Shape[] {
+    ctx.element.dataType = ctx.old
+    return [ctx.element]
+  }
+}
+
+type SelectionService = { get: () => Shape[] }
+const isInputData = (el: Shape | undefined): boolean => !!el && el.type === 'dmn:inputData'
+
+// Build an editable DMN diagram into the container with temis' own renderers on
+// the diagram-js MIT core — no dmn-js. A fresh diagram is built per call (the
+// container is cleared first), so switching models starts a clean undo history.
+export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
+  container.innerHTML = ''
+  const diagram = new Diagram({
+    canvas: { container },
+    modules: [
+      dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
+      ModelingModule, MoveModule, ContextPadModule, ConnectModule,
+      MoveCanvasModule, ZoomScrollModule,
+    ],
+  })
   const canvas = diagram.get<Canvas>('canvas')
-  const elementFactory = diagram.get<ElementFactory>('elementFactory')
+  const factory = diagram.get<ElementFactory>('elementFactory')
+  const commandStack = diagram.get<CommandStack>('commandStack')
+  const eventBus = diagram.get<EventBus>('eventBus')
+  const selection = diagram.get<SelectionService>('selection')
+  commandStack.registerHandler('element.updateType', UpdateTypeHandler)
 
-  const decision = elementFactory.createShape({ id: 'decision', x: 210, y: 80, width: 150, height: 70 })
-  canvas.addShape(decision)
-
-  const input = elementFactory.createShape({ id: 'input', x: 235, y: 250, width: 100, height: 50 })
-  canvas.addShape(input)
-
-  canvas.addConnection(
-    elementFactory.createConnection({
-      id: 'requirement',
-      source: input,
-      target: decision,
-      waypoints: [
-        { x: 285, y: 250 },
-        { x: 285, y: 150 },
-      ],
-    }),
-  )
+  const byId: Record<string, Shape> = {}
+  for (const n of laid.nodes) {
+    // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
+    // the "dmn:" vocabulary. name/type are carried on the element for it to read.
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName } as never)
+    canvas.addShape(shape)
+    byId[n.id] = shape
+  }
+  for (const e of laid.edges) {
+    if (!byId[e.source] || !byId[e.target]) continue
+    const conn = factory.createConnection({ id: e.id, type: 'dmn:' + e.type, source: byId[e.source], target: byId[e.target], waypoints: e.waypoints } as never)
+    canvas.addConnection(conn)
+  }
 
   canvas.zoom('fit-viewport')
+
+  // The shapes added above must not be undoable — only user edits are. The
+  // command stack is empty here because addShape/addConnection bypass it.
+  let changeCb = (): void => {}
+  eventBus.on('commandStack.changed', () => changeCb())
+
+  let selectCb = (_sel: Selected): void => {}
+  const reportSelection = (): void => {
+    const sel = selection.get()
+    const one = sel.length === 1 ? sel[0] : undefined
+    selectCb(isInputData(one) ? { id: one!.id, dataType: (one as Shape & { dataType?: string }).dataType } : null)
+  }
+  eventBus.on('selection.changed', reportSelection)
+  // A type change keeps the same element selected; refresh the editor's value.
+  eventBus.on('commandStack.changed', reportSelection)
+
+  return {
+    undo: () => commandStack.undo(),
+    redo: () => commandStack.redo(),
+    canUndo: () => commandStack.canUndo(),
+    canRedo: () => commandStack.canRedo(),
+    onChange: (cb) => {
+      changeCb = cb
+    },
+    onSelect: (cb) => {
+      selectCb = cb
+    },
+    setSelectedType: (dataType) => {
+      const sel = selection.get()
+      const one = sel.length === 1 ? sel[0] : undefined
+      if (isInputData(one)) commandStack.execute('element.updateType', { element: one, dataType })
+    },
+    nodes: () => Object.values(byId).map((s) => {
+      const shape = s as Shape & { name?: string; dataType?: string }
+      return { id: shape.id, type: shape.type.replace(/^dmn:/, ''), name: shape.name, dataType: shape.dataType, x: shape.x, y: shape.y }
+    }),
+  }
 }

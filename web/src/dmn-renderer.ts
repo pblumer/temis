@@ -1,0 +1,147 @@
+import BaseRenderer from 'diagram-js/lib/draw/BaseRenderer'
+import type { Element, Shape, Connection } from 'diagram-js/lib/model/Types'
+import type EventBus from 'diagram-js/lib/core/EventBus'
+import { append, attr, create } from 'tiny-svg'
+
+type Point = { x: number; y: number }
+
+// Custom diagram-js renderers for the DMN DRG vocabulary (ADR-0016, WP-65),
+// drawn directly with tiny-svg — no dmn-js. This is the start of temis owning
+// how DMN elements look: Decision (rectangle), InputData (stadium/oval),
+// BusinessKnowledgeModel (clipped corners), plus requirement edges (information
+// = solid arrow, knowledge/authority = dashed). Real model loading + DMNDI
+// layout follow in the full WP-65 / WP-62-JS.
+
+const HIGH_PRIORITY = 1500
+
+// A small, cohesive DMN palette — dark consistent borders, lightly tinted fills
+// per element kind, one muted accent for edges. Tuned for a clean, intentional
+// look rather than wireframe boxes.
+const STROKE = '#2b313c'
+const EDGE = '#5b6675'
+const FILL_DECISION = '#ffffff'
+const FILL_INPUT = '#eef3ff'
+const FILL_BKM = '#edfaf1'
+const TEXT = '#1f2632'
+
+type Named = { name?: string; dataType?: string; varName?: string }
+const SUBTLE = '#7a8597'
+
+function drawText(parent: SVGElement, content: string, cx: number, cy: number, size: number, color: string, weight: string): void {
+  const t = create('text')
+  attr(t, {
+    x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    'font-family': 'system-ui, -apple-system, sans-serif', 'font-size': String(size),
+    'font-weight': weight, fill: color,
+  })
+  t.textContent = content
+  append(parent, t)
+}
+
+// label draws the element name and, below it, a subtle second line carrying the
+// data contract: the type on an InputData, the output variable (name : type) on
+// a Decision — so it's visible how a decision's result is referenced (ADR-0016).
+function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): void {
+  const name = shape.name ?? shape.id
+  let sub = ''
+  if (shape.type === 'dmn:inputData') {
+    sub = shape.dataType ?? ''
+  } else if (shape.type === 'dmn:decision') {
+    const vn = shape.varName ?? name
+    sub = '▸ ' + vn + (shape.dataType ? ' : ' + shape.dataType : '')
+  } else if (shape.dataType) {
+    sub = shape.dataType
+  }
+  if (sub) {
+    drawText(parent, name, w / 2, h / 2 - 9, 13, TEXT, '500')
+    drawText(parent, sub, w / 2, h / 2 + 10, 10.5, SUBTLE, '400')
+  } else {
+    drawText(parent, name, w / 2, h / 2, 13, TEXT, '500')
+  }
+}
+
+// decisionIcon draws the small type badge in the top-left corner of a decision
+// (the blue "decision logic" indicator, like dmn-js), so a decision reads as a
+// decision at a glance.
+function decisionIcon(parent: SVGElement): void {
+  const badge = create('rect')
+  attr(badge, { x: 8, y: 8, width: 18, height: 18, rx: 3, fill: '#3f74e0' })
+  append(parent, badge)
+  const glyph = create('path')
+  attr(glyph, {
+    d: 'M12 13 H22 M12 17 H22 M12 21 H22 M15 12.5 V21.5',
+    stroke: '#ffffff', 'stroke-width': 1.3, fill: 'none',
+  })
+  append(parent, glyph)
+}
+
+function arrowHead(from: Point, to: Point): SVGElement {
+  const a = Math.atan2(to.y - from.y, to.x - from.x)
+  const s = 9
+  const spread = 0.4
+  const p = (off: number) => `${to.x - s * Math.cos(a - off)},${to.y - s * Math.sin(a - off)}`
+  const head = create('polygon')
+  attr(head, { points: `${to.x},${to.y} ${p(spread)} ${p(-spread)}`, fill: EDGE, stroke: EDGE })
+  return head
+}
+
+export default class DmnRenderer extends BaseRenderer {
+  static $inject = ['eventBus']
+
+  constructor(eventBus: EventBus) {
+    super(eventBus, HIGH_PRIORITY)
+  }
+
+  canRender(element: Element): boolean {
+    return typeof element.type === 'string' && element.type.indexOf('dmn:') === 0
+  }
+
+  drawShape(parent: SVGElement, shape: Shape): SVGElement {
+    const w = shape.width ?? 0
+    const h = shape.height ?? 0
+    let visual: SVGElement
+
+    if (shape.type === 'dmn:inputData') {
+      visual = create('rect')
+      attr(visual, { x: 0, y: 0, width: w, height: h, rx: h / 2, ry: h / 2, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_INPUT })
+    } else if (shape.type === 'dmn:businessKnowledgeModel') {
+      const c = 14
+      visual = create('path')
+      attr(visual, { d: `M${c},0 L${w},0 L${w},${h - c} L${w - c},${h} L0,${h} L0,${c} Z`, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_BKM })
+    } else {
+      // dmn:decision (default) — sharp DMN rectangle, just softened corners
+      visual = create('rect')
+      attr(visual, { x: 0, y: 0, width: w, height: h, rx: 3, ry: 3, stroke: STROKE, 'stroke-width': 1.6, fill: FILL_DECISION })
+    }
+
+    append(parent, visual)
+    if (shape.type === 'dmn:decision' || shape.type === undefined) {
+      decisionIcon(parent)
+    }
+    label(parent, shape as Shape & Named, w, h)
+    return visual
+  }
+
+  drawConnection(parent: SVGElement, connection: Connection): SVGElement {
+    const wps: Point[] = connection.waypoints ?? []
+    const line = create('polyline')
+    const dashed = connection.type !== 'dmn:informationRequirement'
+    attr(line, {
+      points: wps.map((p) => `${p.x},${p.y}`).join(' '),
+      stroke: EDGE, 'stroke-width': 1.5, fill: 'none',
+      ...(dashed ? { 'stroke-dasharray': '6 4' } : {}),
+    })
+    append(parent, line)
+    if (wps.length >= 2) {
+      append(parent, arrowHead(wps[wps.length - 2], wps[wps.length - 1]))
+    }
+    return line
+  }
+}
+
+// didi module: register the renderer at high priority so it wins over the
+// diagram-js DefaultRenderer for every dmn:* element.
+export const dmnRendererModule = {
+  __init__: ['dmnRenderer'],
+  dmnRenderer: ['type', DmnRenderer],
+}

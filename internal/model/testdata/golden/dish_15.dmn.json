@@ -90,5 +90,27 @@
         ]
       }
     }
-  ]
+  ],
+  "Diagram": {
+    "Shapes": {
+      "id_dish": {
+        "X": 280,
+        "Y": 260,
+        "Width": 180,
+        "Height": 80
+      },
+      "id_guests": {
+        "X": 400,
+        "Y": 100,
+        "Width": 180,
+        "Height": 60
+      },
+      "id_season": {
+        "X": 160,
+        "Y": 100,
+        "Width": 180,
+        "Height": 60
+      }
+    }
+  }
 }
