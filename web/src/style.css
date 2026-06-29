@@ -39,6 +39,24 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .canvas .djs-shape {
   filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.10));
 }
+/* Inline rename box (diagram-js-direct-editing ships no CSS). */
+.canvas .djs-direct-editing-parent {
+  box-sizing: border-box;
+}
+.canvas .djs-direct-editing-content {
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 4px 6px;
+  outline: none;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.12);
+}
+/* Inline rename: flag a name the FEEL engine would not accept. */
+.canvas .djs-direct-editing-content.name-invalid {
+  border-color: #e5484d;
+  background: #fff4f4;
+}
 /* Context pad (popup actions right of a selected element) — dmn-js-like feel. */
 .canvas .djs-context-pad .entry {
   width: 24px;

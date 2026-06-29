@@ -14,6 +14,7 @@ import 'diagram-js/assets/diagram-js.css'
 import { dmnRendererModule } from './dmn-renderer'
 import { dmnRulesModule } from './dmn-rules'
 import { dmnContextPadModule } from './dmn-context-pad'
+import { dmnLabelEditingModule } from './dmn-label-editing'
 import type { Laid } from './layout'
 
 // Handle to the live diagram: nodes are selectable and draggable, every change
@@ -34,7 +35,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const diagram = new Diagram({
     canvas: { container },
     modules: [
-      dmnRendererModule, dmnRulesModule, dmnContextPadModule,
+      dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       ModelingModule, MoveModule, ContextPadModule, ConnectModule,
       MoveCanvasModule, ZoomScrollModule,
     ],

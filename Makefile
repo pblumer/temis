@@ -54,8 +54,13 @@ build:
 feel-spike:
 	./web/feel-spike/build.sh
 
+## web-wasm: build the FEEL validator (cmd/feel-wasm) into web/public/ for the modeler
+web-wasm:
+	GOOS=js GOARCH=wasm $(GO) build -o web/public/feel.wasm ./cmd/feel-wasm
+	cp "$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js" web/public/wasm_exec.js
+
 ## web: build the embedded modeler frontend (ADR-0016 WP-60) into web/dist/
-web:
+web: web-wasm
 	cd web && npm ci && npm run build
 
 ## web-check: type-check the frontend without emitting (CI frontend lane)
