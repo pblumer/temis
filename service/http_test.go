@@ -71,6 +71,27 @@ func TestCreateModelAndIndex(t *testing.T) {
 	}
 }
 
+func TestGetModelXML(t *testing.T) {
+	h := newTestServer(t)
+	xml := dishXML(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	rec := do(t, h, "GET", "/v1/models/"+id+"/xml", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET model xml = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/xml") {
+		t.Errorf("xml content-type = %q, want application/xml", ct)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), xml) {
+		t.Errorf("returned xml does not match the uploaded document")
+	}
+
+	if rec := do(t, h, "GET", "/v1/models/sha256:deadbeef/xml", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET unknown model xml = %d, want 404", rec.Code)
+	}
+}
+
 func TestListModels(t *testing.T) {
 	h := newTestServer(t)
 

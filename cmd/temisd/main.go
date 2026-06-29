@@ -22,6 +22,8 @@ func main() {
 		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
 	listModels := flag.Bool("list-models", true,
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private")
+	examples := flag.Bool("examples", true,
+		"preload the bundled example DMN models so they appear in the /ui explorer on start")
 	flag.Parse()
 
 	if *showVersion {
@@ -29,10 +31,14 @@ func main() {
 		return
 	}
 
-	srv := service.NewServer(dmn.New(),
+	opts := []service.Option{
 		service.WithToken(*token),
 		service.WithModelListing(*listModels),
-	)
+	}
+	if *examples {
+		opts = append(opts, service.WithExamples())
+	}
+	srv := service.NewServer(dmn.New(), opts...)
 	if *token != "" {
 		log.Printf("temisd: /v1 endpoints require a bearer token")
 	}
