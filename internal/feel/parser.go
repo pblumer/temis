@@ -364,7 +364,17 @@ func isNameableKeyword(k Kind) bool { return k >= And && k <= External }
 
 func (p *parser) parseName() Expr {
 	start := p.cur()
-	// Collect the maximal contiguous run of nameable fragments.
+	parts := p.takeNameRun()
+	return &NameRef{baseNode: base(start), Name: strings.Join(parts, " "), Parts: parts}
+}
+
+// takeNameRun consumes one (possibly multi-word) name starting at the cursor and
+// returns its fragments, advancing past them. It greedily merges plain Name
+// fragments; when a name oracle is set it also extends across nameable keywords
+// (e.g. the "and" in "days and time duration") while the joined run is a name
+// the oracle knows.
+func (p *parser) takeNameRun() []string {
+	start := p.cur()
 	run := []Token{start}
 	for j := p.pos + 1; j < len(p.toks); j++ {
 		k := p.toks[j].Kind
@@ -394,7 +404,7 @@ func (p *parser) parseName() Expr {
 		parts[i] = run[i].Text
 	}
 	p.pos += take
-	return &NameRef{baseNode: base(start), Name: strings.Join(parts, " "), Parts: parts}
+	return parts
 }
 
 // assembleNameString consumes a greedy run of plain Name fragments and returns
@@ -417,7 +427,7 @@ func (p *parser) parseTypeName() string {
 	if p.cur().Kind != Name {
 		p.fail("expected a type name, got %s", describe(p.cur()))
 	}
-	name := p.assembleNameString()
+	name := strings.Join(p.takeNameRun(), " ")
 	if p.cur().Kind == Lt {
 		name += p.captureGeneric()
 	}

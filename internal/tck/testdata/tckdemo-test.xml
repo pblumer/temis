@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testCases xmlns="http://www.omg.org/spec/DMN/20160719/testcase"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelName>tckdemo.dmn</modelName>
+
+  <testCase id="t1">
+    <inputNode name="Age"><value xsi:type="xsd:decimal">20</value></inputNode>
+    <inputNode name="Member"><value xsi:type="xsd:boolean">true</value></inputNode>
+    <resultNode name="Category" type="decision">
+      <expected><value xsi:type="xsd:string">adult</value></expected>
+    </resultNode>
+    <resultNode name="Discount" type="decision">
+      <expected><value xsi:type="xsd:decimal">0.1</value></expected>
+    </resultNode>
+    <resultNode name="Summary" type="decision">
+      <expected>
+        <component name="category"><value xsi:type="xsd:string">adult</value></component>
+        <component name="discount"><value xsi:type="xsd:decimal">0.1</value></component>
+      </expected>
+    </resultNode>
+  </testCase>
+
+  <testCase id="t2">
+    <inputNode name="Age"><value xsi:type="xsd:decimal">10</value></inputNode>
+    <inputNode name="Member"><value xsi:type="xsd:boolean">false</value></inputNode>
+    <resultNode name="Category" type="decision">
+      <expected><value xsi:type="xsd:string">minor</value></expected>
+    </resultNode>
+    <resultNode name="Discount" type="decision">
+      <expected><value xsi:type="xsd:decimal">0</value></expected>
+    </resultNode>
+  </testCase>
+</testCases>

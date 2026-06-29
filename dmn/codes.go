@@ -59,6 +59,12 @@ const (
 	// error-severity diagnostic from Compile. Severity: error.
 	CodeServiceOutputUnresolved = "SERVICE_OUTPUT_UNRESOLVED"
 
+	// CodeTypeError marks a statically provable type mismatch found by the
+	// type-check phase (e.g. arithmetic on a string), carrying the source
+	// position. It is advisory: evaluation still follows FEEL's null semantics, so
+	// it is reported as a warning, not an error. Severity: warning.
+	CodeTypeError = "TYPE_ERROR"
+
 	// CodeRuntime is an honest placeholder for runtime failures that are not yet
 	// exposed as a typed cause and so cannot be reliably classified at the API
 	// edge (e.g. a resource-limit breach is today a bare error indistinguishable

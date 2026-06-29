@@ -51,10 +51,9 @@ func (s *Server) loadExamples(ctx context.Context) {
 			continue
 		}
 		if sm.name == "" {
-			stem := strings.TrimSuffix(file, ".dmn")
-			s.mu.Lock()
-			sm.name = stem
-			s.mu.Unlock()
+			// Set at construction time, before the server serves, so no lock is
+			// needed; the cache holds this same pointer.
+			sm.name = strings.TrimSuffix(file, ".dmn")
 		}
 	}
 }

@@ -24,13 +24,10 @@ type Func struct {
 // arguments are ignored, so the body always sees exactly len(Params) slots.
 func (f *Func) call(s *Scope, args []value.Value) (value.Value, error) {
 	st := s.st
-	if st != nil {
-		if st.depth >= st.maxDepth {
-			return nil, fmt.Errorf("feel: call depth limit %d exceeded calling %s", st.maxDepth, f.label())
-		}
-		st.depth++
-		defer func() { st.depth-- }()
+	if err := st.enterCall(); err != nil {
+		return nil, err
 	}
+	defer st.leaveCall()
 	if f.Body == nil {
 		return nil, fmt.Errorf("feel: function %s has no body", f.label())
 	}

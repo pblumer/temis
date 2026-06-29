@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/tckdemo" name="TckDemo" id="def_tck">
+  <inputData id="i_age" name="Age"><variable name="Age" typeRef="number"/></inputData>
+  <inputData id="i_member" name="Member"><variable name="Member" typeRef="boolean"/></inputData>
+
+  <decision id="d_cat" name="Category">
+    <variable name="Category" typeRef="string"/>
+    <informationRequirement><requiredInput href="#i_age"/></informationRequirement>
+    <decisionTable hitPolicy="UNIQUE">
+      <input id="ci"><inputExpression typeRef="number"><text>Age</text></inputExpression></input>
+      <output name="Category" typeRef="string"/>
+      <rule><inputEntry><text>&lt; 18</text></inputEntry><outputEntry><text>"minor"</text></outputEntry></rule>
+      <rule><inputEntry><text>&gt;= 18</text></inputEntry><outputEntry><text>"adult"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="d_disc" name="Discount">
+    <variable name="Discount" typeRef="number"/>
+    <informationRequirement><requiredInput href="#i_member"/></informationRequirement>
+    <literalExpression><text>if Member then 0.1 else 0</text></literalExpression>
+  </decision>
+
+  <decision id="d_sum" name="Summary">
+    <variable name="Summary"/>
+    <informationRequirement><requiredDecision href="#d_cat"/></informationRequirement>
+    <informationRequirement><requiredDecision href="#d_disc"/></informationRequirement>
+    <literalExpression><text>{category: Category, discount: Discount}</text></literalExpression>
+  </decision>
+</definitions>
