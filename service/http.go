@@ -20,14 +20,13 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"sync"
 
 	"github.com/pblumer/temis/dmn"
 )
 
 // maxBodyBytes caps request bodies to keep a single request from exhausting
-// memory; oversized bodies are rejected. Tunable once configurable limits land
-// (WP-34).
+// memory; oversized bodies are rejected. This is the transport-level guard,
+// distinct from the engine's evaluation limits (WP-34).
 const maxBodyBytes = 8 << 20 // 8 MiB
 
 // Server is the HTTP front end over a dmn.Engine. It is safe for concurrent use:
@@ -45,8 +44,10 @@ type Server struct {
 	// thereby the decisions in them). Defaults to true.
 	listModels bool
 
-	mu     sync.RWMutex
-	models map[string]*storedModel
+	// cacheSize is the model cache capacity applied at construction; 0 means
+	// unbounded. NewServer builds cache from it after options run.
+	cacheSize int
+	cache     *modelCache
 }
 
 // Option configures a Server at construction time.
@@ -67,6 +68,14 @@ func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
 }
 
+// WithCacheSize bounds how many compiled models the server keeps in memory.
+// When the cache is full the least-recently-used model is evicted; a subsequent
+// request for it recompiles on upload. A size <= 0 means unbounded (no
+// eviction). The default is a bounded cache (WP-35).
+func WithCacheSize(size int) Option {
+	return func(s *Server) { s.cacheSize = size }
+}
+
 // storedModel is a compiled model held in the cache together with the index and
 // any diagnostics produced while compiling it.
 type storedModel struct {
@@ -82,10 +91,11 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, models: map[string]*storedModel{}, listModels: true}
+	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize}
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.cache = newModelCache(s.cacheSize)
 	return s
 }
 
@@ -212,16 +222,15 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	summaries := make([]modelSummary, 0, len(s.models))
-	for _, sm := range s.models {
+	models := s.cache.snapshot()
+	summaries := make([]modelSummary, 0, len(models))
+	for _, sm := range models {
 		summaries = append(summaries, modelSummary{
 			ModelID:   sm.id,
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
 		})
 	}
-	s.mu.RUnlock()
 
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].ModelID < summaries[j].ModelID
@@ -335,30 +344,21 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel, error) {
 	id := modelID(xml)
 
-	s.mu.RLock()
-	if sm, ok := s.models[id]; ok {
-		s.mu.RUnlock()
+	if sm, ok := s.cache.get(id); ok {
 		return sm, nil
 	}
-	s.mu.RUnlock()
 
 	defs, diags, err := s.engine.Compile(ctx, xml)
 	if err != nil {
 		return nil, err
 	}
 	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
-
-	s.mu.Lock()
-	s.models[id] = sm
-	s.mu.Unlock()
+	s.cache.add(sm)
 	return sm, nil
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sm, ok := s.models[id]
-	return sm, ok
+	return s.cache.get(id)
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"

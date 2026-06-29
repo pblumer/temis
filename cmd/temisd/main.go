@@ -22,6 +22,11 @@ func main() {
 		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
 	listModels := flag.Bool("list-models", true,
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private")
+	cacheSize := flag.Int("cache-size", 0,
+		"max compiled models kept in memory (LRU eviction); 0 uses the default, negative means unbounded")
+	maxCallDepth := flag.Int("max-call-depth", 0, "limit on nested function/BKM recursion (0 = default)")
+	maxIterations := flag.Int("max-iterations", 0, "limit on total comprehension iterations per evaluation (0 = default)")
+	maxListSize := flag.Int("max-list-size", 0, "limit on the size of any single produced list (0 = default)")
 	flag.Parse()
 
 	if *showVersion {
@@ -29,10 +34,19 @@ func main() {
 		return
 	}
 
-	srv := service.NewServer(dmn.New(),
+	engine := dmn.New(dmn.WithLimits(dmn.Limits{
+		MaxCallDepth:  *maxCallDepth,
+		MaxIterations: *maxIterations,
+		MaxListSize:   *maxListSize,
+	}))
+	srvOpts := []service.Option{
 		service.WithToken(*token),
 		service.WithModelListing(*listModels),
-	)
+	}
+	if *cacheSize != 0 {
+		srvOpts = append(srvOpts, service.WithCacheSize(*cacheSize))
+	}
+	srv := service.NewServer(engine, srvOpts...)
 	if *token != "" {
 		log.Printf("temisd: /v1 endpoints require a bearer token")
 	}
