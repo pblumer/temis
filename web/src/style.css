@@ -23,5 +23,12 @@ h1 { font-size: 24px; margin: 0 0 4px; }
   border-radius: 6px;
   margin: 0 0 20px;
 }
-.hint { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+.hint { color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; margin-top: 20px; }
 .probe { color: var(--accent); font-weight: 600; }
+.canvas {
+  height: 380px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
