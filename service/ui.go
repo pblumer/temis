@@ -29,7 +29,7 @@ const playgroundPage = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Temis — DMN Editor</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8def'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='16' cy='6.5' r='1.6' fill='%23fff' stroke='none'/%3E%3Cpath d='M16 8v18M11 26h10M8 11h16M16 8.5 8 11m8-2.5 8 2.5'/%3E%3Cpath d='M8 11l-3 6.2a3 3 0 0 0 6 0z'/%3E%3Cpath d='M24 11l-3 6.2a3 3 0 0 0 6 0z'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8def'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 4 28 16 16 28 4 16Z'/%3E%3Cpath d='M11.5 16.3 14.8 19.6 20.8 12.8'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/assets/diagram-js.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/assets/dmn-js-shared.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dmn-js@17.8.1/dist/assets/dmn-js-drd.css">
@@ -275,16 +275,14 @@ const playgroundPage = `<!DOCTYPE html>
     // window.TEMIS_BRANDING (Produktname, Logo, Firmen-Theme). Die Seite bleibt
     // asset-frei; ein Reverse-Proxy kann das Branding-Global injizieren.
     //
-    // Standard-Logo: inline SVG (Waage der Themis = Abwägen von Eingaben gegen
-    // Regeln). Es erbt über currentColor die Akzentfarbe des aktiven Themes.
+    // Standard-Logo: inline SVG (Raute = Entscheidungssymbol in DMN/Flowcharts,
+    // Häkchen = ausgewertete Decision). Es erbt über currentColor die
+    // Akzentfarbe des aktiven Themes.
     var LOGO_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none"' +
-      ' stroke="currentColor" stroke-width="1.7" stroke-linecap="round"' +
+      ' stroke="currentColor" stroke-width="1.8" stroke-linecap="round"' +
       ' stroke-linejoin="round" aria-hidden="true">' +
-      '<circle cx="12" cy="4.4" r="1.5" fill="currentColor" stroke="none"/>' +
-      '<path d="M12 5.9v13.6"/><path d="M7.5 19.5h9"/><path d="M5 8.2h14"/>' +
-      '<path d="M12 6.4 5 8.2M12 6.4l7 1.8"/>' +
-      '<path d="M5 8.2 2.6 13.2a2.7 2.7 0 0 0 4.8 0z"/>' +
-      '<path d="M19 8.2 16.6 13.2a2.7 2.7 0 0 0 4.8 0z"/></svg>';
+      '<path d="M12 3 21 12 12 21 3 12Z"/>' +
+      '<path d="M8.4 12.2 11 14.8 15.6 9.6"/></svg>';
     var THEME_KEY = 'temis.theme';
     var THEME_VARS = ['--bg', '--panel', '--border', '--fg', '--muted',
       '--accent', '--accent-fg', '--ok', '--err', '--warn'];

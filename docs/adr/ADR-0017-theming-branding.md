@@ -39,9 +39,10 @@ nichts an der Engine (Go-Modul bleibt frontend-frei, ADR-0006/0011):
 - **Theme-Auswahl** in Reihenfolge: `?theme=` (URL) > gespeicherte Nutzerwahl >
   `defaultTheme` > Firmen-Theme > `temis-dark`. `allowUserSwitch: false` blendet den
   Umschalter aus (fest gebrandetes Deployment).
-- **Logo-Standard:** ein inline ausgeliefertes SVG-Logo (Data-URI, kein externes Asset),
-  das die Akzentfarbe des aktiven Themes über `currentColor` übernimmt; Firmen überschreiben
-  es per `branding.logo`.
+- **Logo-Standard:** ein inline ausgeliefertes SVG-Logo (Raute = Entscheidungssymbol in
+  DMN/Flowcharts, Häkchen = ausgewertete Decision), das die Akzentfarbe des aktiven Themes
+  über `currentColor` übernimmt; das Favicon nutzt dieselbe Glyphe als Data-URI. Firmen
+  überschreiben das Logo per `branding.logo`.
 - **Asset-Freiheit bleibt:** die Seite lädt außer dmn-js (CDN, wie Swagger UI) keine
   weiteren Assets; das Branding-Global wird vom Betrieb beigesteuert, nicht vom Binary.
 
