@@ -59,7 +59,7 @@ func main() {
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
 	}
-	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs",
+	log.Printf("temisd %s listening on %s — Playground at http://%s/ui · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)
 	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
