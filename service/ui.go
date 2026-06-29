@@ -109,6 +109,14 @@ const playgroundPage = `<!DOCTYPE html>
     .diag.info { border-color: var(--accent); }
     .out-table td:first-child { font-family: var(--mono); color: var(--accent); }
     details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 12px; }
+    /* Evaluation overlay: a value badge under each traversed decision node, plus
+       a coloured node outline (blue = requested decision, green = intermediate). */
+    .temis-badge { font: 600 11px/1.3 var(--mono); color: #fff; padding: 2px 7px;
+      border-radius: 6px; white-space: nowrap; max-width: 240px; overflow: hidden;
+      text-overflow: ellipsis; box-shadow: 0 1px 4px rgba(0,0,0,.35); background: #2da44e; }
+    .temis-badge.final { background: #1f6feb; }
+    .djs-element.temis-eval .djs-visual > :first-child { stroke: #2da44e !important; stroke-width: 3px !important; }
+    .djs-element.temis-final .djs-visual > :first-child { stroke: #1f6feb !important; stroke-width: 3px !important; }
   </style>
 </head>
 <body>
@@ -169,6 +177,7 @@ const playgroundPage = `<!DOCTYPE html>
       </div>
       <div id="resultBox" style="display:none">
         <h2 style="margin-top:20px">Ergebnis</h2>
+        <p class="muted" id="resultIntro">Durchlaufene Decisions — links im Diagramm markiert (★ = angefragte):</p>
         <table class="out-table" id="outTable"><tbody></tbody></table>
         <div id="diags"></div>
         <details>
@@ -203,6 +212,7 @@ const playgroundPage = `<!DOCTYPE html>
     var loaded = false;                       // a diagram is currently shown
     var lastXML = '';                         // last known model XML
     var modelId = null;                       // set after a successful deploy
+    var annotatedIds = [];                    // DRD element ids currently annotated
 
     var $ = function (id) { return document.getElementById(id); };
 
@@ -265,6 +275,7 @@ const playgroundPage = `<!DOCTYPE html>
     function renderDiagram(xml, newMode) {
       return new Promise(function (resolve, reject) {
         if (dmn) { try { dmn.destroy(); } catch (e) { /* ignore */ } dmn = null; }
+        annotatedIds = []; // overlays/markers are gone with the destroyed instance
         $('dmnHint').style.display = 'none';
         var Ctor = (newMode === 'write') ? DmnModeler : DmnViewer;
         dmn = new Ctor({ container: '#dmnCanvas' });
@@ -435,10 +446,10 @@ const playgroundPage = `<!DOCTYPE html>
         var url, payload;
         if (stateless) {
           url = '/v1/evaluate';
-          payload = { xml: xml, decision: decision, input: input };
+          payload = { xml: xml, decision: decision, input: input, explain: true };
         } else {
           url = '/v1/models/' + encodeURIComponent(modelId) + '/evaluate';
-          payload = { decision: decision, input: input };
+          payload = { decision: decision, input: input, explain: true };
         }
         return fetch(url, {
           method: 'POST',
@@ -447,12 +458,14 @@ const playgroundPage = `<!DOCTYPE html>
         });
       }).then(asJson).then(function (r) {
         if (!r.resp.ok) {
-          // Hide any prior result so a stale success isn't shown next to the error.
+          // Hide any prior result and clear the graph so a stale success isn't
+          // shown next to the error.
           $('resultBox').style.display = 'none';
+          clearAnnotations();
           setStatus($('evalStatus'), errorText(r.resp, r.body), 'err');
           return;
         }
-        renderResult(r.body);
+        renderResult(r.body, decision);
         setStatus($('evalStatus'), 'OK', 'ok');
       }).catch(function (e) { setStatus($('evalStatus'), 'Fehler: ' + (e.message || e), 'err'); });
     }
@@ -466,24 +479,91 @@ const playgroundPage = `<!DOCTYPE html>
       return String(v);
     }
 
-    function renderResult(res) {
+    function renderResult(res, finalDecision) {
       $('resultBox').style.display = 'block';
       $('rawResult').textContent = JSON.stringify(res, null, 2);
       var tb = $('outTable').querySelector('tbody'); tb.innerHTML = '';
-      var outs = res.outputs || {};
-      var keys = Object.keys(outs);
+      // Show every decision that was traversed (with DRG chaining this includes
+      // the intermediate decisions, not just the requested one).
+      var decisions = res.decisions || res.outputs || {};
+      var keys = Object.keys(decisions);
       if (!keys.length) {
         var tr = document.createElement('tr');
         var td = document.createElement('td'); td.colSpan = 2; td.className = 'muted';
-        td.textContent = 'Keine Outputs.'; tr.appendChild(td); tb.appendChild(tr);
+        td.textContent = 'Keine Decisions ausgewertet.'; tr.appendChild(td); tb.appendChild(tr);
       }
       keys.forEach(function (k) {
         var tr = document.createElement('tr');
-        var kt = document.createElement('td'); kt.textContent = k;
-        var vt = document.createElement('td'); vt.textContent = fmt(outs[k]);
+        var kt = document.createElement('td'); kt.textContent = (k === finalDecision) ? (k + ' ★') : k;
+        var vt = document.createElement('td'); vt.textContent = fmt(decisions[k]);
         tr.appendChild(kt); tr.appendChild(vt); tb.appendChild(tr);
       });
       renderDiags(res.diagnostics || []);
+      annotateGraph(res, finalDecision);
+    }
+
+    // Run cb with the DRD view's viewer, switching to the DRD view first if a
+    // decision-table/literal view is currently open. Falls back to the active
+    // viewer when the views API is unavailable.
+    function withDrd(cb) {
+      if (!dmn || !dmn.getActiveViewer) { return; }
+      var av = dmn.getActiveView && dmn.getActiveView();
+      if (av && av.type === 'drd') { cb(dmn.getActiveViewer()); return; }
+      var views = (dmn.getViews && dmn.getViews()) || [];
+      var drd = views.filter(function (v) { return v.type === 'drd'; })[0];
+      if (!drd || !dmn.open) { cb(dmn.getActiveViewer()); return; }
+      Promise.resolve(dmn.open(drd)).then(function () { cb(dmn.getActiveViewer()); }).catch(function () { /* ignore */ });
+    }
+
+    // Remove all evaluation markers/badges from the DRD.
+    function clearAnnotations() {
+      withDrd(function (viewer) {
+        if (!viewer) { return; }
+        try {
+          var canvas = viewer.get('canvas'), overlays = viewer.get('overlays');
+          annotatedIds.forEach(function (id) {
+            canvas.removeMarker(id, 'temis-eval'); canvas.removeMarker(id, 'temis-final');
+          });
+          overlays.clear();
+        } catch (e) { /* ignore */ }
+        annotatedIds = [];
+      });
+    }
+
+    // Annotate the DRD: outline every traversed decision and badge it with the
+    // value it produced; the requested ("final") decision is highlighted apart.
+    function annotateGraph(res, finalDecision) {
+      withDrd(function (viewer) {
+        if (!viewer) { return; }
+        var reg, overlays, canvas;
+        try { reg = viewer.get('elementRegistry'); overlays = viewer.get('overlays'); canvas = viewer.get('canvas'); }
+        catch (e) { return; }
+        annotatedIds.forEach(function (id) {
+          try { canvas.removeMarker(id, 'temis-eval'); canvas.removeMarker(id, 'temis-final'); } catch (e) { /* ignore */ }
+        });
+        try { overlays.clear(); } catch (e) { /* ignore */ }
+        annotatedIds = [];
+
+        var decisions = res.decisions || {};
+        Object.keys(decisions).forEach(function (name) {
+          var el = reg.filter(function (e) {
+            var bo = e.businessObject;
+            return bo && bo.$type === 'dmn:Decision' && (bo.name === name || e.id === name);
+          })[0];
+          if (!el) { return; }
+          var isFinal = (name === finalDecision);
+          try { canvas.addMarker(el.id, isFinal ? 'temis-final' : 'temis-eval'); } catch (e) { /* ignore */ }
+          annotatedIds.push(el.id);
+
+          var full = fmt(decisions[name]);
+          var text = (full.length > 40) ? (full.slice(0, 39) + '…') : full;
+          var div = document.createElement('div');
+          div.className = 'temis-badge' + (isFinal ? ' final' : '');
+          div.title = name + ' = ' + full;
+          div.textContent = text;
+          try { overlays.add(el.id, { position: { bottom: -8, left: 0 }, html: div }); } catch (e) { /* ignore */ }
+        });
+      });
     }
 
     function renderDiags(diags) {
