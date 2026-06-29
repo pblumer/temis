@@ -12,12 +12,11 @@ coverage.*
 go.work
 go.work.sum
 
+# FEEL-WASM spike build artifacts (regenerate via ./web/feel-spike/build.sh)
+/web/feel-spike/feel.wasm
+/web/feel-spike/wasm_exec.js
+
 # Editor/OS noise
 .DS_Store
 .idea/
 .vscode/
-
-# Frontend (web/) build & deps
-/web/node_modules/
-/web/dist/
-/web/package-lock.json

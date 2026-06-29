@@ -53,7 +53,7 @@ Decision Services, plus Service-Wrapper (HTTP + gRPC).
 | WP-27 ✅ | Hit Policies vollständig | WP-09 | **done** — **P** (Priority) und **O** (Output Order) ergänzt (`internal/boxed/priority.go`): Priorität = Position des Output-Werts in der Output-Werteliste (`<outputValues>`), spaltenweise lexikografisch verglichen, Gleichstand → Tabellenreihenfolge. P → höchstrangiger Treffer, O → alle Treffer als Liste in Prioritätsreihenfolge; nicht-gelistete Werte rangieren zuletzt. Multi-Output unterstützt. **C+/C</C>/C#** liefen bereits über das `aggregation`-Attribut (SUM/MIN/MAX/COUNT, WP-09). E2E `hitpolicy_15.dmn`. |
 | WP-28 ✅ | DRG-Verkettung & Eval-Plan | WP-10 | **done** — `dmn/graph.go`: Required-Decision-Referenzen → Kanten zwischen `CompiledDecision`s; **Zyklus-Erkennung** per DFS (3-Färbung) als `DECISION_CYCLE`-Diagnostic beim Compile. `Evaluate` wertet die benötigten Entscheidungen rekursiv & **memoisiert** aus (Diamond → einmal), speist Ergebnisse per Name als Zwischenvariablen ein; Laufzeit-Zyklus-Guard. Ein direkt im Input gelieferter Decision-Wert überschreibt (kein Recompute) → Rückwärtskompatibilität. `Result.Decisions` listet alle ausgewerteten Entscheidungen. E2E `routing_13.dmn` (Chaining) + Diamond/Cycle-Modelle. (Decision Services → WP-29.) |
 | WP-29 ✅ | Decision Services | WP-28 | **done** — `<decisionService>` (XML/Modell: output/encapsulated/input-Decisions + inputData). Öffentliche API `Definitions.Service(idOrName)` → `CompiledService.Evaluate`. Gemeinsamer, memoisierter `evaluator` (`dmn/eval.go`, aus WP-28 extrahiert): wertet Output- (+ benötigte encapsulated) Decisions aus; **Input-Decisions sind Grenzen** — vom Aufrufer geliefert, nie berechnet (unbeliefert → null, kein Chaining dahinter). `Result.Outputs` je Output-Decision, `Result.Decisions` = tatsächlich ausgewertete. E2E `decisionservice_15.dmn` (encapsulated vs. input-decision). |
-| WP-30 ✅ | Typecheck-Phase | WP-20, WP-28 | **done** — Typrepräsentation (`internal/feel/types.go`: FEEL-Typen, Builtin-/Item-Definition-Auflösung). **`instance of`** kompiliert+läuft (Built-in-Typen inkl. mehrwortiger Namen via Oracle; unbekannter Typ → Compile-Fehler). Konservativer statischer Checker (`internal/feel/typecheck.go`): infert Ausdruckstypen gegen ein `TypeEnv`, meldet nur **beweisbare** Mismatches (Arithmetik/Vergleich/Logik/`if`-Bedingung/`between`) mit Position; unbekannt → `Any`, keine Fehlalarme. dmn-Integration (`dmn/typecheck.go`): TypeEnv aus Input-Data-/Decision-/Item-Definition-`typeRef`, prüft Literal-Ausdrücke + Tabellen-Inputs/Outputs → `TYPE_ERROR`-**Warnungen** (advisory, FEEL bleibt dynamisch — ADR-0016). Über alle 12 Beispielmodelle fehlalarmfrei. (Allowed-Values-Constraints/volle Typbindung → WP-31.) |
+| WP-30 ✅ | Typecheck-Phase | WP-20, WP-28 | **done** — Typrepräsentation (`internal/feel/types.go`: FEEL-Typen, Builtin-/Item-Definition-Auflösung). **`instance of`** kompiliert+läuft (Built-in-Typen inkl. mehrwortiger Namen via Oracle; unbekannter Typ → Compile-Fehler). Konservativer statischer Checker (`internal/feel/typecheck.go`): infert Ausdruckstypen gegen ein `TypeEnv`, meldet nur **beweisbare** Mismatches (Arithmetik/Vergleich/Logik/`if`-Bedingung/`between`) mit Position; unbekannt → `Any`, keine Fehlalarme. dmn-Integration (`dmn/typecheck.go`): TypeEnv aus Input-Data-/Decision-/Item-Definition-`typeRef`, prüft Literal-Ausdrücke + Tabellen-Inputs/Outputs → `TYPE_ERROR`-**Warnungen** (advisory, FEEL bleibt dynamisch — ADR-0017). Über alle 12 Beispielmodelle fehlalarmfrei. (Allowed-Values-Constraints/volle Typbindung → WP-31.) |
 | WP-31 ✅ | Item Definitions / Typsystem-Bindung | WP-30 | **done** — Benutzerdefinierte Item-Definitions in feel.Type aufgelöst (Struct→Context, isCollection→List, typeRef-Aliasketten); Self-Description (`InputField.Type`) nennt den Custom-Typnamen + `Constraint` (Allowed-Values-Text). **Constraints (allowed values)** als FEEL-Unary-Test-Matcher (WP-08) kompiliert und unter `WithStrictInput` durchgesetzt: Wert außerhalb der erlaubten Menge → `VALUE_NOT_ALLOWED`; Struct-/Listen-Typ strukturell geprüft (`TYPE_MISMATCH`). Quelle der Allowed-Values: Item-Definition oder inline `inputValues` der Tabelle. **Statischer Output-Constraint-Check**: konstante Output-Zelle außerhalb der `outputValues` → `TYPE_ERROR`-Warnung mit Position. Über alle Beispielmodelle fehlalarmfrei. (Tieferes Feld-Constraint-Binding in geschachtelten Structs → später.) |
 | WP-32 ✅ | HTTP-Service-Wrapper | WP-10 | **done** — `service.Server` über `*dmn.Engine` (nur öffentliche `dmn/`-API, kein `internal/`). Endpunkte: `POST /v1/models` (XML → kompilieren+cachen, content-addressed `sha256:`-ID, idempotent), `GET /v1/models/{id}` (Index), `POST /v1/models/{id}/evaluate` (`{decision,input}` → Outputs/Decisions/Diagnostics), `POST /v1/evaluate` (stateless: XML+Input in einem Request), `GET /healthz`/`/readyz`. Go-1.22-Mux (kein externer Router), Request-Body-Limit, RFC-7807 `application/problem+json` mit stabilen Codes (`MALFORMED_XML`/`MODEL_NOT_FOUND`/`DECISION_NOT_FOUND`/`INVALID_REQUEST`/`EVALUATION_FAILED`). `cmd/temisd` startet den Server (`-addr`). `service/openapi.yaml`. httptest-Suite über alle Endpunkte; manuell mit `dish_15.dmn` per `curl` verifiziert. (In-Memory-Cache = WP-35-Vorstufe; Hot-Reload/Eviction → WP-35. Limits-Konfiguration → WP-34.) |
 | WP-33 | gRPC-Service-Wrapper | WP-10 | `dmn.proto`, Evaluate/Compile-RPCs, Streaming für Batch. |
@@ -98,18 +98,22 @@ Erweiterungen über `package dmn` (ADR-0011); kein `internal/`-Zugriff von auße
 
 dmn-js erzeugt und liest **Standard-DMN-XML**. Es gibt nichts „proprietär" zu adaptieren —
 die Engine muss exakt dieses XML lesen/schreiben können (das ist WP-02). dmn-js wird
-**unverändert** eingebettet (npm) und über additive Module angepasst — **nie geforkt**
-(ADR-0012; bpmn.io-Logo bleibt sichtbar). Frontend-Pakete leben getrennt vom Go-Modul unter
-`web/` mit eigener Toolchain/CI-Lane.
+**unverändert** eingebettet und angepasst — **nie geforkt** (ADR-0012; bpmn.io-Logo bleibt
+sichtbar). Der Editor ist in die bestehende `/ui`-Seite (`service/ui.go`) integriert und lädt
+dmn-js per CDN — wie die Swagger-UI unter `/docs`; **keine zweite Toolchain**.
 
-- **F-01** (Beta, optional): **Einsteiger-Editor** als separates Frontend (`web/`). Bettet
-  dmn-js ein (DRD + Decision-Table-Editor), schickt das Modell an den HTTP-Service und zeigt
-  Ergebnisse an. **Kein** Produktziel der Engine. Akzeptanzkriterium: in dmn-js erstelltes
-  Modell → `POST /v1/models` → Decision wählen → `POST /v1/models/{id}/evaluate` mit
-  Eingaben → Outputs sichtbar; alles offline lauffähig gegen ein lokales `temisd`.
-  Vorstufe existiert als read-only **Playground** in `service/ui.go` (Evaluator ohne Editor).
+- **F-01** (Beta, optional) ✅: **Editor in `/ui`** (`service/ui.go`). Bettet dmn-js per CDN ein
+  (read-only `dmn-navigated-viewer`, bearbeitbar `dmn-modeler`). Fluss: Datei hochladen/XML
+  einfügen → read-only Ansicht → „Bearbeiten" → editierbar → „Auf Server deployen"
+  (`POST /v1/models`) → Decision wählen → `POST /v1/models/{id}/evaluate` (`explain:true`).
+  **Ergebnis als Graph:** die durchlaufenen Decisions werden im DRD markiert und mit ihrem
+  Wert beschriftet (angefragte Decision hervorgehoben, Zwischenergebnisse separat) — nutzt die
+  DRG-Verkettung (WP-28) und die `decisions`-Map. „Neu" erstellt ein leeres Modell.
+  **Kein** Produktziel der Engine. End-to-End per Headless-Browser verifiziert. Grenze: dmn-js
+  rendert DMN 1.3 (1.4/1.5 wertet die Engine aus, zeichnet der Editor ggf. nicht).
 - **F-02** (optional, nach F-01): Einsteiger-UX-Module — reduzierte Palette,
   Decision-Table-Vorlagen, Inline-FEEL-Hilfe und ein **Diagnostics-Overlay**, das temis-
-  Diagnostics (`line/col`) auf die betroffenen Tabellenzellen mappt.
+  Diagnostics (`line/col`) auf die betroffenen Tabellenzellen mappt. Optional: dmn-js-Bundles
+  per `go:embed` für ein offline lauffähiges `/ui`.
 - Round-trip-Pflicht: Eine in dmn-js gespeicherte Datei muss von der Engine ladbar sein
   **und** eine von der Engine (un)veränderte Datei muss in dmn-js wieder öffnen.

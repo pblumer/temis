@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             id="loan_definitions"
+             name="Loan Approval"
+             namespace="http://temis.test/loan">
+  <inputData id="id_score" name="Credit Score"/>
+  <inputData id="id_income" name="Annual Income"/>
+  <decision id="id_loan" name="Loan Approval">
+    <informationRequirement id="ir_score">
+      <requiredInput href="#id_score"/>
+    </informationRequirement>
+    <informationRequirement id="ir_income">
+      <requiredInput href="#id_income"/>
+    </informationRequirement>
+    <decisionTable id="dt_loan" hitPolicy="FIRST">
+      <input id="in_score" label="Credit Score">
+        <inputExpression typeRef="number">
+          <text>Credit Score</text>
+        </inputExpression>
+      </input>
+      <input id="in_income" label="Annual Income">
+        <inputExpression typeRef="number">
+          <text>Annual Income</text>
+        </inputExpression>
+      </input>
+      <output id="out_decision" name="Decision" typeRef="string"/>
+      <output id="out_rate" name="Interest Rate" typeRef="number"/>
+      <rule id="r1">
+        <inputEntry><text>&lt; 600</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Declined"</text></outputEntry>
+        <outputEntry><text>0</text></outputEntry>
+      </rule>
+      <rule id="r2">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&lt; 30000</text></inputEntry>
+        <outputEntry><text>"Declined"</text></outputEntry>
+        <outputEntry><text>0</text></outputEntry>
+      </rule>
+      <rule id="r3">
+        <inputEntry><text>&gt;= 750</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Approved"</text></outputEntry>
+        <outputEntry><text>0.035</text></outputEntry>
+      </rule>
+      <rule id="r4">
+        <inputEntry><text>&gt;= 700</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Approved"</text></outputEntry>
+        <outputEntry><text>0.05</text></outputEntry>
+      </rule>
+      <rule id="r5">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Review"</text></outputEntry>
+        <outputEntry><text>0.08</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="diagram_loan">
+      <dmndi:DMNShape id="shape_score" dmnElementRef="id_score">
+        <dc:Bounds x="160" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_income" dmnElementRef="id_income">
+        <dc:Bounds x="400" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_loan" dmnElementRef="id_loan">
+        <dc:Bounds x="280" y="260" width="180" height="80"/>
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

@@ -1,14 +1,10 @@
-// A small, valid DMN 1.3 diagram (DRD + decision table) that dmn-js opens on
-// first load, so beginners start with something concrete instead of a blank
-// canvas. It mirrors the classic "dish" example in miniature: one input
-// (Season), one decision (Greeting) with a UNIQUE-hit decision table.
-export const STARTER_DMN = `<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
              xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
              xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
              xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
              id="Definitions_temis_starter"
-             name="Beispiel"
+             name="Begrüßung (Demo)"
              namespace="http://temis/examples">
   <decision id="Decision_Greeting" name="Begruessung">
     <informationRequirement id="ir_season">
@@ -50,4 +46,4 @@ export const STARTER_DMN = `<?xml version="1.0" encoding="UTF-8"?>
       </dmndi:DMNEdge>
     </dmndi:DMNDiagram>
   </dmndi:DMNDI>
-</definitions>`;
+</definitions>

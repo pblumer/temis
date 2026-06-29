@@ -59,6 +59,10 @@ func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error) {
 	return cd, nil
 }
 
+// ModelName returns the DMN definitions' name (the editable model name), or ""
+// when the document declares none.
+func (d *Definitions) ModelName() string { return d.model.Name }
+
 // Name returns the decision's name.
 func (c *CompiledDecision) Name() string { return c.name }
 

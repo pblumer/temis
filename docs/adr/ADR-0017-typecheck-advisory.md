@@ -1,4 +1,4 @@
-# ADR-0016: Statische Typprüfung ist advisory (Warnung), FEEL bleibt dynamisch
+# ADR-0017: Statische Typprüfung ist advisory (Warnung), FEEL bleibt dynamisch
 
 - **Status:** accepted
 - **Datum:** 2026-06-29
