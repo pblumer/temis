@@ -80,6 +80,8 @@ func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
 
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
 
+func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
+
 func New(opts ...Option) *Engine
 
 func WithLimits(l Limits) Option

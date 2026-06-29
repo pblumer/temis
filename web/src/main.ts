@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveGraph, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel } from './evaluate'
@@ -75,25 +75,48 @@ async function boot(root: HTMLElement): Promise<void> {
 
   // save persists the current diagram's edits, then switches the picker to the
   // server's new revision (its content hash, hence its modelId, changed).
+  // persistGraph posts the live canvas graph (moved/renamed/retyped nodes AND
+  // nodes/edges added or removed, ADR-0016) and returns the saved model's id. It
+  // is a no-op returning modelId unchanged when there is nothing to save.
+  const persistGraph = async (modelId: string): Promise<string> => {
+    if (!handle || !dirty) return modelId
+    const { nodes, edges } = handle.graph()
+    const saved = await saveGraph(modelId, {
+      nodes: nodes.map((n) => ({ ...n, dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined })),
+      edges,
+    })
+    return saved.modelId
+  }
+
   const save = async (): Promise<void> => {
     if (!handle || !dirty) return
     const current = models[Number(select.value)]
     if (!current) return
-    // The structural save persists everything on the canvas — moved/renamed/
-    // retyped nodes AND nodes/edges added or removed (ADR-0016).
-    const { nodes, edges } = handle.graph()
     saveBtn.disabled = true
     status.textContent = 'speichert …'
     try {
-      const saved = await saveGraph(current.modelId, {
-        nodes: nodes.map((n) => ({ ...n, dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined })),
-        edges,
-      })
-      await reselect(saved.modelId)
+      await reselect(await persistGraph(current.modelId))
       status.textContent = 'gespeichert ✓'
     } catch (e) {
       status.textContent = (e as Error).message
       syncButtons()
+    }
+  }
+
+  // createTable gives a table-less decision a fresh table: persist any pending
+  // structural edits first (so the decision exists server-side), create the
+  // table, switch to the saved revision and open it for editing.
+  const createTable = async (decisionId: string): Promise<void> => {
+    const current = models[Number(select.value)]
+    if (!current) return
+    status.textContent = 'legt Tabelle an …'
+    try {
+      const created = await createDecisionTable(await persistGraph(current.modelId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Tabelle angelegt ✓'
+      void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId))
+    } catch (e) {
+      status.textContent = (e as Error).message
     }
   }
   saveBtn.addEventListener('click', () => void save())
@@ -175,6 +198,7 @@ async function boot(root: HTMLElement): Promise<void> {
         syncButtons()
       })
       handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId)))
+      handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
