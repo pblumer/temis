@@ -3,8 +3,9 @@
 
 GO      ?= go
 PKGS    ?= ./...
+FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz build tidy clean help
 
 all: verify
 
@@ -49,6 +50,22 @@ budget:
 ## tck: run the TCK runner package (tolerant while no cases exist yet)
 tck:
 	$(GO) test ./internal/tck/...
+
+## fuzz: run every fuzz target for FUZZTIME each, asserting no crash (WP-44, docs/50-testing-strategy.md §3)
+fuzz:
+	@set -e; \
+	for spec in \
+		"./dmn:FuzzCompile" \
+		"./internal/xml:FuzzDecode" \
+		"./internal/value:FuzzParseNumber" \
+		"./internal/value:FuzzParseDuration" \
+		"./internal/feel:FuzzLexer" \
+		"./internal/feel:FuzzParser" \
+		"./internal/feel:FuzzBoundedEvaluation"; do \
+		pkg=$${spec%%:*}; fn=$${spec##*:}; \
+		echo "=== fuzz $$fn ($$pkg) for $(FUZZTIME) ==="; \
+		$(GO) test -run='^$$' -fuzz="^$$fn$$" -fuzztime=$(FUZZTIME) $$pkg; \
+	done
 
 ## build: compile all packages and binaries
 build:

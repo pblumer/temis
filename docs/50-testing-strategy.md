@@ -27,8 +27,22 @@
 
 ## 3. Property-/Fuzz-Tests
 
-- `go test -fuzz` für: Lexer, Parser, XML-Decoder. **Invariante:** kein Panic, kein
-  Hang (Timeout), kein OOM bei beliebigem Input.
+- `go test -fuzz` (WP-44). **Invariante:** kein Panic, kein Hang (Timeout), kein OOM
+  bei beliebigem Input. Die Fuzz-Ziele decken jede Schicht ab, die untrusted Input
+  sieht:
+  - `internal/feel.FuzzLexer`, `FuzzParser` — Lexer/Parser akzeptieren jeden String
+    ohne Panic; Fehler kommen als `*ParseError`, erfolgreiche ASTs rendern panikfrei.
+  - `internal/feel.FuzzBoundedEvaluation` — kompiliert **und** wertet FEEL unter engen
+    `Limits` aus; dank ADR-0008-Schranken (Rekursion/Iteration/Listengröße) terminiert
+    selbst feindlicher Input (z. B. `for i in 1..1000000000 …`) statt zu hängen.
+  - `internal/value.FuzzParseNumber`, `FuzzParseDuration` — Decimal-/Dauer-Parser.
+  - `internal/xml.FuzzDecode` — DMN-XML-Decoder (+ anschließendes Encode).
+  - `dmn.FuzzCompile` — End-to-End über die **öffentliche** API: `Compile` und dann
+    `Decision`/`Evaluate` jeder Decision unter engen `Limits`. Malformed Input ergibt
+    Fehler/Diagnostics, nie einen Panic.
+- `make fuzz` läuft alle Ziele je `FUZZTIME` (Default 10s) crash-frei; Failing-Inputs
+  würden als Seed-Corpus unter `testdata/fuzz/<FuzzName>/` persistiert und so zum
+  Regressionstest. Nicht Teil von `make verify` (zeitgebunden, separat ausgeführt).
 - Property: `parse(print(ast)) ≡ ast` für FEEL-Ausdrücke (Round-trip), wo ein Printer
   existiert.
 
