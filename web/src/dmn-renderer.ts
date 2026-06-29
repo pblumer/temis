@@ -37,6 +37,21 @@ function text(parent: SVGElement, content: string, w: number, h: number): void {
   append(parent, t)
 }
 
+// decisionIcon draws the small type badge in the top-left corner of a decision
+// (the blue "decision logic" indicator, like dmn-js), so a decision reads as a
+// decision at a glance.
+function decisionIcon(parent: SVGElement): void {
+  const badge = create('rect')
+  attr(badge, { x: 8, y: 8, width: 18, height: 18, rx: 3, fill: '#3f74e0' })
+  append(parent, badge)
+  const glyph = create('path')
+  attr(glyph, {
+    d: 'M12 13 H22 M12 17 H22 M12 21 H22 M15 12.5 V21.5',
+    stroke: '#ffffff', 'stroke-width': 1.3, fill: 'none',
+  })
+  append(parent, glyph)
+}
+
 function arrowHead(from: Point, to: Point): SVGElement {
   const a = Math.atan2(to.y - from.y, to.x - from.x)
   const s = 9
@@ -77,6 +92,9 @@ export default class DmnRenderer extends BaseRenderer {
     }
 
     append(parent, visual)
+    if (shape.type === 'dmn:decision' || shape.type === undefined) {
+      decisionIcon(parent)
+    }
     text(parent, (shape as Shape & Named).name ?? shape.id, w, h)
     return visual
   }

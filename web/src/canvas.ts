@@ -1,6 +1,8 @@
 import Diagram from 'diagram-js'
 import MoveModule from 'diagram-js/lib/features/move'
 import ModelingModule from 'diagram-js/lib/features/modeling'
+import ContextPadModule from 'diagram-js/lib/features/context-pad'
+import ConnectModule from 'diagram-js/lib/features/connect'
 import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
 import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
 import type Canvas from 'diagram-js/lib/core/Canvas'
@@ -11,6 +13,7 @@ import type { Shape } from 'diagram-js/lib/model/Types'
 import 'diagram-js/assets/diagram-js.css'
 import { dmnRendererModule } from './dmn-renderer'
 import { dmnRulesModule } from './dmn-rules'
+import { dmnContextPadModule } from './dmn-context-pad'
 import type { Laid } from './layout'
 
 // Handle to the live diagram: nodes are selectable and draggable, every change
@@ -31,8 +34,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const diagram = new Diagram({
     canvas: { container },
     modules: [
-      dmnRendererModule, dmnRulesModule,
-      ModelingModule, MoveModule, MoveCanvasModule, ZoomScrollModule,
+      dmnRendererModule, dmnRulesModule, dmnContextPadModule,
+      ModelingModule, MoveModule, ContextPadModule, ConnectModule,
+      MoveCanvasModule, ZoomScrollModule,
     ],
   })
   const canvas = diagram.get<Canvas>('canvas')

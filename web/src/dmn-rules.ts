@@ -14,6 +14,11 @@ class DmnRules extends RuleProvider {
   init(): void {
     this.addRule('shape.move', () => true)
     this.addRule('elements.move', () => true)
+    // Permit the context-pad connect action; real DRG connection rules (which
+    // requirement is legal between which elements) refine this later.
+    this.addRule('connection.start', () => true)
+    this.addRule('connection.create', () => true)
+    this.addRule('connection.reconnect', () => true)
   }
 }
 
