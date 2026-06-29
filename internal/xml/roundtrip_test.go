@@ -111,6 +111,54 @@ func summarizeDMNDI(r *dmnxml.Raw) string {
 	return b.String()
 }
 
+// TestRoundTripXMLFidelity guards byte-structural round-trip fidelity, not just
+// semantic-model equality: some encode bugs (boxed <list>/<relation> emitting Go
+// field names; decision-table rules collapsing multiple <inputEntry> into one)
+// produce structurally invalid DMN that nonetheless re-decodes to the same
+// model — so TestRoundTrip alone misses them. A forked dmn-moddle editor
+// (ADR-0016) consumes this XML directly, so element structure must be preserved.
+func TestRoundTripXMLFidelity(t *testing.T) {
+	for _, path := range fixtures(t) {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			def, err := dmnxml.Decode(data)
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			enc, err := dmnxml.Encode(def)
+			if err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			before, after := elementCounts(t, data), elementCounts(t, enc)
+			if !reflect.DeepEqual(before, after) {
+				t.Errorf("element histogram changed across encode\n before: %v\n after:  %v", before, after)
+			}
+		})
+	}
+}
+
+// elementCounts tallies start-element local names, ignoring prefixes, attributes
+// and whitespace — robust to namespace-prefix rewrites and self-closing vs
+// open/close differences, while detecting any added/dropped/renamed element.
+func elementCounts(t *testing.T, b []byte) map[string]int {
+	t.Helper()
+	counts := map[string]int{}
+	dec := xml.NewDecoder(strings.NewReader(string(b)))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			counts[se.Name.Local]++
+		}
+	}
+	return counts
+}
+
 // TestNamespaceTolerance confirms that one decoder reads every DMN version.
 func TestNamespaceTolerance(t *testing.T) {
 	for _, path := range fixtures(t) {

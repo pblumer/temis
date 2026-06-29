@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/boxed-collections"
+             name="BoxedCollections" id="def_coll">
+  <inputData id="id_threshold" name="Threshold">
+    <variable name="Threshold" typeRef="number"/>
+  </inputData>
+
+  <!-- Boxed list -->
+  <decision id="id_numbers" name="Numbers">
+    <variable name="Numbers"/>
+    <list>
+      <literalExpression><text>1</text></literalExpression>
+      <literalExpression><text>2</text></literalExpression>
+      <literalExpression><text>3</text></literalExpression>
+    </list>
+  </decision>
+
+  <!-- Boxed relation -->
+  <decision id="id_people" name="People">
+    <variable name="People"/>
+    <relation>
+      <column name="name"/>
+      <column name="age"/>
+      <row>
+        <literalExpression><text>"Ann"</text></literalExpression>
+        <literalExpression><text>30</text></literalExpression>
+      </row>
+      <row>
+        <literalExpression><text>"Bob"</text></literalExpression>
+        <literalExpression><text>15</text></literalExpression>
+      </row>
+    </relation>
+  </decision>
+
+  <!-- Boxed conditional -->
+  <decision id="id_grade" name="Grade">
+    <variable name="Grade" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#id_threshold"/>
+    </informationRequirement>
+    <conditional>
+      <if><literalExpression><text>Threshold &gt; 5</text></literalExpression></if>
+      <then><literalExpression><text>"high"</text></literalExpression></then>
+      <else><literalExpression><text>"low"</text></literalExpression></else>
+    </conditional>
+  </decision>
+
+  <!-- Boxed for -->
+  <decision id="id_doubled" name="Doubled">
+    <variable name="Doubled"/>
+    <for iteratorVariable="x">
+      <in><literalExpression><text>[1, 2, 3]</text></literalExpression></in>
+      <return><literalExpression><text>x * 2</text></literalExpression></return>
+    </for>
+  </decision>
+
+  <!-- Boxed every -->
+  <decision id="id_allpos" name="AllPositive">
+    <variable name="AllPositive" typeRef="boolean"/>
+    <every iteratorVariable="x">
+      <in><literalExpression><text>[1, 2, 3]</text></literalExpression></in>
+      <satisfies><literalExpression><text>x &gt; 0</text></literalExpression></satisfies>
+    </every>
+  </decision>
+
+  <!-- Boxed some, depending on an input -->
+  <decision id="id_anybig" name="AnyBig">
+    <variable name="AnyBig" typeRef="boolean"/>
+    <informationRequirement>
+      <requiredInput href="#id_threshold"/>
+    </informationRequirement>
+    <some iteratorVariable="x">
+      <in><literalExpression><text>[1, 5, 9]</text></literalExpression></in>
+      <satisfies><literalExpression><text>x &gt; Threshold</text></literalExpression></satisfies>
+    </some>
+  </decision>
+
+  <!-- Boxed filter over numbers (implicit item) -->
+  <decision id="id_bignums" name="BigNumbers">
+    <variable name="BigNumbers"/>
+    <filter>
+      <in><literalExpression><text>[1, 2, 3, 4]</text></literalExpression></in>
+      <match><literalExpression><text>item &gt; 2</text></literalExpression></match>
+    </filter>
+  </decision>
+
+  <!-- Boxed filter over contexts (context-key access in the match) -->
+  <decision id="id_adults" name="Adults">
+    <variable name="Adults"/>
+    <filter>
+      <in>
+        <list>
+          <context>
+            <contextEntry><variable name="name"/><literalExpression><text>"Ann"</text></literalExpression></contextEntry>
+            <contextEntry><variable name="age"/><literalExpression><text>30</text></literalExpression></contextEntry>
+          </context>
+          <context>
+            <contextEntry><variable name="name"/><literalExpression><text>"Bob"</text></literalExpression></contextEntry>
+            <contextEntry><variable name="age"/><literalExpression><text>15</text></literalExpression></contextEntry>
+          </context>
+        </list>
+      </in>
+      <match><literalExpression><text>age &gt;= 18</text></literalExpression></match>
+    </filter>
+  </decision>
+</definitions>
