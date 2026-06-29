@@ -39,6 +39,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-21 | FEEL-Built-ins vollständig (nicht-temporal: string/numeric/list/context/range/sort) | ✅ |
 | WP-22 | Date/Time/Duration + temporale Built-ins, Komponentenzugriff, `@`-Literale | ✅ |
 | WP-32 | HTTP-Service (`temisd`): `/v1/models`, `/v1/evaluate`, OpenAPI | ✅ |
+| WP-50 | Agent-First: MCP-Server (`temis-mcp`) über stdio | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
 > ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
@@ -144,6 +145,32 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
+### Für KI-Agenten (`temis-mcp`, MCP über stdio)
+
+temis ist bewusst als **Verifikationswerkzeug für KI-Agenten** ausgelegt (ADR-0012):
+Statt eine regelbasierte Entscheidung selbst zu „raten", delegiert ein Agent sie an
+temis und bekommt eine **deterministische, reproduzierbare** Antwort zurück. `temis-mcp`
+bietet die Engine dafür als natives Werkzeug über das **Model Context Protocol**
+(JSON-RPC 2.0 über stdio) an — abhängigkeitsfrei, reine Standardbibliothek.
+
+```sh
+go run ./cmd/temis-mcp        # spricht MCP über stdin/stdout (Logs auf stderr)
+```
+
+Vier Tools: **`list_models`** (Cache auflisten), **`load_model`** (DMN-XML kompilieren +
+content-addressed cachen, idempotent), **`describe_decision`** (Decision + erwartete
+Inputs beschreiben) und **`evaluate`** (auswerten per `modelId` oder stateless per `xml`).
+Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Eintrag:
+
+```jsonc
+// in der MCP-Client-Konfiguration
+{ "command": "go", "args": ["run", "./cmd/temis-mcp"] }   // oder das gebaute Binary
+```
+
+> Nächste Agent-First-Bausteine (Roadmap-Etappe „Agent-First"): **WP-51**
+> Entscheidungsspur (welche Regel warum gefeuert hat) und **WP-52** typisiertes
+> Eingabe-Schema mit strenger Validierung.
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.
@@ -158,6 +185,8 @@ make help          # alle Make-Targets
 
 ```
 dmn/                 # öffentliche API (Engine, Compile/Evaluate — WP-10)
+service/             # HTTP-Service-Adapter (temisd, WP-32)
+mcp/                 # MCP-Server-Adapter für KI-Agenten (temis-mcp, WP-50)
 internal/
   xml/               # DMN-XML ⇄ Modell (namespace-tolerant)
   model/             # versionsneutrales Domänenmodell
