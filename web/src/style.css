@@ -267,18 +267,47 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 
 /* On-canvas result badge: a decision's evaluated value, overlaid on its node. */
 .node-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: 600 11px/1 ui-monospace, monospace;
   background: var(--accent);
   color: #fff;
   padding: 2px 7px;
   border-radius: 999px;
   white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 200px;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
   pointer-events: none;
 }
+.node-result-val { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.node-result-rule { background: rgba(255, 255, 255, 0.28); border-radius: 999px; padding: 0 5px; font-size: 10px; }
+
+/* Design / Operate views. In Operate the editor is read-only (palette, context
+   pad and editing toolbar hidden) and the run history/inspector is shown. */
+.mode-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.mode-btn { font: 13px/1 system-ui, sans-serif; padding: 6px 12px; border: 0; background: #fff; color: var(--muted); cursor: pointer; }
+.mode-btn.is-active { background: var(--accent); color: #fff; font-weight: 600; }
+.mode-btn:not(.is-active):hover { background: #f1f4f9; }
+.operate-panel { display: none; }
+.app-shell[data-mode="operate"] .operate-panel { display: block; }
+.app-shell[data-mode="operate"] .design-only { display: none !important; }
+.app-shell[data-mode="operate"] .djs-palette,
+.app-shell[data-mode="operate"] .djs-context-pad { display: none !important; }
+.op-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; }
+.op-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.op-run { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; }
+.op-run:hover { background: #f1f5f9; }
+.op-run.is-active { border-color: var(--accent); background: #f0fdf4; }
+.op-run-n { font-weight: 600; white-space: nowrap; }
+.op-run-in { color: var(--muted); font: 12px/1.4 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-detail { border-top: 1px solid var(--line); padding-top: 12px; }
+.op-subtitle { font-size: 11.5px; font-weight: 700; color: var(--muted); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+.op-kv { border-collapse: collapse; margin-bottom: 6px; }
+.op-kv th, .op-kv td { border: 1px solid var(--line); padding: 3px 9px; text-align: left; font-size: 13px; }
+.op-kv th { background: #f1f5f9; font-weight: 600; }
+.op-rule { margin-left: 8px; font: 600 11px/1 ui-monospace, monospace; color: var(--accent); background: #dcfce7; padding: 1px 6px; border-radius: 999px; }
+.op-hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
 
 /* Decision-table overlay (double-click a table-decision in the DRD). */
 .dt-overlay {
@@ -392,6 +421,16 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .dt-save:hover { filter: brightness(1.05); }
 .dt-status { font-size: 13px; color: var(--muted); }
 .dt-status.dt-error { color: #e5484d; }
+/* Operate: the rule that fired, and the read-only (view-only) table. */
+.dt-rule.dt-hit { background: #f0fdf4; }
+.dt-rule.dt-hit .dt-idx { color: var(--accent); font-weight: 700; }
+.dt-readonly .dt-cell, .dt-readonly .dt-head-field, .dt-readonly .dt-type-sel, .dt-readonly .dt-policy-sel, .dt-readonly .dt-agg-sel {
+  background: #f8fafc;
+  color: var(--fg);
+  cursor: default;
+  opacity: 1;
+}
+.dt-readonly .dt-rm, .dt-readonly .dt-del { display: none; }
 /* Editable hit-policy + column headers. */
 .dt-policy-sel, .dt-agg-sel {
   font: 12px/1 ui-monospace, monospace;

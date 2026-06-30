@@ -13,7 +13,10 @@ const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
 // editable modal (ADR-0016): hit policy, input/output columns (add/remove, edit
 // expression/name/type) and rule cells, all FEEL-validated, then saved back into
 // the model. onSaved gets the saved model's new id (its content hash changed).
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES): Promise<void> {
+// opts.matched highlights the rule row(s) that fired in an evaluation (the
+// Operate view's hit-rule highlight); opts.readOnly opens the table for viewing
+// only (no editing/saving) — used when inspecting a past run.
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean } = {}): Promise<void> {
   let fetched: TableView | null
   try {
     fetched = await getTable(modelId, decisionId)
@@ -76,9 +79,10 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   // names that a cell/output expression may reference: the input column expressions.
   const inputNames = (): string[] => state.inputs.map((c) => c.expression).filter((s) => s.trim() !== '')
 
+  const matched = new Set(opts.matched ?? [])
   const rebuild = (): void => {
     scroll.textContent = ''
-    scroll.append(buildGrid(state, inputNames(), rebuild, typeOptions))
+    scroll.append(buildGrid(state, inputNames(), rebuild, typeOptions, matched))
   }
   rebuild()
 
@@ -136,13 +140,25 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   saveBtn.addEventListener('click', () => void save())
 
   const toolbar = el('div', { class: 'dt-toolbar' }, addInBtn, addOutBtn, addBtn, saveBtn, status)
-  overlay.append(el('div', { class: 'dt-modal' }, header, scroll, toolbar))
+  const modal = el('div', { class: 'dt-modal' }, header, scroll, toolbar)
+  overlay.append(modal)
+
+  // Read-only (Operate): no structural edits — disable every field/button and
+  // replace the editing toolbar with a hint. The matched-rule highlight stays.
+  if (opts.readOnly) {
+    modal.classList.add('dt-readonly')
+    for (const f of scroll.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button')) f.disabled = true
+    toolbar.textContent = ''
+    if (matched.size) toolbar.append(el('span', { class: 'dt-status' }, 'Regel ' + [...matched].map((m) => m + 1).join(', ') + ' hat gehittet'))
+    else toolbar.append(el('span', { class: 'dt-status' }, 'keine Regel hat gehittet'))
+  }
+
   document.body.append(overlay)
 }
 
 // buildGrid renders the editable table from the working state. rebuild is called
 // after a structural change (column/row add/remove) to redraw.
-function buildGrid(state: TableView, names: string[], rebuild: () => void, typeOptions: string[]): HTMLElement {
+function buildGrid(state: TableView, names: string[], rebuild: () => void, typeOptions: string[], matched: Set<number>): HTMLElement {
   const table = el('table', { class: 'dt' })
   const head = el('thead')
 
@@ -163,7 +179,7 @@ function buildGrid(state: TableView, names: string[], rebuild: () => void, typeO
 
   // Rule rows.
   const body = el('tbody')
-  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild)))
+  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild, matched.has(i))))
   table.append(body)
   return table
 }
@@ -203,8 +219,8 @@ function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: ()
   return el('th', { class: 'dt-out' }, el('div', { class: 'dt-colhead' }, name, typeSelect(col, typeOptions), rm))
 }
 
-function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void): HTMLElement {
-  const row = el('tr', { class: 'dt-rule' }, el('td', { class: 'dt-idx' }, String(i + 1)))
+function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void, hit = false): HTMLElement {
+  const row = el('tr', { class: hit ? 'dt-rule dt-hit' : 'dt-rule' }, el('td', { class: 'dt-idx' }, String(i + 1)))
   state.inputs.forEach((_, k) => row.append(el('td', { class: 'dt-in' }, cell(r.inputEntries, k, 'in', names))))
   state.outputs.forEach((_, k) => row.append(el('td', { class: 'dt-out' }, cell(r.outputEntries, k, 'out', names))))
   const ann = el('input', { class: 'dt-cell dt-cell-ann', value: (r.annotations ?? [])[0] ?? '', placeholder: '—' }) as HTMLInputElement

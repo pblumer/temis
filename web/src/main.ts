@@ -2,7 +2,8 @@ import { APP_NAME } from './build-info'
 import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
-import { renderEvaluatePanel } from './evaluate'
+import { renderEvaluatePanel, type EvalRun } from './evaluate'
+import type { GraphEvalResult } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBKMOverlay } from './bkm'
@@ -34,16 +35,22 @@ async function boot(root: HTMLElement): Promise<void> {
       </aside>
       <main class="editor">
         <div class="toolbar">
-          <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
-          <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
-          <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
-          <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+          <span class="mode-toggle">
+            <button id="modeDesign" class="mode-btn is-active" type="button" title="Bearbeiten">Design</button>
+            <button id="modeOperate" class="mode-btn" type="button" title="Auswerten & beobachten">Operate</button>
+          </span>
+          <span class="design-only toolbar-group">
+            <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
+            <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
+            <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
+            <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+          </span>
           <span class="zoom-group">
             <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
           </span>
-          <span id="typeEditor" class="type-editor" style="display:none">
+          <span id="typeEditor" class="type-editor design-only" style="display:none">
             <label for="datatype">Typ</label>
             <select id="datatype"></select>
           </span>
@@ -53,13 +60,18 @@ async function boot(root: HTMLElement): Promise<void> {
         <section class="eval-panel">
           <h2 class="eval-title">Auswerten</h2>
           <div id="eval"></div>
+          <div id="operate" class="operate-panel"></div>
         </section>
       </main>
     </div>`
 
+  const appShell = root.querySelector<HTMLElement>('.app-shell')
   const modelList = root.querySelector<HTMLElement>('#modelList')
   const canvas = root.querySelector<HTMLElement>('#canvas')
   const status = root.querySelector<HTMLElement>('#status')
+  const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
+  const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
+  const operateHost = root.querySelector<HTMLElement>('#operate')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
   const saveBtn = root.querySelector<HTMLButtonElement>('#save')
@@ -69,7 +81,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!modelList || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -87,6 +99,12 @@ async function boot(root: HTMLElement): Promise<void> {
   let dirty = false
   // The model currently loaded in the editor (a specific revision's id).
   let currentId = ''
+  // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
+  // evaluations and inspects the results — decision values and the hit rule(s)
+  // highlighted on the nodes and in the table — with a session history of runs.
+  let mode: 'design' | 'operate' = 'design'
+  let runs: EvalRun[] = []
+  let activeRun: EvalRun | null = null
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -302,12 +320,112 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
+  // hitRulesOf maps each decision to the rule numbers (1-based) that fired, from
+  // the run's per-decision traces — for the on-node hit-rule badges.
+  const hitRulesOf = (result: GraphEvalResult): Record<string, number[]> => {
+    const out: Record<string, number[]> = {}
+    for (const [name, tr] of Object.entries(result.traces ?? {})) {
+      const rules: number[] = []
+      for (const t of tr.tables ?? []) for (const m of t.matched ?? []) rules.push(m + 1)
+      if (rules.length) out[name] = rules
+    }
+    return out
+  }
+
+  // applyRun makes a run the active one and overlays its values + hit rules.
+  const applyRun = (run: EvalRun): void => {
+    activeRun = run
+    handle?.showResults(run.result.values, hitRulesOf(run.result))
+  }
+
+  // recordRun is called after each evaluation: keep it in the session history
+  // (newest first), highlight it, and refresh the Operate panel.
+  const recordRun = (run: EvalRun): void => {
+    runs.unshift(run)
+    applyRun(run)
+    if (mode === 'operate') renderOperate()
+  }
+
+  const summarizeInputs = (inputs: Record<string, unknown>): string => {
+    const parts = Object.entries(inputs).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    return parts.length ? parts.join(', ') : '(keine Eingaben)'
+  }
+
+  // renderOperate draws the session run history and the active run's detail.
+  const renderOperate = (): void => {
+    operateHost.textContent = ''
+    if (!runs.length) {
+      operateHost.append(el('p', 'model-empty', 'Noch keine Auswertung in dieser Session. Oben Eingaben füllen und „Auswerten" — die Ergebnisse erscheinen hier und auf den Knoten.'))
+      return
+    }
+    operateHost.append(el('div', 'op-title', 'Läufe (Session)'))
+    const list = el('div', 'op-runs')
+    runs.forEach((run, i) => {
+      const n = runs.length - i
+      const row = el('div', 'op-run' + (run === activeRun ? ' is-active' : ''))
+      row.append(el('span', 'op-run-n', 'Lauf ' + n), el('span', 'op-run-in', summarizeInputs(run.inputs)))
+      row.addEventListener('click', () => {
+        applyRun(run)
+        renderOperate()
+      })
+      list.append(row)
+    })
+    operateHost.append(list)
+    if (activeRun) {
+      const detail = el('div', 'op-detail')
+      detail.append(el('div', 'op-subtitle', 'Eingangsdaten'))
+      const intbl = el('table', 'op-kv')
+      for (const [k, v] of Object.entries(activeRun.inputs)) {
+        intbl.append(el('tr', '', el('th', '', k), el('td', '', el('code', '', typeof v === 'string' ? v : JSON.stringify(v)))))
+      }
+      if (!Object.keys(activeRun.inputs).length) intbl.append(el('tr', '', el('td', '', '(keine)')))
+      detail.append(intbl)
+      detail.append(el('div', 'op-subtitle', 'Ergebnisse'))
+      const outtbl = el('table', 'op-kv')
+      const rules = hitRulesOf(activeRun.result)
+      for (const [name, val] of Object.entries(activeRun.result.values)) {
+        const rule = rules[name]?.length ? el('span', 'op-rule', 'Regel ' + rules[name].join(', ')) : el('span', '', '')
+        outtbl.append(el('tr', '', el('th', '', name), el('td', '', el('code', '', typeof val === 'string' ? val : JSON.stringify(val)), rule)))
+      }
+      detail.append(outtbl)
+      detail.append(el('p', 'op-hint', 'Tipp: Doppelklick auf eine Decision mit Tabelle zeigt die getroffene Regel.'))
+      operateHost.append(detail)
+    }
+  }
+
+  // openTable opens a decision's table — editable in Design, read-only with the
+  // active run's hit rule(s) highlighted in Operate.
+  const openTable = (modelId: string, decisionId: string): void => {
+    if (mode === 'operate') {
+      const name = handle?.graph().nodes.find((n) => n.id === decisionId)?.name ?? ''
+      const tr = activeRun?.result.traces?.[name]
+      const matched: number[] = []
+      for (const t of tr?.tables ?? []) for (const m of t.matched ?? []) matched.push(m)
+      void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched })
+    } else {
+      void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions)
+    }
+  }
+
+  const setMode = (m: 'design' | 'operate'): void => {
+    mode = m
+    appShell.dataset.mode = m
+    modeDesignBtn.classList.toggle('is-active', m === 'design')
+    modeOperateBtn.classList.toggle('is-active', m === 'operate')
+    if (m === 'operate') renderOperate()
+  }
+  modeDesignBtn.addEventListener('click', () => setMode('design'))
+  modeOperateBtn.addEventListener('click', () => setMode('operate'))
+
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
     currentId = modelId
     renderModelList()
     status.textContent = 'lädt …'
     dirty = false
+    // A fresh model view starts an empty run history (its decisions differ).
+    runs = []
+    activeRun = null
     try {
       // Refresh the type options for this model (built-in + its custom types).
       try {
@@ -321,7 +439,7 @@ async function boot(root: HTMLElement): Promise<void> {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions))
+      handle.onOpenTable((decisionId) => openTable(modelId, decisionId))
       handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
@@ -340,10 +458,11 @@ async function boot(root: HTMLElement): Promise<void> {
       // Its results are also overlaid on the canvas nodes (the whole graph with
       // its computed values).
       try {
-        renderEvaluatePanel(evalHost, await getModel(modelId), (values) => handle?.showResults(values))
+        renderEvaluatePanel(evalHost, await getModel(modelId), (run) => recordRun(run))
       } catch {
         evalHost.textContent = ''
       }
+      if (mode === 'operate') renderOperate()
     } catch (e) {
       status.textContent = (e as Error).message
     }
