@@ -6,6 +6,8 @@ import ConnectModule from 'diagram-js/lib/features/connect'
 import PaletteModule from 'diagram-js/lib/features/palette'
 import CreateModule from 'diagram-js/lib/features/create'
 import HandToolModule from 'diagram-js/lib/features/hand-tool'
+import KeyboardModule from 'diagram-js/lib/features/keyboard'
+import EditorActionsModule from 'diagram-js/lib/features/editor-actions'
 import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
 import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
 import OverlaysModule from 'diagram-js/lib/features/overlays'
@@ -158,7 +160,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       dmnPaletteModule, ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      PaletteModule, CreateModule, HandToolModule, MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
+      PaletteModule, CreateModule, HandToolModule, KeyboardModule, EditorActionsModule,
+      MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
     ],
   })
   current = diagram
