@@ -743,3 +743,51 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   font-size: 13.5px;
 }
 .assist-form .tbtn:disabled { opacity: 0.5; cursor: default; }
+
+/* Code-completion dropdown (src/complete.ts): the in-scope variables and the
+   engine's built-in functions for every FEEL field. Sits above the editor
+   modal (dt-overlay is z-index 100). */
+.cc-pop {
+  position: absolute;
+  z-index: 1000;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.22);
+  padding: 4px;
+  font-size: 13px;
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cc-row.cc-active { background: #dbe7fb; }
+.cc-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 10px/1 ui-monospace, monospace;
+  border-radius: 4px;
+  color: #fff;
+}
+.cc-icon.cc-variable { background: #15803d; }
+.cc-icon.cc-function { background: #2563eb; font-style: italic; }
+.cc-icon.cc-keyword { background: #94a3b8; }
+.cc-label { font-family: ui-monospace, monospace; color: var(--fg); }
+.cc-detail {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: ui-monospace, monospace;
+}

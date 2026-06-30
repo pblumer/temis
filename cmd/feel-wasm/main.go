@@ -11,13 +11,20 @@
 //
 // Each returns { ok: bool } on success or { ok: false, line, col, message }
 // with the engine's 1-based line/col diagnostic on failure.
+//
+// It also exposes the engine's built-in catalog so the editor can offer code
+// completion (variables come from the page, functions from here):
+//
+//	window.temisFeelBuiltins()  // [{ name, params: [...], variadic }, …]
 package main
 
 import (
+	"sort"
 	"strings"
 	"syscall/js"
 
 	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/temis/internal/feel/builtins"
 )
 
 // splitNames turns "Season, Guest Count" into ["Season", "Guest Count"], the
@@ -99,9 +106,33 @@ func validateName(_ js.Value, args []js.Value) any {
 	return map[string]any{"ok": true}
 }
 
+// builtinsCatalog returns the FEEL built-in functions as a JS array of
+// { name, params: [...], variadic } objects, so the in-browser editor can offer
+// function completions with signature hints straight from the engine's own
+// registry — never a hand-maintained list that could drift from the runtime.
+func builtinsCatalog(_ js.Value, _ []js.Value) any {
+	reg := builtins.Default()
+	names := reg.Names()
+	sort.Strings(names)
+	out := make([]any, 0, len(names))
+	for _, n := range names {
+		b, ok := reg.Lookup(n)
+		if !ok {
+			continue
+		}
+		params := make([]any, len(b.Params))
+		for i, p := range b.Params {
+			params[i] = p
+		}
+		out = append(out, map[string]any{"name": b.Name, "params": params, "variadic": b.Variadic()})
+	}
+	return out
+}
+
 func main() {
 	js.Global().Set("temisFeelValidate", js.FuncOf(validateOutput))
 	js.Global().Set("temisFeelValidateUnary", js.FuncOf(validateUnary))
 	js.Global().Set("temisFeelValidateName", js.FuncOf(validateName))
+	js.Global().Set("temisFeelBuiltins", js.FuncOf(builtinsCatalog))
 	select {} // keep the Go runtime alive so the exported funcs stay callable
 }
