@@ -169,6 +169,14 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .eval-cell-error { color: #e5484d; }
 .eval-cell-error code { color: #e5484d; }
 
+/* The active palette tool (e.g. the hand) — make the mode obvious so a user
+   doesn't wonder why dragging pans instead of moving an element. */
+.djs-palette .entry.highlighted-entry {
+  background: #e7effd;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: 4px;
+}
+
 /* On-canvas result badge: a decision's evaluated value, overlaid on its node. */
 .node-result {
   font: 600 11px/1 ui-monospace, monospace;

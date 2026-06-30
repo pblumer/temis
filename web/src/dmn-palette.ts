@@ -54,8 +54,12 @@ class DmnPaletteProvider {
       this.create.start(event as MouseEvent, shape)
     }
 
+    // Entry keys carry the "-tool" suffix the palette strips to match the active
+    // diagram-js tool name (e.g. "hand-tool" → "hand"), so the active tool is
+    // highlighted. "select-tool" has no backing tool, so it never highlights — it
+    // is the momentary "back to selecting" action.
     const entries: PaletteEntries = {
-      'tool-select': {
+      'select-tool': {
         group: 'tools',
         className: 'pal-icon',
         title: 'Auswählen',
@@ -63,7 +67,7 @@ class DmnPaletteProvider {
         // Leave any active tool (e.g. the hand) and return to plain selection.
         action: { click: () => { if (this.handTool.isActive()) this.handTool.toggle() } },
       },
-      'tool-hand': {
+      'hand-tool': {
         group: 'tools',
         className: 'pal-icon',
         title: 'Navigieren (Hand)',

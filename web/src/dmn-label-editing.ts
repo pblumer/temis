@@ -55,6 +55,9 @@ class DmnLabelEditing {
   private commandStack: CommandStack
   private canvas: ViewboxCanvas
   private directEditing: DirectEditing
+  // The shape currently being inline-edited, so the box can follow it when the
+  // canvas pans or zooms; null when no edit is active.
+  private active: (Shape & { name?: string }) | null = null
 
   constructor(eventBus: EventBus, directEditing: DirectEditing, commandStack: CommandStack, canvas: Canvas) {
     this.commandStack = commandStack
@@ -69,6 +72,14 @@ class DmnLabelEditing {
       directEditing.activate(event.element)
       this.wireLiveValidation()
     })
+
+    // Keep the edit box glued to its element when the canvas viewbox changes
+    // (scroll/trackpad pan or zoom) while editing — otherwise the absolutely
+    // positioned box detaches and drifts far from the element.
+    eventBus.on('canvas.viewbox.changed', () => this.reposition())
+    eventBus.on(['directEditing.cancel', 'directEditing.complete', 'directEditing.deactivate'], () => {
+      this.active = null
+    })
   }
 
   // activate tells direct-editing what to edit and where. The box is positioned in
@@ -77,12 +88,32 @@ class DmnLabelEditing {
   activate(element: Element): { text: string; bounds: { x: number; y: number; width: number; height: number }; style: Record<string, string> } | undefined {
     if (!isRenamable(element)) return undefined
     const shape = element as Shape & { name?: string }
-    const bounds = this.canvas.getAbsoluteBBox({ x: shape.x ?? 0, y: shape.y ?? 0, width: shape.width ?? 0, height: shape.height ?? 0 })
+    this.active = shape
     return {
       text: shape.name ?? '',
-      bounds,
+      bounds: this.screenBounds(shape),
       style: { textAlign: 'center', fontFamily: 'system-ui, sans-serif', fontSize: 13 * this.canvas.zoom() + 'px', fontWeight: '500' },
     }
+  }
+
+  // screenBounds maps a shape's model bounds to the canvas container's coordinate
+  // space (accounting for zoom/scroll), where the edit box is absolutely placed.
+  private screenBounds(shape: Shape): { x: number; y: number; width: number; height: number } {
+    return this.canvas.getAbsoluteBBox({ x: shape.x ?? 0, y: shape.y ?? 0, width: shape.width ?? 0, height: shape.height ?? 0 })
+  }
+
+  // reposition re-places the open edit box over its element after a viewbox change.
+  private reposition(): void {
+    if (!this.active) return
+    const container = this.canvas.getContainer()
+    const box = container.querySelector<HTMLElement>('.djs-direct-editing-parent')
+    if (!box) return
+    const b = this.screenBounds(this.active)
+    box.style.left = b.x + 'px'
+    box.style.top = b.y + 'px'
+    box.style.width = b.width + 'px'
+    const content = container.querySelector<HTMLElement>('.djs-direct-editing-content')
+    if (content) content.style.fontSize = 13 * this.canvas.zoom() + 'px'
   }
 
   // update is called on commit; apply only a valid, non-empty name.
