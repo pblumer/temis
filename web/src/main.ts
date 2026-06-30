@@ -569,11 +569,28 @@ async function boot(root: HTMLElement): Promise<void> {
       })
       syncButtons()
       status.textContent = `${graph.nodes.length} Knoten · ${graph.edges.length} Kanten`
-      // Evaluate panel: needs the typed per-decision schema, so fetch the detail.
-      // Its results are also overlaid on the canvas nodes (the whole graph with
-      // its computed values).
+      // Evaluate panel needs the typed per-decision schema, and the model detail
+      // also carries the compile diagnostics, which mark the affected nodes and a
+      // summary in the status bar — the editor validates against the engine that
+      // runs the model (ADR-0016).
       try {
-        renderEvaluatePanel(evalHost, await getModel(modelId), (run) => recordRun(run))
+        const detail = await getModel(modelId)
+        const diags = detail.diagnostics ?? []
+        handle.showDiagnostics(diags)
+        const errors = diags.filter((d) => d.severity === 'error').length
+        const warnings = diags.filter((d) => d.severity === 'warning').length
+        if (errors || warnings) {
+          const parts: string[] = []
+          if (errors) parts.push(`${errors} Fehler`)
+          if (warnings) parts.push(`${warnings} ${warnings === 1 ? 'Warnung' : 'Warnungen'}`)
+          status.textContent += ' · ⚠ ' + parts.join(', ')
+          status.title = diags.map((d) => (d.severity === 'error' ? '✕ ' : d.severity === 'warning' ? '⚠ ' : 'ℹ ') + d.message).join('\n')
+          status.classList.add('status-problem')
+        } else {
+          status.title = ''
+          status.classList.remove('status-problem')
+        }
+        renderEvaluatePanel(evalHost, detail, (run) => recordRun(run))
       } catch {
         evalHost.textContent = ''
       }

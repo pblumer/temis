@@ -84,6 +84,11 @@ export type ModelerHandle = {
   onOpenBKM: (cb: (bkmId: string) => void) => void
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
+  // showDiagnostics marks each decision node that has compile/eval problems with a
+  // severity badge (error/warning) carrying the messages as a tooltip, so issues
+  // are visible on the diagram. Diagnostics without a decision id are model-level
+  // and handled by the caller. An empty list clears the markers.
+  showDiagnostics: (diags: { severity: string; message: string; decisionId?: string }[]) => void
   // showResults overlays each decision's evaluated value on its node (keyed by
   // decision name), so the whole graph's results are visible on the diagram. When
   // hitRules is given (decision name → matched rule numbers, 1-based), the badge
@@ -255,6 +260,25 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     zoom: (dir) => {
       if (dir === 'fit') canvas.zoom('fit-viewport')
       else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
+    },
+    showDiagnostics: (diags) => {
+      overlays.remove({ type: 'diagnostic' })
+      const byDec = new Map<string, { severity: string; message: string }[]>()
+      for (const d of diags) {
+        if (!d.decisionId) continue
+        const list = byDec.get(d.decisionId) ?? []
+        list.push(d)
+        byDec.set(d.decisionId, list)
+      }
+      for (const [id, ds] of byDec) {
+        if (!elementRegistry.get(id)) continue
+        const worst = ds.some((d) => d.severity === 'error') ? 'error' : ds.some((d) => d.severity === 'warning') ? 'warning' : 'info'
+        const badge = document.createElement('div')
+        badge.className = 'node-diag node-diag-' + worst
+        badge.textContent = worst === 'info' ? 'i' : '!'
+        badge.title = ds.map((d) => d.message).join('\n')
+        overlays.add(id, 'diagnostic', { position: { top: -9, right: -9 }, html: badge })
+      }
     },
     showResults: (values, hitRules) => {
       overlays.remove({ type: 'eval-result' })
