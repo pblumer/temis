@@ -27,20 +27,94 @@ const TEXT = '#1f2632'
 type Named = { name?: string; dataType?: string; varName?: string }
 const SUBTLE = '#7a8597'
 
+const FONT = 'system-ui, -apple-system, sans-serif'
+
 function drawText(parent: SVGElement, content: string, cx: number, cy: number, size: number, color: string, weight: string): void {
   const t = create('text')
   attr(t, {
     x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-    'font-family': 'system-ui, -apple-system, sans-serif', 'font-size': String(size),
+    'font-family': FONT, 'font-size': String(size),
     'font-weight': weight, fill: color,
   })
   t.textContent = content
   append(parent, t)
 }
 
+// Accurate text measurement via an offscreen canvas, so labels can be wrapped and
+// shrunk to fit the node rather than overflowing it.
+const measureCtx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
+function textWidth(s: string, size: number, weight: string): number {
+  if (!measureCtx) return s.length * size * 0.55
+  measureCtx.font = `${weight} ${size}px ${FONT}`
+  return measureCtx.measureText(s).width
+}
+
+// wrapAll word-wraps text to maxW, hard-breaking any single word that is wider
+// than the line, and returns every resulting line.
+function wrapAll(text: string, maxW: number, size: number, weight: string): string[] {
+  const lines: string[] = []
+  let cur = ''
+  const fits = (s: string): boolean => textWidth(s, size, weight) <= maxW
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (fits(cur ? cur + ' ' + word : word)) {
+      cur = cur ? cur + ' ' + word : word
+      continue
+    }
+    if (cur && fits(word)) {
+      lines.push(cur)
+      cur = word
+      continue
+    }
+    if (cur) {
+      lines.push(cur)
+      cur = ''
+    }
+    let chunk = ''
+    for (const ch of word) {
+      if (fits(chunk + ch) || chunk === '') chunk += ch
+      else {
+        lines.push(chunk)
+        chunk = ch
+      }
+    }
+    cur = chunk
+  }
+  if (cur) lines.push(cur)
+  return lines
+}
+
+// ellipsizeToWidth trims s and appends an ellipsis until it fits maxW.
+function ellipsizeToWidth(s: string, maxW: number, size: number, weight: string): string {
+  if (textWidth(s, size, weight) <= maxW) return s
+  let t = s
+  while (t && textWidth(t + '…', size, weight) > maxW) t = t.slice(0, -1)
+  return t + '…'
+}
+
+// fitName lays out a name within maxW: it picks the largest font (down to a floor)
+// at which the name wraps into at most maxLines without splitting a word, so long
+// single words (e.g. "MonatlichesEinkommen") shrink rather than break; if even the
+// floor size can't fit, it hard-breaks and ellipsizes the last line.
+function fitName(name: string, maxW: number, maxLines: number): { size: number; lines: string[] } {
+  const words = name.split(/\s+/).filter(Boolean)
+  for (let size = 13; size >= 10; size -= 0.5) {
+    const lines = wrapAll(name, maxW, size, '500')
+    const noBreak = words.every((w) => textWidth(w, size, '500') <= maxW)
+    if (lines.length <= maxLines && noBreak) return { size, lines }
+  }
+  const size = 10
+  let lines = wrapAll(name, maxW, size, '500')
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines)
+    lines[maxLines - 1] = ellipsizeToWidth(lines[maxLines - 1] + '…', maxW, size, '500')
+  }
+  return { size, lines }
+}
+
 // label draws the element name and, below it, a subtle second line carrying the
 // data contract: the type on an InputData, the output variable (name : type) on
 // a Decision — so it's visible how a decision's result is referenced (ADR-0016).
+// Long names are wrapped/shrunk to fit the node instead of overflowing it.
 function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): void {
   const name = shape.name ?? shape.id
   let sub = ''
@@ -52,12 +126,19 @@ function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): 
   } else if (shape.dataType) {
     sub = shape.dataType
   }
-  if (sub) {
-    drawText(parent, name, w / 2, h / 2 - 9, 13, TEXT, '500')
-    drawText(parent, sub, w / 2, h / 2 + 10, 10.5, SUBTLE, '400')
-  } else {
-    drawText(parent, name, w / 2, h / 2, 13, TEXT, '500')
+
+  // The label sits at the vertical centre, where even a pill (InputData) is at
+  // full width, so a small uniform padding keeps text off the borders.
+  const maxW = w - 18
+  const { size, lines } = fitName(name, maxW, sub ? 2 : 3)
+  const lineH = size + 3
+  const subH = sub ? 14 : 0
+  let y = h / 2 - (lines.length * lineH + subH) / 2 + lineH / 2
+  for (const ln of lines) {
+    drawText(parent, ln, w / 2, y, size, TEXT, '500')
+    y += lineH
   }
+  if (sub) drawText(parent, ellipsizeToWidth(sub, maxW, 10.5, '400'), w / 2, y + 1, 10.5, SUBTLE, '400')
 }
 
 // decisionIcon draws the small type badge in the top-left corner of a decision

@@ -33,15 +33,37 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
   // declared inputs, so a transitively-reached input (one only a downstream
   // decision names) is still offered. Types/constraints come along for the ride.
   const fields = leafInputs(model)
-  const rows: { field: InputField; input: HTMLInputElement }[] = fields.map((field) => {
-    const input = el('input', {
-      type: 'text',
-      class: 'eval-field',
-      placeholder: field.type || 'FEEL',
-      title: field.constraint ? 'erlaubte Werte: ' + field.constraint : '',
-    }) as HTMLInputElement
+  const rows: { field: InputField; input: HTMLInputElement | HTMLSelectElement }[] = fields.map((field, idx) => {
+    const values = field.values ?? []
+    let input: HTMLInputElement | HTMLSelectElement
+    const extras: Node[] = []
+    if (values.length && field.valuesClosed) {
+      // Closed enumeration → a dropdown; only declared values are accepted.
+      const sel = el('select', { class: 'eval-field' }) as HTMLSelectElement
+      const blank = el('option', {}, '— wählen —') as HTMLOptionElement
+      blank.value = ''
+      sel.append(blank)
+      for (const v of values) sel.append(el('option', { value: v }, v))
+      input = sel
+    } else {
+      // Free text, with the inferred cell values offered as suggestions.
+      const box = el('input', {
+        type: 'text',
+        class: 'eval-field',
+        placeholder: field.type || 'FEEL',
+        title: field.constraint ? 'erlaubte Werte: ' + field.constraint : '',
+      }) as HTMLInputElement
+      if (values.length) {
+        const id = 'eval-dl-' + idx
+        const dl = el('datalist', { id })
+        for (const v of values) dl.append(el('option', { value: v }))
+        box.setAttribute('list', id)
+        extras.push(dl)
+      }
+      input = box
+    }
     const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
-    inputsHost.append(el('div', { class: 'eval-field-wrap' }, label, input))
+    inputsHost.append(el('div', { class: 'eval-field-wrap' }, label, input, ...extras))
     return { field, input }
   })
   if (!rows.length) inputsHost.append(el('p', { class: 'eval-empty' }, 'Dieses Modell braucht keine Eingaben.'))
@@ -112,11 +134,20 @@ function leafInputs(model: ModelDetail): InputField[] {
       for (const f of fields ?? []) {
         const ex = byName.get(f.name)
         if (!ex) {
-          byName.set(f.name, { ...f })
+          byName.set(f.name, { ...f, values: f.values ? [...f.values] : undefined })
         } else {
           if (!ex.type && f.type) ex.type = f.type
           if (!ex.constraint && f.constraint) ex.constraint = f.constraint
           ex.required = ex.required || f.required
+          // Values: a closed declared enumeration wins; else union the suggestions.
+          if (!ex.valuesClosed) {
+            if (f.valuesClosed) {
+              ex.values = f.values ? [...f.values] : undefined
+              ex.valuesClosed = true
+            } else if (f.values?.length) {
+              ex.values = [...new Set([...(ex.values ?? []), ...f.values])]
+            }
+          }
         }
       }
     }

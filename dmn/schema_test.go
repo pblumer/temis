@@ -25,6 +25,35 @@ func TestInputSchema(t *testing.T) {
 	}
 }
 
+func TestInputSchemaSuggestsTableCellValues(t *testing.T) {
+	dec := compileDecision(t, "dish_15.dmn", "Dish")
+	got := map[string]dmn.InputField{}
+	for _, f := range dec.InputSchema() {
+		got[f.Name] = f
+	}
+
+	// Season's cells are the string literals "Fall"/"Winter"/"Spring" (+ a "-"
+	// catch-all) — inferred as suggestions, with free entry still allowed.
+	season := got["Season"]
+	want := map[string]bool{"Fall": true, "Winter": true, "Spring": true}
+	if len(season.Values) != 3 {
+		t.Fatalf("Season values = %v, want the three seasons", season.Values)
+	}
+	for _, v := range season.Values {
+		if !want[v] {
+			t.Errorf("unexpected Season value %q", v)
+		}
+	}
+	if season.ValuesClosed {
+		t.Error("Season values are inferred suggestions, should not be a closed set")
+	}
+	// Guest Count's cells are ranges/comparisons (<= 8, [5..8], > 8) — no discrete
+	// values to suggest.
+	if gc := got["Guest Count"]; len(gc.Values) != 0 {
+		t.Errorf("Guest Count should have no suggested values, got %v", gc.Values)
+	}
+}
+
 func TestValidateInputByErrorClass(t *testing.T) {
 	dec := compileDecision(t, "dish_15.dmn", "Dish")
 

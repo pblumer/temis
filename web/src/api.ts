@@ -26,8 +26,11 @@ export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 export type ModelSummary = { modelId: string; name?: string; decisions: string[]; inputs: string[]; seq?: number }
 
 // InputField mirrors dmn.InputField: a decision's typed input, with its optional
-// allowed-values constraint, for building the evaluation form.
-export type InputField = { name: string; type?: string; required: boolean; constraint?: string }
+// allowed-values constraint and discrete suggested values, for building the
+// evaluation form. values lists the discrete values to offer (from a declared
+// enumeration or the literals used in decision-table cells); valuesClosed is true
+// when that set is exhaustive (offer a closed dropdown).
+export type InputField = { name: string; type?: string; required: boolean; constraint?: string; values?: string[]; valuesClosed?: boolean }
 export type Diagnostic = { severity: string; code: string; message: string }
 
 // ModelDetail mirrors the service modelResponse: decisions/inputs plus the typed
