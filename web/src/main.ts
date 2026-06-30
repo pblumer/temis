@@ -28,6 +28,11 @@ async function boot(root: HTMLElement): Promise<void> {
         <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
         <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
         <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+        <span class="zoom-group">
+          <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
+          <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
+          <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
+        </span>
         <span id="typeEditor" class="type-editor" style="display:none">
           <label for="datatype">Typ</label>
           <select id="datatype"></select>
@@ -152,6 +157,11 @@ async function boot(root: HTMLElement): Promise<void> {
     const current = models[Number(select.value)]
     if (current) void openTypeManager(current.modelId, (newId) => reselect(newId))
   })
+
+  // Zoom controls.
+  root.querySelector('#zoomOut')?.addEventListener('click', () => handle?.zoom('out'))
+  root.querySelector('#zoomFit')?.addEventListener('click', () => handle?.zoom('fit'))
+  root.querySelector('#zoomIn')?.addEventListener('click', () => handle?.zoom('in'))
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
   const createLiteral = async (decisionId: string): Promise<void> => {
