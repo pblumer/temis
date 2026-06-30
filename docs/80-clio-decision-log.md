@@ -1,9 +1,9 @@
 # Entscheidungs-Logbuch mit clio (revisionssicheres Audit)
 
-> **Status:** Der **`temisd`-Sink (Abschnitt 2) ist umgesetzt** (WP-54); das
-> **Re-Audit-Tool (Abschnitt 4)** ist als WP-55 eingeplant (`docs/20-roadmap.md`).
-> Das **Agent-Muster** (Abschnitt 5) funktioniert ganz ohne neuen temis-Code.
-> Vertrag & Begründung: ADR-0023.
+> **Status:** Der **`temisd`-Sink (Abschnitt 2, WP-54)** und das
+> **Re-Audit-Tool (Abschnitt 4, WP-55)** sind umgesetzt. Das **Agent-Muster**
+> (Abschnitt 5) funktioniert ganz ohne neuen temis-Code. Vertrag & Begründung:
+> ADR-0023.
 
 temis trifft **deterministische, begründete** Entscheidungen (ADR-0013); das
 Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (`cliostore`) ist ein
@@ -159,28 +159,40 @@ einschränken. clios **Signaturen** (`CLIO_SIGNING_KEY`) und **Authorship**
 
 ---
 
-## 4. Re-Audit / Replay-Verifikation (WP-55, geplant)
+## 4. Re-Audit / Replay-Verifikation (WP-55, umgesetzt)
 
 Der eigentliche Mehrwert gegenüber einem reinen Log: weil temis **deterministisch** ist,
-lässt sich jede historische Entscheidung **nachrechnen**.
+lässt sich jede historische Entscheidung **nachrechnen**. Das Binary **`temis-reaudit`**
+(`cmd/temis-reaudit`, Kern in `package audit`) tut genau das — **read-only**, es schreibt
+nie zurück:
 
-Ein eigenständiges Tool liest die Decision-Events aus clio und prüft sie gegen temis:
+1. `run-query` auf clio mit `where: event.type == 'com.temis.decision.evaluated.v1'`.
+2. Für jedes Event: `data.input` + `data.modelId` erneut über die `dmn`-API auswerten.
+3. Ist-Ausgabe **kanonisch (JSON)** mit `data.outputs` vergleichen.
 
-1. `run-query`/`observe` auf clio mit
-   `where: event.type == 'com.temis.decision.evaluated.v1'`.
-2. Für jedes Event: `data.input` + `data.modelId` erneut durch temis auswerten.
-3. Ist-Ausgabe mit `data.outputs` vergleichen.
+```sh
+temis-reaudit \
+  -clio-url   http://127.0.0.1:3000 \
+  -clio-token kid_ro.secret \
+  -models     ./models            # Verzeichnis der DMN-Dateien (löst modelId auf)
+# → re-audited 127 decision event(s) against 9 model(s): 127 reproduced — OK ✓
+# Exit 0 = alles reproduziert, 1 = mind. eine Abweichung/Fehler (skriptbar wie clios verify).
+```
 
-Ergebnis: ein Compliance-Report — *„127 von 127 historischen Entscheidungen reproduzieren
-exakt"* — bzw. eine präzise Liste der Abweichungen (z. B. weil ein Modell außerhalb des
-content-addressed Pfads ersetzt wurde). Das Tool **liest nur** und hat keinerlei
-Sonderrechte.
+Je Event eine Verdikt-Klasse: **reproduced** ✓, **discrepancy** ✗ (Ausgabe weicht ab),
+**model_unavailable** (modelId nicht im `-models`-Verzeichnis — inkonklusiv) oder
+**eval_error** (Compile/Decision/Evaluate schlägt fehl). Die Modell-Auflösung läuft über
+content-addressed `modelId`: `temis-reaudit` hasht die DMN-Dateien mit demselben
+`sha256:`-Schema wie der Server-Cache, sodass eine zur Aufzeichnung passende Modellversion
+exakt gefunden wird. **Abgrenzung:** clios `verify` prüft Hash-Kette und Signaturen
+(*unverändert?*); `temis-reaudit` ergänzt den orthogonalen *Regelkonformitäts*-Beweis
+(*korrekt gerechnet?*).
 
 ```text
-clio  ──(read decision events)──▶  re-audit  ──(re-evaluate input@modelId)──▶  temis
-                                       │
-                                       ▼
-                     Report: reproduziert ✓ / Abweichung ✗
+clio  ──(run-query: decision events)──▶  temis-reaudit  ──(re-evaluate input@modelId)──▶  dmn
+                                              │
+                                              ▼
+                        Report: reproduced ✓ / discrepancy ✗ / unavailable / eval_error
 ```
 
 ---

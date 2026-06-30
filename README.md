@@ -44,6 +44,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 | WP-54 | Entscheidungs-Logbuch: opt-in clio-Audit-Sink in `temisd` (ADR-0023) | ✅ |
+| WP-55 | Entscheidungs-Logbuch: Re-Audit-/Replay-Tool `temis-reaudit` (ADR-0023) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 | WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
 
@@ -172,6 +173,18 @@ fail-closed (`502`), sonst best-effort. Voller Vertrag & Betrieb: `docs/80-clio-
 go run ./cmd/temisd -addr :8080 \
   -clio-url http://127.0.0.1:3000 -clio-token kid_ci01.geheim -clio-subject-key "Order ID"
 # entsprechend per Env: TEMIS_CLIO_URL / TEMIS_CLIO_TOKEN / TEMIS_CLIO_SOURCE
+```
+
+**Nachrechnen (`temis-reaudit`):** Weil temis deterministisch ist, lässt sich das Logbuch
+**verifizieren** — `temis-reaudit` liest die Events aus clio, rechnet jede Entscheidung
+`input`@`modelId` erneut nach und vergleicht mit der protokollierten Ausgabe. Das ergänzt
+clios `verify` (Hash-Kette/Signatur = *unverändert*) um den *Regelkonformitäts*-Beweis;
+Exit-Code 0/1 macht es skriptbar.
+
+```sh
+go run ./cmd/temis-reaudit \
+  -clio-url http://127.0.0.1:3000 -clio-token kid_ro.secret -models ./models
+# → re-audited 127 decision event(s) against 9 model(s): 127 reproduced — OK ✓
 ```
 
 **gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als
