@@ -25,6 +25,41 @@ func graphEdit(t *testing.T, xml []byte) dmn.GraphEdit {
 	return e
 }
 
+// TestApplyGraphPersistsLayoutWhenNoDiagram covers the layout-persist path: a
+// model authored WITHOUT DMNDI (routing_13) gets the modeler's positions written
+// as a synthesised diagram on save, so the arrangement sticks on reload.
+func TestApplyGraphPersistsLayoutWhenNoDiagram(t *testing.T) {
+	src := readModel(t, "routing_13.dmn") // no DMNDI
+
+	edit := graphEdit(t, src)
+	if len(edit.Nodes) == 0 {
+		t.Fatal("expected nodes")
+	}
+	// The source carries no bounds; assign a layout as the modeler would.
+	for i := range edit.Nodes {
+		edit.Nodes[i].X = float64(i * 200)
+		edit.Nodes[i].Y = float64(i * 120)
+		edit.Nodes[i].Width = 150
+		edit.Nodes[i].Height = 70
+	}
+
+	out, err := dmn.ApplyGraph(src, edit)
+	if err != nil {
+		t.Fatalf("ApplyGraph: %v", err)
+	}
+
+	g := graphByName(t, out)
+	for i, n := range edit.Nodes {
+		got, ok := g[n.Name]
+		if !ok {
+			t.Fatalf("node %q missing after save", n.Name)
+		}
+		if got.X != float64(i*200) || got.Y != float64(i*120) || got.Width != 150 || got.Height != 70 {
+			t.Errorf("node %q bounds = (%v,%v,%v,%v), want persisted (%v,%v,150,70)", n.Name, got.X, got.Y, got.Width, got.Height, i*200, i*120)
+		}
+	}
+}
+
 // TestApplyGraphAddThenDelete adds a fresh inputData wired into the Dish decision,
 // checks it (and its DMNDI shape) round-trips, then removes it again and checks it
 // is gone — while the Dish decision keeps evaluating throughout (logic preserved).

@@ -115,6 +115,20 @@ func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error) {
 			}
 			dmnxml.UpsertShape(def.DMNDI, n.ID, n.X, n.Y, n.Width, n.Height)
 		}
+	} else {
+		// The model was authored without a diagram, so the client auto-laid it out.
+		// Persist that layout (incl. any manual moves) by synthesising a DMNDI, so
+		// the arrangement sticks on reload instead of being re-laid-out every time.
+		var shapes []dmnxml.DIShape
+		for _, n := range edit.Nodes {
+			if n.ID == "" || n.Width <= 0 || n.Height <= 0 {
+				continue
+			}
+			shapes = append(shapes, dmnxml.DIShape{Ref: n.ID, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height})
+		}
+		if di, err := dmnxml.BuildDI(shapes); err == nil && di != nil {
+			def.DMNDI = di
+		}
 	}
 
 	return dmnxml.Encode(def)
