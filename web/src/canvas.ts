@@ -85,9 +85,11 @@ export type ModelerHandle = {
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
   // showResults overlays each decision's evaluated value on its node (keyed by
-  // decision name), so the whole graph's results are visible on the diagram. An
-  // empty map clears the overlays.
-  showResults: (values: Record<string, unknown>) => void
+  // decision name), so the whole graph's results are visible on the diagram. When
+  // hitRules is given (decision name → matched rule numbers, 1-based), the badge
+  // also shows which rule(s) fired — the Operate view's hit-rule highlight. An
+  // empty values map clears the overlays.
+  showResults: (values: Record<string, unknown>, hitRules?: Record<string, number[]>) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -254,16 +256,22 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       if (dir === 'fit') canvas.zoom('fit-viewport')
       else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
     },
-    showResults: (values) => {
+    showResults: (values, hitRules) => {
       overlays.remove({ type: 'eval-result' })
       for (const el of elementRegistry.getAll()) {
         const s = el as Shape & { name?: string; type?: string }
         if (s.type !== 'dmn:decision' || !s.name || !(s.name in values)) continue
         const text = fmtResult(values[s.name])
+        const rules = hitRules?.[s.name] ?? []
         const badge = document.createElement('div')
         badge.className = 'node-result'
-        badge.textContent = text
-        badge.title = s.name + ' = ' + text
+        badge.append(Object.assign(document.createElement('span'), { className: 'node-result-val', textContent: text }))
+        if (rules.length) {
+          badge.append(Object.assign(document.createElement('span'), { className: 'node-result-rule', textContent: 'R' + rules.join(',') }))
+          badge.title = s.name + ' = ' + text + ' · Regel ' + rules.join(', ')
+        } else {
+          badge.title = s.name + ' = ' + text
+        }
         overlays.add(s.id, 'eval-result', { position: { bottom: -4, left: 6 }, html: badge })
       }
     },

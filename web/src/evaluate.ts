@@ -1,11 +1,17 @@
-import { evaluateGraph, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
+import { evaluateGraph, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace, type GraphEvalResult } from './api'
+
+// EvalRun is one whole-graph evaluation: the inputs the user supplied and the
+// result (per-decision values + traces). The Operate view keeps a session list
+// of these to replay and highlight.
+export type EvalRun = { inputs: Record<string, unknown>; result: GraphEvalResult }
 
 // renderEvaluatePanel runs a whole-graph evaluation in the own modeler: the user
 // fills the model's leaf inputs once and sees EVERY decision's result — the
 // entire decision requirements graph computed from one set of inputs, not one
-// decision at a time (ADR-0016). onResults, when given, receives the per-decision
-// values so the caller can overlay them on the canvas nodes.
-export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onResults?: (values: Record<string, unknown>) => void): void {
+// decision at a time (ADR-0016). onRun, when given, receives each successful run
+// (inputs + result) so the caller can overlay results on the canvas and record a
+// session history (Operate).
+export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun?: (run: EvalRun) => void): void {
   host.textContent = ''
   const decisions = model.decisions ?? []
   if (!decisions.length) {
@@ -77,7 +83,7 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRes
       const res = await evaluateGraph(model.modelId, input, true, true)
       showResults(result, decisions, res.values, res.errors)
       showTraces(result, res.traces)
-      onResults?.(res.values)
+      onRun?.({ inputs: input, result: res })
     } catch (e) {
       result.className = 'eval-result eval-error'
       if (e instanceof InputValidationError) {

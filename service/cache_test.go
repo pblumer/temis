@@ -4,6 +4,22 @@ import "testing"
 
 func sm(id string) *storedModel { return &storedModel{id: id} }
 
+func TestModelCacheStampsCreationSeq(t *testing.T) {
+	c := newModelCache(0)
+	a, b := sm("a"), sm("b")
+	c.add(a)
+	c.add(b)
+	if a.seq == 0 || b.seq <= a.seq {
+		t.Fatalf("seq should increase per new model: a=%d b=%d", a.seq, b.seq)
+	}
+	// Re-storing the same id keeps its original creation order (history is stable).
+	a2 := sm("a")
+	c.add(a2)
+	if a2.seq != a.seq {
+		t.Errorf("re-add seq = %d, want preserved %d", a2.seq, a.seq)
+	}
+}
+
 func TestModelCacheEvictsLRU(t *testing.T) {
 	c := newModelCache(2)
 	c.add(sm("a"))
