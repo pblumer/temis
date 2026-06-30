@@ -34,46 +34,78 @@ function borderPoint(n: LaidNode, tx: number, ty: number): { x: number; y: numbe
 }
 
 function autoLayout(graph: Graph, pos: Map<string, LaidNode>): void {
-  const sources = new Map<string, string[]>() // node -> nodes it requires
-  for (const n of graph.nodes) sources.set(n.id, [])
-  for (const e of graph.edges) sources.get(e.target)?.push(e.source)
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const req = new Map<string, string[]>() // node -> nodes it requires (below it)
+  const reqBy = new Map<string, string[]>() // node -> nodes that require it (above it)
+  for (const n of graph.nodes) {
+    req.set(n.id, [])
+    reqBy.set(n.id, [])
+  }
+  for (const e of graph.edges) {
+    req.get(e.target)?.push(e.source)
+    reqBy.get(e.source)?.push(e.target)
+  }
 
+  // Row = longest requirement chain (leaves/inputs at the bottom, row 0).
   const memo = new Map<string, number>()
   const rowOf = (id: string, seen: Set<string>): number => {
     const cached = memo.get(id)
     if (cached !== undefined) return cached
     if (seen.has(id)) return 0 // cycle guard (the engine forbids cycles)
     seen.add(id)
-    const reqs = sources.get(id) ?? []
+    const reqs = req.get(id) ?? []
     const row = reqs.length ? 1 + Math.max(...reqs.map((s) => rowOf(s, seen))) : 0
     seen.delete(id)
     memo.set(id, row)
     return row
   }
 
-  const rows = new Map<number, Graph['nodes']>()
+  const rowIds = new Map<number, string[]>()
   let maxRow = 0
   for (const n of graph.nodes) {
     const r = rowOf(n.id, new Set())
     maxRow = Math.max(maxRow, r)
-    const bucket = rows.get(r) ?? []
-    bucket.push(n)
-    rows.set(r, bucket)
+    const bucket = rowIds.get(r) ?? []
+    bucket.push(n.id)
+    rowIds.set(r, bucket)
   }
 
-  const rowWidth = (r: number) =>
-    (rows.get(r) ?? []).reduce((acc, n) => acc + sizeOf(n.type).w + COL_GAP, -COL_GAP)
-  const maxWidth = Math.max(0, ...Array.from({ length: maxRow + 1 }, (_, r) => rowWidth(r)))
+  const rowWidth = (ids: string[]) => ids.reduce((acc, id) => acc + sizeOf(byId.get(id)!.type).w + COL_GAP, -COL_GAP)
+  const maxWidth = Math.max(0, ...[...rowIds.values()].map(rowWidth))
 
-  for (let r = 0; r <= maxRow; r++) {
-    const bucket = rows.get(r) ?? []
-    let x = PAD + (maxWidth - rowWidth(r)) / 2
-    const y = PAD + (maxRow - r) * (ROW_GAP + 70)
-    for (const n of bucket) {
-      const s = sizeOf(n.type)
-      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, x, y, w: s.w, h: s.h })
-      x += s.w + COL_GAP
+  // pack lays out each row left-to-right in its current order, centred.
+  const pack = (): void => {
+    for (const [r, ids] of rowIds) {
+      let x = PAD + (maxWidth - rowWidth(ids)) / 2
+      const y = PAD + (maxRow - r) * (ROW_GAP + 70)
+      for (const id of ids) {
+        const n = byId.get(id)!
+        const s = sizeOf(n.type)
+        pos.set(id, { id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, x, y, w: s.w, h: s.h })
+        x += s.w + COL_GAP
+      }
     }
+  }
+  pack()
+
+  // Order each row by the barycentre of its neighbours' horizontal centres, so a
+  // node sits under/over the elements it connects to (e.g. an input lands beneath
+  // the decisions it feeds) instead of wherever it happened to be listed. A few
+  // sweeps settle it; unconnected nodes keep their relative position.
+  const cx = (id: string): number => {
+    const p = pos.get(id)
+    return p ? p.x + p.w / 2 : 0
+  }
+  for (let iter = 0; iter < 8; iter++) {
+    for (const ids of rowIds.values()) {
+      const want = new Map<string, number>()
+      for (const id of ids) {
+        const nb = [...(req.get(id) ?? []), ...(reqBy.get(id) ?? [])]
+        want.set(id, nb.length ? nb.reduce((a, n) => a + cx(n), 0) / nb.length : cx(id))
+      }
+      ids.sort((a, b) => want.get(a)! - want.get(b)! || cx(a) - cx(b))
+    }
+    pack()
   }
 }
 
