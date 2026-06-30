@@ -13,6 +13,7 @@ export type GraphNode = {
   varName?: string
   hasTable?: boolean
   hasLiteral?: boolean
+  hasContext?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -336,6 +337,51 @@ export async function saveLiteral(modelId: string, decision: string, text: strin
     body: JSON.stringify({ text, typeRef }),
   })
   if (!r.ok) throw new Error(await problemMessage(r, 'Ausdruck speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// ContextView mirrors dmn.ContextView: a decision's boxed-context logic — named
+// literal entries plus an optional result-cell expression. simple=false when an
+// entry is a nested boxed expression this text editor cannot represent.
+export type ContextEntryView = { name: string; text: string; typeRef?: string }
+export type ContextView = {
+  decisionId: string
+  name: string
+  entries: ContextEntryView[]
+  result?: string
+  resultTypeRef?: string
+  simple: boolean
+}
+export type ContextEdit = { entries: ContextEntryView[]; result?: string; resultTypeRef?: string }
+
+// getContext fetches a decision's boxed-context view, or null when the decision
+// has no boxed-context logic (HTTP 404).
+export async function getContext(modelId: string, decision: string): Promise<ContextView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Boxed Context laden fehlgeschlagen (HTTP ' + r.status + ')')
+  const cv = (await r.json()) as ContextView
+  cv.entries = cv.entries ?? []
+  return cv
+}
+
+// saveContext replaces a decision's boxed-context entries (POST), recompiles the
+// model and returns the saved detail with its new id and any compile diagnostics.
+export async function saveContext(modelId: string, decision: string, edit: ContextEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Boxed Context speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedContext gives an undecided decision a fresh boxed context and
+// returns the saved model's detail with its new id.
+export async function createBoxedContext(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-context', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Boxed Context anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

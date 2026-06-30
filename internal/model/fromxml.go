@@ -265,6 +265,7 @@ func mapContext(c *dmnxml.Context) *ContextExpr {
 		entry := ContextEntry{Value: mapExpression(e.Expression)}
 		if e.Variable != nil {
 			entry.Name = e.Variable.Name
+			entry.TypeRef = e.Variable.TypeRef
 		}
 		ctx.Entries = append(ctx.Entries, entry)
 	}
