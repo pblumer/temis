@@ -1,6 +1,10 @@
 package feel
 
-import "github.com/pblumer/temis/internal/value"
+import (
+	"fmt"
+
+	"github.com/pblumer/temis/internal/value"
+)
 
 // Scope holds a compiled expression's variables as a flat slot array. Compiled
 // variable accesses are resolved to slot indices at compile time (ADR-0004,
@@ -36,16 +40,89 @@ func (s *Scope) WithTrace(sink any) *Scope {
 
 // evalState carries mutable, per-evaluation execution state. A fresh instance is
 // created by NewScope and shared (never copied) down the scope lineage, so it is
-// confined to one evaluation and never touched by concurrent ones.
+// confined to one evaluation and never touched by concurrent ones. It also
+// enforces the per-evaluation resource limits (ADR-0008, WP-34).
 type evalState struct {
 	depth    int // current user-function call depth
-	maxDepth int // limit beyond which recursion is refused
+	iter     int // iteration steps taken so far across all comprehensions
+	maxDepth int // limit beyond which recursion is refused (0 = unlimited)
+	maxIter  int // limit on total iteration steps (0 = unlimited)
+	maxItems int // limit on the element count of any single produced list (0 = unlimited)
+}
+
+// enterCall accounts for entering a user-function call and reports a LimitError
+// once the call-depth budget is exhausted. The matching leaveCall must run on
+// the way out.
+func (st *evalState) enterCall() error {
+	if st == nil {
+		return nil
+	}
+	if st.maxDepth != 0 && st.depth >= st.maxDepth {
+		return &LimitError{Limit: "call depth", Max: st.maxDepth}
+	}
+	st.depth++
+	return nil
+}
+
+func (st *evalState) leaveCall() {
+	if st != nil {
+		st.depth--
+	}
+}
+
+// step accounts for one iteration step and reports a LimitError once the
+// configured iteration budget is exhausted.
+func (st *evalState) step() error {
+	if st == nil || st.maxIter == 0 {
+		return nil
+	}
+	st.iter++
+	if st.iter > st.maxIter {
+		return &LimitError{Limit: "iterations", Max: st.maxIter}
+	}
+	return nil
+}
+
+// checkItems reports a LimitError when a produced list would exceed the
+// element-count limit.
+func (st *evalState) checkItems(n int) error {
+	if st == nil || st.maxItems == 0 || n <= st.maxItems {
+		return nil
+	}
+	return &LimitError{Limit: "list size", Max: st.maxItems}
+}
+
+// LimitError reports that an evaluation exceeded a configured resource limit
+// (ADR-0008). The execution-edge classifier maps it to a distinct code so a
+// limit breach is distinguishable from other runtime failures.
+type LimitError struct {
+	Limit string // which limit: "call depth", "iterations", "list size"
+	Max   int
+}
+
+func (e *LimitError) Error() string {
+	return fmt.Sprintf("feel: %s limit %d exceeded", e.Limit, e.Max)
+}
+
+// Limits configures the per-evaluation resource bounds. A zero field means that
+// dimension is unbounded; DefaultLimits supplies safe non-zero defaults.
+type Limits struct {
+	MaxCallDepth  int // nested user-function (BKM / function literal) calls
+	MaxIterations int // total iteration steps across all comprehensions
+	MaxListSize   int // element count of any single produced list
 }
 
 // DefaultMaxCallDepth bounds nested user-function (BKM / function literal) calls,
 // turning unbounded recursion into a runtime error instead of a stack overflow
-// (ADR-0008). It is a fixed default until limits become configurable (WP-34).
+// (ADR-0008).
 const DefaultMaxCallDepth = 256
+
+// DefaultLimits returns the resource limits applied when none are configured.
+// They are generous enough not to affect normal models yet bound hostile input
+// (deep recursion, runaway comprehensions, huge lists).
+func DefaultLimits() Limits {
+	return Limits{MaxCallDepth: DefaultMaxCallDepth, MaxIterations: 10_000_000, MaxListSize: 10_000_000}
+}
 
 // at returns the value in slot i, or null if i is out of range (defensive; the
 // compiler only ever emits valid indices).
@@ -137,6 +214,12 @@ func (s *Scope) Extend(extra ...value.Value) *Scope {
 // env slot. Names absent from values (or with a nil value) become null. This is
 // the single map→slots boundary; everything past it is index-based.
 func (e *Env) NewScope(values map[string]value.Value) *Scope {
+	return e.NewScopeWithLimits(values, DefaultLimits())
+}
+
+// NewScopeWithLimits is NewScope with explicit resource limits enforced for the
+// evaluation rooted at the returned scope (ADR-0008, WP-34).
+func (e *Env) NewScopeWithLimits(values map[string]value.Value, lim Limits) *Scope {
 	vars := make([]value.Value, len(e.order))
 	for i, n := range e.order {
 		if v, ok := values[n]; ok && v != nil {
@@ -145,5 +228,9 @@ func (e *Env) NewScope(values map[string]value.Value) *Scope {
 			vars[i] = value.Null
 		}
 	}
-	return &Scope{vars: vars, st: &evalState{maxDepth: DefaultMaxCallDepth}}
+	return &Scope{vars: vars, st: &evalState{
+		maxDepth: lim.MaxCallDepth,
+		maxIter:  lim.MaxIterations,
+		maxItems: lim.MaxListSize,
+	}}
 }

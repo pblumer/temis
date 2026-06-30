@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pblumer/temis/internal/boxed"
+	"github.com/pblumer/temis/internal/feel"
 	"github.com/pblumer/temis/internal/value"
 )
 
@@ -17,18 +18,20 @@ type evaluator struct {
 	visiting  map[*CompiledDecision]bool
 	decisions map[string]any  // evaluated decisions, by name, for the Result
 	boundary  map[string]bool // decision names the evaluator must not compute (service inputs)
+	limits    feel.Limits     // resource bounds enforced for this evaluation (WP-34)
 	// rec, when set, collects a decision trace shared across the whole graph, so
 	// every decision table the evaluation touches records into one explanation
 	// (WP-51). nil disables tracing.
 	rec *boxed.Recorder
 }
 
-func newEvaluator(base map[string]value.Value) *evaluator {
+func newEvaluator(base map[string]value.Value, limits feel.Limits) *evaluator {
 	return &evaluator{
 		base:      base,
 		cache:     make(map[*CompiledDecision]value.Value),
 		visiting:  make(map[*CompiledDecision]bool),
 		decisions: map[string]any{},
+		limits:    limits,
 	}
 }
 
@@ -70,7 +73,7 @@ func (e *evaluator) eval(d *CompiledDecision) (value.Value, error) {
 		vals[req.name] = rv
 	}
 
-	scope := d.env.NewScope(vals)
+	scope := d.env.NewScopeWithLimits(vals, e.limits)
 	if e.rec != nil {
 		scope = scope.WithTrace(e.rec)
 	}

@@ -1,5 +1,5 @@
 // Package github implements the vcs.Reader interface against the GitHub REST
-// API using only the standard library — no new dependency (ADR-0016, Golden
+// API using only the standard library — no new dependency (ADR-0022, Golden
 // Rule 6). It is the first concrete git provider for Temis; because callers
 // depend on the vcs.Reader interface, swapping or adding providers (GitHub
 // Enterprise, a pure-Go git library, GitLab) does not touch them.

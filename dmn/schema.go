@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pblumer/temis/internal/feel"
 	"github.com/pblumer/temis/internal/model"
 )
 
@@ -16,10 +17,15 @@ type InputField struct {
 	Name     string `json:"name"`
 	Type     string `json:"type,omitempty"`
 	Required bool   `json:"required"`
+	// Constraint is the input's allowed-values text (a FEEL unary-test list, e.g.
+	// `"red","green","blue"` or `[1..10]`), empty when unconstrained. It lets an
+	// agent see the permitted values before calling Evaluate (WP-31).
+	Constraint string `json:"constraint,omitempty"`
 }
 
 // InputProblem is a single, machine-readable input-validation failure. Code is
-// one of "TYPE_MISMATCH", "UNKNOWN_INPUT" or "MISSING_INPUT".
+// one of "TYPE_MISMATCH", "UNKNOWN_INPUT", "MISSING_INPUT" or, for a value
+// outside its type's allowed values, "VALUE_NOT_ALLOWED" (WP-31).
 type InputProblem struct {
 	Input    string `json:"input"`
 	Code     string `json:"code"`
@@ -56,8 +62,17 @@ func (c *CompiledDecision) InputSchema() []InputField { return c.inputs }
 // required inputs — turning what would otherwise be a silently wrong result into
 // an explicit, actionable list. It never evaluates the decision.
 func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
-	schema := make(map[string]InputField, len(c.inputs))
-	for _, f := range c.inputs {
+	return validateInputAgainst(in, c.inputs, c.constraints, fmt.Sprintf("decision %q", c.name))
+}
+
+// validateInputAgainst is the shared core of input validation: it checks in
+// against the given declared fields and resolved constraints and returns every
+// problem found. subject names the schema's owner for the UNKNOWN_INPUT message
+// (e.g. `decision "Routing"` or `this model`), so the same logic backs both
+// per-decision (ValidateInput) and whole-graph (ValidateModelInput) validation.
+func validateInputAgainst(in Input, fields []InputField, constraints map[string]*inputConstraint, subject string) []InputProblem {
+	schema := make(map[string]InputField, len(fields))
+	for _, f := range fields {
 		schema[f.Name] = f
 	}
 
@@ -68,7 +83,7 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 			probs = append(probs, InputProblem{
 				Input:   name,
 				Code:    "UNKNOWN_INPUT",
-				Message: fmt.Sprintf("input %q is not declared by decision %q; expected one of %s", name, c.name, quoteNames(c.inputs)),
+				Message: fmt.Sprintf("input %q is not declared by %s; expected one of %s", name, subject, quoteNames(fields)),
 			})
 			continue
 		}
@@ -80,9 +95,18 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 				Got:      got,
 				Message:  fmt.Sprintf("input %q expects %s, got %s", name, want, got),
 			})
+			continue
+		}
+		// Structural (custom struct/list) and allowed-values constraints (WP-31).
+		if c := constraints[name]; c != nil {
+			if fv, err := toValue(v); err == nil {
+				if p := c.check(name, fv); p != nil {
+					probs = append(probs, *p)
+				}
+			}
 		}
 	}
-	for _, f := range c.inputs {
+	for _, f := range fields {
 		if !f.Required {
 			continue
 		}
@@ -95,6 +119,59 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 		}
 	}
 	return probs
+}
+
+// ModelInputSchema returns the input data the whole model consumes — the union of
+// every decision's declared input fields, deduped by name. It is the schema for a
+// graph-wide evaluation (EvaluateGraph): the leaf inputs a caller fills once to
+// drive every decision, including those reached only transitively through other
+// decisions (e.g. an input a downstream decision never names directly). A field's
+// type/constraint is taken from the first decision that declares it with one, and
+// it is required when any decision requires it.
+func (d *Definitions) ModelInputSchema() []InputField {
+	var fields []InputField
+	idx := map[string]int{}
+	for _, cd := range d.order {
+		for _, f := range cd.inputs {
+			if i, ok := idx[f.Name]; ok {
+				ex := &fields[i]
+				if ex.Type == "" {
+					ex.Type = f.Type
+				}
+				if ex.Constraint == "" {
+					ex.Constraint = f.Constraint
+				}
+				ex.Required = ex.Required || f.Required
+				continue
+			}
+			idx[f.Name] = len(fields)
+			fields = append(fields, f)
+		}
+	}
+	return fields
+}
+
+// ValidateModelInput checks in against the model's whole-graph input schema
+// (ModelInputSchema) and returns every problem found — the model-level
+// counterpart of CompiledDecision.ValidateInput, used by EvaluateGraph's strict
+// mode so a transitively-reached input is accepted (it feeds some decision) while
+// a genuinely unknown one is still reported.
+func (d *Definitions) ValidateModelInput(in Input) []InputProblem {
+	return validateInputAgainst(in, d.ModelInputSchema(), d.mergedConstraints(), "this model")
+}
+
+// mergedConstraints unions every decision's resolved input constraints, keyed by
+// input name (first decision to declare a constraint wins).
+func (d *Definitions) mergedConstraints() map[string]*inputConstraint {
+	out := map[string]*inputConstraint{}
+	for _, cd := range d.order {
+		for name, c := range cd.constraints {
+			if _, ok := out[name]; !ok {
+				out[name] = c
+			}
+		}
+	}
+	return out
 }
 
 // InputSchema returns the declared input schema of a decision by id or name.
@@ -112,8 +189,10 @@ func (d *Definitions) InputSchema(idOrName string) ([]InputField, error) {
 // buildInputSchema resolves a decision's required inputs into typed fields. A
 // type is taken from the input-data's own typeRef when present, otherwise from
 // the decision table's input clause whose expression is exactly that input's
-// name (the common dmn-js authoring style, where types live on the table).
-func buildInputSchema(m *model.Definitions, dec *model.Decision) []InputField {
+// name (the common dmn-js authoring style, where types live on the table). A
+// user-defined item-definition type is reported by its name; a resolved
+// allowed-values constraint is surfaced on the field (WP-31).
+func buildInputSchema(m *model.Definitions, dec *model.Decision, items map[string]*feel.Type, constraints map[string]*inputConstraint) []InputField {
 	typeByExpr := map[string]string{}
 	if dec.DecisionTable != nil {
 		for _, in := range dec.DecisionTable.Inputs {
@@ -140,9 +219,30 @@ func buildInputSchema(m *model.Definitions, dec *model.Decision) []InputField {
 		if typ == "" {
 			typ = typeByExpr[idata.Name]
 		}
-		fields = append(fields, InputField{Name: idata.Name, Type: canonicalType(typ), Required: true})
+		f := InputField{Name: idata.Name, Type: schemaTypeName(typ, items), Required: true}
+		if c := constraints[idata.Name]; c != nil {
+			f.Constraint = c.allowedText
+		}
+		fields = append(fields, f)
 	}
 	return fields
+}
+
+// schemaTypeName is the type name reported in the self-description: the canonical
+// FEEL name for a built-in, the item-definition's own name for a user-defined
+// type, or "" when neither resolves.
+func schemaTypeName(ref string, items map[string]*feel.Type) string {
+	if c := canonicalType(ref); c != "" {
+		return c
+	}
+	name := strings.TrimSpace(ref)
+	if i := strings.LastIndexByte(name, ':'); i >= 0 {
+		name = name[i+1:]
+	}
+	if items[name] != nil {
+		return name
+	}
+	return ""
 }
 
 // canonicalType maps a DMN typeRef (optionally namespace-prefixed) to the

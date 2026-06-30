@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pblumer/temis/internal/feel"
 	"github.com/pblumer/temis/internal/model"
 )
 
@@ -16,6 +17,9 @@ type CompiledService struct {
 	// boundary holds the names of the service's input decisions, which are
 	// supplied by the caller rather than computed.
 	boundary map[string]bool
+	// limits are the resource bounds enforced for an evaluation of this service
+	// (WP-34), resolved from the engine configuration at compile time.
+	limits feel.Limits
 }
 
 // Name returns the service's name.
@@ -50,7 +54,7 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error
 		return Result{}, err
 	}
 
-	ev := newEvaluator(base)
+	ev := newEvaluator(base, s.limits)
 	ev.boundary = s.boundary
 
 	outputs := make(map[string]any, len(s.outputs))

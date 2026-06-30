@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20211108/MODEL/"
+             id="discount_definitions"
+             name="Discount"
+             namespace="http://temis.test/discount">
+  <inputData id="id_customer" name="Customer Type"/>
+  <inputData id="id_order" name="Order Total"/>
+  <decision id="id_discount" name="Discount">
+    <informationRequirement>
+      <requiredInput href="#id_customer"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#id_order"/>
+    </informationRequirement>
+    <decisionTable id="dt_discount" hitPolicy="FIRST">
+      <input id="in_customer" label="Customer Type">
+        <inputExpression typeRef="string">
+          <text>Customer Type</text>
+        </inputExpression>
+        <inputValues>
+          <text>"Business","Private"</text>
+        </inputValues>
+      </input>
+      <input id="in_order" label="Order Total">
+        <inputExpression typeRef="number">
+          <text>Order Total</text>
+        </inputExpression>
+      </input>
+      <output id="out_discount" name="Discount" typeRef="number"/>
+      <rule id="d1">
+        <inputEntry><text>"Business"</text></inputEntry>
+        <inputEntry><text>&gt;= 1000</text></inputEntry>
+        <outputEntry><text>0.15</text></outputEntry>
+      </rule>
+      <rule id="d2">
+        <inputEntry><text>"Business"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>0.10</text></outputEntry>
+      </rule>
+      <rule id="d3">
+        <inputEntry><text>"Private"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>0.05</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

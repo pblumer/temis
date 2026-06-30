@@ -30,9 +30,12 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 
 ## 3. Nicht-Ziele (explizit ausgeschlossen, verhindert Scope-Creep)
 
-- **Kein** eigener Web-Editor (kein From-Scratch-Diagrammeditor) — dmn-js wird unverändert
-  eingebunden. Ein optionaler **Einsteiger-Editor** ist in die `/ui`-Seite integriert und lädt
-  dmn-js per CDN (wie die Swagger-UI), ohne Fork und ohne zweite Toolchain (F-01, ADR-0012).
+- **Eigener Web-Editor** — diese frühere Nicht-Ziel-Festlegung ist durch **ADR-0016**
+  abgelöst (ADR-0012/dmn-js-CDN überholt): temis liefert einen **eigenen DMN-Modeler** auf
+  Basis des MIT-Kerns (`diagram-js`), per `go:embed` an `/` ausgeliefert — DRD-Canvas,
+  editierbare Decision-Tables, FEEL-Validierung gegen die echte Engine, offline ohne CDN.
+  Vom Scope ausgeschlossen bleibt ein **From-Scratch-Diagramm-Framework** (der Canvas/
+  Command-Stack kommt aus dem MIT-Fork, nicht selbst geschrieben).
 - **Kein** Decision-Management-UI (Versionierung, Deployment-Konsole) im MVP.
 - **Kein** PMML/ONNX-Import (DMN 1.5 erlaubt es; bewusst Post-1.0).
 - **Kein** verteilter Cluster-Betrieb / kein eingebauter Persistenzlayer im MVP.

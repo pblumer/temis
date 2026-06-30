@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/boxed-context"
+             name="BoxedContext" id="def_ctx">
+  <inputData id="id_points" name="Points">
+    <variable name="Points" typeRef="number"/>
+  </inputData>
+
+  <!-- Boxed context with a result cell: later entries build on earlier ones. -->
+  <decision id="id_score" name="Score">
+    <variable name="Score" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_points"/>
+    </informationRequirement>
+    <context>
+      <contextEntry>
+        <variable name="Base" typeRef="number"/>
+        <literalExpression><text>Points * 2</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="Bonus" typeRef="number"/>
+        <literalExpression><text>Base + 10</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <literalExpression><text>Bonus</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <!-- Boxed context without a result cell: the value is a context. -->
+  <decision id="id_profile" name="Profile">
+    <variable name="Profile"/>
+    <informationRequirement>
+      <requiredInput href="#id_points"/>
+    </informationRequirement>
+    <context>
+      <contextEntry>
+        <variable name="Doubled" typeRef="number"/>
+        <literalExpression><text>Points * 2</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="Plus" typeRef="number"/>
+        <literalExpression><text>Points + 1</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+</definitions>

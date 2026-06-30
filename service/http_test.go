@@ -71,6 +71,27 @@ func TestCreateModelAndIndex(t *testing.T) {
 	}
 }
 
+func TestGetModelXML(t *testing.T) {
+	h := newTestServer(t)
+	xml := dishXML(t)
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	rec := do(t, h, "GET", "/v1/models/"+id+"/xml", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET model xml = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/xml") {
+		t.Errorf("xml content-type = %q, want application/xml", ct)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), xml) {
+		t.Errorf("returned xml does not match the uploaded document")
+	}
+
+	if rec := do(t, h, "GET", "/v1/models/sha256:deadbeef/xml", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET unknown model xml = %d, want 404", rec.Code)
+	}
+}
+
 func TestListModels(t *testing.T) {
 	h := newTestServer(t)
 
@@ -300,23 +321,36 @@ func TestDocsAndSpec(t *testing.T) {
 	}
 }
 
-func TestPlaygroundUI(t *testing.T) {
+// TestModelerAtRoot checks the WP-67 cutover: the site root serves the own
+// modeler SPA (not the retired dmn-js page), the SPA's embedded assets are
+// reachable, and the legacy /ui and /app/ paths redirect to the root.
+func TestModelerAtRoot(t *testing.T) {
 	h := newTestServer(t)
 
-	for _, path := range []string{"/", "/ui"} {
-		rec := do(t, h, "GET", path, "", nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("GET %s = %d, want 200", path, rec.Code)
-		}
-		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-			t.Errorf("%s content-type = %q, want text/html", path, ct)
-		}
-		body := rec.Body.String()
-		if !strings.Contains(body, "Temis — DMN Editor") {
-			t.Errorf("%s body does not look like the DMN editor page", path)
-		}
-		if !strings.Contains(body, "dmn-js") {
-			t.Errorf("%s body does not embed dmn-js", path)
+	rec := do(t, h, "GET", "/", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("/ content-type = %q, want text/html", ct)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Temis Modeler") {
+		t.Errorf("/ body does not look like the own modeler page")
+	}
+	if strings.Contains(body, "dmn-js") {
+		t.Error("/ still embeds dmn-js; the cutover should have removed it")
+	}
+
+	// The embedded SPA assets are served from the same root.
+	if rec := do(t, h, "GET", "/wasm_exec.js", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("GET /wasm_exec.js = %d, want 200 (SPA runtime not served at root)", rec.Code)
+	}
+
+	// Legacy paths redirect to the new home.
+	for _, path := range []string{"/ui", "/app/"} {
+		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusMovedPermanently {
+			t.Errorf("GET %s = %d, want 301 redirect to /", path, rec.Code)
 		}
 	}
 
@@ -355,7 +389,7 @@ func TestTokenAuth(t *testing.T) {
 	}
 
 	// Discovery and probes stay public even with a token configured.
-	for _, path := range []string{"/", "/ui", "/docs", "/openapi.yaml", "/healthz"} {
+	for _, path := range []string{"/", "/docs", "/openapi.yaml", "/healthz"} {
 		if rec := do(t, h, "GET", path, "", nil); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with token configured = %d, want 200", path, rec.Code)
 		}

@@ -1,0 +1,122 @@
+package dmn_test
+
+import (
+	"testing"
+
+	"github.com/pblumer/temis/dmn"
+)
+
+// TestGraphChaining checks Graph() exposes the DRG nodes (with their kinds) and
+// the requirement edges, including a decision→decision chain.
+func TestGraphChaining(t *testing.T) {
+	defs := compileModel(t, "routing_13.dmn")
+	g := defs.Graph()
+
+	kind := map[string]string{}
+	id := map[string]string{}
+	for _, n := range g.Nodes {
+		kind[n.Name] = n.Type
+		id[n.Name] = n.ID
+	}
+	if len(g.Nodes) != 3 {
+		t.Fatalf("nodes = %d, want 3 (%+v)", len(g.Nodes), g.Nodes)
+	}
+	if kind["Applicant Age"] != "inputData" {
+		t.Errorf("Applicant Age kind = %q, want inputData", kind["Applicant Age"])
+	}
+	if kind["Eligibility"] != "decision" || kind["Routing"] != "decision" {
+		t.Errorf("Eligibility/Routing kinds = %q/%q, want decision", kind["Eligibility"], kind["Routing"])
+	}
+
+	type edge struct{ src, tgt, typ string }
+	have := map[edge]bool{}
+	for _, e := range g.Edges {
+		have[edge{e.Source, e.Target, e.Type}] = true
+	}
+	if len(g.Edges) != 2 {
+		t.Fatalf("edges = %d, want 2 (%+v)", len(g.Edges), g.Edges)
+	}
+	if !have[edge{id["Applicant Age"], id["Eligibility"], "informationRequirement"}] {
+		t.Error("missing informationRequirement Applicant Age → Eligibility")
+	}
+	if !have[edge{id["Eligibility"], id["Routing"], "informationRequirement"}] {
+		t.Error("missing informationRequirement Eligibility → Routing (decision chain)")
+	}
+}
+
+// TestGraphDMNDIBounds checks that a model carrying DMNDI exposes the authored
+// element bounds on its graph nodes (for the modeler's layout).
+func TestGraphDMNDIBounds(t *testing.T) {
+	defs := compileModel(t, "pricing_15.dmn")
+	g := defs.Graph()
+	if len(g.Nodes) == 0 {
+		t.Fatal("no nodes")
+	}
+	for _, n := range g.Nodes {
+		if n.Width <= 0 || n.Height <= 0 {
+			t.Errorf("node %q has no DMNDI bounds (%+v), want authored size", n.Name, n)
+		}
+	}
+}
+
+// TestGraphNoDMNDIBounds checks that a model WITHOUT DMNDI exposes no bounds, so
+// the client falls back to auto-layout.
+func TestGraphNoDMNDIBounds(t *testing.T) {
+	defs := compileModel(t, "discount_14.dmn")
+	for _, n := range defs.Graph().Nodes {
+		if n.Width != 0 || n.Height != 0 || n.X != 0 || n.Y != 0 {
+			t.Errorf("node %q has bounds %+v, want none (no DMNDI)", n.Name, n)
+		}
+	}
+}
+
+// TestGraphDataContract checks the resolved data contract on nodes: a decision's
+// output type (from its literal expression here) and variable name, and an
+// input's type resolved from the decision-table input clause.
+func TestGraphDataContract(t *testing.T) {
+	byName := func(g dmn.Graph) map[string]dmn.GraphNode {
+		m := map[string]dmn.GraphNode{}
+		for _, n := range g.Nodes {
+			m[n.Name] = n
+		}
+		return m
+	}
+
+	pricing := byName(compileModel(t, "pricing_15.dmn").Graph())
+	if n := pricing["Net Total"]; n.DataType != "number" || n.VarName != "Net Total" {
+		t.Errorf("Net Total = {type:%q var:%q}, want {number, Net Total}", n.DataType, n.VarName)
+	}
+
+	// loan: "Credit Score" has no inputData typeRef; its number type is declared
+	// only on the decision-table input clause and must still resolve.
+	loan := byName(compileModel(t, "loan_15.dmn").Graph())
+	if n := loan["Credit Score"]; n.DataType != "number" {
+		t.Errorf("Credit Score type = %q, want number (resolved from table clause)", n.DataType)
+	}
+}
+
+// TestGraphKnowledgeRequirement checks BKM nodes and the knowledgeRequirement
+// edge kind appear in the graph.
+func TestGraphKnowledgeRequirement(t *testing.T) {
+	defs := compileModel(t, "bkm_invocation_15.dmn")
+	g := defs.Graph()
+
+	var bkm string
+	for _, n := range g.Nodes {
+		if n.Type == "businessKnowledgeModel" {
+			bkm = n.ID
+		}
+	}
+	if bkm == "" {
+		t.Fatalf("no businessKnowledgeModel node in %+v", g.Nodes)
+	}
+	var hasKnowledge bool
+	for _, e := range g.Edges {
+		if e.Type == "knowledgeRequirement" && e.Source == bkm {
+			hasKnowledge = true
+		}
+	}
+	if !hasKnowledge {
+		t.Errorf("no knowledgeRequirement edge from BKM %q in %+v", bkm, g.Edges)
+	}
+}

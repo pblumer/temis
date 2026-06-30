@@ -5,8 +5,12 @@ package model
 // whichever is set. Requirement fields hold the local identifiers of referenced
 // elements, resolved into a graph in WP-28.
 type Decision struct {
-	ID              string
-	Name            string
+	ID   string
+	Name string
+	// VariableName is the decision's output-variable name — how other decisions
+	// reference its result. Empty when the model declares no <variable>; tools
+	// then fall back to the decision name.
+	VariableName    string `json:",omitempty"`
 	VariableTypeRef string `json:",omitempty"`
 
 	RequiredDecisions []string `json:",omitempty"`

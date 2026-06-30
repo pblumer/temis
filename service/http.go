@@ -20,14 +20,18 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"sync"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/mcp"
+	webui "github.com/pblumer/temis/web"
 )
 
 // maxBodyBytes caps request bodies to keep a single request from exhausting
-// memory; oversized bodies are rejected. Tunable once configurable limits land
-// (WP-34).
+// memory; oversized bodies are rejected. This is the transport-level guard,
+// distinct from the engine's evaluation limits (WP-34).
 const maxBodyBytes = 8 << 20 // 8 MiB
 
 // Server is the HTTP front end over a dmn.Engine. It is safe for concurrent use:
@@ -45,8 +49,19 @@ type Server struct {
 	// thereby the decisions in them). Defaults to true.
 	listModels bool
 
-	mu     sync.RWMutex
-	models map[string]*storedModel
+	// loadExamplesOnInit preloads the bundled example models at construction
+	// (set via WithExamples).
+	loadExamplesOnInit bool
+
+	// cacheSize is the model cache capacity applied at construction; 0 means
+	// unbounded. NewServer builds cache from it after options run.
+	cacheSize int
+	cache     *modelCache
+
+	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
+	// this server's mux so it shares this server's model cache — one process, one
+	// address space. Nil leaves /mcp unmounted.
+	mcpServer *mcp.Server
 }
 
 // Option configures a Server at construction time.
@@ -67,13 +82,26 @@ func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
 }
 
+// WithCacheSize bounds how many compiled models the server keeps in memory.
+// When the cache is full the least-recently-used model is evicted; a subsequent
+// request for it recompiles on upload. A size <= 0 means unbounded (no
+// eviction). The default is a bounded cache (WP-35).
+func WithCacheSize(size int) Option {
+	return func(s *Server) { s.cacheSize = size }
+}
+
 // storedModel is a compiled model held in the cache together with the index and
 // any diagnostics produced while compiling it.
 type storedModel struct {
 	id    string
+	name  string // display name: the DMN definitions name, or a preset for examples
+	xml   []byte // the raw DMN XML as uploaded, served back for the editor
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
 	diags dmn.Diagnostics
+	// seq is a monotonic creation order assigned by the cache on first store, so a
+	// client can present same-named revisions newest-first (a model's history).
+	seq uint64
 }
 
 // NewServer returns a Server backed by engine. If engine is nil a default engine
@@ -82,9 +110,13 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, models: map[string]*storedModel{}, listModels: true}
+	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize}
 	for _, opt := range opts {
 		opt(s)
+	}
+	s.cache = newModelCache(s.cacheSize)
+	if s.loadExamplesOnInit {
+		s.loadExamples(context.Background())
 	}
 	return s
 }
@@ -98,22 +130,61 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
 	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
 	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
+	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
+	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
+	mux.HandleFunc("GET /v1/models/{id}/types", s.requireToken(s.handleGetTypes))
+	mux.HandleFunc("POST /v1/models/{id}/types", s.requireToken(s.handleSaveType))
+	mux.HandleFunc("DELETE /v1/models/{id}/types/{name}", s.requireToken(s.handleDeleteType))
+	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
+	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleGetLiteral))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleSaveLiteral))
+	mux.HandleFunc("GET /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleGetBKM))
+	mux.HandleFunc("POST /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleSaveBKM))
+	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
+	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
+	mux.HandleFunc("POST /v1/models/{id}/evaluate-graph", s.requireToken(s.handleEvaluateGraph))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
-	mux.HandleFunc("GET /{$}", s.handleUI)
-	mux.HandleFunc("GET /ui", s.handleUI)
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
+	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
+	// /ui and /app/ paths redirect here so old links keep working. This catch-all
+	// also serves the SPA's assets (assets/, feel.wasm, wasm_exec.js). It is
+	// registered method-agnostically so it does not overlap the gRPC handler's own
+	// path prefix below (a method-specific "GET /" would tie with it and panic);
+	// more specific routes still take precedence.
+	mux.Handle("/", http.FileServerFS(webui.Assets()))
+	mux.HandleFunc("GET /ui", redirectTo("/"))
+	mux.HandleFunc("GET /app/", redirectTo("/"))
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
-	return mux
+
+	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
+	// model cache (and its preloaded examples), so a model is visible whether it
+	// was loaded over the API, the modeler or MCP (one address space).
+	if s.mcpServer != nil {
+		s.mcpServer.RegisterRoutes(mux)
+	}
+
+	// gRPC: the Connect handler serves the dmn.v1.DmnEngine service (gRPC,
+	// gRPC-Web and Connect) under its own path prefix on the same mux (WP-33).
+	grpcPath, grpcHandler := s.grpcHandler()
+	mux.Handle(grpcPath, grpcHandler)
+
+	// h2c lets full gRPC and the bidi EvaluateBatch stream work over cleartext
+	// HTTP/2 (no TLS); HTTP/1.1 requests are still served normally.
+	return h2c.NewHandler(mux, &http2.Server{})
 }
 
 // --- request/response DTOs ---
 
 type modelResponse struct {
 	ModelID     string                      `json:"modelId"`
+	Name        string                      `json:"name,omitempty"`
 	Decisions   []string                    `json:"decisions"`
 	Inputs      []string                    `json:"inputs"`
 	Schema      map[string][]dmn.InputField `json:"schema,omitempty"`
@@ -142,8 +213,16 @@ type modelListResponse struct {
 
 type modelSummary struct {
 	ModelID   string   `json:"modelId"`
+	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
+	// Seq is the model's creation order (higher = newer), so the client can show a
+	// model's same-named revisions newest-first as a history.
+	Seq uint64 `json:"seq"`
+}
+
+type saveModelRequest struct {
+	Nodes []dmn.NodeEdit `json:"nodes"`
 }
 
 type evaluateModelRequest struct {
@@ -166,6 +245,23 @@ type evaluateResponse struct {
 	Decisions   map[string]any  `json:"decisions"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
 	Trace       *dmn.Trace      `json:"trace,omitempty"`
+}
+
+type evaluateGraphRequest struct {
+	Input   map[string]any `json:"input"`
+	Explain bool           `json:"explain,omitempty"`
+	Strict  bool           `json:"strict,omitempty"`
+}
+
+// evaluateGraphResponse carries the whole model's result: every decision's value
+// (and trace with explain), the inputs the graph consumes (so a client can build
+// the form from one source of truth), and any per-decision evaluation errors.
+type evaluateGraphResponse struct {
+	Values      map[string]any        `json:"values"`
+	Traces      map[string]*dmn.Trace `json:"traces,omitempty"`
+	Errors      map[string]string     `json:"errors,omitempty"`
+	InputSchema []dmn.InputField      `json:"inputSchema"`
+	Diagnostics []diagnosticDTO       `json:"diagnostics,omitempty"`
 }
 
 type diagnosticDTO struct {
@@ -195,6 +291,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, modelResponse{
 		ModelID:     sm.id,
+		Name:        sm.name,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
@@ -212,16 +309,17 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	summaries := make([]modelSummary, 0, len(s.models))
-	for _, sm := range s.models {
+	models := s.cache.snapshot()
+	summaries := make([]modelSummary, 0, len(models))
+	for _, sm := range models {
 		summaries = append(summaries, modelSummary{
 			ModelID:   sm.id,
+			Name:      sm.name,
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
+			Seq:       sm.seq,
 		})
 	}
-	s.mu.RUnlock()
 
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].ModelID < summaries[j].ModelID
@@ -238,10 +336,354 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, modelResponse{
 		ModelID:     sm.id,
+		Name:        sm.name,
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
+	})
+}
+
+// handleGetModelXML returns a cached model's raw DMN XML, so a client (the
+// editor) can reopen a model that was previously deployed to the server.
+func (s *Server) handleGetModelXML(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(sm.xml)
+}
+
+// handleGetModelGraph returns a cached model's decision requirements graph
+// (nodes + requirement edges), so the own modeler frontend can draw it without
+// parsing DMN XML in the browser (ADR-0016).
+func (s *Server) handleGetModelGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, sm.defs.Graph())
+}
+
+// handleGetTypes returns the model's named item definitions, for the modeler's
+// type manager and type pickers (ADR-0016).
+func (s *Server) handleGetTypes(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"types": sm.defs.ItemDefinitions()})
+}
+
+// handleSaveType creates or updates a simple item definition, recompiles and
+// caches the model, and returns the new id. A structured (component) type or an
+// empty name is a 400.
+func (s *Server) handleSaveType(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var t dmn.ItemType
+	if err := decodeJSON(w, r, &t); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetItemDefinition(sm.xml, t)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "TYPE_SAVE_FAILED", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
+}
+
+// handleDeleteType removes a named item definition and returns the recompiled
+// model's new id.
+func (s *Server) handleDeleteType(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	patched, err := dmn.RemoveItemDefinition(sm.xml, r.PathValue("name"))
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, "TYPE_NOT_FOUND", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
+}
+
+// respondSaved compiles and caches patched XML and writes the saved model
+// response, the common tail of the modeler's mutating endpoints.
+func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, patched []byte) {
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleGetDecisionTable returns a decision's static decision-table view (hit
+// policy, columns and rule rows), so the modeler can open it on double-click
+// without parsing DMN XML in the browser (ADR-0016). It is a 404 when the model,
+// the decision, or its decision-table logic is absent.
+func (s *Server) handleGetDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	table, ok := sm.defs.DecisionTable(r.PathValue("decision"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "TABLE_NOT_FOUND", "no decision table for that decision")
+		return
+	}
+	writeJSON(w, http.StatusOK, table)
+}
+
+// handleGetBKM returns a business knowledge model's encapsulated-logic view, or
+// 404 when there is no such BKM.
+func (s *Server) handleGetBKM(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	bkm, ok := sm.defs.BKMFunction(r.PathValue("bkm"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "BKM_NOT_FOUND", "no business knowledge model with that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, bkm)
+}
+
+// handleSaveBKM sets a business knowledge model's function (parameters + literal
+// body), recompiles and caches the model, and returns the new id with any compile
+// diagnostics.
+func (s *Server) handleSaveBKM(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.BKMFunctionEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetBKMFunction(sm.xml, r.PathValue("bkm"), edit)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "BKM_SAVE_FAILED", err.Error())
+		return
+	}
+	s.respondSaved(w, r, patched)
+}
+
+// handleGetLiteral returns a decision's literal-expression view, or 404 when the
+// decision's logic is not a literal expression.
+func (s *Server) handleGetLiteral(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	lit, ok := sm.defs.LiteralExpression(r.PathValue("decision"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "LITERAL_NOT_FOUND", "no literal expression for that decision")
+		return
+	}
+	writeJSON(w, http.StatusOK, lit)
+}
+
+type saveLiteralRequest struct {
+	Text    string `json:"text"`
+	TypeRef string `json:"typeRef"`
+}
+
+// handleSaveLiteral sets (or creates) a decision's literal-expression logic,
+// recompiles and caches the model, and returns the new id with any compile
+// diagnostics (so the client can surface a FEEL error). It is a 404/400 when the
+// decision is unknown or already has non-literal logic (ADR-0016).
+func (s *Server) handleSaveLiteral(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req saveLiteralRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetLiteralExpression(sm.xml, r.PathValue("decision"), req.Text, req.TypeRef)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "LITERAL_SAVE_FAILED", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleCreateDecisionTable gives an undecided decision a fresh decision table
+// (columns derived from its requirements), recompiles and caches the model, and
+// returns the new id. It is a 404/400 when the decision is unknown or already has
+// logic (ADR-0016).
+func (s *Server) handleCreateDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	patched, err := dmn.CreateDecisionTable(sm.xml, r.PathValue("decision"))
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "TABLE_CREATE_FAILED", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleSaveDecisionTable rewrites a decision's decision-table rules and caches
+// the recompiled model under its new content hash, returning the saved model's
+// id and any compile diagnostics (so the client can surface a cell the engine
+// rejects). The table's columns and hit policy are preserved (ADR-0016). It is a
+// 404 when the model or the decision's table is absent.
+func (s *Server) handleSaveDecisionTable(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.TableEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyTableEdit(sm.xml, r.PathValue("decision"), edit)
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, "TABLE_NOT_FOUND", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleSaveGraph reconciles a cached model to a desired decision requirements
+// graph — persisting added and removed nodes/edges as well as moved/renamed/
+// retyped ones — then recompiles and caches the result, returning the new model
+// id and any compile diagnostics. Surviving decisions keep their logic; new
+// decisions are created undecided. It is the modeler's structural save (ADR-0016).
+func (s *Server) handleSaveGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var edit dmn.GraphEdit
+	if err := decodeJSON(w, r, &edit); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyGraph(sm.xml, edit)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleSaveModel applies modeler edits (positions, names, types) to a cached
+// model's XML, recompiles the patched document and caches it under its new
+// content hash. It responds 201 with the saved model's id and index, so the
+// client can switch to the persisted revision. The original model stays cached.
+// Because edits patch the existing XML, all decision logic and the untouched
+// DMNDI are preserved (ADR-0016, Edit→Save).
+func (s *Server) handleSaveModel(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req saveModelRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.ApplyEdits(sm.xml, req.Nodes)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
 
@@ -280,8 +722,63 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
+// handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
+// inputs once and returns every decision's value (and trace with explain), so the
+// modeler can show the entire DRG with its results rather than one decision at a
+// time. Inputs are validated against the model's whole-graph schema when strict.
+func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req evaluateGraphRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	var opts []dmn.EvalOption
+	if req.Explain {
+		opts = append(opts, dmn.WithTrace())
+	}
+	if req.Strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
+	res, err := sm.defs.EvaluateGraph(r.Context(), dmn.Input(req.Input), opts...)
+	if err != nil {
+		var ie *dmn.InputError
+		if errors.As(err, &ie) {
+			writeProblemDetail(w, problem{
+				Title:    http.StatusText(http.StatusUnprocessableEntity),
+				Status:   http.StatusUnprocessableEntity,
+				Detail:   "input does not satisfy the model's schema",
+				Code:     "INVALID_INPUT",
+				Problems: ie.Problems,
+			})
+			return
+		}
+		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, evaluateGraphResponse{
+		Values:      res.Values,
+		Traces:      res.Traces,
+		Errors:      res.Errors,
+		InputSchema: sm.defs.ModelInputSchema(),
+		Diagnostics: toDiagnosticDTOs(res.Diags),
+	})
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// redirectTo permanently redirects to target. It keeps the retired /ui and /app/
+// paths pointing at the modeler's new home at the site root (ADR-0016 WP-67).
+func redirectTo(target string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	}
 }
 
 // evaluate runs a decision and writes the result or an appropriate problem. When
@@ -335,30 +832,21 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel, error) {
 	id := modelID(xml)
 
-	s.mu.RLock()
-	if sm, ok := s.models[id]; ok {
-		s.mu.RUnlock()
+	if sm, ok := s.cache.get(id); ok {
 		return sm, nil
 	}
-	s.mu.RUnlock()
 
 	defs, diags, err := s.engine.Compile(ctx, xml)
 	if err != nil {
 		return nil, err
 	}
-	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
-
-	s.mu.Lock()
-	s.models[id] = sm
-	s.mu.Unlock()
+	sm := &storedModel{id: id, name: defs.ModelName(), xml: xml, defs: defs, index: defs.Index(), diags: diags}
+	s.cache.add(sm)
 	return sm, nil
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sm, ok := s.models[id]
-	return sm, ok
+	return s.cache.get(id)
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"

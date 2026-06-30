@@ -26,13 +26,21 @@ import (
 // shared model cache is mutex-guarded.
 func (s *Server) HTTPHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /mcp", s.handleHTTPMessage)
-	mux.HandleFunc("GET /mcp", s.handleHTTPGet)
+	s.RegisterRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	return mux
+}
+
+// RegisterRoutes mounts the MCP endpoint's routes (POST/GET /mcp) on an existing
+// mux, so the endpoint can be co-located in another server's process and address
+// space (e.g. temisd serving the web UI, the /v1 API and /mcp on one shared model
+// cache). Unlike HTTPHandler it adds no /healthz, leaving liveness to the host.
+func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /mcp", s.handleHTTPMessage)
+	mux.HandleFunc("GET /mcp", s.handleHTTPGet)
 }
 
 // handleHTTPMessage processes one JSON-RPC message from the request body. A

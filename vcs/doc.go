@@ -13,7 +13,7 @@
 // GitHub over its REST API (subpackage vcs/github), implemented with the
 // standard library alone — no new dependency. Because the contract is an
 // interface, further backends (a pure-Go git library, the git CLI, GitLab,
-// Bitbucket) can be added without touching callers. See ADR-0016.
+// Bitbucket) can be added without touching callers. See ADR-0022.
 //
 // # Refs
 //

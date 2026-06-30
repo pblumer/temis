@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             id="pricing_definitions"
+             name="Pricing"
+             namespace="http://temis.test/pricing">
+  <inputData id="id_price" name="Unit Price"/>
+  <inputData id="id_qty" name="Quantity"/>
+  <inputData id="id_name" name="Product Name"/>
+  <decision id="id_net" name="Net Total">
+    <informationRequirement id="ir_price">
+      <requiredInput href="#id_price"/>
+    </informationRequirement>
+    <informationRequirement id="ir_qty">
+      <requiredInput href="#id_qty"/>
+    </informationRequirement>
+    <literalExpression id="le_net" typeRef="number">
+      <text>Unit Price * Quantity</text>
+    </literalExpression>
+  </decision>
+  <decision id="id_label" name="Label">
+    <informationRequirement id="ir_name">
+      <requiredInput href="#id_name"/>
+    </informationRequirement>
+    <literalExpression id="le_label" typeRef="string">
+      <text>upper case(substring(Product Name, 1, 3))</text>
+    </literalExpression>
+  </decision>
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="diagram_pricing">
+      <dmndi:DMNShape id="shape_price" dmnElementRef="id_price">
+        <dc:Bounds x="160" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_qty" dmnElementRef="id_qty">
+        <dc:Bounds x="400" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_name" dmnElementRef="id_name">
+        <dc:Bounds x="640" y="100" width="180" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_net" dmnElementRef="id_net">
+        <dc:Bounds x="280" y="260" width="180" height="80"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="shape_label" dmnElementRef="id_label">
+        <dc:Bounds x="640" y="260" width="180" height="80"/>
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

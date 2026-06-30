@@ -258,9 +258,15 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
   OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
 
-## 3. gRPC-Service (`service/dmn.proto`)
+## 3. gRPC-Service (`proto/dmn/v1/engine.proto`, WP-33)
+
+Implementiert über **ConnectRPC** (ADR-0020): die Handler sprechen gRPC, gRPC-Web und
+das Connect-Protokoll und laufen im selben `service.Server`/Mux **auf demselben Port**
+wie der REST-Service (`temisd`); Engine und Modell-Cache sind geteilt. Klartext-HTTP/2
+(h2c) ist aktiv, sodass voller gRPC und der bidi-Stream auch ohne TLS funktionieren.
 
 ```proto
+package dmn.v1;
 service DmnEngine {
   rpc Compile(CompileRequest) returns (CompileResponse);
   rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
@@ -268,12 +274,43 @@ service DmnEngine {
 }
 ```
 
-- `Input`/`Output` als `google.protobuf.Struct` (deckt das Go⇄FEEL-Mapping ab).
-- Decimal-genaue Zahlen als String-Feld transportieren, um JSON-/proto-float-Verlust zu
+- `Evaluate`/`EvaluateBatch` wählen das Modell per `model_id` (zuvor kompiliert) **oder**
+  inline `xml` (stateless, wird gecacht); `decision`, `explain`, `strict` analog zu §2.
+- `EvaluateBatch` ist ein **bidirektionaler Stream**: je Request genau eine Response, in
+  Reihenfolge — Pipelining vieler Auswertungen über eine Verbindung.
+- `Input`/`Output`/`trace` als `google.protobuf.Struct` (deckt das Go⇄FEEL-Mapping ab).
+- Decimal-genaue Zahlen als String transportieren, um JSON-/proto-float-Verlust zu
   vermeiden (ADR-0007-Konsequenz).
+- Der optionale Bearer-Token (§2) gilt per Interceptor für **jeden** RPC (sonst
+  `CodeUnauthenticated`). Fehler-Mapping: fehlendes Modell/Decision → `NotFound`,
+  Schema-Verletzung (`strict`) → `InvalidArgument`, sonstige Auswertungsfehler →
+  `FailedPrecondition`.
+- Generierter Code (`internal/gen/dmnv1/`) ist committet; `make proto` regeneriert,
+  eine CI-Lane prüft auf Drift (ADR-0020).
 
-## 4. Versionierung
+## 4. Versionierung & Stabilität (SemVer, WP-43)
 
-- Go-Modulpfad endet bei Major ≥ 2 auf `/v2` (Go-Konvention).
-- HTTP-Pfade tragen `/v1`. gRPC-Package `dmn.v1`.
-- Stabilität ab WP-43. Davor „experimental", in README markiert.
+Ab WP-43 ist `package dmn` als **stabile v1-Oberfläche** zugesagt (ADR-0011,
+ADR-0019). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
+
+- **Stabiler Vertrag (v1):** die exportierten Symbole von `package dmn` —
+  `Engine`/`New`/`Option` (+ `WithLimits`), `Compile`, `Definitions`
+  (+ `Decision`/`Service`/`InputSchema`/`Index`/`ModelName`), `CompiledDecision`
+  (+ `Evaluate`/`EvalOption`/`WithTrace`/`WithStrictInput`/`ValidateInput`),
+  `CompiledService`, `Input`/`Result`/`Trace`, `Diagnostics`/`Diagnostic`/`Sev*`,
+  die `Code*`-Konstanten, `EvalError`/`InputError`, `InputField`/`InputProblem`,
+  `Limits`. Diese Menge ist durch den **API-Surface-Golden-Test**
+  (`dmn/apisurface_test.go` → `testdata/api/dmn.api`) eingefroren: jede Änderung
+  der exportierten Oberfläche bricht CI und erzwingt eine bewusste Entscheidung.
+- **Additive Änderungen** (neue Funktion/Typ/Feld/`Code*`) → Minor. Golden mit
+  `-update-api` aktualisieren.
+- **Breaking Changes** (Umbenennen/Entfernen/Signaturänderung; auch das
+  Verschieben der Compile-/Eval-Fehlergrenze aus §1.4 oder das Umbenennen eines
+  `Diagnostic.Code`) → **Major**. Go-Modulpfad endet bei Major ≥ 2 auf `/vN`.
+- **Deprecation-Policy:** ein zu entfernendes Symbol wird zuerst mit
+  `// Deprecated: <Grund/Ersatz>` markiert (bleibt voll funktionsfähig),
+  frühestens im nächsten Major entfernt.
+- **`internal/` ist ausgenommen** (privat, jederzeit änderbar) — nur `package dmn`
+  ist der SemVer-Vertrag (ADR-0011).
+- **HTTP/gRPC:** HTTP-Pfade tragen `/v1`, gRPC-Package `dmn.v1`; RFC-7807-`code`
+  und `Diagnostic.Code` sind additiv stabil (§1.4/§2).

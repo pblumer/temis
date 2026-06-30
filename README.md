@@ -43,13 +43,18 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
-| WP-60 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
+| WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 
-> **MVP erreicht (WP-01–11); Beta läuft (WP-20, WP-21, WP-22, WP-32 ✅).** Der Engine-Kern
-> ist jetzt **als HTTP-Service** lauffähig (`temisd`). Weiter geht es mit **WP-23/24**
-> (Boxed Context/Invocation/Function & BKM), **WP-28** (DRG-Verkettung für Multi-Decision-
-> Modelle) und **WP-34/35** (Limits, Modell-Cache). Die öffentliche `dmn/`- und HTTP-API ist
-> bis zur `v1`-Stabilisierung (WP-43) noch änderbar; `internal/` ist generell frei.
+> **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
+> sind inzwischen u. a. **WP-23–26** (Boxed Context/Invocation/Function, BKM, DRG-Verkettung,
+> Decision Services), **WP-27** (alle Hit Policies inkl. PRIORITY/OUTPUT ORDER), **WP-30/31**
+> (Typsystem, `instance of`, Item-Definition-Constraints), **WP-34/35** (Ressourcenlimits,
+> LRU-Modell-Cache), **WP-40** (TCK-Runner), **WP-42** (Performance-Budget-Gate),
+> **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
+> Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
+> Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
+> Offen u. a.: **WP-33** (gRPC) und **WP-41** (offizielles TCK-Korpus). Voller Live-Status:
+> `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 
@@ -116,16 +121,17 @@ liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die
 hinterlegten Decisions einsehen kann, schaltet den Endpunkt mit
 `-list-models=false` ab — er antwortet dann mit `404`, als gäbe es ihn nicht.
 
-**Web-UI (DMN-Playground):** Der Server liefert unter `GET /ui` (auch `GET /`) eine
-eigenständige, abhängigkeitsfreie Bedienoberfläche: DMN-XML einfügen oder als Datei
-laden → **Modell laden** liest Decisions und Inputs aus → Eingabewerte eintragen →
-**Auswerten**. Outputs, Decisions und Diagnostics werden direkt angezeigt; ein optionaler
-Bearer-Token kann gesetzt werden. Die Seite enthält kein externes Asset (kein CDN) und
-funktioniert daher offline; sie nutzt ausschließlich die `/v1`-Endpunkte.
+**Web-UI (eigener DMN-Modeler):** Der Server liefert unter `GET /` einen
+eigenständigen, abhängigkeitsfreien DMN-Modeler (ADR-0016, kein dmn-js, kein CDN,
+offline): DRD-Canvas mit eigenen Renderern, Knoten verschieben/umbenennen/typisieren
+(FEEL-validiert), **Decision-Tables ansehen & editieren** (Zellen, Regeln, FEEL-Validierung),
+Datei öffnen, **Auswerten** sowie **Speichern** zurück ins DMN-XML — alles über die
+`/v1`-Endpunkte. Ein optionaler Bearer-Token kann gesetzt werden. Die Alt-Pfade `/ui`
+und `/app/` leiten dauerhaft auf `/` um.
 
 ```sh
 go run ./cmd/temisd -addr :8080
-# Browser: http://localhost:8080/ui
+# Browser: http://localhost:8080/
 ```
 
 **Interaktive API-Doku (Swagger UI):** Der Server liefert zusätzlich eine dynamische
@@ -148,6 +154,15 @@ curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
+
+**gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als
+**gRPC**-Dienst an — über **ConnectRPC** (ADR-0020), auf **demselben Port** wie REST,
+mit geteilter Engine und geteiltem Modell-Cache. RPCs: `Compile`, `Evaluate` (per
+`model_id` oder inline `xml`, mit `explain`/`strict`) und `EvaluateBatch` (bidirektionaler
+Stream fürs Pipelining). Es spricht gRPC, gRPC-Web und das Connect-Protokoll; Klartext-
+HTTP/2 (h2c) ist aktiv, sodass voller gRPC auch ohne TLS läuft. Der optionale Bearer-Token
+gilt per Interceptor für jeden RPC. Contract: `proto/dmn/v1/engine.proto`, `docs/40-api-contract.md §3`.
+Generierter Go-Code ist committet (`internal/gen/dmnv1/`); `make proto` regeneriert ihn.
 
 ### Für KI-Agenten (`temis-mcp`, MCP über stdio & HTTP)
 
@@ -183,7 +198,21 @@ go run ./cmd/temis-mcp -http :8081 -token geheim # optionaler Bearer-Token (nur 
 `POST /mcp` nimmt je eine JSON-RPC-Nachricht und antwortet mit `application/json`
 (Notifications → `202`); `GET /mcp` → `405` (kein SSE-Stream); `GET /healthz` für
 Load-Balancer-Probes. Damit ist temis als geteilter MCP-Dienst hinter Traefik o. ä.
-erreichbar, ohne den REST-Service `temisd` mit MCP zu vermischen.
+erreichbar.
+
+**Ko-lokalisiert in `temisd` (ein Prozess, ein Cache).** Statt eines separaten
+Prozesses bedient auch `temisd` denselben MCP-Endpoint — auf **demselben Modell-Cache**
+wie Modeler und `/v1`-API (ADR-0021). Dann sieht ein Agent die vorgeladenen Beispiele
+und die im Modeler bearbeiteten Modelle, und über MCP geladene Modelle erscheinen im
+Modeler — eine `modelId` über alle Oberflächen.
+
+```sh
+go run ./cmd/temisd                 # /, /v1/... UND POST /mcp auf einem geteilten Cache
+go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
+```
+
+`/mcp` wird vom selben optionalen `-token` bewacht wie die `/v1`-Endpunkte. Das
+eigenständige `temis-mcp` bleibt für reines stdio/lokales Einbetten erhalten.
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine
@@ -205,6 +234,36 @@ zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Einga
 > geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
 > (DRG-Verkettung).
 
+## Releases & Container
+
+Releases werden über einen **SemVer-Tag** geschnitten; die Pipeline
+(`.github/workflows/release.yml`) baucht daraus versionierte Binaries (`temisd` und
+`temis-mcp` für linux/macOS/windows × amd64/arm64, Version per `-ldflags` eingebrannt),
+einen **GitHub-Release** mit Notizen aus dem passenden `CHANGELOG.md`-Abschnitt und ein
+**Container-Image für `temisd`** auf GHCR.
+
+```sh
+git tag v1.2.3 && git push origin v1.2.3        # löst die Release-Pipeline aus
+```
+
+Image direkt nutzen (sobald ein Release existiert):
+
+```sh
+docker run --rm -p 8080:8080 ghcr.io/pblumer/temis/temisd:latest
+# Browser: http://localhost:8080/
+```
+
+Lokal bauen — der Build brennt die Version ein:
+
+```sh
+docker build --build-arg VERSION=v1.2.3 -t temisd:v1.2.3 .
+temisd -version    # → temisd v1.2.3
+```
+
+Das Image basiert auf `distroless/static` (kein Shell, non-root); `temisd` bettet UI,
+OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere Assets.
+Änderungen sammeln sich unter `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Entwicklung
 
 Voraussetzung: **Go ≥ 1.23**.
@@ -221,8 +280,8 @@ make help          # alle Make-Targets
 dmn/                 # öffentliche API (Engine, Compile/Evaluate — WP-10)
 service/             # HTTP-Service-Adapter (temisd, WP-32)
 mcp/                 # MCP-Server-Adapter für KI-Agenten (temis-mcp, WP-50)
-vcs/                 # DMN-Modelle aus Git lesen (Provider-Interface, WP-60)
-  github/            #   erster Provider: GitHub-REST über reine stdlib (ADR-0016)
+vcs/                 # DMN-Modelle aus Git lesen (Provider-Interface, WP-70)
+  github/            #   erster Provider: GitHub-REST über reine stdlib (ADR-0022)
 internal/
   xml/               # DMN-XML ⇄ Modell (namespace-tolerant)
   model/             # versionsneutrales Domänenmodell
@@ -240,9 +299,10 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/10-architecture.md` | Paketstruktur, Compile/Evaluate-Pipeline, interne Schnittstellen |
 | `docs/20-roadmap.md` | MVP / Beta / 1.0 mit Arbeitspaketen & Akzeptanzkriterien **(Live-Status)** |
 | `docs/30-feel-spec.md` | FEEL-Bauplan (Grammatik, Typen, Built-ins) |
-| `docs/40-api-contract.md` | stabile Go- + HTTP/gRPC-API |
-| `docs/50-testing-strategy.md` | Test-Pyramide, TCK, Benchmarks |
+| `docs/40-api-contract.md` | stabile Go- + HTTP/gRPC-API (SemVer-/Deprecation-Policy) |
+| `docs/50-testing-strategy.md` | Test-Pyramide, Fuzzing, TCK, Benchmarks |
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
+| `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken

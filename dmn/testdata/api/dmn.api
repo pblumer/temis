@@ -1,0 +1,368 @@
+const (
+	CodeXMLMalformed	= "XML_MALFORMED"
+
+	CodeUnknownNamespace	= "UNKNOWN_NAMESPACE"
+
+	CodeUnknownElement	= "UNKNOWN_ELEMENT"
+
+	CodeNoLogic	= "DECISION_NO_LOGIC"
+
+	CodeFEELCompile	= "FEEL_COMPILE_ERROR"
+
+	CodeNotExecutable	= "DECISION_NOT_EXECUTABLE"
+
+	CodeMissingInput	= "MISSING_REQUIRED_INPUT"
+
+	CodeLimitExceeded	= "LIMIT_EXCEEDED"
+
+	CodeUniqueMultiple	= "UNIQUE_MULTIPLE_MATCH"
+
+	CodeDecisionCycle	= "DECISION_CYCLE"
+
+	CodeServiceOutputUnresolved	= "SERVICE_OUTPUT_UNRESOLVED"
+
+	CodeTypeError	= "TYPE_ERROR"
+
+	CodeRuntime	= "RUNTIME_ERROR"
+)
+
+const (
+	SevError	Severity	= iota
+	SevWarning
+	SevInfo
+)
+
+func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
+
+func (c *CompiledDecision) ID() string
+
+func (c *CompiledDecision) InputSchema() []InputField
+
+func (c *CompiledDecision) Name() string
+
+func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
+
+func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool)
+
+func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
+
+func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
+
+func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalOption) (GraphResult, error)
+
+func (d *Definitions) Graph() Graph
+
+func (d *Definitions) Index() ModelIndex
+
+func (d *Definitions) InputSchema(idOrName string) ([]InputField, error)
+
+func (d *Definitions) ItemDefinitions() []ItemType
+
+func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
+
+func (d *Definitions) ModelInputSchema() []InputField
+
+func (d *Definitions) ModelName() string
+
+func (d *Definitions) Service(idOrName string) (*CompiledService, error)
+
+func (d *Definitions) ValidateModelInput(in Input) []InputProblem
+
+func (d Diagnostics) HasErrors() bool
+
+func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnostics, error)
+
+func (e *EvalError) Error() string
+
+func (e *EvalError) Unwrap() error
+
+func (e *InputError) Error() string
+
+func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error)
+
+func (s *CompiledService) ID() string
+
+func (s *CompiledService) Name() string
+
+func (s Severity) String() string
+
+func ApplyEdits(src []byte, edits []NodeEdit) ([]byte, error)
+
+func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
+
+func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
+
+func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
+
+func New(opts ...Option) *Engine
+
+func RemoveItemDefinition(src []byte, name string) ([]byte, error)
+
+func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, error)
+
+func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
+
+func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
+
+func WithLimits(l Limits) Option
+
+func WithStrictInput() EvalOption
+
+func WithTrace() EvalOption
+
+type BKMFunctionEdit struct {
+	Params		[]BKMParam	`json:"params"`
+	BodyText	string		`json:"bodyText"`
+	BodyTypeRef	string		`json:"bodyTypeRef"`
+}
+
+type BKMParam struct {
+	Name	string	`json:"name"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type BKMView struct {
+	BkmID		string		`json:"bkmId"`
+	Name		string		`json:"name"`
+	Params		[]BKMParam	`json:"params"`
+	BodyText	string		`json:"bodyText"`
+	BodyTypeRef	string		`json:"bodyTypeRef,omitempty"`
+	Simple		bool		`json:"simple"`
+}
+
+type CompiledDecision struct {
+	// contains filtered or unexported fields
+}
+
+type CompiledService struct {
+	// contains filtered or unexported fields
+}
+
+type Definitions struct {
+	// contains filtered or unexported fields
+}
+
+type Diagnostic struct {
+	Severity	Severity
+
+	Code		string
+	Message		string
+	DecisionID	string
+	Line, Col	int
+}
+
+type Diagnostics []Diagnostic
+
+type Engine struct {
+	// contains filtered or unexported fields
+}
+
+type EvalError struct {
+	Code		string
+	DecisionID	string
+	Message		string
+	Err		error
+}
+
+type EvalOption func(*evalConfig)
+
+type Graph struct {
+	Nodes	[]GraphNode	`json:"nodes"`
+	Edges	[]GraphEdge	`json:"edges"`
+}
+
+type GraphEdge struct {
+	Type	string	`json:"type"`
+	Source	string	`json:"source"`
+	Target	string	`json:"target"`
+}
+
+type GraphEdgeEdit struct {
+	Type	string	`json:"type"`
+	Source	string	`json:"source"`
+	Target	string	`json:"target"`
+}
+
+type GraphEdit struct {
+	Nodes	[]GraphNodeEdit	`json:"nodes"`
+	Edges	[]GraphEdgeEdit	`json:"edges"`
+}
+
+type GraphNode struct {
+	ID	string	`json:"id"`
+	Type	string	`json:"type"`
+	Name	string	`json:"name"`
+
+	DataType	string	`json:"dataType,omitempty"`
+
+	VarName	string	`json:"varName,omitempty"`
+
+	HasTable	bool	`json:"hasTable,omitempty"`
+
+	HasLiteral	bool	`json:"hasLiteral,omitempty"`
+	X		float64	`json:"x,omitempty"`
+	Y		float64	`json:"y,omitempty"`
+	Width		float64	`json:"width,omitempty"`
+	Height		float64	`json:"height,omitempty"`
+}
+
+type GraphNodeEdit struct {
+	ID		string	`json:"id"`
+	Type		string	`json:"type"`
+	Name		string	`json:"name"`
+	DataType	string	`json:"dataType,omitempty"`
+	X		float64	`json:"x"`
+	Y		float64	`json:"y"`
+	Width		float64	`json:"width"`
+	Height		float64	`json:"height"`
+}
+
+type GraphResult struct {
+	Values	map[string]any
+
+	Traces	map[string]*Trace
+
+	Errors	map[string]string
+
+	Diags	Diagnostics
+}
+
+type Input map[string]any
+
+type InputError struct {
+	Problems []InputProblem
+}
+
+type InputField struct {
+	Name		string	`json:"name"`
+	Type		string	`json:"type,omitempty"`
+	Required	bool	`json:"required"`
+
+	Constraint	string	`json:"constraint,omitempty"`
+}
+
+type InputProblem struct {
+	Input		string	`json:"input"`
+	Code		string	`json:"code"`
+	Message		string	`json:"message"`
+	Expected	string	`json:"expected,omitempty"`
+	Got		string	`json:"got,omitempty"`
+}
+
+type ItemType struct {
+	Name		string	`json:"name"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+	IsCollection	bool	`json:"isCollection,omitempty"`
+	AllowedValues	string	`json:"allowedValues,omitempty"`
+	Structured	bool	`json:"structured,omitempty"`
+}
+
+type Limits struct {
+	MaxCallDepth	int
+	MaxIterations	int
+	MaxListSize	int
+	CompileTimeout	time.Duration
+}
+
+type LiteralView struct {
+	DecisionID	string	`json:"decisionId"`
+	Name		string	`json:"name"`
+	Text		string	`json:"text"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+}
+
+type ModelIndex struct {
+	Decisions	[]string
+	Inputs		[]string
+}
+
+type NodeEdit struct {
+	ID		string		`json:"id"`
+	Name		*string		`json:"name,omitempty"`
+	DataType	*string		`json:"dataType,omitempty"`
+	X		*float64	`json:"x,omitempty"`
+	Y		*float64	`json:"y,omitempty"`
+}
+
+type Option func(*config)
+
+type Result struct {
+	Outputs	map[string]any
+
+	Decisions	map[string]any
+
+	Diags	Diagnostics
+
+	Trace	*Trace
+}
+
+type Severity int
+
+type TableEdit struct {
+	HitPolicy	string		`json:"hitPolicy,omitempty"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TableInput	`json:"inputs,omitempty"`
+	Outputs		[]TableOutput	`json:"outputs,omitempty"`
+	Rules		[]TableRule	`json:"rules"`
+	ReplaceColumns	bool		`json:"replaceColumns,omitempty"`
+}
+
+type TableInput struct {
+	Label		string	`json:"label,omitempty"`
+	Expression	string	`json:"expression"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+}
+
+type TableOutput struct {
+	Name	string	`json:"name,omitempty"`
+	Label	string	`json:"label,omitempty"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type TableRule struct {
+	InputEntries	[]string	`json:"inputEntries"`
+	OutputEntries	[]string	`json:"outputEntries"`
+	Annotations	[]string	`json:"annotations,omitempty"`
+}
+
+type TableTrace struct {
+	HitPolicy	string		`json:"hitPolicy"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TraceInput	`json:"inputs"`
+	Rules		[]TraceRule	`json:"rules"`
+	Matched		[]int		`json:"matched"`
+}
+
+type TableView struct {
+	DecisionID	string		`json:"decisionId"`
+	Name		string		`json:"name"`
+	HitPolicy	string		`json:"hitPolicy"`
+	Aggregation	string		`json:"aggregation,omitempty"`
+	Inputs		[]TableInput	`json:"inputs"`
+	Outputs		[]TableOutput	`json:"outputs"`
+	Rules		[]TableRule	`json:"rules"`
+}
+
+type Trace struct {
+	Tables []TableTrace `json:"tables"`
+}
+
+type TraceCondition struct {
+	Input	string	`json:"input"`
+	Entry	string	`json:"entry"`
+	Matched	bool	`json:"matched"`
+}
+
+type TraceInput struct {
+	Expression	string	`json:"expression"`
+	Value		any	`json:"value"`
+}
+
+type TraceRule struct {
+	Index		int			`json:"index"`
+	ID		string			`json:"id,omitempty"`
+	Matched		bool			`json:"matched"`
+	Conditions	[]TraceCondition	`json:"conditions"`
+
+	Outputs	[]any	`json:"outputs,omitempty"`
+}
