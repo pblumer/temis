@@ -24,7 +24,10 @@ async function boot(root: HTMLElement): Promise<void> {
         <div class="sidebar-title">${APP_NAME}</div>
         <div class="sidebar-section">
           <span>Modelle</span>
-          <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">+</button>
+          <span class="sidebar-actions">
+            <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+            <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">+</button>
+          </span>
         </div>
         <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
         <div id="modelList" class="model-list"></div>
@@ -76,12 +79,13 @@ async function boot(root: HTMLElement): Promise<void> {
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
   const saveBtn = root.querySelector<HTMLButtonElement>('#save')
   const openBtn = root.querySelector<HTMLButtonElement>('#open')
+  const newFolderBtn = root.querySelector<HTMLButtonElement>('#newFolder')
   const fileInput = root.querySelector<HTMLInputElement>('#file')
   const evalHost = root.querySelector<HTMLElement>('#eval')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -281,43 +285,154 @@ async function boot(root: HTMLElement): Promise<void> {
     return n
   }
 
-  const renderModelList = (): void => {
-    modelList.textContent = ''
-    for (const group of groupModels()) {
-      const current = group.revisions[0]
-      const older = group.revisions.slice(1)
-      const total = group.revisions.length
-      // Auto-unfold a group if the loaded revision is one of its older ones, so
-      // the highlight is visible.
-      if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
+  // Folders organise the model list. A model is filed by NAME (its stable
+  // identity across revisions), and the assignment is persisted in the browser
+  // (localStorage) — per browser, since the server's model cache is content-
+  // addressed and ephemeral. Drag a model onto a folder to file it; drop it on
+  // empty space to unfile it.
+  const FOLDERS_KEY = 'temis.modeler.folders'
+  type FolderState = { folders: string[]; assign: Record<string, string> }
+  const loadFolders = (): FolderState => {
+    try {
+      const s = JSON.parse(localStorage.getItem(FOLDERS_KEY) ?? '') as FolderState
+      if (Array.isArray(s.folders) && s.assign && typeof s.assign === 'object') return { folders: s.folders.filter((f) => typeof f === 'string'), assign: s.assign }
+    } catch {
+      /* no/invalid stored folders */
+    }
+    return { folders: [], assign: {} }
+  }
+  const folderState = loadFolders()
+  const collapsedFolders = new Set<string>()
+  const saveFolders = (): void => {
+    try {
+      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folderState))
+    } catch {
+      /* storage unavailable (private mode) — folders just won't persist */
+    }
+  }
+  const assignModel = (name: string, folder: string | null): void => {
+    if (folder) folderState.assign[name] = folder
+    else delete folderState.assign[name]
+    saveFolders()
+    renderModelList()
+  }
+  const createFolder = (): void => {
+    const name = (window.prompt('Name des neuen Ordners:') ?? '').trim()
+    if (!name || folderState.folders.includes(name)) return
+    folderState.folders.push(name)
+    saveFolders()
+    renderModelList()
+  }
+  const deleteFolder = (name: string): void => {
+    folderState.folders = folderState.folders.filter((f) => f !== name)
+    for (const k of Object.keys(folderState.assign)) if (folderState.assign[k] === name) delete folderState.assign[k]
+    saveFolders()
+    renderModelList()
+  }
+  newFolderBtn.addEventListener('click', createFolder)
+  // Dropping a model on the list background (not on a folder) unfiles it.
+  modelList.addEventListener('dragover', (e) => e.preventDefault())
+  modelList.addEventListener('drop', (e) => {
+    const name = e.dataTransfer?.getData('text/plain')
+    if (name) assignModel(name, null)
+  })
 
-      const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
-      row.append(el('span', 'model-name', group.name))
-      if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
-      row.addEventListener('click', () => void showModel(current.modelId))
-      modelList.append(row)
+  // renderGroup draws one model (its current revision + a collapsible history of
+  // older ones) into container. The current row is draggable so it can be dropped
+  // onto a folder (drag by model name — the stable identity across revisions).
+  const renderGroup = (group: Group, container: HTMLElement): void => {
+    const current = group.revisions[0]
+    const older = group.revisions.slice(1)
+    const total = group.revisions.length
+    if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
 
-      if (older.length) {
-        const open = expanded.has(group.name)
-        const toggle = el('button', 'model-history-toggle', (open ? '▾ ' : '▸ ') + 'Verlauf (' + older.length + ')')
-        toggle.addEventListener('click', () => {
-          if (expanded.has(group.name)) expanded.delete(group.name)
-          else expanded.add(group.name)
-          renderModelList()
+    const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
+    row.append(el('span', 'model-name', group.name))
+    if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
+    row.draggable = true
+    row.addEventListener('dragstart', (e) => e.dataTransfer?.setData('text/plain', group.name))
+    row.addEventListener('click', () => void showModel(current.modelId))
+    container.append(row)
+
+    if (older.length) {
+      const open = expanded.has(group.name)
+      const toggle = el('button', 'model-history-toggle', (open ? '▾ ' : '▸ ') + 'Verlauf (' + older.length + ')')
+      toggle.addEventListener('click', () => {
+        if (expanded.has(group.name)) expanded.delete(group.name)
+        else expanded.add(group.name)
+        renderModelList()
+      })
+      container.append(toggle)
+      if (open) {
+        older.forEach((rev, i) => {
+          const v = total - 1 - i
+          const hrow = el('div', 'model-history-item' + (rev.modelId === currentId ? ' is-current' : ''))
+          hrow.append(el('span', 'model-rev', 'v' + v), el('span', 'model-hist-id', rev.modelId.slice(-6)))
+          hrow.addEventListener('click', () => void showModel(rev.modelId))
+          container.append(hrow)
         })
-        modelList.append(toggle)
-
-        if (open) {
-          older.forEach((rev, i) => {
-            const v = total - 1 - i
-            const hrow = el('div', 'model-history-item' + (rev.modelId === currentId ? ' is-current' : ''))
-            hrow.append(el('span', 'model-rev', 'v' + v), el('span', 'model-hist-id', rev.modelId.slice(-6)))
-            hrow.addEventListener('click', () => void showModel(rev.modelId))
-            modelList.append(hrow)
-          })
-        }
       }
     }
+  }
+
+  const renderModelList = (): void => {
+    modelList.textContent = ''
+    const groups = groupModels()
+    const known = new Set(folderState.folders)
+    const byFolder = new Map<string, Group[]>()
+    const unassigned: Group[] = []
+    for (const g of groups) {
+      const f = folderState.assign[g.name]
+      if (f && known.has(f)) {
+        const list = byFolder.get(f) ?? []
+        list.push(g)
+        byFolder.set(f, list)
+      } else {
+        unassigned.push(g)
+      }
+    }
+
+    for (const folder of folderState.folders) {
+      const open = !collapsedFolders.has(folder)
+      const members = byFolder.get(folder) ?? []
+      const head = el('div', 'folder-head')
+      head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', folder), el('span', 'folder-count', String(members.length)))
+      const del = el('button', 'folder-del', '✕')
+      del.title = 'Ordner löschen (Modelle bleiben erhalten)'
+      del.addEventListener('click', (e) => {
+        e.stopPropagation()
+        deleteFolder(folder)
+      })
+      head.append(del)
+      head.addEventListener('click', () => {
+        if (collapsedFolders.has(folder)) collapsedFolders.delete(folder)
+        else collapsedFolders.add(folder)
+        renderModelList()
+      })
+      // Drop a dragged model onto the folder to file it here.
+      head.addEventListener('dragover', (e) => {
+        e.preventDefault()
+        head.classList.add('drop-over')
+      })
+      head.addEventListener('dragleave', () => head.classList.remove('drop-over'))
+      head.addEventListener('drop', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        head.classList.remove('drop-over')
+        const name = e.dataTransfer?.getData('text/plain')
+        if (name) assignModel(name, folder)
+      })
+      modelList.append(head)
+
+      if (open) {
+        const body = el('div', 'folder-body')
+        for (const g of members) renderGroup(g, body)
+        if (!members.length) body.append(el('p', 'folder-empty', 'leer — Modelle hierher ziehen'))
+        modelList.append(body)
+      }
+    }
+
+    for (const g of unassigned) renderGroup(g, modelList)
   }
 
   // hitRulesOf maps each decision to the rule numbers (1-based) that fired, from
