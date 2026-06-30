@@ -62,6 +62,11 @@ type Server struct {
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
 	mcpServer *mcp.Server
+
+	// sink, when set via WithClioSink, records each single-decision evaluation as
+	// a tamper-evident event in a clio instance (ADR-0023). Nil disables audit
+	// logging, leaving behaviour byte-identical to a server without it.
+	sink *ClioSink
 }
 
 // Option configures a Server at construction time.
@@ -80,6 +85,14 @@ func WithToken(token string) Option {
 // endpoint then responds 404 as if it did not exist.
 func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
+}
+
+// WithClioSink attaches a clio audit sink so each single-decision evaluation
+// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) is recorded as a
+// tamper-evident decision event in clio (ADR-0023). A nil sink is ignored,
+// leaving the server's behaviour unchanged.
+func WithClioSink(sink *ClioSink) Option {
+	return func(s *Server) { s.sink = sink }
 }
 
 // WithCacheSize bounds how many compiled models the server keeps in memory.
@@ -726,7 +739,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -746,7 +759,7 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
@@ -811,7 +824,7 @@ func redirectTo(target string) http.HandlerFunc {
 // evaluate runs a decision and writes the result or an appropriate problem. When
 // explain is set the response carries the decision trace (which rules matched and
 // why).
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID string, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -843,6 +856,22 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		}
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
+	}
+	// Audit the decision before answering. In fail-closed mode a failed write
+	// aborts the request (the decision must be recorded to count as made); in
+	// best-effort mode Record logs and returns nil so the result still flows.
+	if s.sink != nil {
+		if err := s.sink.Record(ctx, DecisionRecord{
+			ModelID:  modelID,
+			Decision: decision,
+			Input:    input,
+			Outputs:  res.Outputs,
+			Trace:    res.Trace,
+			Strict:   strict,
+		}); err != nil {
+			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, evaluateResponse{
 		Outputs:     res.Outputs,
