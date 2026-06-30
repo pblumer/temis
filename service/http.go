@@ -62,6 +62,12 @@ type Server struct {
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
 	mcpServer *mcp.Server
+
+	// gitBaseURL overrides the GitHub REST API root for the /v1/git endpoints
+	// (default https://api.github.com); set via WithGitHubBaseURL for GitHub
+	// Enterprise or tests. The git-provider token is supplied per request
+	// (X-Git-Token), never stored on the server (WP-72, auth model A).
+	gitBaseURL string
 }
 
 // Option configures a Server at construction time.
@@ -174,6 +180,12 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.dataRoutes() {
 		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
 	}
+	// Git-backed models: browse, load, save and propose against a repository
+	// (WP-72). Registered outside the dataRoutes() table (and thus the
+	// OpenAPI-sync test) for now — the git endpoints are not in openapi.yaml yet.
+	// The git-provider token is per request (X-Git-Token); these endpoints share
+	// the same optional API token gate as the others.
+	s.registerGitRoutes(mux)
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
