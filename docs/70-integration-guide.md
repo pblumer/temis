@@ -186,3 +186,8 @@ Ein vierter Weg, speziell für Agenten als Laufzeit-Konsumenten: `temis-mcp` bie
 Engine über das **Model Context Protocol** an (stdio oder HTTP). Tools: `list_models`,
 `load_model`, `describe_decision`, `evaluate`. Details und Begründung (ADR-0013) im README
 („Für KI-Agenten") und `docs/60-ai-agent-guide.md`.
+
+Alternativ bedient `temisd` denselben MCP-Endpoint **ko-lokalisiert** unter `POST /mcp`
+(Flag `-mcp`, Default an) — auf demselben Modell-Cache wie Modeler und `/v1`-API
+(ADR-0021). So sind vorgeladene Beispiele und im Modeler bearbeitete Modelle über MCP
+sichtbar und umgekehrt; ein separater `temis-mcp`-Prozess ist dann nicht nötig.

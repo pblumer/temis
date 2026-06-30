@@ -197,7 +197,21 @@ go run ./cmd/temis-mcp -http :8081 -token geheim # optionaler Bearer-Token (nur 
 `POST /mcp` nimmt je eine JSON-RPC-Nachricht und antwortet mit `application/json`
 (Notifications → `202`); `GET /mcp` → `405` (kein SSE-Stream); `GET /healthz` für
 Load-Balancer-Probes. Damit ist temis als geteilter MCP-Dienst hinter Traefik o. ä.
-erreichbar, ohne den REST-Service `temisd` mit MCP zu vermischen.
+erreichbar.
+
+**Ko-lokalisiert in `temisd` (ein Prozess, ein Cache).** Statt eines separaten
+Prozesses bedient auch `temisd` denselben MCP-Endpoint — auf **demselben Modell-Cache**
+wie Modeler und `/v1`-API (ADR-0021). Dann sieht ein Agent die vorgeladenen Beispiele
+und die im Modeler bearbeiteten Modelle, und über MCP geladene Modelle erscheinen im
+Modeler — eine `modelId` über alle Oberflächen.
+
+```sh
+go run ./cmd/temisd                 # /, /v1/... UND POST /mcp auf einem geteilten Cache
+go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
+```
+
+`/mcp` wird vom selben optionalen `-token` bewacht wie die `/v1`-Endpunkte. Das
+eigenständige `temis-mcp` bleibt für reines stdio/lokales Einbetten erhalten.
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine

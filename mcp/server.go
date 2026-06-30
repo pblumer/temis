@@ -38,15 +38,40 @@ const (
 // engine is stateless and the model cache is guarded by a mutex. The zero value
 // is not usable; construct one with NewServer.
 type Server struct {
-	engine  *dmn.Engine
+	// store holds the compiled models the tools operate on. It defaults to an
+	// in-process cache (memStore), but WithStore can replace it with a cache
+	// shared with another surface (e.g. the HTTP service), so models loaded over
+	// MCP and over HTTP are visible to both — one process, one address space.
+	store   Store
 	version string
 	// token, when non-empty, is the bearer token required on the HTTP transport
 	// (HTTPHandler). It does not apply to the stdio transport, which is a trusted
 	// local subprocess.
 	token string
+}
 
-	mu     sync.RWMutex
-	models map[string]*storedModel
+// ModelInfo summarises a cached model for list_models: its content-addressed id
+// and the names of its evaluable decisions and input data.
+type ModelInfo struct {
+	ID        string
+	Decisions []string
+	Inputs    []string
+}
+
+// Store is the model cache the MCP tools operate on. Splitting it out lets the
+// MCP server share one cache with another surface (the HTTP service) so a model
+// loaded over either is visible to both. Implementations must be safe for
+// concurrent use. Model ids are the "sha256:"-prefixed hash of the XML, so the
+// same document always lands under the same id across surfaces.
+type Store interface {
+	// Compile compiles and caches xml, returning its content-addressed id, the
+	// compiled definitions, its index and any compile diagnostics. Re-compiling
+	// the same document returns the same id (idempotent).
+	Compile(ctx context.Context, xml []byte) (id string, defs *dmn.Definitions, index dmn.ModelIndex, diags dmn.Diagnostics, err error)
+	// Lookup returns the cached model for id, or ok=false when it is not cached.
+	Lookup(id string) (defs *dmn.Definitions, index dmn.ModelIndex, ok bool)
+	// List summarises every cached model, in any order (the caller sorts).
+	List() []ModelInfo
 }
 
 // Option configures a Server at construction time.
@@ -69,13 +94,27 @@ func WithHTTPToken(token string) Option {
 	return func(s *Server) { s.token = token }
 }
 
+// WithStore backs the server with store instead of its default in-process cache,
+// so the MCP tools share that store. Used to co-locate the MCP endpoint in the
+// HTTP service process on one shared cache (same address space). A nil store is
+// ignored, keeping the default. When set, the engine passed to NewServer is
+// unused — the store owns compilation.
+func WithStore(store Store) Option {
+	return func(s *Server) {
+		if store != nil {
+			s.store = store
+		}
+	}
+}
+
 // NewServer returns a Server backed by engine. If engine is nil a default engine
-// is used.
+// is used. Unless WithStore overrides it, the server keeps its own in-process
+// model cache built on engine.
 func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, version: "dev", models: map[string]*storedModel{}}
+	s := &Server{store: newMemStore(engine), version: "dev"}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -210,12 +249,11 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 }
 
 func (s *Server) toolListModels() (any, *rpcError) {
-	s.mu.RLock()
-	summaries := make([]modelSummary, 0, len(s.models))
-	for _, sm := range s.models {
-		summaries = append(summaries, modelSummary{ModelID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+	infos := s.store.List()
+	summaries := make([]modelSummary, 0, len(infos))
+	for _, mi := range infos {
+		summaries = append(summaries, modelSummary{ModelID: mi.ID, Decisions: mi.Decisions, Inputs: mi.Inputs})
 	}
-	s.mu.RUnlock()
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ModelID < summaries[j].ModelID })
 	return toolText(map[string]any{"models": summaries, "count": len(summaries)})
 }
@@ -230,15 +268,15 @@ func (s *Server) toolLoadModel(ctx context.Context, raw json.RawMessage) (any, *
 	if a.XML == "" {
 		return toolError("missing required argument: xml"), nil
 	}
-	sm, err := s.compileAndStore(ctx, []byte(a.XML))
+	id, _, index, diags, err := s.store.Compile(ctx, []byte(a.XML))
 	if err != nil {
 		return toolError("could not compile model: " + err.Error()), nil
 	}
 	return toolText(modelResponse{
-		ModelID:     sm.id,
-		Decisions:   sm.index.Decisions,
-		Inputs:      sm.index.Inputs,
-		Diagnostics: toDiagnosticDTOs(sm.diags),
+		ModelID:     id,
+		Decisions:   index.Decisions,
+		Inputs:      index.Inputs,
+		Diagnostics: toDiagnosticDTOs(diags),
 	})
 }
 
@@ -253,19 +291,19 @@ func (s *Server) toolDescribeDecision(raw json.RawMessage) (any, *rpcError) {
 	if a.ModelID == "" {
 		return toolError("missing required argument: modelId"), nil
 	}
-	sm, ok := s.lookup(a.ModelID)
+	defs, _, ok := s.store.Lookup(a.ModelID)
 	if !ok {
 		return toolError("no model with id " + a.ModelID + "; load it first with load_model"), nil
 	}
 	if a.Decision == "" {
 		return toolError("missing required argument: decision"), nil
 	}
-	dec, err := sm.defs.Decision(a.Decision)
+	dec, err := defs.Decision(a.Decision)
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
 	return toolText(map[string]any{
-		"modelId":    sm.id,
+		"modelId":    a.ModelID,
 		"decision":   dec.Name(),
 		"decisionId": dec.ID(),
 		"inputs":     dec.InputSchema(),
@@ -291,17 +329,17 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 	var defs *dmn.Definitions
 	switch {
 	case a.ModelID != "":
-		sm, ok := s.lookup(a.ModelID)
+		d, _, ok := s.store.Lookup(a.ModelID)
 		if !ok {
 			return toolError("no model with id " + a.ModelID + "; load it first with load_model"), nil
 		}
-		defs = sm.defs
+		defs = d
 	case a.XML != "":
-		sm, err := s.compileAndStore(ctx, []byte(a.XML))
+		_, d, _, _, err := s.store.Compile(ctx, []byte(a.XML))
 		if err != nil {
 			return toolError("could not compile model: " + err.Error()), nil
 		}
-		defs = sm.defs
+		defs = d
 	default:
 		return toolError("provide either modelId or xml"), nil
 	}
@@ -340,35 +378,61 @@ func (s *Server) toolEvaluate(ctx context.Context, raw json.RawMessage) (any, *r
 	})
 }
 
-// --- model store (content-addressed, mirrors the HTTP service) ---
+// --- default in-process model store (content-addressed, mirrors the HTTP service) ---
 
-func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel, error) {
+// memStore is the Server's default cache: content-addressed, mutex-guarded and
+// unbounded. WithStore replaces it when the cache must be shared with another
+// surface. It reaches the engine only through the public dmn package (ADR-0005).
+type memStore struct {
+	engine *dmn.Engine
+	mu     sync.RWMutex
+	models map[string]*storedModel
+}
+
+func newMemStore(engine *dmn.Engine) *memStore {
+	return &memStore{engine: engine, models: map[string]*storedModel{}}
+}
+
+func (m *memStore) Compile(ctx context.Context, xml []byte) (string, *dmn.Definitions, dmn.ModelIndex, dmn.Diagnostics, error) {
 	id := modelID(xml)
 
-	s.mu.RLock()
-	if sm, ok := s.models[id]; ok {
-		s.mu.RUnlock()
-		return sm, nil
+	m.mu.RLock()
+	if sm, ok := m.models[id]; ok {
+		m.mu.RUnlock()
+		return sm.id, sm.defs, sm.index, sm.diags, nil
 	}
-	s.mu.RUnlock()
+	m.mu.RUnlock()
 
-	defs, diags, err := s.engine.Compile(ctx, xml)
+	defs, diags, err := m.engine.Compile(ctx, xml)
 	if err != nil {
-		return nil, err
+		return "", nil, dmn.ModelIndex{}, nil, err
 	}
 	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
 
-	s.mu.Lock()
-	s.models[id] = sm
-	s.mu.Unlock()
-	return sm, nil
+	m.mu.Lock()
+	m.models[id] = sm
+	m.mu.Unlock()
+	return sm.id, sm.defs, sm.index, sm.diags, nil
 }
 
-func (s *Server) lookup(id string) (*storedModel, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sm, ok := s.models[id]
-	return sm, ok
+func (m *memStore) Lookup(id string) (*dmn.Definitions, dmn.ModelIndex, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sm, ok := m.models[id]
+	if !ok {
+		return nil, dmn.ModelIndex{}, false
+	}
+	return sm.defs, sm.index, true
+}
+
+func (m *memStore) List() []ModelInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ModelInfo, 0, len(m.models))
+	for _, sm := range m.models {
+		out = append(out, ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+	}
+	return out
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"
