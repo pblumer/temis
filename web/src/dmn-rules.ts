@@ -83,6 +83,10 @@ class DmnRules extends RuleProvider {
     // Permit creating a fresh element from the palette (drag/click to place);
     // the new node is undoable and persisted by the structural save.
     this.addRule('shape.create', () => true)
+    // Any element (node or requirement edge) may be deleted — the editor-actions
+    // removeSelection (Delete/Backspace) consults this rule, and the structural
+    // save then drops the element and its DMNDI on the server.
+    this.addRule('elements.delete', () => true)
     // A requirement may start from any node; Connect figures out the valid
     // direction from the hovered target via connection.create below.
     this.addRule('connection.start', () => true)

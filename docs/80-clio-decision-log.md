@@ -1,9 +1,9 @@
 # Entscheidungs-Logbuch mit clio (revisionssicheres Audit)
 
-> **Status:** Konzept/Design (ADR-0023, *proposed*). Dieses Dokument beschreibt den
-> **Vertrag** und das **Betriebsmodell**; die Adapter (`temisd`-Sink, Re-Audit-Tool)
-> sind als WP-54/55 eingeplant (`docs/20-roadmap.md`). Das **Agent-Muster** (Abschnitt
-> 5) funktioniert bereits heute, ganz ohne neuen temis-Code.
+> **Status:** Der **`temisd`-Sink (Abschnitt 2, WP-54)** und das
+> **Re-Audit-Tool (Abschnitt 4, WP-55)** sind umgesetzt. Das **Agent-Muster**
+> (Abschnitt 5) funktioniert ganz ohne neuen temis-Code. Vertrag & Begründung:
+> ADR-0023.
 
 temis trifft **deterministische, begründete** Entscheidungen (ADR-0013); das
 Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (`cliostore`) ist ein
@@ -72,29 +72,46 @@ liefert nur `source`/`subject`/`type`/`data`.
 
 ---
 
-## 2. Opt-in-Sink in `temisd` (WP-54, geplant)
+## 2. Opt-in-Sink in `temisd` (WP-54, umgesetzt)
 
-`temisd` emittiert das Event **nach** jeder Auswertung — nur wenn konfiguriert. Default
+`temisd` emittiert das Event **nach** jeder Einzel-Decision-Auswertung
+(`POST /v1/evaluate`, `POST /v1/models/{id}/evaluate`) — nur wenn konfiguriert. Default
 aus ⇒ Verhalten **byte-identisch** zu heute.
 
 ```sh
 temisd -addr :8080 \
-  -clio-url   http://127.0.0.1:3000 \
-  -clio-token kid_ci01.dein-geheimnis \
-  -clio-source temisd-prod
+  -clio-url            http://127.0.0.1:3000 \
+  -clio-token          kid_ci01.dein-geheimnis \
+  -clio-source         temisd-prod \
+  -clio-subject-prefix /decisions \
+  -clio-subject-key    "Order ID" \
+  -clio-strict=false
 # entsprechend per Env: TEMIS_CLIO_URL / TEMIS_CLIO_TOKEN / TEMIS_CLIO_SOURCE
 ```
+
+| Flag / Env | Default | Bedeutung |
+|---|---|---|
+| `-clio-url` / `$TEMIS_CLIO_URL` | — (aus) | Basis-URL der clio-Instanz. Leer ⇒ Sink **aus**. |
+| `-clio-token` / `$TEMIS_CLIO_TOKEN` | — | clio-API-Key (`kid.secret`); eng gescopt, siehe Abschnitt 3. |
+| `-clio-source` / `$TEMIS_CLIO_SOURCE` | `temisd` | CloudEvents-`source`. |
+| `-clio-subject-prefix` | `/decisions` | Subject-Präfix (Abschnitt 3). |
+| `-clio-subject-key` | — | Eingabefeld als Entitäts-Segment; leer ⇒ Decision-Name. |
+| `-clio-strict` | `false` | `true` = fail-closed (siehe unten). |
 
 Eigenschaften (verbindlich laut ADR-0023):
 
 - **Auswertung führt, Audit folgt.** Ein clio-Fehler verfälscht das Ergebnis nie. Die
   Politik ist konfigurierbar:
-  - *best-effort* (Default): Auswertung antwortet normal, Sink-Fehler ⇒ Log + Metrik.
-  - *strikt / fail-closed*: Schlägt das Schreiben fehl, schlägt der Request fehl
-    (für Domänen, in denen „nicht protokolliert = nicht entschieden" gilt).
+  - *best-effort* (Default): Auswertung antwortet normal (`200`), Sink-Fehler wird
+    geloggt.
+  - *strikt / fail-closed* (`-clio-strict`): Schlägt das Schreiben fehl, schlägt der
+    Request mit `502 AUDIT_WRITE_FAILED` fehl (für Domänen, in denen „nicht
+    protokolliert = nicht entschieden" gilt). Ein `409` der Precondition (bereits
+    protokolliert) gilt **immer** als Erfolg.
 - **Reine stdlib** (`net/http`) — keine neue Go-Abhängigkeit, kein Go-Bump (ADR-0014).
+  Die Kopplung lebt im Adapter (`service`), nicht im Engine-Kern (`package dmn`).
 - **Spur opt-in:** `data.trace` wird nur gefüllt, wenn die Spur ohnehin angefordert ist
-  — der allokationsarme Default-Pfad (WP-42) bleibt unangetastet.
+  (`explain`) — der allokationsarme Default-Pfad (WP-42) bleibt unangetastet.
 
 ### Idempotenz über Preconditions
 
@@ -142,28 +159,40 @@ einschränken. clios **Signaturen** (`CLIO_SIGNING_KEY`) und **Authorship**
 
 ---
 
-## 4. Re-Audit / Replay-Verifikation (WP-55, geplant)
+## 4. Re-Audit / Replay-Verifikation (WP-55, umgesetzt)
 
 Der eigentliche Mehrwert gegenüber einem reinen Log: weil temis **deterministisch** ist,
-lässt sich jede historische Entscheidung **nachrechnen**.
+lässt sich jede historische Entscheidung **nachrechnen**. Das Binary **`temis-reaudit`**
+(`cmd/temis-reaudit`, Kern in `package audit`) tut genau das — **read-only**, es schreibt
+nie zurück:
 
-Ein eigenständiges Tool liest die Decision-Events aus clio und prüft sie gegen temis:
+1. `run-query` auf clio mit `where: event.type == 'com.temis.decision.evaluated.v1'`.
+2. Für jedes Event: `data.input` + `data.modelId` erneut über die `dmn`-API auswerten.
+3. Ist-Ausgabe **kanonisch (JSON)** mit `data.outputs` vergleichen.
 
-1. `run-query`/`observe` auf clio mit
-   `where: event.type == 'com.temis.decision.evaluated.v1'`.
-2. Für jedes Event: `data.input` + `data.modelId` erneut durch temis auswerten.
-3. Ist-Ausgabe mit `data.outputs` vergleichen.
+```sh
+temis-reaudit \
+  -clio-url   http://127.0.0.1:3000 \
+  -clio-token kid_ro.secret \
+  -models     ./models            # Verzeichnis der DMN-Dateien (löst modelId auf)
+# → re-audited 127 decision event(s) against 9 model(s): 127 reproduced — OK ✓
+# Exit 0 = alles reproduziert, 1 = mind. eine Abweichung/Fehler (skriptbar wie clios verify).
+```
 
-Ergebnis: ein Compliance-Report — *„127 von 127 historischen Entscheidungen reproduzieren
-exakt"* — bzw. eine präzise Liste der Abweichungen (z. B. weil ein Modell außerhalb des
-content-addressed Pfads ersetzt wurde). Das Tool **liest nur** und hat keinerlei
-Sonderrechte.
+Je Event eine Verdikt-Klasse: **reproduced** ✓, **discrepancy** ✗ (Ausgabe weicht ab),
+**model_unavailable** (modelId nicht im `-models`-Verzeichnis — inkonklusiv) oder
+**eval_error** (Compile/Decision/Evaluate schlägt fehl). Die Modell-Auflösung läuft über
+content-addressed `modelId`: `temis-reaudit` hasht die DMN-Dateien mit demselben
+`sha256:`-Schema wie der Server-Cache, sodass eine zur Aufzeichnung passende Modellversion
+exakt gefunden wird. **Abgrenzung:** clios `verify` prüft Hash-Kette und Signaturen
+(*unverändert?*); `temis-reaudit` ergänzt den orthogonalen *Regelkonformitäts*-Beweis
+(*korrekt gerechnet?*).
 
 ```text
-clio  ──(read decision events)──▶  re-audit  ──(re-evaluate input@modelId)──▶  temis
-                                       │
-                                       ▼
-                     Report: reproduziert ✓ / Abweichung ✗
+clio  ──(run-query: decision events)──▶  temis-reaudit  ──(re-evaluate input@modelId)──▶  dmn
+                                              │
+                                              ▼
+                        Report: reproduced ✓ / discrepancy ✗ / unavailable / eval_error
 ```
 
 ---
