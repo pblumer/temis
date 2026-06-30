@@ -19,6 +19,11 @@ go.work.sum
 # Frontend deps (the built web/dist IS committed for a Node-free `go build`)
 /web/node_modules/
 
+# Playwright end-to-end test output (web/e2e)
+/web/test-results/
+/web/playwright-report/
+/web/blob-report/
+
 # Editor/OS noise
 .DS_Store
 .idea/

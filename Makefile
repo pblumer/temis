@@ -5,7 +5,7 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help web web-wasm web-check web-e2e
 
 # Pinned codegen tools (ADR-0020). go-1.23-compatible versions.
 CONNECT_VERSION ?= v1.18.1
@@ -109,6 +109,10 @@ web: web-wasm
 ## web-check: type-check the frontend without emitting (CI frontend lane)
 web-check:
 	cd web && npm ci && npm run typecheck
+
+## web-e2e: build the frontend and run the Playwright end-to-end tests (browser)
+web-e2e: web
+	cd web && npx playwright test
 
 ## tidy: tidy go.mod/go.sum
 tidy:
