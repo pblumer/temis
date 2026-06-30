@@ -5,6 +5,8 @@ import ContextPadModule from 'diagram-js/lib/features/context-pad'
 import ConnectModule from 'diagram-js/lib/features/connect'
 import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
 import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
+import OverlaysModule from 'diagram-js/lib/features/overlays'
+import type Overlays from 'diagram-js/lib/features/overlays/Overlays'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
 import type EventBus from 'diagram-js/lib/core/EventBus'
@@ -78,6 +80,10 @@ export type ModelerHandle = {
   onOpenBKM: (cb: (bkmId: string) => void) => void
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
+  // showResults overlays each decision's evaluated value on its node (keyed by
+  // decision name), so the whole graph's results are visible on the diagram. An
+  // empty map clears the overlays.
+  showResults: (values: Record<string, unknown>) => void
 }
 
 // Undoable type change on an InputData; redraws the pill via the returned element.
@@ -117,7 +123,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      MoveCanvasModule, ZoomScrollModule, dmnLayouterModule,
+      MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
     ],
   })
   current = diagram
@@ -127,6 +133,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const eventBus = diagram.get<EventBus>('eventBus')
   const elementRegistry = diagram.get<ElementRegistry>('elementRegistry')
   const selection = diagram.get<SelectionService>('selection')
+  const overlays = diagram.get<Overlays>('overlays')
   commandStack.registerHandler('element.updateType', UpdateTypeHandler)
 
   const byId: Record<string, Shape> = {}
@@ -235,5 +242,26 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       if (dir === 'fit') canvas.zoom('fit-viewport')
       else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
     },
+    showResults: (values) => {
+      overlays.remove({ type: 'eval-result' })
+      for (const el of elementRegistry.getAll()) {
+        const s = el as Shape & { name?: string; type?: string }
+        if (s.type !== 'dmn:decision' || !s.name || !(s.name in values)) continue
+        const text = fmtResult(values[s.name])
+        const badge = document.createElement('div')
+        badge.className = 'node-result'
+        badge.textContent = text
+        badge.title = s.name + ' = ' + text
+        overlays.add(s.id, 'eval-result', { position: { bottom: -4, left: 6 }, html: badge })
+      }
+    },
   }
+}
+
+// fmtResult renders a decision's evaluated value for the on-node badge: strings
+// as-is, null explicit, everything else as compact JSON.
+function fmtResult(v: unknown): string {
+  if (v === null || v === undefined) return 'null'
+  if (typeof v === 'string') return v
+  return JSON.stringify(v)
 }

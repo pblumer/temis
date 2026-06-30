@@ -156,6 +156,37 @@ export async function evaluate(modelId: string, decision: string, input: Record<
   return (await r.json()) as EvalResult
 }
 
+// GraphEvalResult mirrors the service evaluateGraphResponse: every decision's
+// value (keyed by name), per-decision traces (with explain), per-decision
+// evaluation errors, and the leaf-input schema the whole graph consumes — so the
+// form is built from one authoritative source.
+export type GraphEvalResult = {
+  values: Record<string, unknown>
+  traces?: Record<string, Trace>
+  errors?: Record<string, string>
+  inputSchema: InputField[]
+  diagnostics?: Diagnostic[]
+}
+
+// evaluateGraph fills the model's leaf inputs once and returns every decision's
+// result (POST /v1/models/{id}/evaluate-graph), so the modeler can show the whole
+// DRG computed from a single set of inputs. With explain, each decision carries
+// its trace; with strict, inputs are validated against the model's whole-graph
+// schema and a bad input surfaces as an InputValidationError.
+export async function evaluateGraph(modelId: string, input: Record<string, unknown>, explain = false, strict = false): Promise<GraphEvalResult> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate-graph', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, explain, strict }),
+  })
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; problems?: InputProblem[]; detail?: string }
+    if (problem.code === 'INVALID_INPUT' && problem.problems?.length) throw new InputValidationError(problem.problems)
+    throw new Error(problem.detail || 'Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
+  }
+  return (await r.json()) as GraphEvalResult
+}
+
 // TableView mirrors dmn.TableView: a decision's static decision-table logic for
 // display in the modeler.
 export type TableInput = { label?: string; expression: string; typeRef?: string }

@@ -136,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
 	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
 	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
+	mux.HandleFunc("POST /v1/models/{id}/evaluate-graph", s.requireToken(s.handleEvaluateGraph))
 	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
@@ -225,6 +226,23 @@ type evaluateResponse struct {
 	Decisions   map[string]any  `json:"decisions"`
 	Diagnostics []diagnosticDTO `json:"diagnostics,omitempty"`
 	Trace       *dmn.Trace      `json:"trace,omitempty"`
+}
+
+type evaluateGraphRequest struct {
+	Input   map[string]any `json:"input"`
+	Explain bool           `json:"explain,omitempty"`
+	Strict  bool           `json:"strict,omitempty"`
+}
+
+// evaluateGraphResponse carries the whole model's result: every decision's value
+// (and trace with explain), the inputs the graph consumes (so a client can build
+// the form from one source of truth), and any per-decision evaluation errors.
+type evaluateGraphResponse struct {
+	Values      map[string]any        `json:"values"`
+	Traces      map[string]*dmn.Trace `json:"traces,omitempty"`
+	Errors      map[string]string     `json:"errors,omitempty"`
+	InputSchema []dmn.InputField      `json:"inputSchema"`
+	Diagnostics []diagnosticDTO       `json:"diagnostics,omitempty"`
 }
 
 type diagnosticDTO struct {
@@ -682,6 +700,53 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+}
+
+// handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
+// inputs once and returns every decision's value (and trace with explain), so the
+// modeler can show the entire DRG with its results rather than one decision at a
+// time. Inputs are validated against the model's whole-graph schema when strict.
+func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req evaluateGraphRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	var opts []dmn.EvalOption
+	if req.Explain {
+		opts = append(opts, dmn.WithTrace())
+	}
+	if req.Strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
+	res, err := sm.defs.EvaluateGraph(r.Context(), dmn.Input(req.Input), opts...)
+	if err != nil {
+		var ie *dmn.InputError
+		if errors.As(err, &ie) {
+			writeProblemDetail(w, problem{
+				Title:    http.StatusText(http.StatusUnprocessableEntity),
+				Status:   http.StatusUnprocessableEntity,
+				Detail:   "input does not satisfy the model's schema",
+				Code:     "INVALID_INPUT",
+				Problems: ie.Problems,
+			})
+			return
+		}
+		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, evaluateGraphResponse{
+		Values:      res.Values,
+		Traces:      res.Traces,
+		Errors:      res.Errors,
+		InputSchema: sm.defs.ModelInputSchema(),
+		Diagnostics: toDiagnosticDTOs(res.Diags),
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

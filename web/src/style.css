@@ -164,6 +164,25 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .trace-no { color: #b91c1c; }
 .trace-skip { color: #cbd5e1; }
 .trace-out { font: 12px/1.3 ui-monospace, monospace; }
+.trace-decision { font-size: 12.5px; font-weight: 600; color: var(--text); margin: 10px 0 4px; }
+.eval-lead { color: var(--muted); font-weight: 600; }
+.eval-cell-error { color: #e5484d; }
+.eval-cell-error code { color: #e5484d; }
+
+/* On-canvas result badge: a decision's evaluated value, overlaid on its node. */
+.node-result {
+  font: 600 11px/1 ui-monospace, monospace;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  pointer-events: none;
+}
 
 /* Decision-table overlay (double-click a table-decision in the DRD). */
 .dt-overlay {

@@ -62,8 +62,17 @@ func (c *CompiledDecision) InputSchema() []InputField { return c.inputs }
 // required inputs — turning what would otherwise be a silently wrong result into
 // an explicit, actionable list. It never evaluates the decision.
 func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
-	schema := make(map[string]InputField, len(c.inputs))
-	for _, f := range c.inputs {
+	return validateInputAgainst(in, c.inputs, c.constraints, fmt.Sprintf("decision %q", c.name))
+}
+
+// validateInputAgainst is the shared core of input validation: it checks in
+// against the given declared fields and resolved constraints and returns every
+// problem found. subject names the schema's owner for the UNKNOWN_INPUT message
+// (e.g. `decision "Routing"` or `this model`), so the same logic backs both
+// per-decision (ValidateInput) and whole-graph (ValidateModelInput) validation.
+func validateInputAgainst(in Input, fields []InputField, constraints map[string]*inputConstraint, subject string) []InputProblem {
+	schema := make(map[string]InputField, len(fields))
+	for _, f := range fields {
 		schema[f.Name] = f
 	}
 
@@ -74,7 +83,7 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 			probs = append(probs, InputProblem{
 				Input:   name,
 				Code:    "UNKNOWN_INPUT",
-				Message: fmt.Sprintf("input %q is not declared by decision %q; expected one of %s", name, c.name, quoteNames(c.inputs)),
+				Message: fmt.Sprintf("input %q is not declared by %s; expected one of %s", name, subject, quoteNames(fields)),
 			})
 			continue
 		}
@@ -89,7 +98,7 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 			continue
 		}
 		// Structural (custom struct/list) and allowed-values constraints (WP-31).
-		if c := c.constraints[name]; c != nil {
+		if c := constraints[name]; c != nil {
 			if fv, err := toValue(v); err == nil {
 				if p := c.check(name, fv); p != nil {
 					probs = append(probs, *p)
@@ -97,7 +106,7 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 			}
 		}
 	}
-	for _, f := range c.inputs {
+	for _, f := range fields {
 		if !f.Required {
 			continue
 		}
@@ -110,6 +119,59 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem {
 		}
 	}
 	return probs
+}
+
+// ModelInputSchema returns the input data the whole model consumes — the union of
+// every decision's declared input fields, deduped by name. It is the schema for a
+// graph-wide evaluation (EvaluateGraph): the leaf inputs a caller fills once to
+// drive every decision, including those reached only transitively through other
+// decisions (e.g. an input a downstream decision never names directly). A field's
+// type/constraint is taken from the first decision that declares it with one, and
+// it is required when any decision requires it.
+func (d *Definitions) ModelInputSchema() []InputField {
+	var fields []InputField
+	idx := map[string]int{}
+	for _, cd := range d.order {
+		for _, f := range cd.inputs {
+			if i, ok := idx[f.Name]; ok {
+				ex := &fields[i]
+				if ex.Type == "" {
+					ex.Type = f.Type
+				}
+				if ex.Constraint == "" {
+					ex.Constraint = f.Constraint
+				}
+				ex.Required = ex.Required || f.Required
+				continue
+			}
+			idx[f.Name] = len(fields)
+			fields = append(fields, f)
+		}
+	}
+	return fields
+}
+
+// ValidateModelInput checks in against the model's whole-graph input schema
+// (ModelInputSchema) and returns every problem found — the model-level
+// counterpart of CompiledDecision.ValidateInput, used by EvaluateGraph's strict
+// mode so a transitively-reached input is accepted (it feeds some decision) while
+// a genuinely unknown one is still reported.
+func (d *Definitions) ValidateModelInput(in Input) []InputProblem {
+	return validateInputAgainst(in, d.ModelInputSchema(), d.mergedConstraints(), "this model")
+}
+
+// mergedConstraints unions every decision's resolved input constraints, keyed by
+// input name (first decision to declare a constraint wins).
+func (d *Definitions) mergedConstraints() map[string]*inputConstraint {
+	out := map[string]*inputConstraint{}
+	for _, cd := range d.order {
+		for name, c := range cd.constraints {
+			if _, ok := out[name]; !ok {
+				out[name] = c
+			}
+		}
+	}
+	return out
 }
 
 // InputSchema returns the declared input schema of a decision by id or name.
