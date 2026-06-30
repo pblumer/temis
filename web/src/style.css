@@ -292,8 +292,17 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .operate-panel { display: none; }
 .app-shell[data-mode="operate"] .operate-panel { display: block; }
 .app-shell[data-mode="operate"] .design-only { display: none !important; }
-.app-shell[data-mode="operate"] .djs-palette,
-.app-shell[data-mode="operate"] .djs-context-pad { display: none !important; }
+.app-shell[data-mode="operate"] .djs-palette { display: none !important; }
+/* In Operate the context pad keeps only the read actions (open table/expression);
+   the editing entries (append/create/connect/delete/edit) are hidden. */
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="append-input"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="append-decision"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="append-bkm"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="create-table"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="create-literal"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edit-bkm"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="connect"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="delete"] { display: none !important; }
 .op-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; }
 .op-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
 .op-run { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; }

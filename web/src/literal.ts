@@ -8,7 +8,7 @@ import { FEEL_TYPES } from './feeltypes'
 // literal yet (an undecided decision), the editor opens empty — saving creates
 // it. names are the in-scope variables the expression may reference. onSaved gets
 // the saved model's new id.
-export async function openLiteralOverlay(modelId: string, decisionId: string, title: string, names: string[], onSaved?: (newModelId: string) => void, opts?: { fresh?: boolean; typeOptions?: string[] }): Promise<void> {
+export async function openLiteralOverlay(modelId: string, decisionId: string, title: string, names: string[], onSaved?: (newModelId: string) => void, opts?: { fresh?: boolean; typeOptions?: string[]; readOnly?: boolean }): Promise<void> {
   const typeOptions = opts?.typeOptions ?? FEEL_TYPES
   let lit: LiteralView | null = null
   if (!opts?.fresh) {
@@ -89,10 +89,20 @@ export async function openLiteralOverlay(modelId: string, decisionId: string, ti
 
   const body = el('div', { class: 'lit-body' }, textarea)
   const toolbar = el('div', { class: 'dt-toolbar' }, saveBtn, status)
-  overlay.append(el('div', { class: 'dt-modal lit-modal' }, header, body, toolbar))
+  const modal = el('div', { class: 'dt-modal lit-modal' }, header, body, toolbar)
+  overlay.append(modal)
+
+  // Read-only (Operate): view the expression without editing/saving.
+  if (opts?.readOnly) {
+    modal.classList.add('dt-readonly')
+    textarea.readOnly = true
+    typeSel.disabled = true
+    saveBtn.style.display = 'none'
+  }
+
   document.body.append(overlay)
   check()
-  textarea.focus()
+  if (!opts?.readOnly) textarea.focus()
 }
 
 // el is a tiny DOM builder: tag, attributes, then string/Node children.

@@ -167,7 +167,7 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   const openLiteral = (modelId: string, decisionId: string, fresh = false): void => {
     const { names, title } = namesFor(decisionId)
-    void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions })
+    void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
   }
 
   // Typen: open the custom-type manager; each save/delete switches to the saved
