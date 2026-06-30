@@ -175,7 +175,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
