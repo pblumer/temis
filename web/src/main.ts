@@ -6,6 +6,7 @@ import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import type { GraphEvalResult } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
+import { openContextOverlay } from './context'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { FEEL_TYPES } from './feeltypes'
@@ -173,6 +174,10 @@ async function boot(root: HTMLElement): Promise<void> {
     const { names, title } = namesFor(decisionId)
     void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
   }
+  const openContext = (modelId: string, decisionId: string, fresh = false): void => {
+    const { names, title } = namesFor(decisionId)
+    void openContextOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
+  }
 
   // Typen: open the custom-type manager; each save/delete switches to the saved
   // revision (which refreshes typeOptions via show()).
@@ -194,6 +199,20 @@ async function boot(root: HTMLElement): Promise<void> {
       await reselect(baseId)
       status.textContent = ''
       openLiteral(baseId, decisionId, true)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+  // createContext persists pending structural edits (so the decision exists), then
+  // opens an empty context editor for it; saving creates the context.
+  const createContext = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Kontext an …'
+    try {
+      const baseId = await persistGraph(currentId)
+      await reselect(baseId)
+      status.textContent = ''
+      openContext(baseId, decisionId, true)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -558,6 +577,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
+      handle.onOpenContext((decisionId) => openContext(modelId, decisionId))
+      handle.onCreateContext((decisionId) => void createContext(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onSelect((sel) => {
         if (sel) {

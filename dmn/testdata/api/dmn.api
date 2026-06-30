@@ -92,6 +92,8 @@ func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
 
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
 
+func ContextOf(src []byte, idOrName string) (ContextView, bool, error)
+
 func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
 
 func New(opts ...Option) *Engine
@@ -99,6 +101,8 @@ func New(opts ...Option) *Engine
 func RemoveItemDefinition(src []byte, name string) ([]byte, error)
 
 func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, error)
+
+func SetContext(src []byte, decisionID string, edit ContextEdit) ([]byte, error)
 
 func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
@@ -136,6 +140,31 @@ type CompiledDecision struct {
 
 type CompiledService struct {
 	// contains filtered or unexported fields
+}
+
+type ContextEdit struct {
+	Entries []ContextEntryEdit `json:"entries"`
+}
+
+type ContextEntryEdit struct {
+	Name	string	`json:"name"`
+	Text	string	`json:"text"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type ContextEntryView struct {
+	Name	string	`json:"name,omitempty"`
+	Text	string	`json:"text"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+	Kind	string	`json:"kind"`
+	Result	bool	`json:"result,omitempty"`
+}
+
+type ContextView struct {
+	DecisionID	string			`json:"decisionId"`
+	Name		string			`json:"name"`
+	Entries		[]ContextEntryView	`json:"entries"`
+	Simple		bool			`json:"simple"`
 }
 
 type Definitions struct {
@@ -200,6 +229,8 @@ type GraphNode struct {
 	HasTable	bool	`json:"hasTable,omitempty"`
 
 	HasLiteral	bool	`json:"hasLiteral,omitempty"`
+
+	HasContext	bool	`json:"hasContext,omitempty"`
 
 	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`

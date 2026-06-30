@@ -18,6 +18,7 @@ const ICON_DECISION = svg(`<rect x="3" y="5" width="12" height="8" rx="1" ${stro
 const ICON_BKM = svg(`<path d="M6 5h9v6l-2 2H3V7z" ${stroke}/>`)
 const ICON_TABLE = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M2.5 7h13M7 7v7.5" ${stroke}/>`)
 const ICON_LITERAL = svg(`<path d="M6 4 3 9l3 5M12 4l3 5-3 5" ${stroke}/>`)
+const ICON_CONTEXT = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M9 3.5v11M2.5 7h6.5M2.5 11h6.5" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -83,9 +84,10 @@ class DmnContextPadProvider {
         }
       }
       // A decided decision: open its logic with a single click on the icon —
-      // the table view or the FEEL-expression editor (also reachable by
-      // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean })
+      // the table view, the FEEL-expression editor or the context editor (also
+      // reachable by double-click). The handlers live in the app shell, so fire
+      // events.
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean })
       if (decided.hasTable) {
         entries['open-table'] = {
           group: 'edit',
@@ -102,10 +104,19 @@ class DmnContextPadProvider {
           imageUrl: ICON_LITERAL,
           action: { click: () => this.eventBus.fire('dmn.openLiteral', { element }) },
         }
+      } else if (decided.hasContext) {
+        entries['open-context'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Kontext anzeigen',
+          imageUrl: ICON_CONTEXT,
+          action: { click: () => this.eventBus.fire('dmn.openContext', { element }) },
+        }
       }
-      // An undecided decision (no logic yet) can get a fresh decision table or a
-      // literal expression. The handlers live in the app shell, so fire events.
-      if (!decided.hasTable && !decided.hasLiteral) {
+      // An undecided decision (no logic yet) can get a fresh decision table, a
+      // literal expression or a boxed context. The handlers live in the app shell,
+      // so fire events.
+      if (!decided.hasTable && !decided.hasLiteral && !decided.hasContext) {
         entries['create-table'] = {
           group: 'add',
           className: 'cp-icon',
@@ -119,6 +130,13 @@ class DmnContextPadProvider {
           title: 'FEEL-Ausdruck anlegen',
           imageUrl: ICON_LITERAL,
           action: { click: () => this.eventBus.fire('dmn.createLiteral', { element }) },
+        }
+        entries['create-context'] = {
+          group: 'add',
+          className: 'cp-icon',
+          title: 'Kontext anlegen',
+          imageUrl: ICON_CONTEXT,
+          action: { click: () => this.eventBus.fire('dmn.createContext', { element }) },
         }
       }
     }

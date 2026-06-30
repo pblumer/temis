@@ -148,6 +148,48 @@ func (d *Definitions) SetLiteralExpression(id, text, typeRef string) bool {
 	return false
 }
 
+// ContextEntryEdit is one desired entry of a boxed context: a name (empty for the
+// final result cell) and the entry's literal FEEL expression with an optional
+// declared type. The simple context editor only authors literal-valued entries.
+type ContextEntryEdit struct {
+	Name    string
+	Text    string
+	TypeRef string
+}
+
+// SetContext sets (or creates) the boxed-context logic of the decision identified
+// by id from the given literal-valued entries. A named entry carries a
+// <variable> with its type; the unnamed entry (Name == "") is the result cell,
+// whose type goes on its literal expression. It refuses (returns false) when the
+// decision is unknown or already carries a different boxed logic (a table, a
+// literal, …), which would conflict.
+func (d *Definitions) SetContext(id string, entries []ContextEntryEdit) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		if dec.present() && dec.Context == nil {
+			return false // some other boxed logic is present
+		}
+		ctx := &Context{Entries: make([]ContextEntry, 0, len(entries))}
+		for _, e := range entries {
+			ce := ContextEntry{}
+			if e.Name != "" {
+				ce.Variable = &Variable{Name: e.Name, TypeRef: e.TypeRef}
+				ce.Expression = Expression{LiteralExpression: &LiteralExpression{Text: e.Text}}
+			} else {
+				// The result cell has no variable; its type sits on the expression.
+				ce.Expression = Expression{LiteralExpression: &LiteralExpression{Text: e.Text, TypeRef: e.TypeRef}}
+			}
+			ctx.Entries = append(ctx.Entries, ce)
+		}
+		dec.Context = ctx
+		return true
+	}
+	return false
+}
+
 // SetBKMFunction sets the encapsulated logic of the business knowledge model
 // identified by id to a function with the given formal parameters and a literal
 // FEEL body. It refuses (returns false) when the BKM is unknown or its current

@@ -351,6 +351,40 @@ func (e Expression) present() bool {
 		e.Some != nil || e.Filter != nil
 }
 
+// BoxedKind returns the local element name of the present boxed-expression child
+// ("literalExpression", "decisionTable", "context", …), or "" when none is set.
+// It lets a reader label a nested expression it does not interpret further.
+func (e Expression) BoxedKind() string {
+	switch {
+	case e.LiteralExpression != nil:
+		return "literalExpression"
+	case e.DecisionTable != nil:
+		return "decisionTable"
+	case e.Context != nil:
+		return "context"
+	case e.Invocation != nil:
+		return "invocation"
+	case e.FunctionDefinition != nil:
+		return "functionDefinition"
+	case e.List != nil:
+		return "list"
+	case e.Relation != nil:
+		return "relation"
+	case e.Conditional != nil:
+		return "conditional"
+	case e.For != nil:
+		return "for"
+	case e.Every != nil:
+		return "every"
+	case e.Some != nil:
+		return "some"
+	case e.Filter != nil:
+		return "filter"
+	default:
+		return ""
+	}
+}
+
 // elementNameType resolves an inputData or decision id to its name and declared
 // variable type ("" when none).
 func (d *Definitions) elementNameType(id string) (name, typeRef string) {

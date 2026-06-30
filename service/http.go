@@ -140,6 +140,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
 	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleGetLiteral))
 	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleSaveLiteral))
+	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/context", s.requireToken(s.handleGetContext))
+	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/context", s.requireToken(s.handleSaveContext))
 	mux.HandleFunc("GET /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleGetBKM))
 	mux.HandleFunc("POST /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleSaveBKM))
 	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
@@ -531,6 +533,60 @@ func (s *Server) handleSaveLiteral(w http.ResponseWriter, r *http.Request) {
 	patched, err := dmn.SetLiteralExpression(sm.xml, r.PathValue("decision"), req.Text, req.TypeRef)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, "LITERAL_SAVE_FAILED", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
+	})
+}
+
+// handleGetContext returns a decision's boxed-context view, or 404 when the
+// decision's logic is not a boxed context.
+func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	ctx, ok, err := dmn.ContextOf(sm.xml, r.PathValue("decision"))
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "MALFORMED_XML", err.Error())
+		return
+	}
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "CONTEXT_NOT_FOUND", "no boxed context for that decision")
+		return
+	}
+	writeJSON(w, http.StatusOK, ctx)
+}
+
+// handleSaveContext sets (or creates) a decision's boxed-context logic, recompiles
+// and caches the model, and returns the new id with any compile diagnostics. It is
+// a 400 when the decision is unknown or already has non-context logic (ADR-0016).
+func (s *Server) handleSaveContext(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req dmn.ContextEdit
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	patched, err := dmn.SetContext(sm.xml, r.PathValue("decision"), req)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "CONTEXT_SAVE_FAILED", err.Error())
 		return
 	}
 	saved, err := s.compileAndStore(r.Context(), patched)

@@ -13,6 +13,7 @@ export type GraphNode = {
   varName?: string
   hasTable?: boolean
   hasLiteral?: boolean
+  hasContext?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -336,6 +337,39 @@ export async function saveLiteral(modelId: string, decision: string, text: strin
     body: JSON.stringify({ text, typeRef }),
   })
   if (!r.ok) throw new Error(await problemMessage(r, 'Ausdruck speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// ContextEntryView is one entry of a boxed context: a name (empty for the result
+// cell), the FEEL text when the value is a literal, its type, and the value's kind
+// ("literal" or a nested boxed kind shown read-only).
+export type ContextEntryView = { name?: string; text: string; typeRef?: string; kind: string; result?: boolean }
+// ContextView mirrors dmn.ContextView. simple is false when any entry is a nested
+// non-literal expression, so the editor opens read-only to avoid clobbering it.
+export type ContextView = { decisionId: string; name: string; entries: ContextEntryView[]; simple: boolean }
+
+// getContext fetches a decision's boxed context, or null when the decision has no
+// context logic (HTTP 404 — e.g. it is undecided or a decision table).
+export async function getContext(modelId: string, decision: string): Promise<ContextView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Kontext laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as ContextView
+}
+
+// ContextEntryEdit is one editable entry sent on save: a name (empty for the
+// result cell), the FEEL text and an optional declared type.
+export type ContextEntryEdit = { name: string; text: string; typeRef?: string }
+
+// saveContext sets (or creates) a decision's boxed context (POST), recompiles the
+// model and returns the saved model's detail with its new id.
+export async function saveContext(modelId: string, decision: string, entries: ContextEntryEdit[]): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Kontext speichern fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

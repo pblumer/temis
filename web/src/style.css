@@ -547,6 +547,36 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .lit-text:focus { outline: none; border-color: var(--accent); background: #fff; }
 .lit-invalid { border-color: #e5484d; background: #fff4f4; }
 
+/* Boxed-context editor: a (name · expression · type) grid plus a result cell. */
+.ctx-modal { width: min(760px, 95vw); }
+.ctx-body { padding: 14px 16px; max-height: 60vh; overflow: auto; }
+.ctx-grid { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(220px, 2.2fr) 150px 28px; gap: 8px; align-items: start; }
+.ctx-h { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding-bottom: 2px; }
+.ctx-h:last-child { padding: 0; }
+.ctx-name-in {
+  width: 100%; box-sizing: border-box;
+  font: 13px/1.3 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fcfdff; color: var(--fg);
+}
+.ctx-name-in:focus { outline: none; border-color: var(--accent); background: #fff; }
+.ctx-result-label { font: 12.5px/1.3 system-ui, sans-serif; font-weight: 600; color: var(--accent); padding: 8px 2px; }
+.ctx-text {
+  width: 100%; box-sizing: border-box; min-height: 34px; resize: vertical;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fcfdff; color: var(--fg);
+}
+.ctx-text:focus { outline: none; border-color: var(--accent); background: #fff; }
+.ctx-nested { font: 12.5px/1.3 ui-monospace, monospace; color: var(--muted); padding: 8px 9px; border: 1px dashed var(--line); border-radius: 6px; background: #f6f8fb; }
+.ctx-type { width: 100%; box-sizing: border-box; }
+.ctx-del {
+  border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 7px 4px; line-height: 1; border-radius: 5px;
+}
+.ctx-del:hover:not(:disabled) { color: #c0392b; background: #fbecec; }
+.ctx-del:disabled { color: #d6dbe3; cursor: default; }
+.ctx-result-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); margin-right: auto; }
+.ctx-add { margin-right: 8px; }
+.dt-readonly-note { font-size: 12.5px; color: var(--muted); margin-right: auto; }
+
 /* BKM function editor (parameters + body). */
 .bkm-params { margin-bottom: 14px; }
 .bkm-params-title, .bkm-body-title { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
