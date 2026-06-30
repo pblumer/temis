@@ -44,6 +44,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
+| WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
 > sind inzwischen u. a. **WP-23–26** (Boxed Context/Invocation/Function, BKM, DRG-Verkettung,
