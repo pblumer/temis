@@ -340,6 +340,34 @@ export async function saveLiteral(modelId: string, decision: string, text: strin
   return (await r.json()) as ModelDetail
 }
 
+// --- modeling assistant (ADR-0024) ---
+
+// ChatMessage is one turn in the assistant conversation. Only user and assistant
+// text turns are kept client-side; the server runs the tool-calling loop.
+export type ChatMessage = { role: 'user' | 'assistant'; text: string }
+// ChatStep records one tool the assistant ran on the way to its answer.
+export type ChatStep = { tool: string; args?: unknown; result?: string; error?: boolean }
+// ChatReply is the assistant's answer plus the tool steps it took and the id of
+// any model it created or changed (so the modeler can reload it).
+export type ChatReply = { reply: string; steps?: ChatStep[]; modelId?: string; provider?: string }
+
+// chat sends the conversation so far to the assistant. An optional bring-your-own
+// key is passed in the X-LLM-Token header (used only for that request, never
+// stored server-side). provider/model override the server defaults when set.
+export async function chat(
+  messages: ChatMessage[],
+  opts: { token?: string; provider?: string; model?: string } = {},
+): Promise<ChatReply> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (opts.token) headers['X-LLM-Token'] = opts.token
+  const body: Record<string, unknown> = { messages }
+  if (opts.provider) body.provider = opts.provider
+  if (opts.model) body.model = opts.model
+  const r = await fetch('/v1/chat', { method: 'POST', headers, body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Assistent-Anfrage fehlgeschlagen'))
+  return (await r.json()) as ChatReply
+}
+
 // ContextView mirrors dmn.ContextView: a decision's boxed-context logic — named
 // literal entries plus an optional result-cell expression. simple=false when an
 // entry is a nested boxed expression this text editor cannot represent.

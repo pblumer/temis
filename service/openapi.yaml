@@ -462,6 +462,49 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/chat:
+    post:
+      summary: Modeling assistant — one assistant turn (ADR-0024)
+      description: >
+        Sends the conversation so far to the configured LLM, which may drive
+        temis's tools (inspect, evaluate, build decisions) before answering. The
+        endpoint is dormant (503 ASSIST_DISABLED) unless the server was started
+        with the assistant enabled. With bring-your-own-key allowed, a caller may
+        send its own provider key in the X-LLM-Token header.
+      parameters:
+        - in: header
+          name: X-LLM-Token
+          required: false
+          schema: { type: string }
+          description: Optional per-request provider API key (when BYOK is allowed).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: The assistant's reply, the tool steps it took and any model it produced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatResponse" }
+        "400":
+          description: Missing messages, no token, or unknown provider
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: The LLM provider returned an error
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: The assistant is not enabled on this server
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /docs:
     get:
       summary: Interactive Swagger UI
@@ -519,6 +562,44 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ModelResponse" }
   schemas:
+    ChatRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          description: The conversation so far, oldest first.
+          items:
+            type: object
+            required: [role, text]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              text: { type: string }
+        provider:
+          type: string
+          enum: [anthropic, openai]
+          description: Override the server's default LLM provider for this request.
+        model:
+          type: string
+          description: Override the provider's default model id for this request.
+    ChatResponse:
+      type: object
+      properties:
+        reply: { type: string, description: The assistant's final answer. }
+        provider: { type: string, description: The provider that produced the reply. }
+        modelId:
+          type: string
+          description: The id of a model the assistant created or changed, if any.
+        steps:
+          type: array
+          description: The tool calls the assistant made on the way to its answer.
+          items:
+            type: object
+            properties:
+              tool: { type: string }
+              args: { type: object }
+              result: { type: string }
+              error: { type: boolean }
     ModelListResponse:
       type: object
       properties:

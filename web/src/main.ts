@@ -9,6 +9,7 @@ import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
+import { mountAssist } from './assist'
 import { FEEL_TYPES } from './feeltypes'
 import './style.css'
 
@@ -58,6 +59,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <label for="datatype">Typ</label>
             <select id="datatype"></select>
           </span>
+          <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
         </div>
         <div id="canvas" class="canvas"></div>
@@ -67,6 +69,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <div id="operate" class="operate-panel"></div>
         </section>
       </main>
+      <aside id="assist" class="assist-panel"></aside>
     </div>`
 
   const appShell = root.querySelector<HTMLElement>('.app-shell')
@@ -229,6 +232,19 @@ async function boot(root: HTMLElement): Promise<void> {
   const reselect = async (modelId: string): Promise<void> => {
     models = await listModels()
     await showModel(models.some((m) => m.modelId === modelId) ? modelId : (models[0]?.modelId ?? ''))
+  }
+
+  // Modeling assistant (ADR-0024): a docked chat where an LLM drives temis's
+  // tools to help build decisions. It gets the open model's id as context and,
+  // when it creates or changes a model, we reload that revision.
+  const assistHost = root.querySelector<HTMLElement>('#assist')
+  const assistBtn = root.querySelector<HTMLButtonElement>('#assistBtn')
+  if (assistHost && assistBtn) {
+    const assist = mountAssist(assistHost, {
+      currentModelId: () => currentId,
+      onModelChanged: (id) => void reselect(id),
+    })
+    assistBtn.addEventListener('click', () => assist.toggle())
   }
 
   // Open… deploys a chosen .dmn/.xml file to the engine and switches to it.
