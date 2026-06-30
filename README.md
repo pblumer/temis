@@ -112,10 +112,13 @@ curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "
 # → {"outputs":{"Dish":"Roastbeef"}, ...}
 ```
 
-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
-`POST /v1/models/{id}/evaluate`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
-Vollständig in `service/openapi.yaml` und `docs/40-api-contract.md` §2. Fehler als
-RFC-7807 `application/problem+json`.
+Kern-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
+`GET /v1/models/{id}/xml`, `POST /v1/models/{id}/evaluate`,
+`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
+Dazu die Modeler-Endpunkte (ADR-0016), die den eingebauten DMN-Modeler bedienen
+(Graph, Typen, Decision-Tables, Literal-Expressions, BKM, Save). Vollständig — Pfade
+und Schemas — in `service/openapi.yaml` und `docs/40-api-contract.md` §2; ein Test
+hält Routen und OpenAPI in synch. Fehler als RFC-7807 `application/problem+json`.
 
 **Gecachte Modelle auflisten:** `GET /v1/models` liefert alle aktuell im Cache
 liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die

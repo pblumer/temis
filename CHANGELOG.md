@@ -44,6 +44,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Docs
 
+- **OpenAPI & API-Vertrag mit dem Modeler synchronisiert:** Die 13 Modeler-Endpunkte
+  (ADR-0016 — Graph, Item Definitions, Decision-Tables, Literal-Expressions, BKM, Save)
+  sowie `GET /v1/models/{id}/xml` und `POST /v1/models/{id}/evaluate-graph` sind jetzt in
+  `service/openapi.yaml` (Pfade + Schemas) und `docs/40-api-contract.md` §2.1 dokumentiert;
+  README entsprechend ergänzt. Ein neuer Test (`TestOpenAPICoversDataRoutes`) gleicht die
+  registrierten `/v1`-Routen gegen die OpenAPI-Pfade ab, sodass die Spec nicht mehr stillschweigend
+  von der Implementierung abdriften kann.
 - **Entscheidungs-Logbuch via clio (ADR-0023, geplant WP-54–56):** ADR-0023 und
   `docs/80-clio-decision-log.md` spezifizieren ein revisionssicheres Entscheidungs-Logbuch über das
   Schwesterprojekt [clio](https://github.com/pblumer/clio) — ein versionierter

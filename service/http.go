@@ -121,32 +121,59 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	return s
 }
 
+// route is one token-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
+// pattern and the handler that serves it. dataRoutes() is the single list of
+// them, so registration (Handler) and the OpenAPI-sync test share one source.
+type route struct {
+	method  string
+	pattern string
+	handler http.HandlerFunc
+}
+
+// dataRoutes is the canonical list of token-gated /v1 endpoints. Every entry
+// must have a matching path+method in service/openapi.yaml (enforced by
+// TestOpenAPICoversDataRoutes); adding a route here without documenting it — or
+// vice versa — breaks that test on purpose.
+func (s *Server) dataRoutes() []route {
+	return []route{
+		{"POST", "/v1/models", s.handleCreateModel},
+		{"GET", "/v1/models", s.handleListModels},
+		{"GET", "/v1/models/{id}", s.handleGetModel},
+		{"GET", "/v1/models/{id}/xml", s.handleGetModelXML},
+		// Modeler (ADR-0016): structure, types and per-decision logic editing that
+		// backs the built-in DMN modeler frontend; all on the same token-gated /v1
+		// surface. The mutating ones recompile and return the saved model (201).
+		{"GET", "/v1/models/{id}/graph", s.handleGetModelGraph},
+		{"POST", "/v1/models/{id}/graph", s.handleSaveGraph},
+		{"GET", "/v1/models/{id}/types", s.handleGetTypes},
+		{"POST", "/v1/models/{id}/types", s.handleSaveType},
+		{"DELETE", "/v1/models/{id}/types/{name}", s.handleDeleteType},
+		{"GET", "/v1/models/{id}/decisions/{decision}/table", s.handleGetDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/table", s.handleSaveDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
+		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
+		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
+		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
+		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
+		// Evaluation.
+		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
+		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
+		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+	}
+}
+
 // Handler returns the HTTP handler exposing the service routes. It uses the
 // standard library's method-and-pattern mux (Go 1.22+), so no external router is
 // required.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// Data endpoints: gated by the optional bearer token.
-	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
-	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
-	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
-	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
-	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
-	mux.HandleFunc("GET /v1/models/{id}/types", s.requireToken(s.handleGetTypes))
-	mux.HandleFunc("POST /v1/models/{id}/types", s.requireToken(s.handleSaveType))
-	mux.HandleFunc("DELETE /v1/models/{id}/types/{name}", s.requireToken(s.handleDeleteType))
-	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
-	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleGetLiteral))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleSaveLiteral))
-	mux.HandleFunc("GET /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleGetBKM))
-	mux.HandleFunc("POST /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleSaveBKM))
-	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
-	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
-	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
-	mux.HandleFunc("POST /v1/models/{id}/evaluate-graph", s.requireToken(s.handleEvaluateGraph))
-	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
+	// Data endpoints: gated by the optional bearer token. Registered from the
+	// single dataRoutes() table so the route set has one source of truth — the
+	// OpenAPI-sync test reads the same table (see http_test.go).
+	for _, rt := range s.dataRoutes() {
+		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
+	}
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)

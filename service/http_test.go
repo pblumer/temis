@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -433,4 +434,69 @@ func mustJSON(t *testing.T, v any) []byte {
 		t.Fatalf("marshal: %v", err)
 	}
 	return b
+}
+
+// TestOpenAPICoversDataRoutes keeps service/openapi.yaml in sync with the
+// registered HTTP surface: the set of token-gated /v1 routes (dataRoutes) and
+// the set of /v1 operations documented in the OpenAPI spec must be identical. A
+// route added without a doc entry — or a doc entry whose route was removed —
+// fails here, so the Swagger spec cannot silently drift from the code.
+func TestOpenAPICoversDataRoutes(t *testing.T) {
+	registered := map[string]bool{}
+	for _, rt := range NewServer(nil).dataRoutes() {
+		registered[rt.method+" "+rt.pattern] = true
+	}
+	documented := documentedV1Operations(t)
+
+	for op := range registered {
+		if !documented[op] {
+			t.Errorf("route %q is registered but not documented in openapi.yaml", op)
+		}
+	}
+	for op := range documented {
+		if !registered[op] {
+			t.Errorf("openapi.yaml documents %q but no matching /v1 route is registered", op)
+		}
+	}
+}
+
+// documentedV1Operations parses openapi.yaml and returns the set of documented
+// "METHOD /v1/..." operations. It scans the paths: section by indentation
+// (2-space path keys, 4-space HTTP-method keys) instead of pulling in a YAML
+// dependency, which the engine deliberately avoids.
+func documentedV1Operations(t *testing.T) map[string]bool {
+	t.Helper()
+	spec, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi.yaml: %v", err)
+	}
+	pathLine := regexp.MustCompile(`^  (/\S*?):\s*$`)
+	methodLine := regexp.MustCompile(`^    (get|post|put|patch|delete|head|options):\s*$`)
+
+	ops := map[string]bool{}
+	inPaths := false
+	curPath := ""
+	for _, line := range strings.Split(string(spec), "\n") {
+		// A non-indented, non-comment line is a top-level key: it opens the paths
+		// section or (anything else) closes it.
+		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
+			inPaths = strings.TrimSpace(line) == "paths:"
+			curPath = ""
+			continue
+		}
+		if !inPaths {
+			continue
+		}
+		if m := pathLine.FindStringSubmatch(line); m != nil {
+			curPath = m[1]
+			continue
+		}
+		if m := methodLine.FindStringSubmatch(line); m != nil && strings.HasPrefix(curPath, "/v1") {
+			ops[strings.ToUpper(m[1])+" "+curPath] = true
+		}
+	}
+	if len(ops) == 0 {
+		t.Fatal("parsed no /v1 operations from openapi.yaml — parser or spec layout changed")
+	}
+	return ops
 }
