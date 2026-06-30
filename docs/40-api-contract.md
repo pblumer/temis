@@ -259,6 +259,13 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   `401` mit `code: UNAUTHORIZED` (`WWW-Authenticate: Bearer`). Ohne Token ist die
   API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
   OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
+- **Optionales Audit-Logbuch (clio, ADR-0023, WP-54):** Mit `temisd -clio-url …`
+  protokolliert der Server jede Einzel-Decision-Auswertung (`/v1/evaluate`,
+  `/v1/models/{id}/evaluate`) als `com.temis.decision.evaluated.v1`-CloudEvent in einer
+  clio-Instanz (`service.WithClioSink`). **Default aus** ⇒ Antworten byte-identisch. Im
+  best-effort-Default verändert der Sink die Antwort nie; mit `-clio-strict` (fail-closed)
+  kann eine fehlgeschlagene Audit-Schreibung den Request mit `502` und
+  `code: AUDIT_WRITE_FAILED` beenden. Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
 
 ### 2.1 Modeler-Endpunkte (ADR-0016)
 
