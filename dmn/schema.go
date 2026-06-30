@@ -2,6 +2,7 @@ package dmn
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,6 +22,17 @@ type InputField struct {
 	// `"red","green","blue"` or `[1..10]`), empty when unconstrained. It lets an
 	// agent see the permitted values before calling Evaluate (WP-31).
 	Constraint string `json:"constraint,omitempty"`
+	// Values lists the discrete values this input may take, for a picker. They
+	// come from the input's declared allowed-values enumeration and/or the literal
+	// values used in decision-table cells. Empty when the domain is open or
+	// continuous (e.g. a numeric range). A consumer can offer these to send a
+	// correct input without guessing.
+	Values []string `json:"values,omitempty"`
+	// ValuesClosed is true when Values is the exhaustive allowed set (a declared
+	// enumeration) — a caller may offer a closed dropdown and reject other input;
+	// false when Values are merely suggestions inferred from table cells and other
+	// values are still accepted.
+	ValuesClosed bool `json:"valuesClosed,omitempty"`
 }
 
 // InputProblem is a single, machine-readable input-validation failure. Code is
@@ -142,6 +154,15 @@ func (d *Definitions) ModelInputSchema() []InputField {
 					ex.Constraint = f.Constraint
 				}
 				ex.Required = ex.Required || f.Required
+				// Values: a closed declared enumeration wins; otherwise union the
+				// suggestions from every decision that consumes this input.
+				if !ex.ValuesClosed {
+					if f.ValuesClosed {
+						ex.Values, ex.ValuesClosed = f.Values, true
+					} else {
+						ex.Values = mergeDistinct(ex.Values, f.Values)
+					}
+				}
 				continue
 			}
 			idx[f.Name] = len(fields)
@@ -207,6 +228,32 @@ func buildInputSchema(m *model.Definitions, dec *model.Decision, items map[strin
 		byID[idata.ID] = idata
 	}
 
+	// Distinct literal values used in each input column's cells, keyed by the
+	// column expression — the values a picker can suggest for that input.
+	cellLits := map[string][]string{}
+	if dec.DecisionTable != nil {
+		for ci, in := range dec.DecisionTable.Inputs {
+			expr := strings.TrimSpace(in.Expression)
+			seenLit := map[string]bool{}
+			var lits []string
+			for _, r := range dec.DecisionTable.Rules {
+				if ci >= len(r.InputEntries) {
+					continue
+				}
+				vs, _ := literalsIn(r.InputEntries[ci])
+				for _, v := range vs {
+					if !seenLit[v] {
+						seenLit[v] = true
+						lits = append(lits, v)
+					}
+				}
+			}
+			if len(lits) > 0 {
+				cellLits[expr] = lits
+			}
+		}
+	}
+
 	var fields []InputField
 	seen := map[string]bool{}
 	for _, id := range dec.RequiredInputs {
@@ -223,9 +270,106 @@ func buildInputSchema(m *model.Definitions, dec *model.Decision, items map[strin
 		if c := constraints[idata.Name]; c != nil {
 			f.Constraint = c.allowedText
 		}
+		f.Values, f.ValuesClosed = suggestValues(f.Constraint, cellLits[idata.Name])
 		fields = append(fields, f)
 	}
 	return fields
+}
+
+var numberLiteral = regexp.MustCompile(`^-?\d+(\.\d+)?$`)
+
+// suggestValues picks the discrete values to offer for an input: a declared
+// enumeration (every part a literal) is the closed allowed set; otherwise the
+// literal values used in the table cells are suggestions (plus any literal parts
+// of a non-enumerable constraint), and other values are still accepted.
+func suggestValues(constraint string, cellLits []string) (values []string, closed bool) {
+	if constraint != "" {
+		if vs, complete := literalsIn(constraint); complete {
+			return vs, true
+		} else if len(vs) > 0 {
+			return mergeDistinct(vs, cellLits), false
+		}
+	}
+	if len(cellLits) > 0 {
+		return cellLits, false
+	}
+	return nil, false
+}
+
+// literalsIn extracts the discrete literal values from a FEEL unary-test list:
+// each top-level, comma-separated part that is a plain string or number literal.
+// Non-literal parts (ranges, comparisons, "-", expressions) are skipped. It also
+// reports whether EVERY part was such a literal — i.e. a closed enumeration.
+func literalsIn(text string) (values []string, complete bool) {
+	parts := splitTopLevel(text)
+	if len(parts) == 0 {
+		return nil, false
+	}
+	complete = true
+	for _, p := range parts {
+		if v, ok := literalValue(p); ok {
+			values = append(values, v)
+		} else {
+			complete = false
+		}
+	}
+	return values, complete && len(values) > 0
+}
+
+// literalValue returns the value of a FEEL string or number literal (a string
+// unquoted), or ok=false for anything else (a range, comparison, "-", …).
+func literalValue(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		inner := s[1 : len(s)-1]
+		if !strings.Contains(inner, `"`) {
+			return inner, true
+		}
+		return "", false
+	}
+	if numberLiteral.MatchString(s) {
+		return s, true
+	}
+	return "", false
+}
+
+// splitTopLevel splits on commas that are not inside a string or brackets, so a
+// list like `"a","b",[1..5]` yields three parts.
+func splitTopLevel(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+	inStr := false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			inStr = !inStr
+		case inStr:
+			// inside a string literal: ignore structural characters
+		case c == '[' || c == '(':
+			depth++
+		case (c == ']' || c == ')') && depth > 0:
+			depth--
+		case c == ',' && depth == 0:
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, s[start:])
+}
+
+// mergeDistinct appends b's items to a, skipping ones already present.
+func mergeDistinct(a, b []string) []string {
+	seen := make(map[string]bool, len(a))
+	for _, v := range a {
+		seen[v] = true
+	}
+	for _, v := range b {
+		if !seen[v] {
+			seen[v] = true
+			a = append(a, v)
+		}
+	}
+	return a
 }
 
 // schemaTypeName is the type name reported in the self-description: the canonical

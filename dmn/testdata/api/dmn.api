@@ -239,6 +239,10 @@ type InputField struct {
 	Required	bool	`json:"required"`
 
 	Constraint	string	`json:"constraint,omitempty"`
+
+	Values	[]string	`json:"values,omitempty"`
+
+	ValuesClosed	bool	`json:"valuesClosed,omitempty"`
 }
 
 type InputProblem struct {

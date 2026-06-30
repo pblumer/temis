@@ -297,6 +297,14 @@ components:
         name: { type: string }
         type: { type: string, description: "Canonical FEEL type, or empty if undeclared." }
         required: { type: boolean }
+        constraint: { type: string, description: "Allowed-values text (a FEEL unary-test list), if any." }
+        values:
+          type: array
+          items: { type: string }
+          description: "Discrete values to offer for this input — from a declared enumeration and/or the literals used in decision-table cells."
+        valuesClosed:
+          type: boolean
+          description: "True when values is the exhaustive allowed set (a closed dropdown); false when they are suggestions and other values are accepted."
     EvaluateModelRequest:
       type: object
       required: [decision]

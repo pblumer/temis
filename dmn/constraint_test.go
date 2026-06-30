@@ -84,6 +84,10 @@ func TestSchemaSurfacesCustomTypeAndConstraint(t *testing.T) {
 	if f := by["Shade"]; f.Type != "Color" || f.Constraint != `"red","green","blue"` {
 		t.Errorf("Shade field = %+v, want type Color with allowed values", f)
 	}
+	// A declared enumeration is a CLOSED set of values, ready for a dropdown.
+	if f := by["Shade"]; !f.ValuesClosed || len(f.Values) != 3 || f.Values[0] != "red" || f.Values[2] != "blue" {
+		t.Errorf("Shade values = %v (closed=%v), want a closed [red green blue]", f.Values, f.ValuesClosed)
+	}
 	if f := by["P"]; f.Type != "Person" {
 		t.Errorf("P field type = %q, want Person", f.Type)
 	}
