@@ -25,3 +25,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0018 | Theming/Branding der UI über CSS-Variablen + Deployment-Hook | accepted |
 | 0019 | API-Stabilität, SemVer und Deprecation-Policy für `package dmn` | accepted |
 | 0020 | gRPC-Schnittstelle über ConnectRPC (nicht grpc-go) | accepted |
+| 0021 | MCP-Endpoint in `temisd` ko-lokalisieren (geteilter Modell-Cache, ein Adressraum) | accepted |
