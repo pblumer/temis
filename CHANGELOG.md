@@ -42,4 +42,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte
   Release-Pipeline, Container-Image für `temisd`, dieses Changelog.
 
+### Docs
+
+- **Entscheidungs-Logbuch via clio (ADR-0023, geplant WP-54–56):** ADR-0023 und
+  `docs/80-clio-decision-log.md` spezifizieren ein revisionssicheres Entscheidungs-Logbuch über das
+  Schwesterprojekt [clio](https://github.com/pblumer/clio) — ein versionierter
+  `com.temis.decision.evaluated.v1`-CloudEvent-Vertrag (Eingabe/Ausgabe/Spur/content-addressed
+  `modelId`), ein opt-in-Sink in `temisd` und ein Re-Audit-/Replay-Werkzeug. Kopplung nur über
+  clios HTTP-Vertrag, kein Go-Import (ADR-0011); noch kein Code.
+
 [Unreleased]: https://github.com/pblumer/temis/commits/main

@@ -303,6 +303,7 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/50-testing-strategy.md` | Test-Pyramide, Fuzzing, TCK, Benchmarks |
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
 | `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
+| `docs/80-clio-decision-log.md` | Revisionssicheres Entscheidungs-Logbuch via clio (ADR-0023) |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken
