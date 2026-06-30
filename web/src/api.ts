@@ -13,6 +13,7 @@ export type GraphNode = {
   varName?: string
   hasTable?: boolean
   hasLiteral?: boolean
+  hasLogic?: boolean
   x?: number
   y?: number
   width?: number

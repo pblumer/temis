@@ -32,11 +32,15 @@ type GraphNode struct {
 	HasTable bool `json:"hasTable,omitempty"`
 	// HasLiteral marks a decision whose logic is a literal FEEL expression, so the
 	// modeler opens the expression editor on double-click.
-	HasLiteral bool    `json:"hasLiteral,omitempty"`
-	X          float64 `json:"x,omitempty"`
-	Y          float64 `json:"y,omitempty"`
-	Width      float64 `json:"width,omitempty"`
-	Height     float64 `json:"height,omitempty"`
+	HasLiteral bool `json:"hasLiteral,omitempty"`
+	// HasLogic marks a decision that has ANY executable logic (a table, a literal
+	// or another boxed expression), so the modeler can show a table icon vs a
+	// boxed-expression icon vs an "undecided" (no logic) icon.
+	HasLogic bool    `json:"hasLogic,omitempty"`
+	X        float64 `json:"x,omitempty"`
+	Y        float64 `json:"y,omitempty"`
+	Width    float64 `json:"width,omitempty"`
+	Height   float64 `json:"height,omitempty"`
 }
 
 // GraphEdge is one requirement, directed from the required (upstream) element to
@@ -59,12 +63,12 @@ func (d *Definitions) Graph() Graph {
 	if d.model.Diagram != nil {
 		shapes = d.model.Diagram.Shapes
 	}
-	add := func(id, typ, name, dataType, varName string, hasTable, hasLiteral bool) {
+	add := func(id, typ, name, dataType, varName string, hasTable, hasLiteral, hasLogic bool) {
 		if id == "" {
 			return
 		}
 		known[id] = true
-		n := GraphNode{ID: id, Type: typ, Name: name, DataType: dataType, VarName: varName, HasTable: hasTable, HasLiteral: hasLiteral}
+		n := GraphNode{ID: id, Type: typ, Name: name, DataType: dataType, VarName: varName, HasTable: hasTable, HasLiteral: hasLiteral, HasLogic: hasLogic}
 		if b, ok := shapes[id]; ok {
 			n.X, n.Y, n.Width, n.Height = b.X, b.Y, b.Width, b.Height
 		}
@@ -88,17 +92,17 @@ func (d *Definitions) Graph() Graph {
 		if t == "" {
 			t = canonicalType(in.TypeRef)
 		}
-		add(in.ID, "inputData", in.Name, t, "", false, false)
+		add(in.ID, "inputData", in.Name, t, "", false, false, false)
 	}
 	for _, b := range d.model.BKMs {
-		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "", false, false)
+		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "", false, false, false)
 	}
 	for _, dec := range d.model.Decisions {
 		varName := dec.VariableName
 		if varName == "" {
 			varName = dec.Name // DMN convention: result referenced by the decision name
 		}
-		add(dec.ID, "decision", dec.Name, decisionOutputType(dec), varName, dec.DecisionTable != nil, dec.LiteralExpression != nil)
+		add(dec.ID, "decision", dec.Name, decisionOutputType(dec), varName, dec.DecisionTable != nil, dec.LiteralExpression != nil, dec.Logic() != nil)
 	}
 
 	edge := func(typ, source, target string) {

@@ -141,18 +141,25 @@ function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): 
   if (sub) drawText(parent, ellipsizeToWidth(sub, maxW, 10.5, '400'), w / 2, y + 1, 10.5, SUBTLE, '400')
 }
 
+// The kind of logic a decision carries, used to pick its corner icon.
+type LogicKind = 'table' | 'expression' | 'undecided'
+
 // decisionIcon draws the small type badge in the top-left corner of a decision
-// (the blue "decision logic" indicator, like dmn-js), so a decision reads as a
-// decision at a glance.
-function decisionIcon(parent: SVGElement): void {
+// (the "decision logic" indicator, like dmn-js), with a glyph that distinguishes
+// its logic: a grid for a decision table, chevrons for a boxed/literal expression,
+// and a muted, empty badge for a decision with no logic yet.
+function decisionIcon(parent: SVGElement, kind: LogicKind): void {
   const badge = create('rect')
-  attr(badge, { x: 8, y: 8, width: 18, height: 18, rx: 3, fill: '#3f74e0' })
+  attr(badge, { x: 8, y: 8, width: 18, height: 18, rx: 3, fill: kind === 'undecided' ? '#94a3b8' : '#3f74e0' })
   append(parent, badge)
+  const d =
+    kind === 'table'
+      ? 'M12 13 H22 M12 17 H22 M12 21 H22 M15 12.5 V21.5' // table grid
+      : kind === 'expression'
+        ? 'M15 13 L11.5 17 L15 21 M19 13 L22.5 17 L19 21' // < >  (boxed expression)
+        : 'M13.5 17 H20.5' // — (no logic yet)
   const glyph = create('path')
-  attr(glyph, {
-    d: 'M12 13 H22 M12 17 H22 M12 21 H22 M15 12.5 V21.5',
-    stroke: '#ffffff', 'stroke-width': 1.3, fill: 'none',
-  })
+  attr(glyph, { d, stroke: '#ffffff', 'stroke-width': 1.4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
   append(parent, glyph)
 }
 
@@ -197,7 +204,8 @@ export default class DmnRenderer extends BaseRenderer {
 
     append(parent, visual)
     if (shape.type === 'dmn:decision' || shape.type === undefined) {
-      decisionIcon(parent)
+      const s = shape as Shape & { hasTable?: boolean; hasLogic?: boolean }
+      decisionIcon(parent, s.hasTable ? 'table' : s.hasLogic ? 'expression' : 'undecided')
     }
     label(parent, shape as Shape & Named, w, h)
     return visual

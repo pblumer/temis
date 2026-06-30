@@ -200,6 +200,8 @@ type GraphNode struct {
 	HasTable	bool	`json:"hasTable,omitempty"`
 
 	HasLiteral	bool	`json:"hasLiteral,omitempty"`
+
+	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`
 	Y		float64	`json:"y,omitempty"`
 	Width		float64	`json:"width,omitempty"`
