@@ -559,6 +559,9 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
+      handle.onBoxed(() => {
+        status.textContent = 'Boxed-Ausdruck (Kontext/Liste/Invocation/…) — im Modeler noch nicht editierbar.'
+      })
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''

@@ -85,7 +85,7 @@ class DmnContextPadProvider {
       // A decided decision: open its logic with a single click on the icon —
       // the table view or the FEEL-expression editor (also reachable by
       // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean })
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasLogic?: boolean })
       if (decided.hasTable) {
         entries['open-table'] = {
           group: 'edit',
@@ -102,10 +102,21 @@ class DmnContextPadProvider {
           imageUrl: ICON_LITERAL,
           action: { click: () => this.eventBus.fire('dmn.openLiteral', { element }) },
         }
-      }
-      // An undecided decision (no logic yet) can get a fresh decision table or a
-      // literal expression. The handlers live in the app shell, so fire events.
-      if (!decided.hasTable && !decided.hasLiteral) {
+      } else if (decided.hasLogic) {
+        // A decided decision whose logic is a boxed expression (context, list,
+        // invocation, conditional, …) the modeler cannot edit yet (WP-66). Offer
+        // an honest hint rather than a "create table" that the server rejects
+        // because the decision already has logic.
+        entries['boxed-info'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Boxed-Ausdruck — im Modeler noch nicht editierbar',
+          imageUrl: ICON_LITERAL,
+          action: { click: () => this.eventBus.fire('dmn.boxedInfo', { element }) },
+        }
+      } else {
+        // A truly undecided decision (no logic at all) can get a fresh decision
+        // table or a literal expression. The handlers live in the app shell.
         entries['create-table'] = {
           group: 'add',
           className: 'cp-icon',

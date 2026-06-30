@@ -82,6 +82,10 @@ export type ModelerHandle = {
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
+  // onBoxed fires with a decision's id when the user tries to open a decision
+  // whose logic is a boxed expression the modeler cannot edit yet (WP-66), so the
+  // app shell can give an honest hint instead of a silent no-op.
+  onBoxed: (cb: (decisionId: string) => void) => void
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
   // showDiagnostics marks each decision node that has compile/eval problems with a
@@ -197,11 +201,19 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // don't collide.
   let openTableCb = (_decisionId: string): void => {}
   let openLiteralCb = (_decisionId: string): void => {}
+  let openBoxedCb = (_decisionId: string): void => {}
   eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean } }) => {
     const el = e.element
     if (!el || el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
+    // A boxed-expression decision has neither; double-click inline-renames it
+    // (see dmn-label-editing). The "not editable" hint comes from the context
+    // pad's boxed-info icon instead, so it doesn't clash with the rename.
+  })
+  // The context pad's boxed-info icon fires this for a boxed-expression decision.
+  eventBus.on('dmn.boxedInfo', (e: { element?: Shape }) => {
+    if (e.element) openBoxedCb(e.element.id)
   })
   // The context pad's open icons fire these so the table/expression opens with a
   // single click (the same handlers as the double-click above).
@@ -280,6 +292,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onOpenBKM: (cb) => {
       openBKMCb = cb
+    },
+    onBoxed: (cb) => {
+      openBoxedCb = cb
     },
     zoom: (dir) => {
       if (dir === 'fit') fitViewport(canvas)
