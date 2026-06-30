@@ -42,6 +42,18 @@ func main() {
 		"override the provider's API base URL, e.g. a proxy (default $TEMIS_LLM_BASE_URL)")
 	llmAllowBYOK := flag.Bool("llm-allow-byok", true,
 		"let a caller supply its own provider key via the X-LLM-Token header (used only for that request)")
+	clioURL := flag.String("clio-url", os.Getenv("TEMIS_CLIO_URL"),
+		"record each evaluation as a tamper-evident event in this clio instance (default $TEMIS_CLIO_URL; empty = off)")
+	clioToken := flag.String("clio-token", os.Getenv("TEMIS_CLIO_TOKEN"),
+		"clio API key (kid.secret) for the audit sink (default $TEMIS_CLIO_TOKEN)")
+	clioSource := flag.String("clio-source", os.Getenv("TEMIS_CLIO_SOURCE"),
+		"CloudEvents source stamped on audit events (default $TEMIS_CLIO_SOURCE, else \"temisd\")")
+	clioSubjectPrefix := flag.String("clio-subject-prefix", "/decisions",
+		"clio subject prefix the decision is filed under")
+	clioSubjectKey := flag.String("clio-subject-key", "",
+		"input field whose value becomes the subject's entity segment (empty = decision name)")
+	clioStrict := flag.Bool("clio-strict", false,
+		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -81,6 +93,22 @@ func main() {
 			AllowBYOK: *llmAllowBYOK,
 		}))
 	}
+	if *clioURL != "" {
+		sink, err := service.NewClioSink(service.ClioConfig{
+			URL:           *clioURL,
+			Token:         *clioToken,
+			Source:        *clioSource,
+			SubjectPrefix: *clioSubjectPrefix,
+			SubjectKey:    *clioSubjectKey,
+			Engine:        "temisd " + ver,
+			Strict:        *clioStrict,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
+			os.Exit(1)
+		}
+		opts = append(opts, service.WithClioSink(sink))
+	}
 	srv := service.NewServer(engine, opts...)
 	if *serveMCP {
 		// One address space: the MCP endpoint shares the service's model cache, so
@@ -109,6 +137,13 @@ func main() {
 			provider = "anthropic"
 		}
 		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, BYOK=%v)", provider, *llmAllowBYOK)
+	}
+	if *clioURL != "" {
+		mode := "best-effort"
+		if *clioStrict {
+			mode = "fail-closed"
+		}
+		log.Printf("temisd: clio audit sink → %s (%s)", *clioURL, mode)
 	}
 	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)

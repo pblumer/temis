@@ -66,6 +66,17 @@ type Server struct {
 	// assist, when set via WithAssist, enables the modeling assistant at
 	// POST /v1/chat (ADR-0024). Nil leaves the endpoint dormant (503).
 	assist *AssistConfig
+
+	// sink, when set via WithClioSink, records each single-decision evaluation as
+	// a tamper-evident event in a clio instance (ADR-0023). Nil disables audit
+	// logging, leaving behaviour byte-identical to a server without it.
+	sink *ClioSink
+
+	// gitBaseURL overrides the GitHub REST API root for the /v1/git endpoints
+	// (default https://api.github.com); set via WithGitHubBaseURL for GitHub
+	// Enterprise or tests. The git-provider token is supplied per request
+	// (X-Git-Token), never stored on the server (WP-72, auth model A).
+	gitBaseURL string
 }
 
 // Option configures a Server at construction time.
@@ -84,6 +95,14 @@ func WithToken(token string) Option {
 // endpoint then responds 404 as if it did not exist.
 func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
+}
+
+// WithClioSink attaches a clio audit sink so each single-decision evaluation
+// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) is recorded as a
+// tamper-evident decision event in clio (ADR-0023). A nil sink is ignored,
+// leaving the server's behaviour unchanged.
+func WithClioSink(sink *ClioSink) Option {
+	return func(s *Server) { s.sink = sink }
 }
 
 // WithCacheSize bounds how many compiled models the server keeps in memory.
@@ -157,6 +176,9 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
 		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
 		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/decisions/{decision}/context", s.handleGetContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/context", s.handleSaveContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", s.handleCreateContext},
 		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
 		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
 		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
@@ -181,6 +203,12 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.dataRoutes() {
 		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
 	}
+	// Git-backed models: browse, load, save and propose against a repository
+	// (WP-72). Registered outside the dataRoutes() table (and thus the
+	// OpenAPI-sync test) for now — the git endpoints are not in openapi.yaml yet.
+	// The git-provider token is per request (X-Git-Token); these endpoints share
+	// the same optional API token gate as the others.
+	s.registerGitRoutes(mux)
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
@@ -733,7 +761,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -753,7 +781,7 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
@@ -818,7 +846,7 @@ func redirectTo(target string) http.HandlerFunc {
 // evaluate runs a decision and writes the result or an appropriate problem. When
 // explain is set the response carries the decision trace (which rules matched and
 // why).
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID string, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -850,6 +878,22 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		}
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
+	}
+	// Audit the decision before answering. In fail-closed mode a failed write
+	// aborts the request (the decision must be recorded to count as made); in
+	// best-effort mode Record logs and returns nil so the result still flows.
+	if s.sink != nil {
+		if err := s.sink.Record(ctx, DecisionRecord{
+			ModelID:  modelID,
+			Decision: decision,
+			Input:    input,
+			Outputs:  res.Outputs,
+			Trace:    res.Trace,
+			Strict:   strict,
+		}); err != nil {
+			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, evaluateResponse{
 		Outputs:     res.Outputs,

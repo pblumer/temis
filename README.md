@@ -43,8 +43,12 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
+| WP-54 | Entscheidungs-Logbuch: opt-in clio-Audit-Sink in `temisd` (ADR-0023) | ✅ |
+| WP-55 | Entscheidungs-Logbuch: Re-Audit-/Replay-Tool `temis-reaudit` (ADR-0023) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 | WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
+| WP-72 | Git-Modelle über HTTP (`/v1/git/*`, Token pro Request) | ✅ |
+| WP-73 | Git-Modelle über MCP (`git_list_models`/`git_load_model`/`git_propose`) | ✅ |
 | WP-80 | Modellierungs-Assistent: LLM-Chat im Modeler (`assist`, `POST /v1/chat`) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
@@ -160,6 +164,32 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
+**Revisionssicheres Entscheidungs-Logbuch (clio, opt-in):** Mit `-clio-url`
+protokolliert `temisd` jede Einzel-Decision-Auswertung als manipulationssicheres
+CloudEvent im Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (append-only,
+hash-verkettet) — Eingabe, Ausgabe, optionale Spur und content-addressed `modelId`. Default
+**aus** (byte-identisch); die Kopplung läuft nur über clios HTTP-API, ohne Go-Import
+(ADR-0023, ADR-0011). Idempotent per clio-Precondition; `-clio-strict` macht den Sink
+fail-closed (`502`), sonst best-effort. Voller Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+
+```sh
+go run ./cmd/temisd -addr :8080 \
+  -clio-url http://127.0.0.1:3000 -clio-token kid_ci01.geheim -clio-subject-key "Order ID"
+# entsprechend per Env: TEMIS_CLIO_URL / TEMIS_CLIO_TOKEN / TEMIS_CLIO_SOURCE
+```
+
+**Nachrechnen (`temis-reaudit`):** Weil temis deterministisch ist, lässt sich das Logbuch
+**verifizieren** — `temis-reaudit` liest die Events aus clio, rechnet jede Entscheidung
+`input`@`modelId` erneut nach und vergleicht mit der protokollierten Ausgabe. Das ergänzt
+clios `verify` (Hash-Kette/Signatur = *unverändert*) um den *Regelkonformitäts*-Beweis;
+Exit-Code 0/1 macht es skriptbar.
+
+```sh
+go run ./cmd/temis-reaudit \
+  -clio-url http://127.0.0.1:3000 -clio-token kid_ro.secret -models ./models
+# → re-audited 127 decision event(s) against 9 model(s): 127 reproduced — OK ✓
+```
+
 **gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als
 **gRPC**-Dienst an — über **ConnectRPC** (ADR-0020), auf **demselben Port** wie REST,
 mit geteilter Engine und geteiltem Modell-Cache. RPCs: `Compile`, `Evaluate` (per
@@ -168,6 +198,36 @@ Stream fürs Pipelining). Es spricht gRPC, gRPC-Web und das Connect-Protokoll; K
 HTTP/2 (h2c) ist aktiv, sodass voller gRPC auch ohne TLS läuft. Der optionale Bearer-Token
 gilt per Interceptor für jeden RPC. Contract: `proto/dmn/v1/engine.proto`, `docs/40-api-contract.md §3`.
 Generierter Go-Code ist committet (`internal/gen/dmnv1/`); `make proto` regeneriert ihn.
+
+### Git-gestützte Modelle (`/v1/git/*`, ADR-0022)
+
+DMN-Modelle können **versioniert aus einem Git-Repository** gelesen, ausgewertet und
+bearbeitet werden — Branch/Commit/PR inklusive. Als SaaS zuerst über **GitHub**,
+grundsätzlich über jeden Remote (Provider-Interface, `package vcs`). Der GitHub-Token wird
+**pro Request** im Header `X-Git-Token` mitgegeben und nie serverseitig gespeichert (getrennt
+vom optionalen temisd-Bearer-Token).
+
+```sh
+# Modelle eines Repos auf einem Branch auflisten (nur *.dmn)
+curl -H 'X-Git-Token: ghp_…' \
+  'localhost:8080/v1/git/models?owner=pblumer&repo=temis&ref=main&dir=models'
+
+# Ein Modell aus dem Repo laden → liefert eine modelId (danach wie jedes Cache-Modell nutzbar)
+curl -X POST localhost:8080/v1/git/load -H 'Content-Type: application/json' -H 'X-Git-Token: ghp_…' \
+  -d '{"owner":"pblumer","repo":"temis","ref":"main","path":"models/dish.dmn"}'
+
+# Editiertes Modell als Pull Request vorschlagen (Branch → Commit → PR; kompiliert vorab)
+curl -X POST localhost:8080/v1/git/propose -H 'Content-Type: application/json' -H 'X-Git-Token: ghp_…' \
+  -d '{"owner":"pblumer","repo":"temis","base":"main","branch":"edit-dish",
+       "path":"models/dish.dmn","title":"Update dish","xml":"<definitions …/>"}'
+```
+
+Endpunkte: `GET /v1/git/branches|commits|models`, `POST /v1/git/load|save|propose`. Fehler als
+RFC-7807 (`GIT_NOT_FOUND`/`GIT_UNAUTHORIZED`/`GIT_CONFLICT`/`GIT_UPSTREAM_ERROR`). `save`/`propose`
+kompilieren das Modell **vor** dem Schreiben — ein kaputtes DMN landet nie im Repo. GitHub
+Enterprise via `service.WithGitHubBaseURL`. Dieselben Operationen stehen KI-Agenten über die
+MCP-Tools **`git_list_models`**, **`git_load_model`** und **`git_propose`** zur Verfügung
+(Token pro Call als `gitToken`-Argument).
 
 ### Für KI-Agenten (`temis-mcp`, MCP über stdio & HTTP)
 

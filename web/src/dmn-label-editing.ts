@@ -9,13 +9,13 @@ import { ensureFeel, validateName } from './feel'
 // logic is a decision table or a literal expression — for those, double-click
 // opens the respective editor instead (see canvas.ts), so the gestures do not
 // collide.
-const isRenamable = (el: (Element & { hasTable?: boolean; hasLiteral?: boolean }) | undefined): el is Shape =>
+const isRenamable = (el: (Element & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean }) | undefined): el is Shape =>
   !!el &&
   typeof el.type === 'string' &&
   el.type.indexOf('dmn:') === 0 &&
   el.type !== 'dmn:informationRequirement' &&
   el.type !== 'dmn:knowledgeRequirement' &&
-  !(el.type === 'dmn:decision' && (el.hasTable || el.hasLiteral))
+  !(el.type === 'dmn:decision' && (el.hasTable || el.hasLiteral || el.hasContext))
 
 // Undoable rename: change the element's name and report it changed so the
 // renderer redraws. diagram-js core has no label command, so we add one.

@@ -349,6 +349,49 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/context:
+    get:
+      summary: Get a decision's boxed-context view
+      description: 404 when the decision's logic is not a boxed context. simple=false when an entry is a nested boxed expression (the editor opens read-only).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The boxed context
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's boxed-context logic
+      description: Replaces the decision's context entries (each a literal FEEL expression) and optional result cell. Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContextEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-context:
+    post:
+      summary: Give an undecided decision a fresh boxed context
+      description: Creates a context with a single named entry. 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/bkm/{bkm}:
     get:
       summary: Get a business knowledge model's encapsulated-logic view
@@ -908,6 +951,31 @@ components:
       properties:
         text: { type: string, description: The FEEL expression to set as the decision's logic. }
         typeRef: { type: string, description: Optional output type for the decision's variable. }
+    ContextEntryView:
+      type: object
+      properties:
+        name: { type: string, description: The bound entry name. }
+        text: { type: string, description: The entry's literal FEEL expression. }
+        typeRef: { type: string, description: The entry variable's declared FEEL type, if any. }
+    ContextView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/ContextEntryView" }
+        result: { type: string, description: The result-cell expression (the context's value), if any. }
+        resultTypeRef: { type: string, description: The result cell's declared type, if any. }
+        simple: { type: boolean, description: False when an entry is a nested boxed expression this text view cannot edit. }
+    ContextEdit:
+      type: object
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/ContextEntryView" }
+        result: { type: string, description: Optional result-cell expression. }
+        resultTypeRef: { type: string, description: Optional result type. }
     BKMView:
       type: object
       properties:
