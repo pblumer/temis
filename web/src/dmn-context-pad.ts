@@ -82,9 +82,29 @@ class DmnContextPadProvider {
           action: { click: () => this.append(element as Shape, kind) },
         }
       }
+      // A decided decision: open its logic with a single click on the icon —
+      // the table view or the FEEL-expression editor (also reachable by
+      // double-click). The handlers live in the app shell, so fire events.
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean })
+      if (decided.hasTable) {
+        entries['open-table'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Decision Table anzeigen',
+          imageUrl: ICON_TABLE,
+          action: { click: () => this.eventBus.fire('dmn.openTable', { element }) },
+        }
+      } else if (decided.hasLiteral) {
+        entries['open-literal'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'FEEL-Ausdruck anzeigen',
+          imageUrl: ICON_LITERAL,
+          action: { click: () => this.eventBus.fire('dmn.openLiteral', { element }) },
+        }
+      }
       // An undecided decision (no logic yet) can get a fresh decision table or a
       // literal expression. The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean })
       if (!decided.hasTable && !decided.hasLiteral) {
         entries['create-table'] = {
           group: 'add',

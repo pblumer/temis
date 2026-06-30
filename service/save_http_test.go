@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/pblumer/temis/dmn"
@@ -322,6 +323,52 @@ func TestSaveModelUnknownModel(t *testing.T) {
 	body := mustJSON(t, saveModelRequest{Nodes: []dmn.NodeEdit{{ID: "x", Name: strPtr("Y")}}})
 	if rec := do(t, h, "POST", "/v1/models/sha256:deadbeef/save", "application/json", body); rec.Code != http.StatusNotFound {
 		t.Errorf("save unknown model = %d, want 404", rec.Code)
+	}
+}
+
+// TestEvaluateGraphEndpoint drives the whole-graph evaluation: it fills the one
+// leaf input (Applicant Age) and checks every decision in the chain comes back
+// with its value, including the transitive one the form does not name directly.
+func TestEvaluateGraphEndpoint(t *testing.T) {
+	h := newTestServer(t)
+	xml, err := os.ReadFile("../dmn/testdata/models/routing_13.dmn")
+	if err != nil {
+		t.Fatalf("read routing model: %v", err)
+	}
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	body := mustJSON(t, evaluateGraphRequest{Input: map[string]any{"Applicant Age": 20}, Strict: true})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/evaluate-graph", "application/json", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST evaluate-graph = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+	res := decode[evaluateGraphResponse](t, rec)
+	if res.Values["Eligibility"] != "ELIGIBLE" {
+		t.Errorf("Eligibility = %v, want ELIGIBLE", res.Values["Eligibility"])
+	}
+	if res.Values["Routing"] != "ACCEPT" {
+		t.Errorf("Routing = %v, want ACCEPT", res.Values["Routing"])
+	}
+	// The graph input schema names the single leaf input the form should ask for.
+	if len(res.InputSchema) != 1 || res.InputSchema[0].Name != "Applicant Age" {
+		t.Errorf("inputSchema = %+v, want [Applicant Age]", res.InputSchema)
+	}
+}
+
+// TestEvaluateGraphRejectsUnknownInput checks strict graph validation reports an
+// input no decision declares as a structured INVALID_INPUT problem.
+func TestEvaluateGraphRejectsUnknownInput(t *testing.T) {
+	h := newTestServer(t)
+	xml, err := os.ReadFile("../dmn/testdata/models/routing_13.dmn")
+	if err != nil {
+		t.Fatalf("read routing model: %v", err)
+	}
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	body := mustJSON(t, evaluateGraphRequest{Input: map[string]any{"Applicant Age": 20, "Bogus": 1}, Strict: true})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/evaluate-graph", "application/json", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("evaluate-graph unknown input = %d, want 422 (body %s)", rec.Code, rec.Body)
 	}
 }
 

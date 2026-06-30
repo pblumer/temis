@@ -277,8 +277,10 @@ async function boot(root: HTMLElement): Promise<void> {
       syncButtons()
       status.textContent = `${graph.nodes.length} Knoten · ${graph.edges.length} Kanten`
       // Evaluate panel: needs the typed per-decision schema, so fetch the detail.
+      // Its results are also overlaid on the canvas nodes (the whole graph with
+      // its computed values).
       try {
-        renderEvaluatePanel(evalHost, await getModel(model.modelId))
+        renderEvaluatePanel(evalHost, await getModel(model.modelId), (values) => handle?.showResults(values))
       } catch {
         evalHost.textContent = ''
       }

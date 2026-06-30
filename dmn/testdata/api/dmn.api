@@ -48,6 +48,8 @@ func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
 
 func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
 
+func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalOption) (GraphResult, error)
+
 func (d *Definitions) Graph() Graph
 
 func (d *Definitions) Index() ModelIndex
@@ -58,9 +60,13 @@ func (d *Definitions) ItemDefinitions() []ItemType
 
 func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
 
+func (d *Definitions) ModelInputSchema() []InputField
+
 func (d *Definitions) ModelName() string
 
 func (d *Definitions) Service(idOrName string) (*CompiledService, error)
+
+func (d *Definitions) ValidateModelInput(in Input) []InputProblem
 
 func (d Diagnostics) HasErrors() bool
 
@@ -209,6 +215,16 @@ type GraphNodeEdit struct {
 	Y		float64	`json:"y"`
 	Width		float64	`json:"width"`
 	Height		float64	`json:"height"`
+}
+
+type GraphResult struct {
+	Values	map[string]any
+
+	Traces	map[string]*Trace
+
+	Errors	map[string]string
+
+	Diags	Diagnostics
 }
 
 type Input map[string]any

@@ -1,10 +1,11 @@
-import { evaluate, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
+import { evaluateGraph, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace } from './api'
 
-// renderEvaluatePanel brings the legacy /ui evaluate workflow into the own
-// modeler (feature parity before the root cutover, ADR-0016 WP-67): pick a
-// decision, fill its typed inputs and run it against the engine. The panel is
-// self-contained and re-rendered whenever the shown model changes.
-export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void {
+// renderEvaluatePanel runs a whole-graph evaluation in the own modeler: the user
+// fills the model's leaf inputs once and sees EVERY decision's result — the
+// entire decision requirements graph computed from one set of inputs, not one
+// decision at a time (ADR-0016). onResults, when given, receives the per-decision
+// values so the caller can overlay them on the canvas nodes.
+export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onResults?: (values: Record<string, unknown>) => void): void {
   host.textContent = ''
   const decisions = model.decisions ?? []
   if (!decisions.length) {
@@ -12,46 +13,32 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void
     return
   }
 
-  const decisionSel = el('select', { id: 'evalDecision' }) as HTMLSelectElement
-  for (const d of decisions) decisionSel.append(el('option', { value: d }, d))
   const runBtn = el('button', { id: 'evalRun', class: 'tbtn', type: 'button' }, 'Auswerten') as HTMLButtonElement
-
   const inputsHost = el('div', { id: 'evalInputs', class: 'eval-inputs' })
   const result = el('div', { id: 'evalResult', class: 'eval-result' })
 
   host.append(
-    el('div', { class: 'eval-row' }, el('label', { for: 'evalDecision' }, 'Decision'), decisionSel, runBtn),
+    el('div', { class: 'eval-row' }, el('span', { class: 'eval-lead' }, 'Eingaben füllen und den ganzen Graphen auswerten'), runBtn),
     inputsHost,
     result,
   )
 
-  // fieldsFor returns the typed input fields the selected decision needs: its
-  // schema entry when present, else the model's inputs as untyped fields.
-  const fieldsFor = (decision: string): InputField[] => {
-    const schema = model.schema?.[decision]
-    if (schema && schema.length) return schema
-    return (model.inputs ?? []).map((name) => ({ name, required: false }))
-  }
-
-  let rows: { field: InputField; input: HTMLInputElement }[] = []
-  const renderInputs = (): void => {
-    inputsHost.textContent = ''
-    result.textContent = ''
-    rows = fieldsFor(decisionSel.value).map((field) => {
-      const input = el('input', {
-        type: 'text',
-        class: 'eval-field',
-        placeholder: field.type || 'FEEL',
-        title: field.constraint ? 'erlaubte Werte: ' + field.constraint : '',
-      }) as HTMLInputElement
-      const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
-      inputsHost.append(el('div', { class: 'eval-field-wrap' }, label, input))
-      return { field, input }
-    })
-    if (!rows.length) inputsHost.append(el('p', { class: 'eval-empty' }, 'Diese Decision braucht keine Eingaben.'))
-  }
-  decisionSel.addEventListener('change', renderInputs)
-  renderInputs()
+  // The form asks for the model's leaf inputs — the union of every decision's
+  // declared inputs, so a transitively-reached input (one only a downstream
+  // decision names) is still offered. Types/constraints come along for the ride.
+  const fields = leafInputs(model)
+  const rows: { field: InputField; input: HTMLInputElement }[] = fields.map((field) => {
+    const input = el('input', {
+      type: 'text',
+      class: 'eval-field',
+      placeholder: field.type || 'FEEL',
+      title: field.constraint ? 'erlaubte Werte: ' + field.constraint : '',
+    }) as HTMLInputElement
+    const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
+    inputsHost.append(el('div', { class: 'eval-field-wrap' }, label, input))
+    return { field, input }
+  })
+  if (!rows.length) inputsHost.append(el('p', { class: 'eval-empty' }, 'Dieses Modell braucht keine Eingaben.'))
 
   // mark flags a field by name with a message (or clears all when name is null).
   const mark = (name: string | null, message?: string): void => {
@@ -85,11 +72,12 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void
     result.textContent = 'wertet aus …'
     result.className = 'eval-result'
     try {
-      // strict: the engine checks types and allowed values, so a bad input is
-      // reported per field rather than producing a confusing result.
-      const res = await evaluate(model.modelId, decisionSel.value, input, true, true)
-      showResult(result, res.outputs)
-      if (res.trace) showTrace(result, res.trace)
+      // strict: validate inputs against the model's whole-graph schema; explain:
+      // get each decision's trace (which rule hit).
+      const res = await evaluateGraph(model.modelId, input, true, true)
+      showResults(result, decisions, res.values, res.errors)
+      showTraces(result, res.traces)
+      onResults?.(res.values)
     } catch (e) {
       result.className = 'eval-result eval-error'
       if (e instanceof InputValidationError) {
@@ -106,6 +94,31 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail): void
   runBtn.addEventListener('click', () => void run())
 }
 
+// leafInputs unions every decision's declared inputs into the model's leaf-input
+// list (deduped by name; type/constraint from the first that declares one;
+// required when any decision requires it). Falls back to the bare input names.
+function leafInputs(model: ModelDetail): InputField[] {
+  const schema = model.schema
+  if (schema) {
+    const byName = new Map<string, InputField>()
+    for (const fields of Object.values(schema)) {
+      // A decision with no direct inputs serialises as null (Go nil slice).
+      for (const f of fields ?? []) {
+        const ex = byName.get(f.name)
+        if (!ex) {
+          byName.set(f.name, { ...f })
+        } else {
+          if (!ex.type && f.type) ex.type = f.type
+          if (!ex.constraint && f.constraint) ex.constraint = f.constraint
+          ex.required = ex.required || f.required
+        }
+      }
+    }
+    if (byName.size) return [...byName.values()]
+  }
+  return (model.inputs ?? []).map((name) => ({ name, required: false }))
+}
+
 // coerce turns a raw form value into a JSON value: an empty box contributes
 // nothing (undefined); otherwise try JSON (numbers, booleans, null, lists,
 // objects) and fall back to the raw string for bare FEEL text like "2024-01-01".
@@ -119,32 +132,37 @@ function coerce(raw: string): unknown {
   }
 }
 
-// showResult renders the decision outputs as a small key/value table, or the raw
-// value when the output is scalar.
-function showResult(host: HTMLElement, outputs: Record<string, unknown>): void {
+// showResults renders one row per decision (in the model's declared order) with
+// its computed value — the whole graph's results — flagging any that errored.
+function showResults(host: HTMLElement, decisions: string[], values: Record<string, unknown>, errors?: Record<string, string>): void {
   host.textContent = ''
   host.className = 'eval-result'
-  const keys = Object.keys(outputs ?? {})
-  if (!keys.length) {
-    host.append(el('span', { class: 'eval-ok' }, 'Ergebnis: '), el('code', {}, 'null'))
-    return
-  }
+  host.append(el('span', { class: 'eval-ok' }, 'Ergebnisse (ganzer Graph)'))
   const table = el('table', { class: 'eval-out' })
-  for (const k of keys) {
-    table.append(el('tr', {}, el('th', {}, k), el('td', {}, el('code', {}, fmt(outputs[k])))))
+  for (const name of decisions) {
+    const errMsg = errors?.[name]
+    const cell = errMsg
+      ? el('td', { class: 'eval-cell-error' }, el('code', {}, 'Fehler'), document.createTextNode(' ' + errMsg))
+      : el('td', {}, el('code', {}, fmt(values[name])))
+    table.append(el('tr', {}, el('th', {}, name), cell))
   }
-  host.append(el('span', { class: 'eval-ok' }, 'Ergebnis'), table)
+  host.append(table)
 }
 
-// showTrace renders the evaluation trace below the outputs: one block per
-// decision table, with the tested input values and every rule — the matched
-// rule(s) highlighted, so the user sees which rule hit and why.
-function showTrace(host: HTMLElement, trace: Trace): void {
-  const tables = trace.tables ?? []
-  if (!tables.length) return
+// showTraces renders, per decision that produced a decision-table trace, the
+// tested input values and every rule — the matched rule(s) highlighted, so the
+// user sees which rule hit and why, for the whole graph at once.
+function showTraces(host: HTMLElement, traces?: Record<string, Trace>): void {
+  if (!traces) return
+  const names = Object.keys(traces).filter((n) => (traces[n].tables ?? []).length)
+  if (!names.length) return
   const wrap = el('div', { class: 'trace' })
   wrap.append(el('div', { class: 'trace-title' }, 'Begründung (welche Regel hat gehittet)'))
-  tables.forEach((tt, i) => wrap.append(traceTable(tt, tables.length > 1 ? i + 1 : 0)))
+  for (const name of names.sort()) {
+    wrap.append(el('div', { class: 'trace-decision' }, name))
+    const tables = traces[name].tables ?? []
+    tables.forEach((tt, i) => wrap.append(traceTable(tt, tables.length > 1 ? i + 1 : 0)))
+  }
   host.append(wrap)
 }
 

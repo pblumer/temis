@@ -148,6 +148,48 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/evaluate-graph:
+    post:
+      summary: Evaluate the whole model and return every decision's result
+      description: >-
+        Fills the model's leaf inputs once and evaluates every executable
+        decision, returning each one's value (and trace with explain) — the whole
+        decision requirements graph computed from a single set of inputs. With
+        strict, inputs are validated against the model's whole-graph schema, so a
+        transitively-reached input is accepted while an unknown one is reported.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateGraphRequest" }
+      responses:
+        "200":
+          description: Per-decision results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateGraphResponse" }
+        "400":
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown model
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Input does not satisfy the model's schema, or evaluation failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/evaluate:
     post:
       summary: Stateless compile-and-evaluate in one request
@@ -295,6 +337,41 @@ components:
           items: { $ref: "#/components/schemas/Diagnostic" }
         trace:
           $ref: "#/components/schemas/Trace"
+    EvaluateGraphRequest:
+      type: object
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+          description: The model's leaf inputs, filled once for the whole graph.
+        explain:
+          type: boolean
+          description: When true, each decision in the response carries its trace.
+        strict:
+          type: boolean
+          description: When true, validate input against the model's whole-graph schema; 422 INVALID_INPUT on violation.
+    EvaluateGraphResponse:
+      type: object
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+          description: Each decision's evaluated value, keyed by decision name.
+        traces:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/Trace" }
+          description: Each decision's trace (with explain), keyed by name.
+        errors:
+          type: object
+          additionalProperties: { type: string }
+          description: Message for each decision that failed to evaluate, keyed by name.
+        inputSchema:
+          type: array
+          items: { $ref: "#/components/schemas/InputField" }
+          description: The leaf inputs the whole graph consumes.
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/Diagnostic" }
     Trace:
       type: object
       description: >
