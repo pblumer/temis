@@ -45,6 +45,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 | WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
+| WP-80 | Modellierungs-Assistent: LLM-Chat im Modeler (`assist`, `POST /v1/chat`) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
 > sind inzwischen u. a. **WP-23–26** (Boxed Context/Invocation/Function, BKM, DRG-Verkettung,
@@ -237,6 +238,44 @@ zu machen. So weiß ein Agent *vor* dem Vertrauen ins Ergebnis, dass seine Einga
 > Damit sind alle drei Agent-First-Säulen aus ADR-0013 umgesetzt (WP-50/51/52). Weiter
 > geht die DMN-Abdeckung mit u. a. **WP-27** (restliche Hit Policies) und **WP-28**
 > (DRG-Verkettung).
+
+### Modellierungs-Assistent im Modeler (`POST /v1/chat`, opt-in)
+
+Während die MCP-/Agent-Schnittstelle temis von einem **externen** Agenten aufrufen lässt,
+dreht der eingebaute **Modellierungs-Assistent** die Richtung um (ADR-0024): temis ruft
+selbst einen LLM und lässt ihn beim **Bauen** von Decisions helfen — FEEL erklären,
+Decision-Tables vorschlagen und auf Wunsch direkt anlegen/ändern. Der Assistent ist ein
+Agent-First-Bürger: er **prüft** seine eigenen Vorschläge mit `evaluate` gegen die echte
+Engine, statt zu raten.
+
+Anbieter-agnostisch über ein schmales Provider-Interface (`package assist`, reine
+Standardbibliothek, kein SDK — konsistent mit ADR-0014): **Anthropic** (Messages API) oder
+**OpenAI** (Chat Completions). Der server-seitige Agent-Loop teilt den **Modell-Cache** mit
+Modeler, `/v1` und MCP (ein Adressraum), und über `load_model`/`save_decision_table`
+Erstelltes erscheint sofort im Modeler.
+
+Der Endpunkt ist **per Default aus** und wird über `temisd`-Flags aktiviert:
+
+```sh
+# Anthropic, Token server-seitig (Browser sieht ihn nie):
+go run ./cmd/temisd -llm-provider anthropic -llm-token "$ANTHROPIC_API_KEY"
+
+# OpenAI, mit Modell-Override:
+go run ./cmd/temisd -llm-provider openai -llm-token "$OPENAI_API_KEY" -llm-model gpt-4o
+# Browser: http://localhost:8080/ → Toolbar „✦ Assistent"
+```
+
+Flags (Env-Defaults in Klammern): `-llm-provider` (`$TEMIS_LLM_PROVIDER`), `-llm-token`
+(`$TEMIS_LLM_TOKEN`), `-llm-model` (`$TEMIS_LLM_MODEL`), `-llm-base-url`
+(`$TEMIS_LLM_BASE_URL`, z. B. ein Proxy oder OpenAI-kompatibler Endpunkt) und
+`-llm-allow-byok` (Default an). Mit **Bring-your-own-key** trägt ein Nutzer im Modeler einen
+eigenen Schlüssel ein, der pro Anfrage als `X-LLM-Token`-Header vorrangig genutzt und **nie**
+serverseitig gespeichert wird. `/v1/chat` wird vom selben optionalen `-token` bewacht wie die
+übrigen `/v1`-Endpunkte.
+
+> **Datenschutz:** Anders als die rein lokale Engine **sendet** der aktive Assistent
+> Modellkontext (Decisions, FEEL, Beispiel-Eingaben) an den gewählten Anbieter. Deshalb
+> opt-in und per Default aus (ADR-0024).
 
 ## Releases & Container
 

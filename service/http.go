@@ -62,6 +62,10 @@ type Server struct {
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
 	mcpServer *mcp.Server
+
+	// assist, when set via WithAssist, enables the modeling assistant at
+	// POST /v1/chat (ADR-0024). Nil leaves the endpoint dormant (503).
+	assist *AssistConfig
 }
 
 // Option configures a Server at construction time.
@@ -160,6 +164,9 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
 		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
 		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+		// Modeling assistant (ADR-0024): an LLM drives temis's tools to help build
+		// decisions. Dormant (503) until enabled with WithAssist.
+		{"POST", "/v1/chat", s.handleChat},
 	}
 }
 

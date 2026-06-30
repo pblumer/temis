@@ -591,3 +591,110 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .tm-field:focus { outline: none; border-color: var(--accent); }
 .tm-invalid { border-color: #e5484d; background: #fff4f4; }
 .tm-form-actions { display: flex; justify-content: flex-end; }
+
+/* Modeling assistant panel (ADR-0024): a chat docked on the right, slid out by
+   the toolbar's Assistent button. Closed by default (translated off-screen). */
+.assist-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  max-width: 92vw;
+  height: 100vh;
+  background: #fff;
+  border-left: 1px solid var(--line);
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  z-index: 40;
+}
+.assist-panel.is-open { transform: translateX(0); }
+.assist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.assist-title { font-weight: 600; font-size: 14px; }
+.assist-head-actions { display: flex; gap: 4px; }
+.assist-head .icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  color: #3b4150;
+}
+.assist-head .icon-btn:hover { background: #f1f4f9; }
+.assist-config {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+.assist-config label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.assist-config input, .assist-config select {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+  background: #fff;
+}
+.assist-config input:focus, .assist-config select:focus { outline: none; border-color: var(--accent); }
+.assist-hint { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 0; }
+.assist-log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.assist-empty { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
+.assist-msg {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.assist-user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.assist-assistant { align-self: flex-start; background: #f1f4f9; color: var(--fg); border-bottom-left-radius: 4px; }
+.assist-msg.assist-error { background: #fff4f4; color: #b42318; }
+.assist-steps { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 2px; }
+.assist-step {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #e7effd;
+  color: #1e40af;
+  cursor: default;
+}
+.assist-step-error { background: #fff4f4; color: #b42318; }
+.assist-form { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); align-items: flex-end; }
+.assist-form textarea {
+  flex: 1;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: none;
+  color: var(--fg);
+}
+.assist-form textarea:focus { outline: none; border-color: var(--accent); }
+.assist-form .tbtn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+}
+.assist-form .tbtn:disabled { opacity: 0.5; cursor: default; }

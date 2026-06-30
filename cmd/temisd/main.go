@@ -32,6 +32,16 @@ func main() {
 		"preload the bundled example DMN models so they appear in the modeler on start")
 	serveMCP := flag.Bool("mcp", true,
 		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples)")
+	llmProvider := flag.String("llm-provider", os.Getenv("TEMIS_LLM_PROVIDER"),
+		"enable the modeling assistant (POST /v1/chat) with this LLM provider: \"anthropic\" or \"openai\" (default $TEMIS_LLM_PROVIDER; empty = assistant off)")
+	llmToken := flag.String("llm-token", os.Getenv("TEMIS_LLM_TOKEN"),
+		"server-side API key for the LLM provider (default $TEMIS_LLM_TOKEN)")
+	llmModel := flag.String("llm-model", os.Getenv("TEMIS_LLM_MODEL"),
+		"override the provider's default model id (default $TEMIS_LLM_MODEL)")
+	llmBaseURL := flag.String("llm-base-url", os.Getenv("TEMIS_LLM_BASE_URL"),
+		"override the provider's API base URL, e.g. a proxy (default $TEMIS_LLM_BASE_URL)")
+	llmAllowBYOK := flag.Bool("llm-allow-byok", true,
+		"let a caller supply its own provider key via the X-LLM-Token header (used only for that request)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -55,6 +65,22 @@ func main() {
 	if *examples {
 		opts = append(opts, service.WithExamples())
 	}
+	// Modeling assistant (ADR-0024): opt-in. Enabled when a provider is named, or
+	// when a token/BYOK is configured without one (then defaults to anthropic).
+	assistOn := *llmProvider != "" || *llmToken != ""
+	if assistOn {
+		provider := *llmProvider
+		if provider == "" {
+			provider = "anthropic"
+		}
+		opts = append(opts, service.WithAssist(service.AssistConfig{
+			Provider:  provider,
+			Token:     *llmToken,
+			Model:     *llmModel,
+			BaseURL:   *llmBaseURL,
+			AllowBYOK: *llmAllowBYOK,
+		}))
+	}
 	srv := service.NewServer(engine, opts...)
 	if *serveMCP {
 		// One address space: the MCP endpoint shares the service's model cache, so
@@ -76,6 +102,13 @@ func main() {
 	}
 	if *serveMCP {
 		log.Printf("temisd: MCP endpoint at POST /mcp (shared model cache)")
+	}
+	if assistOn {
+		provider := *llmProvider
+		if provider == "" {
+			provider = "anthropic"
+		}
+		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, BYOK=%v)", provider, *llmAllowBYOK)
 	}
 	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)

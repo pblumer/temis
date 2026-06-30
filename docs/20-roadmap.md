@@ -113,6 +113,21 @@ veränderter Default, keine neue Pflichtabhängigkeit (ADR-0011/0014). Vertrag &
 
 ---
 
+## Etappe Modellierungs-Assistent — „ein LLM hilft beim Bauen von Decisions" (ADR-0024)
+
+**Ziel:** Ein eingebauter Chat-Assistent im Modeler unterstützt Anwender beim **Bauen**
+von Decisions — FEEL erklären, Decision-Tables vorschlagen und auf Wunsch direkt
+anlegen/ändern. Das dreht die Agent-First-Richtung um (ADR-0013): nicht ein externer
+Agent ruft temis, sondern temis ruft einen LLM und lässt ihn eine kleine, sichere
+temis-Werkzeugmenge fahren. Anbieter-agnostisch (Anthropic **oder** OpenAI) über ein
+Provider-Interface, reine Standardbibliothek (kein SDK, konsistent mit ADR-0014), **opt-in**.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-80 ✅ | Chat-Assistent / LLM-Modellierungshilfe | WP-32, WP-51, WP-52 | **done** — neues, anbieter-agnostisches Paket `assist/` (reine stdlib): `Provider`-Interface (ein nicht-streamender `Complete`-Zug mit Tools), `Agent` (Tool-Calling-Loop, durch `MaxSteps` beschränkt — Goldene Regel 7), `Executor`-Interface (wie `vcs.Reader` von der Aufrufseite implementiert), plus `assist/anthropic` (Messages API) und `assist/openai` (Chat Completions) als stdlib-Clients. Service-Adapter (`service/assist.go` + `assist_tools.go`): `assist.Executor` über den **geteilten Modell-Cache** mit sieben Werkzeugen (`list_models`, `describe_decision`, `get_decision_table`, `evaluate`, `load_model`, `create_decision_table`, `save_decision_table`) und Endpunkt **`POST /v1/chat`** — **per Default aus**, aktiv über `WithAssist`. Token **server-seitig** (`temisd -llm-provider/-llm-token/-llm-model/-llm-base-url`, Env-Defaults) **plus optionaler Browser-Key** (`X-LLM-Token`, `-llm-allow-byok`), nie persistiert; vom selben `-token` bewacht wie die übrigen `/v1`-Routen. Der Assistent ist Agent-First-Bürger: er **verifiziert** eigene Vorschläge mit `evaluate` gegen die echte Engine, statt zu raten. Frontend: angedocktes Chat-Panel im Modeler (`web/src/assist.ts`) mit Tool-Schritt-Anzeige, BYOK-Einstellungen und automatischem Reload, wenn der Assistent ein Modell ändert. Tabellengetriebene Tests über `assist`-Loop (Fake-Provider/-Executor), beide Provider-Clients (httptest) und Service (`/v1/chat` mit Fake-Anthropic: Loop, BYOK-Vorrang, Provider-Fehler→502, disabled→503; Werkzeug-Oberfläche direkt inkl. Build→verify-Roundtrip). OpenAPI-Sync (`/v1/chat` + Schemas), `make verify` grün. (Streaming/weitere Anbieter → Revisit gemäß ADR-0024.) |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.
