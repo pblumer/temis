@@ -54,6 +54,19 @@ func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalO
 		perOpts = append(perOpts, WithTrace())
 	}
 
+	// A decision is evaluated rooted at itself, so its trace captures every table
+	// in its cone — including its dependencies'. Each decision's OWN logic is its
+	// last-evaluated table (the evaluator runs required decisions first), and only
+	// when the decision is itself a decision table; a literal decision has none.
+	// Keep just that, so a decision's reasoning is its own and a literal shows no
+	// (foreign) table.
+	ownsTable := map[string]bool{}
+	for _, dec := range d.model.Decisions {
+		if dec.Name != "" {
+			ownsTable[dec.Name] = dec.DecisionTable != nil
+		}
+	}
+
 	res := GraphResult{Values: map[string]any{}}
 	for _, cd := range d.order {
 		if cd.expr == nil || cd.name == "" {
@@ -68,11 +81,11 @@ func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalO
 			continue
 		}
 		res.Values[cd.name] = r.Outputs[cd.name]
-		if cfg.trace && r.Trace != nil {
+		if cfg.trace && ownsTable[cd.name] && r.Trace != nil && len(r.Trace.Tables) > 0 {
 			if res.Traces == nil {
 				res.Traces = map[string]*Trace{}
 			}
-			res.Traces[cd.name] = r.Trace
+			res.Traces[cd.name] = &Trace{Tables: []TableTrace{r.Trace.Tables[len(r.Trace.Tables)-1]}}
 		}
 		res.Diags = append(res.Diags, r.Diags...)
 	}
