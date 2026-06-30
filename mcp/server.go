@@ -48,6 +48,12 @@ type Server struct {
 	// (HTTPHandler). It does not apply to the stdio transport, which is a trusted
 	// local subprocess.
 	token string
+
+	// gitBaseURL overrides the GitHub REST API root for the git_* tools (default
+	// https://api.github.com); set via WithGitHubBaseURL for GitHub Enterprise or
+	// tests. The git-provider token is supplied per tool call (gitToken arg),
+	// never stored on the server (WP-73, auth model A).
+	gitBaseURL string
 }
 
 // ModelInfo summarises a cached model for list_models: its content-addressed id
@@ -243,6 +249,12 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		return s.toolDescribeDecision(p.Arguments)
 	case "evaluate":
 		return s.toolEvaluate(ctx, p.Arguments)
+	case "git_list_models":
+		return s.toolGitListModels(ctx, p.Arguments)
+	case "git_load_model":
+		return s.toolGitLoadModel(ctx, p.Arguments)
+	case "git_propose":
+		return s.toolGitPropose(ctx, p.Arguments)
 	default:
 		return toolError("unknown tool: " + p.Name), nil
 	}

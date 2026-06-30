@@ -44,6 +44,8 @@ func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
 
 func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool)
 
+func (d *Definitions) BoxedContext(idOrName string) (ContextView, bool)
+
 func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
 
 func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
@@ -92,6 +94,8 @@ func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
 
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
 
+func CreateBoxedContext(src []byte, decisionID string) ([]byte, error)
+
 func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
 
 func New(opts ...Option) *Engine
@@ -99,6 +103,8 @@ func New(opts ...Option) *Engine
 func RemoveItemDefinition(src []byte, name string) ([]byte, error)
 
 func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, error)
+
+func SetBoxedContext(src []byte, decisionID string, edit ContextEdit) ([]byte, error)
 
 func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
@@ -136,6 +142,27 @@ type CompiledDecision struct {
 
 type CompiledService struct {
 	// contains filtered or unexported fields
+}
+
+type ContextEdit struct {
+	Entries		[]ContextEntryView	`json:"entries"`
+	Result		string			`json:"result,omitempty"`
+	ResultTypeRef	string			`json:"resultTypeRef,omitempty"`
+}
+
+type ContextEntryView struct {
+	Name	string	`json:"name"`
+	Text	string	`json:"text"`
+	TypeRef	string	`json:"typeRef,omitempty"`
+}
+
+type ContextView struct {
+	DecisionID	string			`json:"decisionId"`
+	Name		string			`json:"name"`
+	Entries		[]ContextEntryView	`json:"entries"`
+	Result		string			`json:"result,omitempty"`
+	ResultTypeRef	string			`json:"resultTypeRef,omitempty"`
+	Simple		bool			`json:"simple"`
 }
 
 type Definitions struct {
@@ -200,6 +227,8 @@ type GraphNode struct {
 	HasTable	bool	`json:"hasTable,omitempty"`
 
 	HasLiteral	bool	`json:"hasLiteral,omitempty"`
+
+	HasContext	bool	`json:"hasContext,omitempty"`
 
 	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`

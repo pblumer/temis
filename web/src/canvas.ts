@@ -81,9 +81,19 @@ export type ModelerHandle = {
   // onCreateLiteral fires with a decision's id when the user asks (via the context
   // pad) to give an undecided decision a literal expression.
   onCreateLiteral: (cb: (decisionId: string) => void) => void
+  // onOpenContext fires with a decision's id when the user opens a decision whose
+  // logic is a boxed context (double-click or the context pad), to edit it.
+  onOpenContext: (cb: (decisionId: string) => void) => void
+  // onCreateContext fires with a decision's id when the user asks (via the context
+  // pad) to give an undecided decision a boxed context.
+  onCreateContext: (cb: (decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
+  // onBoxed fires with a decision's id when the user tries to open a decision
+  // whose logic is a boxed expression the modeler cannot edit yet (WP-66), so the
+  // app shell can give an honest hint instead of a silent no-op.
+  onBoxed: (cb: (decisionId: string) => void) => void
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
   // showDiagnostics marks each decision node that has compile/eval problems with a
@@ -178,7 +188,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasLogic: n.hasLogic } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -200,28 +210,45 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // don't collide.
   let openTableCb = (_decisionId: string): void => {}
   let openLiteralCb = (_decisionId: string): void => {}
-  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean } }) => {
+  let openContextCb = (_decisionId: string): void => {}
+  let openBoxedCb = (_decisionId: string): void => {}
+  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean } }) => {
     const el = e.element
     if (!el || el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
+    else if (el.hasContext) openContextCb(el.id)
+    // Any other boxed-expression decision has none of these; double-click
+    // inline-renames it (see dmn-label-editing). The "not editable" hint comes
+    // from the context pad's boxed-info icon instead, so it doesn't clash.
   })
-  // The context pad's open icons fire these so the table/expression opens with a
-  // single click (the same handlers as the double-click above).
+  // The context pad's boxed-info icon fires this for a boxed-expression decision.
+  eventBus.on('dmn.boxedInfo', (e: { element?: Shape }) => {
+    if (e.element) openBoxedCb(e.element.id)
+  })
+  // The context pad's open icons fire these so the logic opens with a single
+  // click (the same handlers as the double-click above).
   eventBus.on('dmn.openTable', (e: { element?: Shape }) => {
     if (e.element) openTableCb(e.element.id)
   })
   eventBus.on('dmn.openLiteral', (e: { element?: Shape }) => {
     if (e.element) openLiteralCb(e.element.id)
   })
+  eventBus.on('dmn.openContext', (e: { element?: Shape }) => {
+    if (e.element) openContextCb(e.element.id)
+  })
 
   let createTableCb = (_decisionId: string): void => {}
   let createLiteralCb = (_decisionId: string): void => {}
+  let createContextCb = (_decisionId: string): void => {}
   eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
     if (e.element) createTableCb(e.element.id)
   })
   eventBus.on('dmn.createLiteral', (e: { element?: Shape }) => {
     if (e.element) createLiteralCb(e.element.id)
+  })
+  eventBus.on('dmn.createContext', (e: { element?: Shape }) => {
+    if (e.element) createContextCb(e.element.id)
   })
   let openBKMCb = (_bkmId: string): void => {}
   eventBus.on('dmn.openBKM', (e: { element?: Shape }) => {
@@ -281,8 +308,17 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     onCreateLiteral: (cb) => {
       createLiteralCb = cb
     },
+    onOpenContext: (cb) => {
+      openContextCb = cb
+    },
+    onCreateContext: (cb) => {
+      createContextCb = cb
+    },
     onOpenBKM: (cb) => {
       openBKMCb = cb
+    },
+    onBoxed: (cb) => {
+      openBoxedCb = cb
     },
     zoom: (dir) => {
       if (dir === 'fit') fitViewport(canvas)

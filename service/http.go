@@ -67,6 +67,12 @@ type Server struct {
 	// a tamper-evident event in a clio instance (ADR-0023). Nil disables audit
 	// logging, leaving behaviour byte-identical to a server without it.
 	sink *ClioSink
+
+	// gitBaseURL overrides the GitHub REST API root for the /v1/git endpoints
+	// (default https://api.github.com); set via WithGitHubBaseURL for GitHub
+	// Enterprise or tests. The git-provider token is supplied per request
+	// (X-Git-Token), never stored on the server (WP-72, auth model A).
+	gitBaseURL string
 }
 
 // Option configures a Server at construction time.
@@ -166,6 +172,9 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
 		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
 		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/decisions/{decision}/context", s.handleGetContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/context", s.handleSaveContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", s.handleCreateContext},
 		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
 		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
 		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
@@ -187,6 +196,12 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.dataRoutes() {
 		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
 	}
+	// Git-backed models: browse, load, save and propose against a repository
+	// (WP-72). Registered outside the dataRoutes() table (and thus the
+	// OpenAPI-sync test) for now — the git endpoints are not in openapi.yaml yet.
+	// The git-provider token is per request (X-Git-Token); these endpoints share
+	// the same optional API token gate as the others.
+	s.registerGitRoutes(mux)
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)

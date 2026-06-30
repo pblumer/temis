@@ -1,11 +1,12 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, createBoxedContext, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import type { GraphEvalResult } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
+import { openBoxedContextOverlay } from './boxedcontext'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { FEEL_TYPES } from './feeltypes'
@@ -172,6 +173,29 @@ async function boot(root: HTMLElement): Promise<void> {
   const openLiteral = (modelId: string, decisionId: string, fresh = false): void => {
     const { names, title } = namesFor(decisionId)
     void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
+  }
+
+  // openContext opens a decision's boxed-context editor — editable in Design,
+  // read-only in Operate. names are the in-scope variables the entries may use.
+  const openContext = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openBoxedContextOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { typeOptions, readOnly: mode === 'operate' })
+  }
+
+  // createContext gives a logic-less decision a fresh boxed context: persist any
+  // pending structural edits first (so the decision exists server-side), create
+  // the context, switch to the saved revision and open it for editing.
+  const createContext = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Boxed Context an …'
+    try {
+      const created = await createBoxedContext(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Boxed Context angelegt ✓'
+      openContext(created.modelId, decisionId)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
   }
 
   // Typen: open the custom-type manager; each save/delete switches to the saved
@@ -558,7 +582,12 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateTable((decisionId) => void createTable(decisionId))
       handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
+      handle.onOpenContext((decisionId) => openContext(modelId, decisionId))
+      handle.onCreateContext((decisionId) => void createContext(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
+      handle.onBoxed(() => {
+        status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
+      })
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''

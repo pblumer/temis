@@ -547,6 +547,51 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .lit-text:focus { outline: none; border-color: var(--accent); background: #fff; }
 .lit-invalid { border-color: #e5484d; background: #fff4f4; }
 
+/* Boxed-context editor (WP-66): named literal entries + an optional result. */
+.ctx-modal { width: min(760px, 95vw); }
+.ctx-body { padding: 14px 18px; }
+.ctx-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 130px minmax(180px, 2fr) 28px;
+  gap: 8px 10px;
+  align-items: center;
+}
+.ctx-head { font-size: 12px; font-weight: 600; color: var(--muted); }
+.ctx-name, .ctx-expr {
+  width: 100%;
+  box-sizing: border-box;
+  font: 13.5px/1.4 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fcfdff;
+  color: var(--fg);
+}
+.ctx-name:focus, .ctx-expr:focus { outline: none; border-color: var(--accent); background: #fff; }
+.ctx-type { min-width: 0; width: 100%; }
+.ctx-invalid { border-color: #e5484d; background: #fff4f4; }
+.ctx-del {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+}
+.ctx-del:hover { color: #e5484d; background: #fff4f4; }
+.ctx-result {
+  display: grid;
+  grid-template-columns: auto 130px 1fr;
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.ctx-result-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+
 /* BKM function editor (parameters + body). */
 .bkm-params { margin-bottom: 14px; }
 .bkm-params-title, .bkm-body-title { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }

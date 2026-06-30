@@ -27,10 +27,11 @@ type ContextExpr struct {
 }
 
 // ContextEntry is one entry of a boxed context. Name is empty for the result
-// cell.
+// cell. TypeRef is the bound variable's declared FEEL type, if any.
 type ContextEntry struct {
-	Name  string `json:",omitempty"`
-	Value Expression
+	Name    string `json:",omitempty"`
+	TypeRef string `json:",omitempty"`
+	Value   Expression
 }
 
 // Invocation calls a function — typically a business knowledge model named by
