@@ -77,6 +77,35 @@ func TestEvaluateGraphTracePerDecision(t *testing.T) {
 	}
 }
 
+// The chain fixture is Age (input) → Category (decision TABLE) → Greeting
+// (decision LITERAL). Each decision's trace must show only its OWN logic: the
+// literal Greeting must NOT inherit Category's table (the cone-trace bug), and
+// Category's trace must be its own single table.
+func TestEvaluateGraphTraceIsPerDecisionOwnLogic(t *testing.T) {
+	defs := compileModel(t, "chain_15.dmn")
+
+	res, err := defs.EvaluateGraph(context.Background(), dmn.Input{"Age": 20}, dmn.WithTrace())
+	if err != nil {
+		t.Fatalf("EvaluateGraph: %v", err)
+	}
+	if res.Values["Category"] != "adult" || res.Values["Greeting"] != "Willkommen" {
+		t.Fatalf("values = %+v, want Category=adult, Greeting=Willkommen", res.Values)
+	}
+	// Category is a decision table: exactly one (its own) table, and it tests Age.
+	cat := res.Traces["Category"]
+	if cat == nil || len(cat.Tables) != 1 {
+		t.Fatalf("Category trace = %+v, want exactly one table", cat)
+	}
+	if len(cat.Tables[0].Inputs) == 0 || cat.Tables[0].Inputs[0].Expression != "Age" {
+		t.Errorf("Category table input = %+v, want it to test Age", cat.Tables[0].Inputs)
+	}
+	// Greeting is a literal expression: it must have NO table trace (it must not
+	// show Category's table).
+	if g := res.Traces["Greeting"]; g != nil && len(g.Tables) > 0 {
+		t.Errorf("Greeting (literal) should have no table trace, got %+v", g.Tables)
+	}
+}
+
 func TestModelInputSchemaUnionsLeafInputs(t *testing.T) {
 	defs := compileModel(t, "routing_13.dmn")
 
