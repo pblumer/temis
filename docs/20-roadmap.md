@@ -89,10 +89,27 @@ Regel 6): GitHub-Adapter über reine Standardbibliothek.
 | WP | Titel | Abhängt von | Akzeptanzkriterium |
 |---|---|---|---|
 | WP-70 ✅ | Git-Modellquelle: Lesen & Browsen | WP-10 | **done** — `package vcs`: `Reader`-Interface (`ListBranches`/`ListCommits`/`ListFiles`/`ReadFile`, je an explizitem Ref = Branch/Tag/Commit) + Sentinels `ErrNotFound`/`ErrUnauthorized`; `Models` bindet `Reader`+`dmn.Engine` (`List` filtert auf `.dmn`, `Load` liest+kompiliert). Erster Provider `vcs/github.Client` über GitHub-REST mit **reiner Standardbibliothek** (`net/http`, optionaler Bearer-Token, Link-Header-Pagination, raw-Media-Type, GHE via `WithBaseURL`). Tests: In-Memory-Fake-`Reader` + `httptest`-GitHub-Fake inkl. **E2E** (`dish_15.dmn` aus (Fake-)GitHub@ref → Compile → Evaluate → `Roastbeef`); Coverage beider Pakete ≥ 90 %. (Schreiben → WP-71; Wrapper → WP-72/73/74.) |
-| WP-71 | Git-Modellquelle: Schreiben (Commit/Branch/PR) | WP-70 | `vcs.Writer`: `Commit` (Datei auf Branch schreiben), `CreateBranch`, `OpenPullRequest`; GitHub-Adapter über Git-Data/PR-API. 3-Wege-/XML-Merge bleibt dem Provider (GitHub-PR-Merge) überlassen. Optimistic-Concurrency über Blob-/Branch-SHA. Tests gegen `httptest`-Fake. |
+| WP-71 ✅ | Git-Modellquelle: Schreiben (Commit/Branch/PR) | WP-70 | **done** — `vcs.Writer`-Interface (`CreateBranch`, `Commit`, `OpenPullRequest`) + Sentinel `ErrConflict`; GitHub-Adapter über Git-Data/Contents/PR-API mit **reiner Standardbibliothek** (`vcs/github.Client` implementiert jetzt `Reader`+`Writer`). **Optimistic-Concurrency** über Blob-SHA (`CommitRequest.PrevSHA`; leer = neu anlegen): stale/fehlende SHA & „ref already exists" → `ErrConflict` (409 + konflikt-typische 422 zentral gemappt). High-Level über `Models` (`NewModelsWithWriter`): `Save` (kompiliert **vor** dem Commit → nie ein kaputtes Modell committen), `Propose` (kompletter Fluss: Branch ab Base → Commit → PR; Base-SHA automatisch aufgelöst, neue Datei = anlegen). Merge bleibt dem Provider (GitHub-PR) überlassen. Tests: `httptest`-GitHub-Fake (Branch/Commit-create+update/Conflict-Mapping/PR) + Fake-`Writer` für `Save`/`Propose` (Reihenfolge, Malformed-Refusal, read-only); Coverage beider Pakete ≥ 90 %; `make verify` grün. (Wrapper → WP-72/73/74.) |
 | WP-72 | HTTP-Endpunkte für Git-Modelle (`temisd`) | WP-70 | Dünne `/v1`-Endpunkte über `vcs`: Branches/Commits/DMN-Dateien eines Repos@Ref auflisten, laden, auswerten (später committen). Auth-/Token-Herkunft je Repo entscheiden. RFC-7807-Fehler, `httptest`-Suite. |
 | WP-73 | MCP-Tools für Git-Modelle (`temis-mcp`) | WP-70 | Agent-First: Tools `list_repo_models`/`load_repo_model` (Repo@Ref durchsuchen, DMN laden/auswerten), konsistent zur bestehenden Tool-Oberfläche. |
 | WP-74 | Git-Browser im Modeler (`/`) | WP-72 | Optional: Branch/Datei im eigenen DMN-Modeler (ADR-0016) wählen → laden → editieren → (WP-71) committen. |
+
+---
+
+## Etappe Entscheidungs-Logbuch — „revisionssicher protokollieren & nachrechnen" (ADR-0023)
+
+**Ziel:** Jede Entscheidung wird als manipulationssicheres, hash-verkettetes CloudEvent in
+einer **[clio](https://github.com/pblumer/clio)**-Instanz protokolliert — inkl. Eingabe,
+Ausgabe, Spur und content-addressed `modelId` — und lässt sich dank Determinismus später
+**nachrechnen** (Re-Audit). Kopplung nur über clios HTTP-Vertrag; kein Go-Import, kein
+veränderter Default, keine neue Pflichtabhängigkeit (ADR-0011/0014). Vertrag & Betrieb:
+`docs/80-clio-decision-log.md`.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-54 ✅ | Opt-in clio-Sink in `temisd` | WP-32, WP-51 | **done** — `service.ClioSink` (`service/cliosink.go`) + `WithClioSink`-Option; `temisd`-Flags/Env `-clio-url`/`-clio-token`/`-clio-source`/`-clio-subject-prefix`/`-clio-subject-key`/`-clio-strict` (`$TEMIS_CLIO_*`). Nach jeder Einzel-Decision-Auswertung (`POST /v1/evaluate`, `/v1/models/{id}/evaluate`) POSTet der Sink ein `com.temis.decision.evaluated.v1`-CloudEvent an clios `write-events` — **reine stdlib** (`net/http`, kein neuer Dep, kein Go-Bump). Default aus = **byte-identisch** (Sink nil). **Idempotenz** per clio-Precondition `isQueryResultEmpty` über (Subject + `inputHash` aus modelId+decision+input). **Fehlerpolitik:** best-effort (Default: Log, Auswertung antwortet 200) bzw. `-clio-strict` fail-closed (Audit-Fehler → `502 AUDIT_WRITE_FAILED`). Kopplung nur über clios HTTP-Vertrag, kein Go-Import (ADR-0011/0023); Engine-Kern unberührt, kein Hot-Path-Eingriff (WP-42). Tests (`service/cliosink_test.go`) gegen einen `httptest`-clio-Stub: Event-Vertrag (source/subject/type/data), Subject aus Eingabefeld, best-effort überlebt clio-Ausfall, fail-closed → 502, **409 = idempotenter Erfolg**, Hash-Stabilität; `make verify` grün. (Whole-Graph-Eval-Audit + `docs/40`-Contract → Folge-WP.) |
+| WP-55 | Re-Audit-/Replay-Tool | WP-54 | **geplant** — eigenständiger Konsument liest Decision-Events aus clio (`run-query`/`observe`), wertet `input`@`modelId` erneut über die `dmn`-API aus und vergleicht mit `outputs`. Liefert Compliance-Report (reproduziert ✓ / Abweichung ✗). Read-only, kein `internal/`-Zugriff. AK: manipuliertes/abweichendes Event wird als Abweichung erkannt, intakte Historie als 100 % reproduziert. |
+| WP-56 | Agent-Muster „delegieren → protokollieren" (Doku) | WP-50, ADR-0013 | **geplant** — `docs/60-ai-agent-guide.md` + `docs/80` dokumentieren das Muster Agent → `temis.evaluate` → `clio.write-events` (kein temis-Code nötig). AK: lauffähiges, nachvollziehbares Beispiel beschrieben. |
 
 ---
 

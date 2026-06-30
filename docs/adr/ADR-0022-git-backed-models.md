@@ -69,7 +69,9 @@ großen Baukasten aufzunehmen, solange der schmale Scope ihn nicht rechtfertigt.
 - **Library (Kern, library-first):** `package vcs` mit `Reader`-Interface (`ListBranches`,
   `ListCommits`, `ListFiles`, `ReadFile`) und `Models` (bindet `Reader` + `dmn.Engine`:
   DMN aus einem Ref laden → kompilieren). `vcs/github.Client` als erster Provider. Schreiben
-  (`Writer`: `Commit`, `CreateBranch`, `OpenPullRequest`) folgt in WP-71.
+  über das `Writer`-Interface (`CreateBranch`, `Commit`, `OpenPullRequest`) + High-Level
+  `Models.Save`/`Models.Propose` ist mit **WP-71** umgesetzt; Optimistic-Concurrency über
+  Blob-SHA (`ErrConflict`).
 - **Wrapper (Folge-WPs, dünn über `vcs`):** `temisd`-Endpunkte (Repos/Branches/Dateien
   lesen, später committen), MCP-Tools (Repo durchsuchen, Modell aus Branch laden/auswerten),
   optional Git-Browser in `/ui`. Diese hängen **nur** von `vcs` und `dmn` ab — kein

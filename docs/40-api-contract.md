@@ -238,8 +238,10 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
 |---|---|---|
 | `POST` | `/v1/models` | DMN-XML hochladen → kompilieren, gibt `modelId` + Diagnostics |
 | `GET` | `/v1/models` | Liste aller gecachten Modelle (`modelId`, Decisions, Inputs) — abschaltbar |
-| `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) |
+| `GET` | `/v1/models/{id}` | Index (Decisions/Services/Inputs) + `schema` |
+| `GET` | `/v1/models/{id}/xml` | Rohes DMN-XML wie hochgeladen (Editor-Reopen) |
 | `POST` | `/v1/models/{id}/evaluate` | `{ "decision", "input", "explain"?, "strict"? }` → `Result` (+ `trace` bei `explain`; `422 INVALID_INPUT` + `problems` bei `strict`) |
+| `POST` | `/v1/models/{id}/evaluate-graph` | Ganzes Modell: Leaf-Inputs einmal füllen → Wert (und `trace`) jeder Decision + `inputSchema` |
 | `POST` | `/v1/evaluate` | Stateless: XML + Input in einem Request (kein Cache); `explain`/`strict` analog |
 | `GET` | `/docs` | Interaktive Swagger-UI-Testseite (lädt `/openapi.yaml`) |
 | `GET` | `/openapi.yaml` | Eingebettetes OpenAPI-3-Dokument |
@@ -257,6 +259,39 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   `401` mit `code: UNAUTHORIZED` (`WWW-Authenticate: Bearer`). Ohne Token ist die
   API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
   OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
+- **Optionales Audit-Logbuch (clio, ADR-0023, WP-54):** Mit `temisd -clio-url …`
+  protokolliert der Server jede Einzel-Decision-Auswertung (`/v1/evaluate`,
+  `/v1/models/{id}/evaluate`) als `com.temis.decision.evaluated.v1`-CloudEvent in einer
+  clio-Instanz (`service.WithClioSink`). **Default aus** ⇒ Antworten byte-identisch. Im
+  best-effort-Default verändert der Sink die Antwort nie; mit `-clio-strict` (fail-closed)
+  kann eine fehlgeschlagene Audit-Schreibung den Request mit `502` und
+  `code: AUDIT_WRITE_FAILED` beenden. Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+
+### 2.1 Modeler-Endpunkte (ADR-0016)
+
+Diese `/v1`-Endpunkte bedienen den **eingebauten DMN-Modeler** (ausgeliefert unter `/`):
+Modellstruktur und Decision-Logik lesen und editieren. Sie liegen auf **derselben
+token-geschützten `/v1`-Oberfläche** wie die Kern-API und gehören damit zum Vertrag.
+Jeder **mutierende** Aufruf rekompiliert das gepatchte DMN-XML und antwortet `201` mit der
+gespeicherten Modell-Antwort (`ModelResponse`) unter ihrer neuen content-addressierten
+`modelId` — der Client wechselt damit auf die persistierte Revision. Vollständige
+Schemas in `service/openapi.yaml`.
+
+| Methode | Pfad | Zweck |
+|---|---|---|
+| `GET` | `/v1/models/{id}/graph` | Decision Requirements Graph (Knoten + Kanten) zum Zeichnen |
+| `POST` | `/v1/models/{id}/graph` | Graph abgleichen (Knoten/Kanten hinzufügen/entfernen/verschieben) → `201` |
+| `GET` | `/v1/models/{id}/types` | Benannte Item Definitions des Modells |
+| `POST` | `/v1/models/{id}/types` | Einfache Item Definition anlegen/ändern → `201` |
+| `DELETE` | `/v1/models/{id}/types/{name}` | Item Definition entfernen → `201` |
+| `GET` | `/v1/models/{id}/decisions/{decision}/table` | Decision-Table-Ansicht (Hit Policy, Spalten, Regeln) |
+| `POST` | `/v1/models/{id}/decisions/{decision}/table` | Regeln einer Decision Table neu schreiben → `201` |
+| `POST` | `/v1/models/{id}/decisions/{decision}/create-table` | Unentschiedener Decision eine frische Tabelle geben → `201` |
+| `GET` | `/v1/models/{id}/decisions/{decision}/literal` | Literal-Expression-Ansicht einer Decision |
+| `POST` | `/v1/models/{id}/decisions/{decision}/literal` | Literal-Expression-Logik setzen → `201` |
+| `GET` | `/v1/models/{id}/bkm/{bkm}` | BKM-Ansicht (Parameter + Body) |
+| `POST` | `/v1/models/{id}/bkm/{bkm}` | BKM-Funktion setzen → `201` |
+| `POST` | `/v1/models/{id}/save` | Knoten-Edits (Position/Name/Typ) ins XML patchen → `201` |
 
 ## 3. gRPC-Service (`proto/dmn/v1/engine.proto`, WP-33)
 

@@ -37,9 +37,32 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Default an) auf **demselben Modell-Cache** wie Modeler und `/v1`-API — vorgeladene Beispiele und
   Modeler-Modelle sind über MCP sichtbar und umgekehrt, eine `modelId` über alle Oberflächen; das
   eigenständige `temis-mcp` (stdio/HTTP) bleibt unverändert.
+- **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
+  Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
+  in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/
+  `-clio-source`/`-clio-subject-prefix`/`-clio-subject-key`/`-clio-strict` (`$TEMIS_CLIO_*`), Default
+  **aus** (byte-identisch). Idempotent per clio-Precondition (`inputHash`); `-clio-strict` macht den
+  Sink fail-closed (`502 AUDIT_WRITE_FAILED`), sonst best-effort. Reine stdlib, kein Go-Import von
+  clio (Kopplung nur über dessen HTTP-API, ADR-0011/0014).
 - **API-Stabilisierung (WP-43):** `package dmn` als v1 zugesagt; SemVer-/Deprecation-Policy;
   Golden-Surface-Test gegen unbeabsichtigte Brüche.
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte
   Release-Pipeline, Container-Image für `temisd`, dieses Changelog.
+
+### Docs
+
+- **OpenAPI & API-Vertrag mit dem Modeler synchronisiert:** Die 13 Modeler-Endpunkte
+  (ADR-0016 — Graph, Item Definitions, Decision-Tables, Literal-Expressions, BKM, Save)
+  sowie `GET /v1/models/{id}/xml` und `POST /v1/models/{id}/evaluate-graph` sind jetzt in
+  `service/openapi.yaml` (Pfade + Schemas) und `docs/40-api-contract.md` §2.1 dokumentiert;
+  README entsprechend ergänzt. Ein neuer Test (`TestOpenAPICoversDataRoutes`) gleicht die
+  registrierten `/v1`-Routen gegen die OpenAPI-Pfade ab, sodass die Spec nicht mehr stillschweigend
+  von der Implementierung abdriften kann.
+- **Entscheidungs-Logbuch via clio (ADR-0023, WP-54–56):** ADR-0023 und
+  `docs/80-clio-decision-log.md` spezifizieren ein revisionssicheres Entscheidungs-Logbuch über das
+  Schwesterprojekt [clio](https://github.com/pblumer/clio) — ein versionierter
+  `com.temis.decision.evaluated.v1`-CloudEvent-Vertrag (Eingabe/Ausgabe/Spur/content-addressed
+  `modelId`), der opt-in-Sink in `temisd` (umgesetzt, siehe oben) und ein noch offenes
+  Re-Audit-/Replay-Werkzeug (WP-55).
 
 [Unreleased]: https://github.com/pblumer/temis/commits/main

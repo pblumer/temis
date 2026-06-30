@@ -43,7 +43,9 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-51 | Agent-First: Entscheidungsspur (`Result.Trace`, `explain`) | ✅ |
 | WP-52 | Agent-First: typisiertes Eingabe-Schema & strikte Validierung | ✅ |
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
+| WP-54 | Entscheidungs-Logbuch: opt-in clio-Audit-Sink in `temisd` (ADR-0023) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
+| WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
 
 > **MVP erreicht (WP-01–11); Beta abgeschlossen.** Über die oben gelisteten Pakete hinaus
 > sind inzwischen u. a. **WP-23–26** (Boxed Context/Invocation/Function, BKM, DRG-Verkettung,
@@ -111,10 +113,13 @@ curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "
 # → {"outputs":{"Dish":"Roastbeef"}, ...}
 ```
 
-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
-`POST /v1/models/{id}/evaluate`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
-Vollständig in `service/openapi.yaml` und `docs/40-api-contract.md` §2. Fehler als
-RFC-7807 `application/problem+json`.
+Kern-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
+`GET /v1/models/{id}/xml`, `POST /v1/models/{id}/evaluate`,
+`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
+Dazu die Modeler-Endpunkte (ADR-0016), die den eingebauten DMN-Modeler bedienen
+(Graph, Typen, Decision-Tables, Literal-Expressions, BKM, Save). Vollständig — Pfade
+und Schemas — in `service/openapi.yaml` und `docs/40-api-contract.md` §2; ein Test
+hält Routen und OpenAPI in synch. Fehler als RFC-7807 `application/problem+json`.
 
 **Gecachte Modelle auflisten:** `GET /v1/models` liefert alle aktuell im Cache
 liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die
@@ -153,6 +158,20 @@ go run ./cmd/temisd -addr :8080 -token gehenix
 curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
+```
+
+**Revisionssicheres Entscheidungs-Logbuch (clio, opt-in):** Mit `-clio-url`
+protokolliert `temisd` jede Einzel-Decision-Auswertung als manipulationssicheres
+CloudEvent im Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (append-only,
+hash-verkettet) — Eingabe, Ausgabe, optionale Spur und content-addressed `modelId`. Default
+**aus** (byte-identisch); die Kopplung läuft nur über clios HTTP-API, ohne Go-Import
+(ADR-0023, ADR-0011). Idempotent per clio-Precondition; `-clio-strict` macht den Sink
+fail-closed (`502`), sonst best-effort. Voller Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+
+```sh
+go run ./cmd/temisd -addr :8080 \
+  -clio-url http://127.0.0.1:3000 -clio-token kid_ci01.geheim -clio-subject-key "Order ID"
+# entsprechend per Env: TEMIS_CLIO_URL / TEMIS_CLIO_TOKEN / TEMIS_CLIO_SOURCE
 ```
 
 **gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als
@@ -303,6 +322,7 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/50-testing-strategy.md` | Test-Pyramide, Fuzzing, TCK, Benchmarks |
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
 | `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
+| `docs/80-clio-decision-log.md` | Revisionssicheres Entscheidungs-Logbuch via clio (ADR-0023) |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken

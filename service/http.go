@@ -62,6 +62,11 @@ type Server struct {
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
 	mcpServer *mcp.Server
+
+	// sink, when set via WithClioSink, records each single-decision evaluation as
+	// a tamper-evident event in a clio instance (ADR-0023). Nil disables audit
+	// logging, leaving behaviour byte-identical to a server without it.
+	sink *ClioSink
 }
 
 // Option configures a Server at construction time.
@@ -80,6 +85,14 @@ func WithToken(token string) Option {
 // endpoint then responds 404 as if it did not exist.
 func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
+}
+
+// WithClioSink attaches a clio audit sink so each single-decision evaluation
+// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) is recorded as a
+// tamper-evident decision event in clio (ADR-0023). A nil sink is ignored,
+// leaving the server's behaviour unchanged.
+func WithClioSink(sink *ClioSink) Option {
+	return func(s *Server) { s.sink = sink }
 }
 
 // WithCacheSize bounds how many compiled models the server keeps in memory.
@@ -121,34 +134,61 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	return s
 }
 
+// route is one token-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
+// pattern and the handler that serves it. dataRoutes() is the single list of
+// them, so registration (Handler) and the OpenAPI-sync test share one source.
+type route struct {
+	method  string
+	pattern string
+	handler http.HandlerFunc
+}
+
+// dataRoutes is the canonical list of token-gated /v1 endpoints. Every entry
+// must have a matching path+method in service/openapi.yaml (enforced by
+// TestOpenAPICoversDataRoutes); adding a route here without documenting it — or
+// vice versa — breaks that test on purpose.
+func (s *Server) dataRoutes() []route {
+	return []route{
+		{"POST", "/v1/models", s.handleCreateModel},
+		{"GET", "/v1/models", s.handleListModels},
+		{"GET", "/v1/models/{id}", s.handleGetModel},
+		{"GET", "/v1/models/{id}/xml", s.handleGetModelXML},
+		// Modeler (ADR-0016): structure, types and per-decision logic editing that
+		// backs the built-in DMN modeler frontend; all on the same token-gated /v1
+		// surface. The mutating ones recompile and return the saved model (201).
+		{"GET", "/v1/models/{id}/graph", s.handleGetModelGraph},
+		{"POST", "/v1/models/{id}/graph", s.handleSaveGraph},
+		{"GET", "/v1/models/{id}/types", s.handleGetTypes},
+		{"POST", "/v1/models/{id}/types", s.handleSaveType},
+		{"DELETE", "/v1/models/{id}/types/{name}", s.handleDeleteType},
+		{"GET", "/v1/models/{id}/decisions/{decision}/table", s.handleGetDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/table", s.handleSaveDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
+		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
+		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/decisions/{decision}/context", s.handleGetContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/context", s.handleSaveContext},
+		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
+		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
+		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
+		// Evaluation.
+		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
+		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
+		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+	}
+}
+
 // Handler returns the HTTP handler exposing the service routes. It uses the
 // standard library's method-and-pattern mux (Go 1.22+), so no external router is
 // required.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// Data endpoints: gated by the optional bearer token.
-	mux.HandleFunc("POST /v1/models", s.requireToken(s.handleCreateModel))
-	mux.HandleFunc("GET /v1/models", s.requireToken(s.handleListModels))
-	mux.HandleFunc("GET /v1/models/{id}", s.requireToken(s.handleGetModel))
-	mux.HandleFunc("GET /v1/models/{id}/xml", s.requireToken(s.handleGetModelXML))
-	mux.HandleFunc("GET /v1/models/{id}/graph", s.requireToken(s.handleGetModelGraph))
-	mux.HandleFunc("GET /v1/models/{id}/types", s.requireToken(s.handleGetTypes))
-	mux.HandleFunc("POST /v1/models/{id}/types", s.requireToken(s.handleSaveType))
-	mux.HandleFunc("DELETE /v1/models/{id}/types/{name}", s.requireToken(s.handleDeleteType))
-	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleGetDecisionTable))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/table", s.requireToken(s.handleSaveDecisionTable))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/create-table", s.requireToken(s.handleCreateDecisionTable))
-	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleGetLiteral))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/literal", s.requireToken(s.handleSaveLiteral))
-	mux.HandleFunc("GET /v1/models/{id}/decisions/{decision}/context", s.requireToken(s.handleGetContext))
-	mux.HandleFunc("POST /v1/models/{id}/decisions/{decision}/context", s.requireToken(s.handleSaveContext))
-	mux.HandleFunc("GET /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleGetBKM))
-	mux.HandleFunc("POST /v1/models/{id}/bkm/{bkm}", s.requireToken(s.handleSaveBKM))
-	mux.HandleFunc("POST /v1/models/{id}/save", s.requireToken(s.handleSaveModel))
-	mux.HandleFunc("POST /v1/models/{id}/graph", s.requireToken(s.handleSaveGraph))
-	mux.HandleFunc("POST /v1/models/{id}/evaluate", s.requireToken(s.handleEvaluateModel))
-	mux.HandleFunc("POST /v1/models/{id}/evaluate-graph", s.requireToken(s.handleEvaluateGraph))
-	mux.HandleFunc("POST /v1/evaluate", s.requireToken(s.handleEvaluateStateless))
+	// Data endpoints: gated by the optional bearer token. Registered from the
+	// single dataRoutes() table so the route set has one source of truth — the
+	// OpenAPI-sync test reads the same table (see http_test.go).
+	for _, rt := range s.dataRoutes() {
+		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
+	}
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
@@ -755,7 +795,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -775,7 +815,7 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
@@ -840,7 +880,7 @@ func redirectTo(target string) http.HandlerFunc {
 // evaluate runs a decision and writes the result or an appropriate problem. When
 // explain is set the response carries the decision trace (which rules matched and
 // why).
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID string, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -872,6 +912,22 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, defs *dmn.
 		}
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
+	}
+	// Audit the decision before answering. In fail-closed mode a failed write
+	// aborts the request (the decision must be recorded to count as made); in
+	// best-effort mode Record logs and returns nil so the result still flows.
+	if s.sink != nil {
+		if err := s.sink.Record(ctx, DecisionRecord{
+			ModelID:  modelID,
+			Decision: decision,
+			Input:    input,
+			Outputs:  res.Outputs,
+			Trace:    res.Trace,
+			Strict:   strict,
+		}); err != nil {
+			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, evaluateResponse{
 		Outputs:     res.Outputs,
