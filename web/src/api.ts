@@ -31,7 +31,10 @@ export type ModelSummary = { modelId: string; name?: string; decisions: string[]
 // enumeration or the literals used in decision-table cells); valuesClosed is true
 // when that set is exhaustive (offer a closed dropdown).
 export type InputField = { name: string; type?: string; required: boolean; constraint?: string; values?: string[]; valuesClosed?: boolean }
-export type Diagnostic = { severity: string; code: string; message: string }
+// Diagnostic mirrors dmn.Diagnostic: a problem found while compiling/evaluating.
+// decisionId ties it to a node (empty for model-level problems); line/col give the
+// FEEL source position when applicable.
+export type Diagnostic = { severity: string; code: string; message: string; decisionId?: string; line?: number; col?: number }
 
 // ModelDetail mirrors the service modelResponse: decisions/inputs plus the typed
 // per-decision input schema used to drive the evaluate form.

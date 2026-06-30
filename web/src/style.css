@@ -290,6 +290,24 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   border-radius: 4px;
 }
 
+/* On-canvas diagnostic badge: a compile/eval problem, marked on its node. */
+.node-diag {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font: 700 12px/1 system-ui, sans-serif;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+  cursor: help;
+}
+.node-diag-error { background: #e5484d; }
+.node-diag-warning { background: #d9870b; }
+.node-diag-info { background: #6b7280; }
+.status-problem { color: #d9870b; font-weight: 600; cursor: help; }
+
 /* On-canvas result badge: a decision's evaluated value, overlaid on its node. */
 .node-result {
   display: inline-flex;
