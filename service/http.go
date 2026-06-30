@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/mcp"
 	webui "github.com/pblumer/temis/web"
 )
 
@@ -56,6 +57,11 @@ type Server struct {
 	// unbounded. NewServer builds cache from it after options run.
 	cacheSize int
 	cache     *modelCache
+
+	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
+	// this server's mux so it shares this server's model cache — one process, one
+	// address space. Nil leaves /mcp unmounted.
+	mcpServer *mcp.Server
 }
 
 // Option configures a Server at construction time.
@@ -153,6 +159,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app/", redirectTo("/"))
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleHealth)
+
+	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
+	// model cache (and its preloaded examples), so a model is visible whether it
+	// was loaded over the API, the modeler or MCP (one address space).
+	if s.mcpServer != nil {
+		s.mcpServer.RegisterRoutes(mux)
+	}
 
 	// gRPC: the Connect handler serves the dmn.v1.DmnEngine service (gRPC,
 	// gRPC-Web and Connect) under its own path prefix on the same mux (WP-33).

@@ -12,6 +12,7 @@ import (
 
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/internal/version"
+	"github.com/pblumer/temis/mcp"
 	"github.com/pblumer/temis/service"
 )
 
@@ -29,6 +30,8 @@ func main() {
 	maxListSize := flag.Int("max-list-size", 0, "limit on the size of any single produced list (0 = default)")
 	examples := flag.Bool("examples", true,
 		"preload the bundled example DMN models so they appear in the modeler on start")
+	serveMCP := flag.Bool("mcp", true,
+		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -53,11 +56,26 @@ func main() {
 		opts = append(opts, service.WithExamples())
 	}
 	srv := service.NewServer(engine, opts...)
+	if *serveMCP {
+		// One address space: the MCP endpoint shares the service's model cache, so
+		// the preloaded examples (and any API-loaded model) are visible over MCP,
+		// and models loaded over MCP appear in the modeler. The same optional token
+		// guards /mcp as the /v1 endpoints.
+		mcpSrv := mcp.NewServer(engine,
+			mcp.WithVersion(ver),
+			mcp.WithHTTPToken(*token),
+			mcp.WithStore(srv.ModelStore()),
+		)
+		srv.AttachMCP(mcpSrv)
+	}
 	if *token != "" {
 		log.Printf("temisd: /v1 endpoints require a bearer token")
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
+	}
+	if *serveMCP {
+		log.Printf("temisd: MCP endpoint at POST /mcp (shared model cache)")
 	}
 	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)
