@@ -27,3 +27,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0020 | gRPC-Schnittstelle über ConnectRPC (nicht grpc-go) | accepted |
 | 0021 | MCP-Endpoint in `temisd` ko-lokalisieren (geteilter Modell-Cache, ein Adressraum) | accepted |
 | 0022 | DMN-Modelle aus einem Git-Repository lesen/bearbeiten (Provider-Interface, GitHub zuerst) | proposed |
+| 0023 | Entscheidungs-Logbuch über clio (revisionssicherer Event-Sink, opt-in) | proposed |

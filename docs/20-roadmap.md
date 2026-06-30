@@ -96,6 +96,23 @@ Regel 6): GitHub-Adapter über reine Standardbibliothek.
 
 ---
 
+## Etappe Entscheidungs-Logbuch — „revisionssicher protokollieren & nachrechnen" (ADR-0023)
+
+**Ziel:** Jede Entscheidung wird als manipulationssicheres, hash-verkettetes CloudEvent in
+einer **[clio](https://github.com/pblumer/clio)**-Instanz protokolliert — inkl. Eingabe,
+Ausgabe, Spur und content-addressed `modelId` — und lässt sich dank Determinismus später
+**nachrechnen** (Re-Audit). Kopplung nur über clios HTTP-Vertrag; kein Go-Import, kein
+veränderter Default, keine neue Pflichtabhängigkeit (ADR-0011/0014). Vertrag & Betrieb:
+`docs/80-clio-decision-log.md`.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-54 | Opt-in clio-Sink in `temisd` | WP-32, WP-51 | **geplant** — Flags/Env (`-clio-url`/`-clio-token`/`-clio-source`); `temisd` POSTet nach jeder Auswertung das `com.temis.decision.evaluated.v1`-Event an clios `write-events`, reine stdlib (kein neuer Dep). Default aus = byte-identisch. **Idempotenz** per clio-Precondition (Entität+Eingabe-Hash). Konfigurierbare Fehlerpolitik (best-effort/fail-closed); Hot-Path-Budget (WP-42) gewahrt. AK: Auswertung erzeugt genau ein Event, Retry erzeugt keins (409), Sink-Ausfall verfälscht das Ergebnis nicht; httptest-E2E gegen einen clio-Stub. |
+| WP-55 | Re-Audit-/Replay-Tool | WP-54 | **geplant** — eigenständiger Konsument liest Decision-Events aus clio (`run-query`/`observe`), wertet `input`@`modelId` erneut über die `dmn`-API aus und vergleicht mit `outputs`. Liefert Compliance-Report (reproduziert ✓ / Abweichung ✗). Read-only, kein `internal/`-Zugriff. AK: manipuliertes/abweichendes Event wird als Abweichung erkannt, intakte Historie als 100 % reproduziert. |
+| WP-56 | Agent-Muster „delegieren → protokollieren" (Doku) | WP-50, ADR-0013 | **geplant** — `docs/60-ai-agent-guide.md` + `docs/80` dokumentieren das Muster Agent → `temis.evaluate` → `clio.write-events` (kein temis-Code nötig). AK: lauffähiges, nachvollziehbares Beispiel beschrieben. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.
