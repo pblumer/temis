@@ -190,6 +190,214 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  # --- Modeler endpoints (ADR-0016) ---
+  # These back the server's built-in DMN modeler (served at /). They read a
+  # model's structure and per-decision logic, and edit it: every mutating call
+  # recompiles the patched DMN XML and returns the saved model (201,
+  # ModelResponse) under its new content-addressed id, so the client switches to
+  # the persisted revision. They live on the same token-gated /v1 surface as the
+  # core API.
+  /v1/models/{id}/graph:
+    get:
+      summary: Get a model's decision requirements graph
+      description: Nodes and requirement edges, so a client can draw the DRG without parsing DMN XML.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The decision requirements graph
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Graph" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Reconcile a model to a desired graph
+      description: >
+        Persists added/removed/moved/renamed/retyped nodes and edges, then
+        recompiles. Surviving decisions keep their logic; new decisions are
+        created undecided.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GraphEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/types:
+    get:
+      summary: List a model's named item definitions
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The model's item definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  types:
+                    type: array
+                    items: { $ref: "#/components/schemas/ItemType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Create or update a simple item definition
+      description: Recompiles and returns the saved model. A structured (component) type or empty name is a 400.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemType" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/types/{name}:
+    delete:
+      summary: Remove a named item definition
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No model with that id, or no type with that name
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/decisions/{decision}/table:
+    get:
+      summary: Get a decision's decision-table view
+      description: Hit policy, columns and rule rows. 404 when the decision has no decision-table logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The decision table
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TableView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Rewrite a decision's decision-table rules
+      description: Columns and hit policy are preserved unless replaceColumns is set. Recompiles and returns the saved model.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TableEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-table:
+    post:
+      summary: Give an undecided decision a fresh decision table
+      description: Columns are derived from the decision's requirements. 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/literal:
+    get:
+      summary: Get a decision's literal-expression view
+      description: 404 when the decision's logic is not a literal expression.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The literal expression
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LiteralView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's literal-expression logic
+      description: Creates or replaces the decision's literal FEEL expression. Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveLiteralRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/bkm/{bkm}:
+    get:
+      summary: Get a business knowledge model's encapsulated-logic view
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: bkm, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The BKM's function (parameters + body)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BKMView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a business knowledge model's function
+      description: Sets the BKM's parameters and literal body, recompiles and returns the saved model.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: bkm, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BKMFunctionEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/save:
+    post:
+      summary: Apply modeler edits (positions, names, types) to a model
+      description: >
+        Patches the cached model's XML with per-node edits, recompiles and
+        returns the saved model. All decision logic and the untouched DMNDI are
+        preserved.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveModelRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/evaluate:
     post:
       summary: Stateless compile-and-evaluate in one request
@@ -249,6 +457,24 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    ModelNotFound:
+      description: No model with that id
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadModelEdit:
+      description: Invalid request body, or the edit could not be applied
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ModelSaved:
+      description: >
+        Edit applied: the patched model was recompiled and cached under a new
+        content-addressed id. The body is the saved model's index (with any
+        compile diagnostics), so the client can switch to the persisted revision.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ModelResponse" }
   schemas:
     ModelListResponse:
       type: object
@@ -456,3 +682,189 @@ components:
         message: { type: string }
         expected: { type: string }
         got: { type: string }
+    # --- Modeler schemas (ADR-0016) ---
+    Graph:
+      type: object
+      description: A model's decision requirements graph — nodes and requirement edges.
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/GraphNode" }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/GraphEdge" }
+    GraphNode:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, description: "Node kind: decision, inputData, businessKnowledgeModel, decisionService, knowledgeSource." }
+        name: { type: string }
+        dataType: { type: string, description: "Resolved FEEL type (InputData type or a decision's output type); empty if unknown." }
+        varName: { type: string, description: "A decision's output-variable name (how its result is referenced downstream)." }
+        hasTable: { type: boolean, description: "Decision whose logic is a decision table." }
+        hasLiteral: { type: boolean, description: "Decision whose logic is a literal FEEL expression." }
+        hasLogic: { type: boolean, description: "Decision that has any executable logic (table, literal or other boxed expression)." }
+        x: { type: number }
+        y: { type: number }
+        width: { type: number }
+        height: { type: number }
+    GraphEdge:
+      type: object
+      properties:
+        type: { type: string, description: "Edge kind, e.g. informationRequirement, knowledgeRequirement, authorityRequirement." }
+        source: { type: string }
+        target: { type: string }
+    GraphEdit:
+      type: object
+      description: Desired decision requirements graph the model is reconciled to.
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/GraphNodeEdit" }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/GraphEdgeEdit" }
+    GraphNodeEdit:
+      type: object
+      required: [id, type, name]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        name: { type: string }
+        dataType: { type: string }
+        x: { type: number }
+        y: { type: number }
+        width: { type: number }
+        height: { type: number }
+    GraphEdgeEdit:
+      type: object
+      required: [type, source, target]
+      properties:
+        type: { type: string }
+        source: { type: string }
+        target: { type: string }
+    ItemType:
+      type: object
+      description: A named item definition (a simple, non-structured FEEL type).
+      required: [name]
+      properties:
+        name: { type: string }
+        typeRef: { type: string, description: "Base FEEL type, e.g. string, number, boolean." }
+        isCollection: { type: boolean }
+        allowedValues: { type: string, description: "A FEEL unary-test list constraining the values." }
+        structured: { type: boolean, description: "Read-only marker on GET; a structured (component) type cannot be saved via this endpoint." }
+    TableView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        hitPolicy: { type: string, description: "U/A/P/F/R/C/O" }
+        aggregation: { type: string, description: "SUM/MIN/MAX/COUNT or empty" }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/TableInput" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/TableOutput" }
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/TableRule" }
+    TableInput:
+      type: object
+      properties:
+        label: { type: string }
+        expression: { type: string }
+        typeRef: { type: string }
+    TableOutput:
+      type: object
+      properties:
+        name: { type: string }
+        label: { type: string }
+        typeRef: { type: string }
+    TableRule:
+      type: object
+      properties:
+        inputEntries:
+          type: array
+          items: { type: string }
+          description: One FEEL unary-test per input column.
+        outputEntries:
+          type: array
+          items: { type: string }
+          description: One FEEL expression per output column.
+        annotations:
+          type: array
+          items: { type: string }
+    TableEdit:
+      type: object
+      description: New rules for a decision table; columns and hit policy are preserved unless replaceColumns is set.
+      required: [rules]
+      properties:
+        hitPolicy: { type: string }
+        aggregation: { type: string }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/TableInput" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/TableOutput" }
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/TableRule" }
+        replaceColumns:
+          type: boolean
+          description: When true, the supplied inputs/outputs replace the table's columns instead of keeping them.
+    LiteralView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        text: { type: string, description: The FEEL expression. }
+        typeRef: { type: string, description: The decision's output type, if declared. }
+    SaveLiteralRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, description: The FEEL expression to set as the decision's logic. }
+        typeRef: { type: string, description: Optional output type for the decision's variable. }
+    BKMView:
+      type: object
+      properties:
+        bkmId: { type: string }
+        name: { type: string }
+        params:
+          type: array
+          items: { $ref: "#/components/schemas/BKMParam" }
+        bodyText: { type: string, description: The BKM's encapsulated-logic FEEL expression. }
+        bodyTypeRef: { type: string }
+        simple: { type: boolean, description: True when the body is a single literal expression (editable here). }
+    BKMParam:
+      type: object
+      properties:
+        name: { type: string }
+        typeRef: { type: string }
+    BKMFunctionEdit:
+      type: object
+      properties:
+        params:
+          type: array
+          items: { $ref: "#/components/schemas/BKMParam" }
+        bodyText: { type: string }
+        bodyTypeRef: { type: string }
+    SaveModelRequest:
+      type: object
+      description: Per-node edits (position, name, type) to patch into the model's XML.
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/NodeEdit" }
+    NodeEdit:
+      type: object
+      description: An edit to one node; only the fields present are changed.
+      required: [id]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        dataType: { type: string }
+        x: { type: number }
+        y: { type: number }
