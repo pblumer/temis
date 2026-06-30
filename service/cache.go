@@ -22,6 +22,7 @@ type modelCache struct {
 	capacity int
 	ll       *list.List               // front = most recently used; values are *storedModel
 	items    map[string]*list.Element // id → element
+	nextSeq  uint64                   // monotonic creation order stamped onto each new model
 }
 
 func newModelCache(capacity int) *modelCache {
@@ -50,10 +51,14 @@ func (c *modelCache) add(sm *storedModel) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[sm.id]; ok {
+		// Same content re-stored: keep its original creation order.
+		sm.seq = el.Value.(*storedModel).seq
 		el.Value = sm
 		c.ll.MoveToFront(el)
 		return
 	}
+	c.nextSeq++
+	sm.seq = c.nextSeq
 	c.items[sm.id] = c.ll.PushFront(sm)
 	if c.capacity > 0 && c.ll.Len() > c.capacity {
 		if oldest := c.ll.Back(); oldest != nil {

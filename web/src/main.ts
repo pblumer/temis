@@ -10,52 +10,54 @@ import { openTypeManager } from './typemanager'
 import { FEEL_TYPES } from './feeltypes'
 import './style.css'
 
-// WP-65: the modeler now loads a REAL model from temis and draws its decision
-// requirements graph with our own DMN renderers on the diagram-js core — no
-// dmn-js, no DMNDI needed (positions are auto-laid-out). A picker switches
-// between the server's models. Editing interactions follow in the full WP-65.
+// The modeler shell (ADR-0016): a VS-Code-style left sidebar lists the server's
+// models — grouped by name, with each model's older saved revisions tucked under
+// the current one as a collapsible history — and the editor (toolbar + canvas +
+// evaluate panel) fills the rest. Selecting a model or a past revision loads its
+// decision requirements graph, drawn by our own DMN renderers on the diagram-js
+// core (no dmn-js).
 async function boot(root: HTMLElement): Promise<void> {
   root.innerHTML = `
-    <main>
-      <h1>${APP_NAME}</h1>
-      <p class="sub">Eigener DMN-Modeler · diagram-js (MIT) + eigene Renderer · echtes Modell aus temis · offline (ADR-0016)</p>
-      <div class="toolbar">
-        <label for="model">Modell</label>
-        <select id="model"></select>
-        <button id="open" class="tbtn" type="button" title="DMN-Datei laden (.dmn/.xml)">Öffnen…</button>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-title">${APP_NAME}</div>
+        <div class="sidebar-section">
+          <span>Modelle</span>
+          <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">+</button>
+        </div>
         <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
-        <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
-        <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
-        <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
-        <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
-        <span class="zoom-group">
-          <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
-          <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
-          <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
-        </span>
-        <span id="typeEditor" class="type-editor" style="display:none">
-          <label for="datatype">Typ</label>
-          <select id="datatype"></select>
-        </span>
-        <span id="status" class="status"></span>
-      </div>
-      <div id="canvas" class="canvas"></div>
-      <section class="eval-panel">
-        <h2 class="eval-title">Auswerten</h2>
-        <div id="eval"></div>
-      </section>
-      <p class="hint">
-        Eigener Modeler ohne dmn-js: DRG über <code>/v1/models/{id}/graph</code>,
-        Bearbeiten/Speichern über <code>/save</code>, Auswerten über
-        <code>/evaluate</code>. <strong>Öffnen…</strong> lädt eine DMN-Datei in die
-        Engine. Knoten sind verschieb-/umbenennbar (Doppelklick); ein
-        <strong>Doppelklick auf eine Decision mit Tabelle öffnet die Decision
-        Table</strong>. Jede Änderung läuft über den Command-Stack (Undo/Redo,
-        Strg/Cmd+Z).
-      </p>
-    </main>`
+        <div id="modelList" class="model-list"></div>
+        <p class="sidebar-hint">
+          Eigener DMN-Modeler · diagram-js (MIT) + eigene Renderer · offline.
+          Jedes Speichern legt eine neue Revision an, sichtbar als Verlauf.
+        </p>
+      </aside>
+      <main class="editor">
+        <div class="toolbar">
+          <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
+          <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
+          <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
+          <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+          <span class="zoom-group">
+            <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
+            <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
+            <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
+          </span>
+          <span id="typeEditor" class="type-editor" style="display:none">
+            <label for="datatype">Typ</label>
+            <select id="datatype"></select>
+          </span>
+          <span id="status" class="status"></span>
+        </div>
+        <div id="canvas" class="canvas"></div>
+        <section class="eval-panel">
+          <h2 class="eval-title">Auswerten</h2>
+          <div id="eval"></div>
+        </section>
+      </main>
+    </div>`
 
-  const select = root.querySelector<HTMLSelectElement>('#model')
+  const modelList = root.querySelector<HTMLElement>('#modelList')
   const canvas = root.querySelector<HTMLElement>('#canvas')
   const status = root.querySelector<HTMLElement>('#status')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
@@ -67,7 +69,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!select || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!modelList || !canvas || !status || !undoBtn || !redoBtn || !saveBtn || !openBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -83,6 +85,8 @@ async function boot(root: HTMLElement): Promise<void> {
 
   let handle: ModelerHandle | null = null
   let dirty = false
+  // The model currently loaded in the editor (a specific revision's id).
+  let currentId = ''
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -91,11 +95,11 @@ async function boot(root: HTMLElement): Promise<void> {
   undoBtn.addEventListener('click', () => handle?.undo())
   redoBtn.addEventListener('click', () => handle?.redo())
 
-  // save persists the current diagram's edits, then switches the picker to the
-  // server's new revision (its content hash, hence its modelId, changed).
-  // persistGraph posts the live canvas graph (moved/renamed/retyped nodes AND
-  // nodes/edges added or removed, ADR-0016) and returns the saved model's id. It
-  // is a no-op returning modelId unchanged when there is nothing to save.
+  // save persists the current diagram's edits, then switches to the server's new
+  // revision (its content hash, hence its modelId, changed). persistGraph posts
+  // the live canvas graph (moved/renamed/retyped nodes AND nodes/edges added or
+  // removed, ADR-0016) and returns the saved model's id. It is a no-op returning
+  // modelId unchanged when there is nothing to save.
   const persistGraph = async (modelId: string): Promise<string> => {
     if (!handle || !dirty) return modelId
     const { nodes, edges } = handle.graph()
@@ -107,13 +111,11 @@ async function boot(root: HTMLElement): Promise<void> {
   }
 
   const save = async (): Promise<void> => {
-    if (!handle || !dirty) return
-    const current = models[Number(select.value)]
-    if (!current) return
+    if (!handle || !dirty || !currentId) return
     saveBtn.disabled = true
     status.textContent = 'speichert …'
     try {
-      await reselect(await persistGraph(current.modelId))
+      await reselect(await persistGraph(currentId))
       status.textContent = 'gespeichert ✓'
     } catch (e) {
       status.textContent = (e as Error).message
@@ -125,11 +127,10 @@ async function boot(root: HTMLElement): Promise<void> {
   // structural edits first (so the decision exists server-side), create the
   // table, switch to the saved revision and open it for editing.
   const createTable = async (decisionId: string): Promise<void> => {
-    const current = models[Number(select.value)]
-    if (!current) return
+    if (!currentId) return
     status.textContent = 'legt Tabelle an …'
     try {
-      const created = await createDecisionTable(await persistGraph(current.modelId), decisionId)
+      const created = await createDecisionTable(await persistGraph(currentId), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Tabelle angelegt ✓'
       void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId))
@@ -154,8 +155,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // Typen: open the custom-type manager; each save/delete switches to the saved
   // revision (which refreshes typeOptions via show()).
   typesBtn.addEventListener('click', () => {
-    const current = models[Number(select.value)]
-    if (current) void openTypeManager(current.modelId, (newId) => reselect(newId))
+    if (currentId) void openTypeManager(currentId, (newId) => reselect(newId))
   })
 
   // Zoom controls.
@@ -165,11 +165,10 @@ async function boot(root: HTMLElement): Promise<void> {
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
   const createLiteral = async (decisionId: string): Promise<void> => {
-    const current = models[Number(select.value)]
-    if (!current) return
+    if (!currentId) return
     status.textContent = 'legt Ausdruck an …'
     try {
-      const baseId = await persistGraph(current.modelId)
+      const baseId = await persistGraph(currentId)
       await reselect(baseId)
       status.textContent = ''
       openLiteral(baseId, decisionId, true)
@@ -179,15 +178,11 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   saveBtn.addEventListener('click', () => void save())
 
-  // reselect refreshes the model list and switches the picker to modelId (e.g.
-  // after a save or an upload created/changed a cached model).
+  // reselect refreshes the model list and switches to modelId (e.g. after a save
+  // or an upload created/changed a cached model).
   const reselect = async (modelId: string): Promise<void> => {
     models = await listModels()
-    models.sort((a, b) => (a.name ?? a.modelId).localeCompare(b.name ?? b.modelId))
-    renderOptions()
-    const idx = models.findIndex((m) => m.modelId === modelId)
-    select.value = String(idx < 0 ? 0 : idx)
-    await show(Number(select.value))
+    await showModel(models.some((m) => m.modelId === modelId) ? modelId : (models[0]?.modelId ?? ''))
   }
 
   // Open… deploys a chosen .dmn/.xml file to the engine and switches to it.
@@ -225,6 +220,10 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   })
 
+  // expanded holds the group names whose revision history is unfolded, kept across
+  // re-renders so a save (which rebuilds the list) doesn't collapse the view.
+  const expanded = new Set<string>()
+
   let models: ModelSummary[] = []
   try {
     models = await listModels()
@@ -233,39 +232,100 @@ async function boot(root: HTMLElement): Promise<void> {
     return
   }
   if (!models.length) {
-    status.textContent = 'Keine Modelle auf dem Server.'
+    modelList.innerHTML = '<p class="model-empty">Keine Modelle auf dem Server.</p>'
     return
   }
-  models.sort((a, b) => (a.name ?? a.modelId).localeCompare(b.name ?? b.modelId))
-  const renderOptions = (): void => {
-    select.innerHTML = models
-      .map((m, i) => `<option value="${i}">${m.name ?? m.modelId.slice(0, 18)}</option>`)
-      .join('')
-  }
-  renderOptions()
 
-  const show = async (index: number): Promise<void> => {
-    const model = models[index]
+  // groupModels buckets revisions by display name and orders each bucket
+  // newest-first (highest seq). Unnamed models each form their own bucket.
+  type Group = { name: string; revisions: ModelSummary[] }
+  const groupModels = (): Group[] => {
+    const byName = new Map<string, ModelSummary[]>()
+    for (const m of models) {
+      const key = m.name || '(' + m.modelId.slice(7, 15) + ')'
+      const list = byName.get(key)
+      if (list) list.push(m)
+      else byName.set(key, [m])
+    }
+    const groups: Group[] = []
+    for (const [name, revisions] of byName) {
+      revisions.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))
+      groups.push({ name, revisions })
+    }
+    groups.sort((a, b) => a.name.localeCompare(b.name))
+    return groups
+  }
+
+  const el = (tag: string, cls: string, ...kids: (string | Node)[]): HTMLElement => {
+    const n = document.createElement(tag)
+    if (cls) n.className = cls
+    n.append(...kids)
+    return n
+  }
+
+  const renderModelList = (): void => {
+    modelList.textContent = ''
+    for (const group of groupModels()) {
+      const current = group.revisions[0]
+      const older = group.revisions.slice(1)
+      const total = group.revisions.length
+      // Auto-unfold a group if the loaded revision is one of its older ones, so
+      // the highlight is visible.
+      if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
+
+      const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
+      row.append(el('span', 'model-name', group.name))
+      if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
+      row.addEventListener('click', () => void showModel(current.modelId))
+      modelList.append(row)
+
+      if (older.length) {
+        const open = expanded.has(group.name)
+        const toggle = el('button', 'model-history-toggle', (open ? '▾ ' : '▸ ') + 'Verlauf (' + older.length + ')')
+        toggle.addEventListener('click', () => {
+          if (expanded.has(group.name)) expanded.delete(group.name)
+          else expanded.add(group.name)
+          renderModelList()
+        })
+        modelList.append(toggle)
+
+        if (open) {
+          older.forEach((rev, i) => {
+            const v = total - 1 - i
+            const hrow = el('div', 'model-history-item' + (rev.modelId === currentId ? ' is-current' : ''))
+            hrow.append(el('span', 'model-rev', 'v' + v), el('span', 'model-hist-id', rev.modelId.slice(-6)))
+            hrow.addEventListener('click', () => void showModel(rev.modelId))
+            modelList.append(hrow)
+          })
+        }
+      }
+    }
+  }
+
+  const showModel = async (modelId: string): Promise<void> => {
+    if (!modelId) return
+    currentId = modelId
+    renderModelList()
     status.textContent = 'lädt …'
     dirty = false
     try {
       // Refresh the type options for this model (built-in + its custom types).
       try {
-        typeOptions = [...FEEL_TYPES, ...(await listTypes(model.modelId)).map((t) => t.name)]
+        typeOptions = [...FEEL_TYPES, ...(await listTypes(modelId)).map((t) => t.name)]
       } catch {
         typeOptions = FEEL_TYPES
       }
-      const graph = await getGraph(model.modelId)
+      const graph = await getGraph(modelId)
       handle = renderGraph(canvas, layout(graph))
       handle.onChange(() => {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => void openTableOverlay(model.modelId, decisionId, (newId) => void reselect(newId), typeOptions))
+      handle.onOpenTable((decisionId) => void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions))
       handle.onCreateTable((decisionId) => void createTable(decisionId))
-      handle.onOpenLiteral((decisionId) => openLiteral(model.modelId, decisionId))
+      handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
-      handle.onOpenBKM((bkmId) => void openBKMOverlay(model.modelId, bkmId, (newId) => void reselect(newId), typeOptions))
+      handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onSelect((sel) => {
         if (sel) {
           typeEditor.style.display = ''
@@ -280,7 +340,7 @@ async function boot(root: HTMLElement): Promise<void> {
       // Its results are also overlaid on the canvas nodes (the whole graph with
       // its computed values).
       try {
-        renderEvaluatePanel(evalHost, await getModel(model.modelId), (values) => handle?.showResults(values))
+        renderEvaluatePanel(evalHost, await getModel(modelId), (values) => handle?.showResults(values))
       } catch {
         evalHost.textContent = ''
       }
@@ -289,14 +349,11 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  select.addEventListener('change', () => void show(Number(select.value)))
-
-  // Default to a clean demo DRG if present, else the first model.
+  // Default to a clean demo DRG if present, else the first group's newest model.
   const preferred = ['Pricing', 'Routing', 'Alterskette (Demo)']
-  let best = models.findIndex((m) => preferred.includes(m.name ?? ''))
-  if (best < 0) best = 0
-  select.value = String(best)
-  await show(best)
+  const groups = groupModels()
+  const best = groups.find((g) => preferred.includes(g.name)) ?? groups[0]
+  await showModel(best.revisions[0].modelId)
 }
 
 const root = document.getElementById('app')

@@ -93,6 +93,9 @@ type storedModel struct {
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
 	diags dmn.Diagnostics
+	// seq is a monotonic creation order assigned by the cache on first store, so a
+	// client can present same-named revisions newest-first (a model's history).
+	seq uint64
 }
 
 // NewServer returns a Server backed by engine. If engine is nil a default engine
@@ -200,6 +203,9 @@ type modelSummary struct {
 	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
+	// Seq is the model's creation order (higher = newer), so the client can show a
+	// model's same-named revisions newest-first as a history.
+	Seq uint64 `json:"seq"`
 }
 
 type saveModelRequest struct {
@@ -298,6 +304,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 			Name:      sm.name,
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
+			Seq:       sm.seq,
 		})
 	}
 
