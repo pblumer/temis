@@ -168,6 +168,14 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
   })
+  // The context pad's open icons fire these so the table/expression opens with a
+  // single click (the same handlers as the double-click above).
+  eventBus.on('dmn.openTable', (e: { element?: Shape }) => {
+    if (e.element) openTableCb(e.element.id)
+  })
+  eventBus.on('dmn.openLiteral', (e: { element?: Shape }) => {
+    if (e.element) openLiteralCb(e.element.id)
+  })
 
   let createTableCb = (_decisionId: string): void => {}
   let createLiteralCb = (_decisionId: string): void => {}
