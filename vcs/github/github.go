@@ -10,6 +10,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -203,16 +204,30 @@ func (c *Client) contentsURL(repo vcs.RepoRef, ref, path string) string {
 
 // --- HTTP plumbing ---
 
-// do issues a GET to urlStr with the given Accept header and returns the body
-// and response. Non-2xx responses are mapped to vcs sentinel errors where
-// meaningful (404 → ErrNotFound, 401/403 → ErrUnauthorized).
+// do issues a GET to urlStr with the given Accept header. It is the read path;
+// writes use send with an explicit method and body.
 func (c *Client) do(ctx context.Context, urlStr, accept string) ([]byte, *http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	return c.send(ctx, http.MethodGet, urlStr, accept, nil)
+}
+
+// send issues an HTTP request and returns the body and response. A non-nil
+// reqBody is sent as JSON. Non-2xx responses are mapped to vcs sentinel errors
+// where meaningful (404 → ErrNotFound, 401/403 → ErrUnauthorized, 409 →
+// ErrConflict).
+func (c *Client) send(ctx context.Context, method, urlStr, accept string, reqBody []byte) ([]byte, *http.Response, error) {
+	var bodyReader io.Reader
+	if reqBody != nil {
+		bodyReader = bytes.NewReader(reqBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, urlStr, bodyReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("github: build request: %w", err)
 	}
 	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", apiVersion)
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
@@ -242,9 +257,32 @@ func statusError(code int, body []byte) error {
 		return fmt.Errorf("github: %w: %s", vcs.ErrNotFound, msg)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return fmt.Errorf("github: %w (status %d): %s", vcs.ErrUnauthorized, code, msg)
+	case http.StatusConflict:
+		return fmt.Errorf("github: %w: %s", vcs.ErrConflict, msg)
+	case http.StatusUnprocessableEntity:
+		// GitHub reports several optimistic-concurrency / already-exists
+		// failures as 422 rather than 409 (creating an existing ref or file,
+		// a stale or missing blob sha). Treat those as conflicts; anything
+		// else 422 stays a generic error.
+		if isConflictMessage(msg) {
+			return fmt.Errorf("github: %w: %s", vcs.ErrConflict, msg)
+		}
+		return fmt.Errorf("github: unexpected status %d: %s", code, msg)
 	default:
 		return fmt.Errorf("github: unexpected status %d: %s", code, msg)
 	}
+}
+
+// isConflictMessage reports whether a 422 message describes an
+// optimistic-concurrency or already-exists conflict.
+func isConflictMessage(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, s := range []string{"already exists", "wasn't supplied", "does not match", "but expected"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // apiMessage extracts GitHub's {"message": "..."} field, falling back to a
