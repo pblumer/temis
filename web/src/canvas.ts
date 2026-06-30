@@ -3,6 +3,9 @@ import MoveModule from 'diagram-js/lib/features/move'
 import ModelingModule from 'diagram-js/lib/features/modeling'
 import ContextPadModule from 'diagram-js/lib/features/context-pad'
 import ConnectModule from 'diagram-js/lib/features/connect'
+import PaletteModule from 'diagram-js/lib/features/palette'
+import CreateModule from 'diagram-js/lib/features/create'
+import HandToolModule from 'diagram-js/lib/features/hand-tool'
 import MoveCanvasModule from 'diagram-js/lib/navigation/movecanvas'
 import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll'
 import OverlaysModule from 'diagram-js/lib/features/overlays'
@@ -19,6 +22,7 @@ import { dmnRulesModule } from './dmn-rules'
 import { dmnContextPadModule } from './dmn-context-pad'
 import { dmnLabelEditingModule } from './dmn-label-editing'
 import { dmnLayouterModule } from './dmn-layouter'
+import { dmnPaletteModule } from './dmn-palette'
 import type { Laid } from './layout'
 
 // What the toolbar needs to know about the current selection to offer the type
@@ -122,8 +126,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     canvas: { container },
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
-      ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
+      dmnPaletteModule, ModelingModule, MoveModule, ContextPadModule, ConnectModule,
+      PaletteModule, CreateModule, HandToolModule, MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
     ],
   })
   current = diagram
