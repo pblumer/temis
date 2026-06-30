@@ -16,6 +16,7 @@ import { dmnRendererModule } from './dmn-renderer'
 import { dmnRulesModule } from './dmn-rules'
 import { dmnContextPadModule } from './dmn-context-pad'
 import { dmnLabelEditingModule } from './dmn-label-editing'
+import { dmnLayouterModule } from './dmn-layouter'
 import type { Laid } from './layout'
 
 // What the toolbar needs to know about the current selection to offer the type
@@ -116,7 +117,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      MoveCanvasModule, ZoomScrollModule,
+      MoveCanvasModule, ZoomScrollModule, dmnLayouterModule,
     ],
   })
   current = diagram

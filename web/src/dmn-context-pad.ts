@@ -60,11 +60,10 @@ class DmnContextPadProvider {
       { x: cx, y: cy },
       root as never,
     )
-    const conn = this.modeling.createConnection(shape, source as never, { type: 'dmn:' + kind.req } as never, root as never)
-    // diagram-js routes new connections centre-to-centre; dock them at the node
-    // borders (like the loaded edges) so the edge — and its hit area — doesn't sit
-    // over the new node, which would make it unselectable.
-    this.modeling.updateWaypoints(conn as never, [borderPoint(shape, source), borderPoint(source, shape)] as never)
+    // The connection is laid out border-to-border by the DMN layouter (see
+    // dmn-layouter.ts), so its line and hit area dock at the node edges and don't
+    // sit over the new node.
+    this.modeling.createConnection(shape, source as never, { type: 'dmn:' + kind.req } as never, root as never)
   }
 
   getContextPadEntries(element: Element): ContextPadEntries {
@@ -135,20 +134,6 @@ class DmnContextPadProvider {
     }
     return entries
   }
-}
-
-// borderPoint returns the point on node's border on the line from its centre
-// toward other's centre — used to dock requirement edges at the node edges.
-function borderPoint(node: Shape, other: Shape): { x: number; y: number } {
-  const cx = (node.x ?? 0) + (node.width ?? 0) / 2
-  const cy = (node.y ?? 0) + (node.height ?? 0) / 2
-  const ox = (other.x ?? 0) + (other.width ?? 0) / 2
-  const oy = (other.y ?? 0) + (other.height ?? 0) / 2
-  const dx = ox - cx
-  const dy = oy - cy
-  if (dx === 0 && dy === 0) return { x: cx, y: cy }
-  const t = 1 / Math.max(Math.abs(dx) / ((node.width ?? 0) / 2), Math.abs(dy) / ((node.height ?? 0) / 2))
-  return { x: cx + dx * t, y: cy + dy * t }
 }
 
 export const dmnContextPadModule = {

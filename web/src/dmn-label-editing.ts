@@ -34,20 +34,32 @@ class UpdateNameHandler {
 // Double-click a node to rename it inline; the name is validated live against
 // the FEEL engine (spaces ok, operator characters not) and only applied when
 // valid — through the command stack, so it undoes/redoes (ADR-0016, WP-65).
+// DirectEditing is the slice of the diagram-js-direct-editing service we use.
+type DirectEditing = {
+  registerProvider: (p: unknown) => void
+  activate: (el: Element) => void
+  complete: () => void
+  cancel: () => void
+}
+
+// A Canvas with the coordinate-transform helpers we need (not in the bundled
+// types), to place the edit box in screen space.
+type ViewboxCanvas = Canvas & {
+  zoom: () => number
+  getAbsoluteBBox: (b: { x: number; y: number; width: number; height: number }) => { x: number; y: number; width: number; height: number }
+}
+
 class DmnLabelEditing {
   static $inject = ['eventBus', 'directEditing', 'commandStack', 'canvas']
 
   private commandStack: CommandStack
-  private canvas: Canvas
+  private canvas: ViewboxCanvas
+  private directEditing: DirectEditing
 
-  constructor(
-    eventBus: EventBus,
-    directEditing: { registerProvider: (p: unknown) => void; activate: (el: Element) => void },
-    commandStack: CommandStack,
-    canvas: Canvas,
-  ) {
+  constructor(eventBus: EventBus, directEditing: DirectEditing, commandStack: CommandStack, canvas: Canvas) {
     this.commandStack = commandStack
-    this.canvas = canvas
+    this.canvas = canvas as ViewboxCanvas
+    this.directEditing = directEditing
     commandStack.registerHandler('element.updateName', UpdateNameHandler)
     directEditing.registerProvider(this)
 
@@ -59,14 +71,17 @@ class DmnLabelEditing {
     })
   }
 
-  // activate tells direct-editing what to edit and where.
+  // activate tells direct-editing what to edit and where. The box is positioned in
+  // SCREEN space (the canvas may be zoomed/panned), so it sits exactly over the
+  // element, with the font scaled to the zoom.
   activate(element: Element): { text: string; bounds: { x: number; y: number; width: number; height: number }; style: Record<string, string> } | undefined {
     if (!isRenamable(element)) return undefined
     const shape = element as Shape & { name?: string }
+    const bounds = this.canvas.getAbsoluteBBox({ x: shape.x ?? 0, y: shape.y ?? 0, width: shape.width ?? 0, height: shape.height ?? 0 })
     return {
       text: shape.name ?? '',
-      bounds: { x: shape.x ?? 0, y: shape.y ?? 0, width: shape.width ?? 0, height: shape.height ?? 0 },
-      style: { textAlign: 'center', fontFamily: 'system-ui, sans-serif', fontSize: '13px', fontWeight: '500' },
+      bounds,
+      style: { textAlign: 'center', fontFamily: 'system-ui, sans-serif', fontSize: 13 * this.canvas.zoom() + 'px', fontWeight: '500' },
     }
   }
 
@@ -88,6 +103,12 @@ class DmnLabelEditing {
       content.title = res.ok ? '' : res.message ?? ''
     }
     content.addEventListener('input', check)
+    // Clicking outside the box commits the edit (and closes it), so it does not
+    // get stuck in edit mode. complete() removes the editing box from the DOM, so
+    // defer it out of the blur handler — tearing the node down synchronously while
+    // the browser is dispatching its own blur/focus teardown double-frees the node
+    // ("removeChild: node no longer a child").
+    content.addEventListener('blur', () => setTimeout(() => this.directEditing.complete(), 0))
     check()
   }
 }
