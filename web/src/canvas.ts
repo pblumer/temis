@@ -97,6 +97,30 @@ export type ModelerHandle = {
   showResults: (values: Record<string, unknown>, hitRules?: Record<string, number[]>) => void
 }
 
+// A Canvas with the viewbox getter/setter we need (not in the bundled types).
+type ViewBox = { x: number; y: number; width: number; height: number; scale: number; inner: { x: number; y: number } }
+type FitCanvas = {
+  zoom: (mode: string) => number
+  viewbox: { (): ViewBox; (box: { x: number; y: number; width: number; height: number }): void }
+}
+
+// The width reserved on the left for the palette toolbox, so fitting the diagram
+// does not tuck the left-most element behind it.
+const PALETTE_INSET = 88
+
+// fitViewport fits the whole diagram, then — if the standard fit left the diagram
+// flush to the left edge — nudges it right so the palette toolbox does not hide
+// the left-most element.
+function fitViewport(canvas: unknown): void {
+  const c = canvas as FitCanvas
+  c.zoom('fit-viewport')
+  const vb = c.viewbox()
+  const leftOnScreen = (vb.inner.x - vb.x) * vb.scale
+  if (leftOnScreen < PALETTE_INSET) {
+    c.viewbox({ x: vb.inner.x - PALETTE_INSET / vb.scale, y: vb.y, width: vb.width, height: vb.height })
+  }
+}
+
 // Undoable type change on an InputData; redraws the pill via the returned element.
 class UpdateTypeHandler {
   execute(ctx: { element: Shape & { dataType?: string }; dataType: string; old?: string }): Shape[] {
@@ -161,7 +185,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     canvas.addConnection(conn)
   }
 
-  canvas.zoom('fit-viewport')
+  fitViewport(canvas)
 
   // The shapes added above must not be undoable — only user edits are. The
   // command stack is empty here because addShape/addConnection bypass it.
@@ -258,7 +282,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       openBKMCb = cb
     },
     zoom: (dir) => {
-      if (dir === 'fit') canvas.zoom('fit-viewport')
+      if (dir === 'fit') fitViewport(canvas)
       else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
     },
     showDiagnostics: (diags) => {
