@@ -1190,3 +1190,31 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   .imp-fly { animation: none; }
   .imp-lane-eval.is-busy .imp-engine-pulse::after { animation: none; }
 }
+
+/* --- Flows view (WP-97): browse and run decision flows (ADR-0026) --- */
+.flow-studio { display: none; }
+.flow-list { display: none; }
+.app-shell[data-mode="flows"] { --flow: #7c3aed; }
+.app-shell[data-mode="flows"] .design-only,
+.app-shell[data-mode="flows"] .zoom-group,
+.app-shell[data-mode="flows"] .canvas-wrap,
+.app-shell[data-mode="flows"] .eval-panel,
+.app-shell[data-mode="flows"] .op-history,
+.app-shell[data-mode="flows"] .op-overlays,
+.app-shell[data-mode="flows"] .import-cockpit,
+.app-shell[data-mode="flows"] #modelList,
+.app-shell[data-mode="flows"] .djs-palette { display: none !important; }
+.app-shell[data-mode="flows"] .flow-list { display: block; }
+.app-shell[data-mode="flows"] .flow-studio { display: flex; flex: 1 1 auto; min-height: 0; gap: 16px; }
+
+.flow-item .model-rev { background: #f3e8ff; color: #7c3aed; }
+.flow-canvas { flex: 1 1 auto; min-width: 0; height: min(70vh, 760px); border: 1px solid var(--line); border-radius: 12px; background: #fff; position: relative; }
+.flow-run { flex: 0 0 300px; display: flex; flex-direction: column; gap: 10px; overflow: auto; padding-top: 2px; }
+.flow-name-lg { font-weight: 650; font-size: 15px; }
+.flow-sub { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+.flow-warn { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-top: 6px; }
+.flow-run #flowRun { align-self: flex-start; border-color: #7c3aed; color: #7c3aed; }
+.flow-out-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.flow-out-table td { padding: 4px 6px; border-top: 1px solid var(--line); }
+.flow-out-val { font-weight: 600; color: #7c3aed; text-align: right; }
+.flow-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 6px 8px; font-size: 12px; }
