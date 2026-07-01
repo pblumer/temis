@@ -34,3 +34,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0027 | Dateisystem-Modell-Store (optionale Persistenz des Modell-Cache, content-adressiert, stdlib, opt-in) | accepted |
 | 0028 | Scoped API-Key-Authentifizierung (`kid.secret`, Keystore, Scopes) — angeglichen an clio | proposed |
 | 0029 | Öffentliches FEEL-Ausdruck-Primitive (`dmn.CompileExpression`) für volle Flow-Mappings | proposed |
+| 0030 | Betriebs-Observability (Status-Endpoint, `expvar`-Metriken, `slog`) — Grenze zur externen Control Plane | proposed |
