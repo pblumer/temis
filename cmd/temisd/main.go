@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/internal/version"
@@ -16,44 +18,52 @@ import (
 	"github.com/pblumer/temis/service"
 )
 
+// Zero-config by design: running the binary with no flags starts a fully featured
+// server (modeler, examples, MCP, model listing, and the modeling assistant in BYOK
+// mode). Every default below is sourced from a TEMIS_* environment variable, so an
+// operator opts out of any feature via the environment alone — no flags required
+// (handy for containers). An explicit flag always overrides the environment.
 func main() {
 	showVersion := flag.Bool("version", false, "print the temisd version and exit")
-	addr := flag.String("addr", ":8080", "address to listen on (host:port)")
+	addr := flag.String("addr", envOr("TEMIS_ADDR", ":8080"),
+		"address to listen on (host:port) (default $TEMIS_ADDR, else :8080)")
 	token := flag.String("token", os.Getenv("TEMIS_API_TOKEN"),
 		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
-	listModels := flag.Bool("list-models", true,
-		"expose GET /v1/models, which lists every cached model; set false to keep decisions private")
-	cacheSize := flag.Int("cache-size", 0,
-		"max compiled models kept in memory (LRU eviction); 0 uses the default, negative means unbounded")
-	maxCallDepth := flag.Int("max-call-depth", 0, "limit on nested function/BKM recursion (0 = default)")
-	maxIterations := flag.Int("max-iterations", 0, "limit on total comprehension iterations per evaluation (0 = default)")
-	maxListSize := flag.Int("max-list-size", 0, "limit on the size of any single produced list (0 = default)")
-	examples := flag.Bool("examples", true,
-		"preload the bundled example DMN models so they appear in the modeler on start")
-	serveMCP := flag.Bool("mcp", true,
-		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples)")
+	listModels := flag.Bool("list-models", envBool("TEMIS_LIST_MODELS", true),
+		"expose GET /v1/models, which lists every cached model; set false to keep decisions private (env TEMIS_LIST_MODELS)")
+	cacheSize := flag.Int("cache-size", envInt("TEMIS_CACHE_SIZE", 0),
+		"max compiled models kept in memory (LRU eviction); 0 uses the default, negative means unbounded (env TEMIS_CACHE_SIZE)")
+	maxCallDepth := flag.Int("max-call-depth", envInt("TEMIS_MAX_CALL_DEPTH", 0), "limit on nested function/BKM recursion (0 = default) (env TEMIS_MAX_CALL_DEPTH)")
+	maxIterations := flag.Int("max-iterations", envInt("TEMIS_MAX_ITERATIONS", 0), "limit on total comprehension iterations per evaluation (0 = default) (env TEMIS_MAX_ITERATIONS)")
+	maxListSize := flag.Int("max-list-size", envInt("TEMIS_MAX_LIST_SIZE", 0), "limit on the size of any single produced list (0 = default) (env TEMIS_MAX_LIST_SIZE)")
+	examples := flag.Bool("examples", envBool("TEMIS_EXAMPLES", true),
+		"preload the bundled example DMN models so they appear in the modeler on start (env TEMIS_EXAMPLES)")
+	serveMCP := flag.Bool("mcp", envBool("TEMIS_MCP", true),
+		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples) (env TEMIS_MCP)")
+	assist := flag.Bool("assist", envBool("TEMIS_ASSIST", true),
+		"enable the modeling assistant at POST /v1/chat; on by default (BYOK unless a server key is set), set false to disable (env TEMIS_ASSIST)")
 	llmProvider := flag.String("llm-provider", os.Getenv("TEMIS_LLM_PROVIDER"),
-		"enable the modeling assistant (POST /v1/chat) with this LLM provider: \"anthropic\" or \"openai\" (default $TEMIS_LLM_PROVIDER; empty = assistant off)")
+		"LLM provider for the modeling assistant: \"anthropic\" or \"openai\" (default $TEMIS_LLM_PROVIDER, else anthropic)")
 	llmToken := flag.String("llm-token", os.Getenv("TEMIS_LLM_TOKEN"),
-		"server-side API key for the LLM provider (default $TEMIS_LLM_TOKEN)")
+		"server-side API key for the LLM provider (default $TEMIS_LLM_TOKEN; empty = BYOK only)")
 	llmModel := flag.String("llm-model", os.Getenv("TEMIS_LLM_MODEL"),
 		"override the provider's default model id (default $TEMIS_LLM_MODEL)")
 	llmBaseURL := flag.String("llm-base-url", os.Getenv("TEMIS_LLM_BASE_URL"),
 		"override the provider's API base URL, e.g. a proxy (default $TEMIS_LLM_BASE_URL)")
-	llmAllowBYOK := flag.Bool("llm-allow-byok", true,
-		"let a caller supply its own provider key via the X-LLM-Token header (used only for that request)")
+	llmAllowBYOK := flag.Bool("llm-allow-byok", envBool("TEMIS_LLM_ALLOW_BYOK", true),
+		"let a caller supply its own provider key via the X-LLM-Token header (used only for that request) (env TEMIS_LLM_ALLOW_BYOK)")
 	clioURL := flag.String("clio-url", os.Getenv("TEMIS_CLIO_URL"),
 		"record each evaluation as a tamper-evident event in this clio instance (default $TEMIS_CLIO_URL; empty = off)")
 	clioToken := flag.String("clio-token", os.Getenv("TEMIS_CLIO_TOKEN"),
 		"clio API key (kid.secret) for the audit sink (default $TEMIS_CLIO_TOKEN)")
 	clioSource := flag.String("clio-source", os.Getenv("TEMIS_CLIO_SOURCE"),
 		"CloudEvents source stamped on audit events (default $TEMIS_CLIO_SOURCE, else \"temisd\")")
-	clioSubjectPrefix := flag.String("clio-subject-prefix", "/decisions",
-		"clio subject prefix the decision is filed under")
-	clioSubjectKey := flag.String("clio-subject-key", "",
-		"input field whose value becomes the subject's entity segment (empty = decision name)")
-	clioStrict := flag.Bool("clio-strict", false,
-		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue)")
+	clioSubjectPrefix := flag.String("clio-subject-prefix", envOr("TEMIS_CLIO_SUBJECT_PREFIX", "/decisions"),
+		"clio subject prefix the decision is filed under (env TEMIS_CLIO_SUBJECT_PREFIX)")
+	clioSubjectKey := flag.String("clio-subject-key", os.Getenv("TEMIS_CLIO_SUBJECT_KEY"),
+		"input field whose value becomes the subject's entity segment (empty = decision name) (env TEMIS_CLIO_SUBJECT_KEY)")
+	clioStrict := flag.Bool("clio-strict", envBool("TEMIS_CLIO_STRICT", false),
+		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue) (env TEMIS_CLIO_STRICT)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -77,9 +87,12 @@ func main() {
 	if *examples {
 		opts = append(opts, service.WithExamples())
 	}
-	// Modeling assistant (ADR-0024): opt-in. Enabled when a provider is named, or
-	// when a token/BYOK is configured without one (then defaults to anthropic).
-	assistOn := *llmProvider != "" || *llmToken != ""
+	// Modeling assistant (ADR-0024): on by default so the binary is fully featured
+	// out of the box. With no server-side key it runs BYOK-only — the endpoint is
+	// live and answers once a caller supplies its own key via X-LLM-Token. It is only
+	// left unmounted when explicitly disabled, or when there is no way to obtain a key
+	// (no server token and BYOK off). Provider defaults to anthropic.
+	assistOn := *assist && (*llmToken != "" || *llmAllowBYOK)
 	if assistOn {
 		provider := *llmProvider
 		if provider == "" {
@@ -136,7 +149,11 @@ func main() {
 		if provider == "" {
 			provider = "anthropic"
 		}
-		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, BYOK=%v)", provider, *llmAllowBYOK)
+		keying := "server key"
+		if *llmToken == "" {
+			keying = "BYOK only (send X-LLM-Token)"
+		}
+		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, %s, BYOK=%v)", provider, keying, *llmAllowBYOK)
 	}
 	if *clioURL != "" {
 		mode := "best-effort"
@@ -151,4 +168,40 @@ func main() {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// envOr returns the value of environment variable key, or def when it is unset.
+func envOr(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
+// envBool reads a boolean environment variable (1/t/true/0/f/false, case-insensitive
+// per strconv.ParseBool), falling back to def when the variable is unset or unparseable.
+func envBool(key string, def bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+// envInt reads an integer environment variable, falling back to def when the
+// variable is unset or unparseable.
+func envInt(key string, def int) int {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return def
+	}
+	return n
 }

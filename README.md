@@ -101,6 +101,43 @@ fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
 
 ### Als HTTP-Service (`temisd`)
 
+**Nullkonfiguration — einfach starten:** `temisd` ist bewusst „batteries-included". Ein
+nackter Start ohne Flags oder Env-Variablen bringt sofort einen **voll ausgestatteten**
+Server: DMN-Modeler unter `/`, Swagger-UI unter `/docs`, mitgelieferte Beispielmodelle,
+Modell-Listing (`GET /v1/models`), den **MCP-Endpunkt** (`POST /mcp`) und den
+**Modellier-Assistenten** (`POST /v1/chat`). Keine Rückfragen, keine Pflicht-Parameter.
+
+```sh
+temisd                                 # alles an, http://localhost:8080/
+```
+
+Der Assistent läuft ohne serverseitigen Schlüssel im **BYOK-Modus** (der Endpunkt ist live
+und antwortet, sobald ein Aufrufer seinen eigenen Provider-Key per `X-LLM-Token`-Header
+mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
+
+**Opt-out für Profis — nur über Umgebungsvariablen.** Jeder Default entstammt einer
+`TEMIS_*`-Variable, sodass sich jedes Feature ohne ein einziges Flag abschalten lässt
+(ideal für Container). Ein explizit gesetztes Flag hat immer Vorrang vor der Env-Variable.
+
+| Env-Variable | Default | Wirkung |
+|---|---|---|
+| `TEMIS_ADDR` | `:8080` | Listen-Adresse (`host:port`) |
+| `TEMIS_API_TOKEN` | *(leer)* | Bearer-Token für `/v1` erzwingen (leer = offen) |
+| `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
+| `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
+| `TEMIS_LIST_MODELS` | `true` | `GET /v1/models` (false → `404`, Decisions privat) |
+| `TEMIS_ASSIST` | `true` | Modellier-Assistent `POST /v1/chat` |
+| `TEMIS_LLM_TOKEN` | *(leer)* | Serverseitiger LLM-Key (leer = BYOK-only) |
+| `TEMIS_LLM_PROVIDER` | `anthropic` | LLM-Provider (`anthropic`/`openai`) |
+| `TEMIS_LLM_ALLOW_BYOK` | `true` | Aufrufer-Key per `X-LLM-Token` zulassen |
+| `TEMIS_CLIO_URL` | *(leer)* | clio-Audit-Sink aktivieren (leer = aus) |
+| `TEMIS_CACHE_SIZE` | `0` | LRU-Cache-Größe (0 = Default, negativ = unbegrenzt) |
+
+```sh
+# Beispiel: gehärteter Betrieb ganz ohne Flags
+TEMIS_API_TOKEN=geheim TEMIS_MCP=false TEMIS_ASSIST=false TEMIS_LIST_MODELS=false temisd
+```
+
 ```sh
 go run ./cmd/temisd -addr :8080        # Server starten
 
