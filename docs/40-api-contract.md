@@ -320,8 +320,25 @@ Oberfläche (unterliegt SemVer): eine neue Route braucht eine bewusste Scope-Zuo
 (`-keys-file`/`$TEMIS_KEYS_FILE`; je Eintrag bevorzugt `secretHash` (hex `sha256`),
 alternativ Klartext-`secret`, plus `scopes[]`, `owner?`, `expiresAt?` RFC-3339,
 `revoked?`) und/oder einem Bootstrap-Admin-Key (`$TEMIS_BOOTSTRAP_ADMIN_KEY` = das
-Secret; der abgeleitete `kid` wird beim Start geloggt, das Secret nie). Persistenz
-und Lifecycle-API (`/v1/keys*`) folgen in Phase 2 (WP-103/104).
+Secret; der abgeleitete `kid` wird beim Start geloggt, das Secret nie).
+
+**Persistenter Keystore & Lifecycle-API (WP-103, Scope `admin`):** Mit
+`temisd -keys-dir <dir>` (`$TEMIS_KEYS_DIR`) hängt der Keystore **opt-in** am
+Dateisystem-Store (ADR-0027, atomarer JSON-Write, reine stdlib — kein bbolt) und
+eine Admin-API verwaltet Keys zur Laufzeit:
+
+| Methode | Pfad | Wirkung |
+|---|---|---|
+| `POST` | `/v1/keys` | Key anlegen → Secret **einmalig** als `secret`/`bearer` (`kid.secret`) in der Antwort, danach nie wieder abrufbar; nur `sha256` wird gespeichert. |
+| `GET` | `/v1/keys` | Alle Keys **ohne Secrets** (Scopes, `owner`, `expiresAt`, `revoked`, `managed`). |
+| `POST` | `/v1/keys/{kid}/rotate` | Neues Secret ausgeben, altes sofort ungültig. |
+| `POST` | `/v1/keys/{kid}/revoke` | Key **markieren** (nie löschen → `kid` bleibt stabiler Audit-Anker). |
+
+Nur über die API erzeugte (**managed**) Keys sind rotier-/widerrufbar; ein
+statischer/Bootstrap-Key → `409 KEY_NOT_MANAGED`, ein unbekannter `kid` → `404`.
+Ohne `-keys-dir` sind die Endpunkte dormant (`404`). Persistiert wird eine einzige
+`keys.json` (Datei `0600`, Verzeichnis `0700`, nur Hashes) — die Keys **überleben
+einen Neustart**. Offline-CLI für den Lockout-Fall folgt in WP-104.
 
 ### 2.1 Modeler-Endpunkte (ADR-0016)
 

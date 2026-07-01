@@ -123,6 +123,7 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 |---|---|---|
 | `TEMIS_ADDR` | `:8080` | Listen-Adresse (`host:port`) |
 | `TEMIS_KEYS_FILE` | *(leer)* | JSON-Datei mit scoped `kid.secret`-API-Keys für `/v1`, `/mcp`, gRPC (leer = keine; ADR-0028) |
+| `TEMIS_KEYS_DIR` | *(leer)* | Verzeichnis für den persistenten Keystore + Lifecycle-API (`POST /v1/keys …`); Keys überleben Neustart (leer = Key-Verwaltung aus; WP-103) |
 | `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
 | `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
@@ -254,6 +255,29 @@ go run ./cmd/temisd -addr :8080 -keys-file keys.json
 curl -H 'Authorization: Bearer agent.s3cret' \
      -d '{"decision":"Dish","input":{"Season":"Winter","Guest Count":8}}' \
      -H 'Content-Type: application/json' localhost:8080/v1/models/<id>/evaluate
+```
+
+**Keys zur Laufzeit verwalten (WP-103, Scope `admin`):** Mit `-keys-dir <dir>`
+(`$TEMIS_KEYS_DIR`) hängt der Keystore am Dateisystem-Store (ADR-0027, atomarer
+JSON-Write, reine stdlib — kein bbolt) und eine Admin-API legt Keys an, listet,
+rotiert und widerruft sie. Das Secret erscheint **einmalig** beim Anlegen/Rotieren
+(als `secret`/`bearer`), danach wird nur der `sha256` gehalten. Nur so erzeugte
+(*managed*) Keys sind rotier-/widerrufbar; statische Keys → `409`. Die Keys
+überleben einen Neustart. Praktisch mit einem Bootstrap-Admin kombinieren:
+
+```sh
+TEMIS_BOOTSTRAP_ADMIN_KEY=adminsecret go run ./cmd/temisd -keys-dir ./keystore
+# → Log: bootstrap admin key registered: kid=boot-xxxxxxxxxxxx
+ADMIN='boot-xxxxxxxxxxxx.adminsecret'
+
+# Key anlegen (Secret nur hier sichtbar)
+curl -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+     -d '{"scopes":["evaluate"],"owner":"agent-1"}' localhost:8080/v1/keys
+# → {"kid":"k_…","secret":"…","bearer":"k_….…","scopes":["evaluate"]}
+
+curl -H "Authorization: Bearer $ADMIN" localhost:8080/v1/keys                 # listen (ohne Secrets)
+curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rotate  # rotieren
+curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
 ```
 
 **DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als

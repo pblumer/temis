@@ -839,6 +839,112 @@ paths:
               schema: { $ref: "#/components/schemas/StatusResponse" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/keys:
+    post:
+      summary: Create a scoped API key (ADR-0028 Phase 2, WP-103)
+      description: >
+        Mint a new managed kid.secret key with the requested scopes. The plaintext
+        secret is returned exactly once in this response (as `secret` and the
+        ready-to-use `bearer` = `kid.secret`) and never again — only its SHA-256 is
+        stored. Requires the `admin` scope. Answers 404 when the persistent key
+        store is not enabled (`temisd -keys-dir`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateKeyRequest" }
+      responses:
+        "201":
+          description: The created key with its one-time secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Key management is disabled (no key store configured)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    get:
+      summary: List API keys without secrets (WP-103)
+      description: >
+        List every key — managed and operator-owned — with its scopes, owner,
+        expiry, revoked and managed flags, never any secret material. Requires the
+        `admin` scope.
+      responses:
+        "200":
+          description: The keys, sorted by kid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Key management is disabled (no key store configured)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/keys/{kid}/rotate:
+    post:
+      summary: Rotate a managed key's secret (WP-103)
+      description: >
+        Issue a fresh secret for a managed key, invalidating the old one. The new
+        secret is returned once (as with create). Requires the `admin` scope. A
+        static/operator key cannot be rotated (409); an unknown kid is 404.
+      parameters:
+        - { name: kid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The rotated key with its new one-time secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such key (or key management disabled)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: The key is not server-managed (created outside the lifecycle API)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/keys/{kid}/revoke:
+    post:
+      summary: Revoke a managed key (WP-103)
+      description: >
+        Mark a managed key revoked so it never authenticates again. Revocation
+        marks rather than deletes, so the kid stays a stable audit handle.
+        Requires the `admin` scope. A static/operator key cannot be revoked (409);
+        an unknown kid is 404.
+      parameters:
+        - { name: kid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The key was revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kid: { type: string }
+                  revoked: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such key (or key management disabled)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: The key is not server-managed (created outside the lifecycle API)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /docs:
     get:
       summary: Interactive Swagger UI
@@ -891,6 +997,16 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: The key is valid but lacks the scope this route requires (code FORBIDDEN)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     ModelNotFound:
       description: No model with that id
       content:
@@ -910,6 +1026,59 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ModelResponse" }
   schemas:
+    CreateKeyRequest:
+      type: object
+      required: [scopes]
+      properties:
+        scopes:
+          type: array
+          items: { type: string, enum: [evaluate, "models:read", "models:write", git, assist, flow, admin, audit] }
+          description: The scopes to grant the new key (ADR-0028 §2).
+        owner:
+          type: string
+          description: Free-form owner label, for identity/audit. Optional.
+        expiresAt:
+          type: string
+          format: date-time
+          description: RFC3339 expiry; omit for a key that never expires.
+    CreatedKey:
+      type: object
+      description: >
+        A newly created or rotated key. The secret is shown once here and never
+        again — only its SHA-256 is stored server-side.
+      required: [kid, secret, bearer]
+      properties:
+        kid: { type: string, description: The public key id. }
+        secret: { type: string, description: The one-time plaintext secret. }
+        bearer: { type: string, description: "Ready-to-use credential: <kid>.<secret>." }
+        scopes:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        expiresAt: { type: string, format: date-time }
+    KeyView:
+      type: object
+      description: A key without any secret material.
+      required: [kid, scopes, revoked, managed]
+      properties:
+        kid: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        expiresAt: { type: string, format: date-time }
+        revoked: { type: boolean }
+        managed:
+          type: boolean
+          description: True for keys created via this API (rotatable/revocable); false for static/operator keys.
+    KeyList:
+      type: object
+      required: [keys, count]
+      properties:
+        keys:
+          type: array
+          items: { $ref: "#/components/schemas/KeyView" }
+        count: { type: integer }
     ChatRequest:
       type: object
       required: [messages]

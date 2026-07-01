@@ -52,10 +52,19 @@ type Server struct {
 	keysFile          string
 	bootstrapAdminKey string
 
+	// keyStoreDir, when non-empty, is the persistent managed-key store directory
+	// (WP-103, ADR-0027): the lifecycle API (/v1/keys*) creates/rotates/revokes keys
+	// there so they survive a restart. Empty leaves key management disabled (404).
+	keyStoreDir string
+
 	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
 	// NewServer. It authenticates kid.secret bearers and drives requireScope.
 	// When it reports !enabled() the /v1 surface is open (the historical default).
 	auth Authenticator
+
+	// keyStore is the concrete keystore behind auth, retained (non-nil) only when a
+	// persistent key store is configured, so the lifecycle handlers can mutate it.
+	keyStore *keystore
 
 	// listModels enables the GET /v1/models listing endpoint. When false the
 	// handler responds 404, so callers cannot enumerate the cached models (and
@@ -147,6 +156,16 @@ func WithBootstrapAdminKey(secret string) Option {
 	return func(s *Server) { s.bootstrapAdminKey = secret }
 }
 
+// WithKeyStore enables the persistent managed-key store and the key lifecycle API
+// (WP-103, ADR-0028 Phase 2). Keys created/rotated/revoked over POST /v1/keys are
+// persisted as a single atomically-written JSON file in dir (secret hashes only)
+// and reloaded on the next start, so they survive a restart. An empty dir leaves
+// key management disabled: the /v1/keys* endpoints answer 404. Pair this with a
+// bootstrap admin key so the API is not open to the first caller.
+func WithKeyStore(dir string) Option {
+	return func(s *Server) { s.keyStoreDir = dir }
+}
+
 // WithVersion sets the build version reported by GET /v1/status (ADR-0030). An
 // empty version falls back to the development placeholder.
 func WithVersion(v string) Option {
@@ -229,6 +248,24 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	s.auth = auth
 	if bootKid != "" {
 		log.Printf("temis: bootstrap admin key registered: kid=%s (use Authorization: Bearer %s.<secret>)", bootKid, bootKid)
+	}
+	// Persistent managed-key store + lifecycle API (WP-103): load previously
+	// created keys so they survive a restart, and let /v1/keys* mutate them. A store
+	// that cannot be opened is fatal, like a malformed keys file — key management
+	// must not silently degrade to unpersisted.
+	if s.keyStoreDir != "" {
+		loaded, skipped, err := auth.attachKeyStore(s.keyStoreDir)
+		if err != nil {
+			panic("temis: key store: " + err.Error())
+		}
+		s.keyStore = auth
+		log.Printf("temis: key store at %s (%d managed keys loaded, lifecycle API at /v1/keys)", s.keyStoreDir, loaded)
+		if skipped > 0 {
+			log.Printf("temis: key store: %d managed key(s) skipped (kid collides with a static/bootstrap key)", skipped)
+		}
+		if !auth.enabled() {
+			log.Printf("temis: WARNING key management is enabled but no admin credential is configured — /v1/keys is OPEN to the first caller; set TEMIS_BOOTSTRAP_ADMIN_KEY or -keys-file")
+		}
 	}
 	s.cache = newModelCache(s.cacheSize)
 	s.flows = newFlowStore()
@@ -346,6 +383,13 @@ func (s *Server) dataRoutes() []route {
 		// secret-free. Guarded by the audit scope — admin keys pass too (admin is
 		// a super-scope), so both admin and audit callers can read it.
 		{"GET", "/v1/status", ScopeAudit, s.handleStatus},
+		// Key lifecycle API (ADR-0028 Phase 2, WP-103): admin-scoped create/list/
+		// rotate/revoke of scoped API keys, backed by the persistent key store.
+		// Dormant (404) unless a -keys-dir is configured.
+		{"POST", "/v1/keys", ScopeAdmin, s.handleCreateKey},
+		{"GET", "/v1/keys", ScopeAdmin, s.handleListKeys},
+		{"POST", "/v1/keys/{kid}/rotate", ScopeAdmin, s.handleRotateKey},
+		{"POST", "/v1/keys/{kid}/revoke", ScopeAdmin, s.handleRevokeKey},
 	}
 }
 
