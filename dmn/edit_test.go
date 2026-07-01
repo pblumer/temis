@@ -134,6 +134,34 @@ func TestApplyEditsUnknownIDIgnored(t *testing.T) {
 	graphByName(t, out) // still compiles
 }
 
+// TestSetModelName renames the model (definitions name) and checks the patched
+// document recompiles, carries the new name and keeps its decision logic intact.
+func TestSetModelName(t *testing.T) {
+	src := readModel(t, "pricing_15.dmn")
+
+	out, err := dmn.SetModelName(src, "Neuer Modellname")
+	if err != nil {
+		t.Fatalf("SetModelName: %v", err)
+	}
+	defs, diags, err := dmn.New().Compile(context.Background(), out)
+	if err != nil {
+		t.Fatalf("recompile renamed model: %v", err)
+	}
+	if diags.HasErrors() {
+		t.Fatalf("renamed model has compile errors: %+v", diags)
+	}
+	if got := defs.ModelName(); got != "Neuer Modellname" {
+		t.Errorf("ModelName = %q, want %q", got, "Neuer Modellname")
+	}
+	// Logic is preserved and the graph still has its nodes.
+	if len(defs.Graph().Nodes) == 0 {
+		t.Error("renamed model lost its graph nodes")
+	}
+	if !strings.Contains(string(out), "literalExpression") && !strings.Contains(string(out), "decisionTable") {
+		t.Error("renamed XML lost its decision logic elements")
+	}
+}
+
 func names(m map[string]dmn.GraphNode) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
