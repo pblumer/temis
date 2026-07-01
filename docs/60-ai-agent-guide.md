@@ -88,3 +88,28 @@
 
 WP-01 → WP-02 → (WP-03 → WP-04 → WP-05 → WP-06 → WP-07) → WP-08 → WP-09 → WP-10 → WP-11.
 Damit ist der MVP erreicht und liefert sofort sichtbaren Wert (lädt echte dmn-js-Dateien).
+
+## 8. Agent als Konsument: delegieren → protokollieren
+
+> Dieser Abschnitt betrifft die **zweite** Rolle aus dem Callout oben — den Agenten, der
+> temis zur **Laufzeit nutzt**, nicht baut. Er gehört hierher, weil viele Coding-Agenten
+> beide Hüte tragen und das Muster kennen sollten.
+
+Ein Agent, der vor einer **regelbasierten** Entscheidung steht (Förderfähigkeit, Tarif,
+Bonität, Routing, Berechtigung), soll sie **nicht raten**. Das verlässliche Muster ist
+zweistufig und braucht **keinen** neuen temis-Code (ADR-0013/0023):
+
+1. **Delegieren:** die Entscheidung an temis geben — MCP-Tool `evaluate` (oder
+   `POST /v1/evaluate`), gern mit `explain: true` (Begründung) und `strict: true`
+   (Eingabe-Vorabprüfung). Ergebnis ist eine **deterministische, reproduzierbare**
+   Grundwahrheit, gegen die der Agent sein Handeln absichert.
+2. **Protokollieren:** das Ergebnis als `com.temis.decision.evaluated.v1`-CloudEvent in
+   clio schreiben (`write-events`) — revisionssicher, hash-verkettet, später per
+   `temis-reaudit` **nachrechenbar**.
+
+> *Themis entscheidet, Clio merkt es sich.* Alternativ übernimmt der `temisd`-Sink
+> (`-clio-url`) Schritt 2 serverseitig, ohne dass der Agent selbst schreibt.
+
+**Lauffähiges Beispiel, Vertrag, Idempotenz und Betriebshinweise:**
+`docs/80-clio-decision-log.md` (Abschnitt 5). Grundsatzentscheidung: **ADR-0023**;
+temis als Verifikationsorakel: **ADR-0013**.

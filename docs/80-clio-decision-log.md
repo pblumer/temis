@@ -199,8 +199,10 @@ clio  ──(run-query: decision events)──▶  temis-reaudit  ──(re-eval
 
 ## 5. Agent-Muster: delegieren → protokollieren (heute nutzbar)
 
-Für KI-Agenten (ADR-0013) braucht es **keinen** neuen temis-Code: Agent ruft erst das
-temis-MCP-Tool `evaluate`, dann clios MCP-/HTTP-Route `write-events`.
+Für KI-Agenten (ADR-0013) braucht es **keinen** neuen temis-Code. Ein Agent, der eine
+regelbasierte Entscheidung nicht „raten" will, **delegiert** sie an temis und
+**protokolliert** das Ergebnis anschließend selbst in clio — beides über bestehende
+Werkzeuge:
 
 ```text
 Agent
@@ -209,9 +211,47 @@ Agent
   ▼
 ```
 
-So entsteht dasselbe Logbuch wie über den `temisd`-Sink, getrieben vom Agenten. Der
-Sink (Abschnitt 2) ist der serverseitige Weg für alle nicht-Agent-Integrationen
-(HTTP-Clients, Batch).
+So entsteht dasselbe Logbuch wie über den `temisd`-Sink (Abschnitt 2) — nur agenten-
+statt servergetrieben. Der Sink ist der serverseitige Weg für nicht-Agent-Integrationen
+(HTTP-Clients, Batch); dieses Muster ist der Weg für einen Agenten, der die Entscheidung
+ohnehin schon in der Hand hält.
+
+### Schritt 1 — an temis delegieren
+
+Über das temis-MCP-Tool `evaluate` (oder `POST /v1/evaluate`). `explain: true` liefert die
+Spur mit, `strict: true` prüft die Eingabe vorab:
+
+```jsonc
+// MCP-Tool-Aufruf: evaluate
+{ "modelId": "sha256:1f3a…", "decision": "Dish",
+  "input": { "Season": "Winter", "Guest Count": 8 },
+  "explain": true }
+// → { "outputs": { "Dish": "Roastbeef" }, "trace": { … } }
+```
+
+### Schritt 2 — in clio protokollieren
+
+Das Ergebnis aus Schritt 1 wird 1:1 in den Decision-Event-Vertrag (Abschnitt 1) gegossen
+und an clios `write-events` geschickt (MCP-Tool bzw. `POST /api/v1/write-events`):
+
+```bash
+curl -X POST http://127.0.0.1:3000/api/v1/write-events \
+  -H "Authorization: Bearer kid_agent.secret" -H "Content-Type: application/json" \
+  -d '{"events":[{
+        "source":"claude-agent","subject":"/orders/42",
+        "type":"com.temis.decision.evaluated.v1",
+        "data":{"modelId":"sha256:1f3a…","decision":"Dish",
+                "input":{"Season":"Winter","Guest Count":8},
+                "outputs":{"Dish":"Roastbeef"}}}]}'
+```
+
+Für **Idempotenz** kann der Agent — genau wie der Sink — eine Precondition mitschicken
+(Abschnitt 2), sodass ein wiederholter Aufruf denselben Eintrag nicht dupliziert. Später
+verifiziert `temis-reaudit` (Abschnitt 4) auch diese agenten-geschriebenen Events, weil
+sie denselben Vertrag erfüllen.
+
+> **Themis entscheidet, Clio merkt es sich** — ohne dass der Agent selbst zur
+> Entscheidungslogik oder zum Speicher wird.
 
 ---
 
