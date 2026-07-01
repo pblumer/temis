@@ -116,12 +116,23 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
     let firstErr = ''
     const nameEls = grid.querySelectorAll<HTMLInputElement>('.ctx-name')
     const exprEls = grid.querySelectorAll<HTMLInputElement>('.ctx-expr')
+    // Count each trimmed entry name so duplicates can be flagged: a context is a
+    // map, so two same-named entries silently clobber each other (the engine keeps
+    // the last, with no error) — catch it here before the value goes wrong.
+    const nameCounts = new Map<string, number>()
+    for (const row of rows) {
+      const n = row.name.trim()
+      if (n !== '') nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1)
+    }
     rows.forEach((row, i) => {
       const nameEl = nameEls[i]
       const exprEl = exprEls[i]
-      const nameRes = row.name.trim() === '' ? { ok: false, message: 'Name darf nicht leer sein' } : validateName(row.name.trim())
-      nameEl?.classList.toggle('ctx-invalid', !nameRes.ok)
+      const trimmed = row.name.trim()
+      const dup = trimmed !== '' && (nameCounts.get(trimmed) ?? 0) > 1
+      const nameRes = trimmed === '' ? { ok: false, message: 'Name darf nicht leer sein' } : validateName(trimmed)
+      nameEl?.classList.toggle('ctx-invalid', !nameRes.ok || dup)
       if (!nameRes.ok && !firstErr) firstErr = 'Name „' + row.name + '": ' + (nameRes.message ?? 'ungültig')
+      else if (dup && !firstErr) firstErr = 'Name „' + trimmed + '" doppelt — Eintragsnamen müssen eindeutig sein'
       const exprRes = row.text.trim() === '' ? { ok: false, message: 'Ausdruck darf nicht leer sein' } : validateExpr(row.text.trim(), scopeFor(i))
       exprEl?.classList.toggle('ctx-invalid', !exprRes.ok)
       if (!exprRes.ok && !firstErr) firstErr = (row.name || 'Eintrag ' + (i + 1)) + ': ' + (exprRes.message ?? 'ungültig')
