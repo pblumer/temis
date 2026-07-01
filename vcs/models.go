@@ -17,6 +17,10 @@ var errReadOnly = errors.New("vcs: Models has no Writer; construct it with NewMo
 // dmn-js and other tools.
 const dmnExt = ".dmn"
 
+// flowExt is the conventional file extension for decision-flow descriptors
+// (ADR-0026, WP-94).
+const flowExt = ".flow.json"
+
 // Models loads DMN documents from a version-controlled repository and compiles
 // them with an engine. It is the library entry point that ties a Reader
 // (how to reach the repository) to the dmn engine (how to compile what it
@@ -63,6 +67,26 @@ func (m *Models) List(ctx context.Context, repo RepoRef, ref, dir string) ([]Fil
 	out := make([]File, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir || !strings.HasSuffix(strings.ToLower(e.Name), dmnExt) {
+			continue
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// ListFlows returns the decision-flow descriptor files (those whose name ends in
+// ".flow.json") directly under dir at ref, sorted by path. It mirrors List for
+// flows (ADR-0026, WP-94); the descriptors themselves are read with the reader's
+// ReadFile and compiled by package flow, so vcs stays free of a flow dependency.
+func (m *Models) ListFlows(ctx context.Context, repo RepoRef, ref, dir string) ([]File, error) {
+	entries, err := m.reader.ListFiles(ctx, repo, ref, dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]File, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir || !strings.HasSuffix(strings.ToLower(e.Name), flowExt) {
 			continue
 		}
 		out = append(out, e)

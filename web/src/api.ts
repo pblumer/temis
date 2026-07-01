@@ -124,10 +124,16 @@ export async function createBlankModel(name: string): Promise<ModelDetail> {
   return createModel(blankModelXML(name))
 }
 
+// getGraph returns the model's decision requirements graph. An empty model (a
+// blank, freshly created one) has no nodes/edges, and the engine serialises
+// those empty slices as JSON null — so coerce to arrays here, keeping the Graph
+// contract (arrays, never null) that layout()/renderGraph rely on. Without this
+// a brand-new model throws in layout() and the canvas keeps the old model.
 export async function getGraph(modelId: string): Promise<Graph> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/graph')
   if (!r.ok) throw new Error('Graph laden fehlgeschlagen (HTTP ' + r.status + ')')
-  return (await r.json()) as Graph
+  const body = (await r.json()) as { nodes?: GraphNode[] | null; edges?: GraphEdge[] | null }
+  return { nodes: body.nodes ?? [], edges: body.edges ?? [] }
 }
 
 // NodeEdit is one node's persistable edit; omitted fields stay unchanged. x/y are

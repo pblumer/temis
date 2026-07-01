@@ -4,7 +4,9 @@ import { promptDialog, confirmDialog } from './dialog'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
-import type { GraphEvalResult } from './api'
+import { mountOperate } from './operate'
+import { mountImport } from './testimport'
+import type { GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
@@ -50,6 +52,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <span class="mode-toggle">
             <button id="modeDesign" class="mode-btn is-active" type="button" title="Bearbeiten">Design</button>
             <button id="modeOperate" class="mode-btn" type="button" title="Auswerten & beobachten">Operate</button>
+            <button id="modeImport" class="mode-btn" type="button" title="Testfälle importieren & durchlaufen lassen">Import</button>
           </span>
           <span class="design-only toolbar-group">
             <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
@@ -69,12 +72,16 @@ async function boot(root: HTMLElement): Promise<void> {
           <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
         </div>
-        <div id="canvas" class="canvas"></div>
+        <div id="opHistory" class="op-history"></div>
+        <div class="canvas-wrap">
+          <div id="canvas" class="canvas"></div>
+          <div id="opOverlays" class="op-overlays"></div>
+        </div>
         <section class="eval-panel">
           <h2 class="eval-title">Auswerten</h2>
           <div id="eval"></div>
-          <div id="operate" class="operate-panel"></div>
         </section>
+        <section id="importCockpit" class="import-cockpit"></section>
       </main>
       <aside id="assist" class="assist-panel"></aside>
     </div>`
@@ -85,7 +92,10 @@ async function boot(root: HTMLElement): Promise<void> {
   const status = root.querySelector<HTMLElement>('#status')
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
-  const operateHost = root.querySelector<HTMLElement>('#operate')
+  const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
+  const importHost = root.querySelector<HTMLElement>('#importCockpit')
+  const opHistoryHost = root.querySelector<HTMLElement>('#opHistory')
+  const opOverlayHost = root.querySelector<HTMLElement>('#opOverlays')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
   const saveBtn = root.querySelector<HTMLButtonElement>('#save')
@@ -97,7 +107,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -118,9 +128,12 @@ async function boot(root: HTMLElement): Promise<void> {
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
-  let mode: 'design' | 'operate' = 'design'
+  let mode: 'design' | 'operate' | 'import' = 'design'
   let runs: EvalRun[] = []
   let activeRun: EvalRun | null = null
+  // The model detail currently loaded (schema + decisions), shared with the
+  // Import cockpit so it can build a matching test template and run cases.
+  let currentModel: ModelDetail | null = null
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -746,65 +759,43 @@ async function boot(root: HTMLElement): Promise<void> {
     return out
   }
 
-  // applyRun makes a run the active one and overlays its values + hit rules.
+  // applyRun makes a run the active one and overlays its values + hit rules on
+  // the diagram nodes (the green result pills).
   const applyRun = (run: EvalRun): void => {
     activeRun = run
     handle?.showResults(run.result.values, hitRulesOf(run.result))
   }
 
+  // The Operate cockpit: a keyboard-navigable run history above the diagram and
+  // frosted summary overlays over it (operate.ts). It reads the live session
+  // state via getters; selecting a run makes it active, repaints the diagram
+  // pills and refreshes the operate chrome.
+  const operate = mountOperate({
+    historyHost: opHistoryHost,
+    overlayHost: opOverlayHost,
+    getRuns: () => runs,
+    getActive: () => activeRun,
+    onActivate: (run) => {
+      applyRun(run)
+      operate.render()
+    },
+  })
+
+  // The Import cockpit: a batch test-runner shaped like a conveyor belt. It reads
+  // the loaded model via getModel to build a matching CSV/JSON template and runs
+  // imported test cases against the same whole-graph evaluate endpoint, animating
+  // each record from the Eingang lane through Evaluation into the clio Store.
+  const importView = mountImport({
+    host: importHost,
+    getModel: () => currentModel,
+  })
+
   // recordRun is called after each evaluation: keep it in the session history
-  // (newest first), highlight it, and refresh the Operate panel.
+  // (newest first), highlight it, and refresh the Operate cockpit.
   const recordRun = (run: EvalRun): void => {
     runs.unshift(run)
     applyRun(run)
-    if (mode === 'operate') renderOperate()
-  }
-
-  const summarizeInputs = (inputs: Record<string, unknown>): string => {
-    const parts = Object.entries(inputs).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
-    return parts.length ? parts.join(', ') : '(keine Eingaben)'
-  }
-
-  // renderOperate draws the session run history and the active run's detail.
-  const renderOperate = (): void => {
-    operateHost.textContent = ''
-    if (!runs.length) {
-      operateHost.append(el('p', 'model-empty', 'Noch keine Auswertung in dieser Session. Oben Eingaben füllen und „Auswerten" — die Ergebnisse erscheinen hier und auf den Knoten.'))
-      return
-    }
-    operateHost.append(el('div', 'op-title', 'Läufe (Session)'))
-    const list = el('div', 'op-runs')
-    runs.forEach((run, i) => {
-      const n = runs.length - i
-      const row = el('div', 'op-run' + (run === activeRun ? ' is-active' : ''))
-      row.append(el('span', 'op-run-n', 'Lauf ' + n), el('span', 'op-run-in', summarizeInputs(run.inputs)))
-      row.addEventListener('click', () => {
-        applyRun(run)
-        renderOperate()
-      })
-      list.append(row)
-    })
-    operateHost.append(list)
-    if (activeRun) {
-      const detail = el('div', 'op-detail')
-      detail.append(el('div', 'op-subtitle', 'Eingangsdaten'))
-      const intbl = el('table', 'op-kv')
-      for (const [k, v] of Object.entries(activeRun.inputs)) {
-        intbl.append(el('tr', '', el('th', '', k), el('td', '', el('code', '', typeof v === 'string' ? v : JSON.stringify(v)))))
-      }
-      if (!Object.keys(activeRun.inputs).length) intbl.append(el('tr', '', el('td', '', '(keine)')))
-      detail.append(intbl)
-      detail.append(el('div', 'op-subtitle', 'Ergebnisse'))
-      const outtbl = el('table', 'op-kv')
-      const rules = hitRulesOf(activeRun.result)
-      for (const [name, val] of Object.entries(activeRun.result.values)) {
-        const rule = rules[name]?.length ? el('span', 'op-rule', 'Regel ' + rules[name].join(', ')) : el('span', '', '')
-        outtbl.append(el('tr', '', el('th', '', name), el('td', '', el('code', '', typeof val === 'string' ? val : JSON.stringify(val)), rule)))
-      }
-      detail.append(outtbl)
-      detail.append(el('p', 'op-hint', 'Tipp: Doppelklick auf eine Decision mit Tabelle zeigt die getroffene Regel.'))
-      operateHost.append(detail)
-    }
+    if (mode === 'operate') operate.render()
   }
 
   // openTable opens a decision's table — editable in Design, read-only with the
@@ -815,21 +806,31 @@ async function boot(root: HTMLElement): Promise<void> {
       const tr = activeRun?.result.traces?.[name]
       const matched: number[] = []
       for (const t of tr?.tables ?? []) for (const m of t.matched ?? []) matched.push(m)
-      void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched })
+      // The first table's trace drives the decision-path view (a decision table
+      // decision has exactly one table; matched still spans all, for safety).
+      void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched, trace: tr?.tables?.[0] })
     } else {
       void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions)
     }
   }
 
-  const setMode = (m: 'design' | 'operate'): void => {
+  const setMode = (m: 'design' | 'operate' | 'import'): void => {
     mode = m
     appShell.dataset.mode = m
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
-    if (m === 'operate') renderOperate()
+    modeImportBtn.classList.toggle('is-active', m === 'import')
+    if (m === 'operate') {
+      operate.render()
+      // Focus the history so the run list is immediately keyboard-navigable.
+      if (runs.length) operate.focusHistory()
+    } else if (m === 'import') {
+      importView.render()
+    }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
   modeOperateBtn.addEventListener('click', () => setMode('operate'))
+  modeImportBtn.addEventListener('click', () => setMode('import'))
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
@@ -837,9 +838,12 @@ async function boot(root: HTMLElement): Promise<void> {
     renderModelList()
     status.textContent = 'lädt …'
     dirty = false
-    // A fresh model view starts an empty run history (its decisions differ).
+    // A fresh model view starts an empty run history (its decisions differ) and
+    // an empty Import belt (the leaf inputs — hence any template — differ too).
     runs = []
     activeRun = null
+    currentModel = null
+    importView.reset()
     try {
       // Refresh the type options for this model (built-in + its custom types).
       try {
@@ -905,10 +909,13 @@ async function boot(root: HTMLElement): Promise<void> {
           status.classList.remove('status-problem')
         }
         renderEvaluatePanel(evalHost, detail, (run) => recordRun(run))
+        // Share the loaded model with the Import cockpit (template + run source).
+        currentModel = detail
+        if (mode === 'import') importView.render()
       } catch {
         evalHost.textContent = ''
       }
-      if (mode === 'operate') renderOperate()
+      if (mode === 'operate') operate.render()
     } catch (e) {
       status.textContent = (e as Error).message
     }

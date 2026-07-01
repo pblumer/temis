@@ -202,6 +202,15 @@ go run ./cmd/temisd -addr :8080
 # Browser: http://localhost:8080/
 ```
 
+**Import-Cockpit (Testfälle stapelweise durchlaufen lassen):** Neben **Design** und **Operate**
+bietet der Modeler einen dritten Modus **Import** — einen Testfall-Stapellauf als *Fließband*. Man
+lädt eine **Vorlage** (**CSV** oder **JSON**) herunter, die exakt zu den Eingaben des Modells passt,
+füllt sie mit Testdaten (von Hand, in der Tabellenkalkulation oder von einem **KI-Agenten**) und
+importiert sie per Datei-Auswahl oder Drag & Drop. Optionale `→Decision`-Spalten machen aus einer
+Zeile eine **Pass/Fail-Erwartung**. „Durchlaufen lassen" schickt jeden Datensatz **animiert** von
+links (*Eingang*) durch die *Evaluation* (dieselbe Engine wie Operate) nach rechts in den *clio
+Store* — mit berechneten Ergebnissen und Pass/Fail-Badges. Reines Frontend, kein neuer Endpunkt.
+
 **Interaktive API-Doku (Swagger UI):** Der Server liefert zusätzlich eine dynamische
 OpenAPI-Testseite unter `GET /docs` (lädt das eingebettete Spec von
 `GET /openapi.yaml`) — Endpunkte direkt im Browser ausprobieren.

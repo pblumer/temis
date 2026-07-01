@@ -1,4 +1,4 @@
-import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit } from './api'
+import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit, type TableTrace, type TraceInput, type TraceRule } from './api'
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
 import { attachCompletion, feelItems, type CompletionItem } from './complete'
 import { FEEL_TYPES } from './feeltypes'
@@ -16,8 +16,11 @@ const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
 // the model. onSaved gets the saved model's new id (its content hash changed).
 // opts.matched highlights the rule row(s) that fired in an evaluation (the
 // Operate view's hit-rule highlight); opts.readOnly opens the table for viewing
-// only (no editing/saving) — used when inspecting a past run.
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean } = {}): Promise<void> {
+// only (no editing/saving) — used when inspecting a past run. opts.trace, when
+// given (read-only), draws the decision PATH: the tested input value per column,
+// a per-cell pass/fail heatmap over every rule and the winning rule glowing, plus
+// a chip-and-arrow summary bar (input value → matched rule → output).
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace } = {}): Promise<void> {
   let fetched: TableView | null
   try {
     fetched = await getTable(modelId, decisionId)
@@ -81,11 +84,13 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   const inputNames = (): string[] => state.inputs.map((c) => c.expression).filter((s) => s.trim() !== '')
 
   const matched = new Set(opts.matched ?? [])
+  // The decision trace is only shown in read-only inspection (a past run).
+  const trace = opts.readOnly ? opts.trace : undefined
   const rebuild = (): void => {
     scroll.textContent = ''
     // inputNames is passed as a live provider so completion always reflects the
     // current input-column expressions, even while they are being edited.
-    scroll.append(buildGrid(state, inputNames, rebuild, typeOptions, matched))
+    scroll.append(buildGrid(state, inputNames, rebuild, typeOptions, matched, trace))
   }
   rebuild()
 
@@ -144,6 +149,12 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
 
   const toolbar = el('div', { class: 'dt-toolbar' }, addInBtn, addOutBtn, addBtn, saveBtn, status)
   const modal = el('div', { class: 'dt-modal' }, header, scroll, toolbar)
+  // Read-only trace inspection: prepend the decision-path summary bar and switch
+  // the grid into heatmap mode (per-cell pass/fail, glowing hit row).
+  if (trace) {
+    modal.classList.add('dt-trace')
+    modal.insertBefore(decisionPath(state, trace), scroll)
+  }
   overlay.append(modal)
 
   // Read-only (Operate): no structural edits — disable every field/button and
@@ -162,8 +173,11 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
 // buildGrid renders the editable table from the working state. rebuild is called
 // after a structural change (column/row add/remove) to redraw. namesProvider
 // yields the in-scope input names live (for validation snapshots and completion).
-function buildGrid(state: TableView, namesProvider: () => string[], rebuild: () => void, typeOptions: string[], matched: Set<number>): HTMLElement {
+function buildGrid(state: TableView, namesProvider: () => string[], rebuild: () => void, typeOptions: string[], matched: Set<number>, trace?: TableTrace): HTMLElement {
   const names = namesProvider()
+  // Trace rules keyed by their (0-based) rule index, so a row finds its per-cell
+  // pass/fail verdict even if the engine omitted or reordered any.
+  const traceRules = new Map<number, TraceRule>((trace?.rules ?? []).map((r) => [r.index, r]))
   const table = el('table', { class: 'dt' })
   const head = el('thead')
 
@@ -176,7 +190,7 @@ function buildGrid(state: TableView, namesProvider: () => string[], rebuild: () 
 
   // Column header row: editable expression/name + type + remove.
   const cols = el('tr', { class: 'dt-cols' }, el('th', { class: 'dt-idx' }, '#'))
-  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild, typeOptions, namesProvider)))
+  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild, typeOptions, namesProvider, trace?.inputs?.[k])))
   state.outputs.forEach((c, k) => cols.append(outputHeader(state, c, k, rebuild, typeOptions)))
   cols.append(el('th', { class: 'dt-ann' }, ''), el('th', { class: 'dt-del' }, ''))
   head.append(cols)
@@ -184,12 +198,12 @@ function buildGrid(state: TableView, namesProvider: () => string[], rebuild: () 
 
   // Rule rows.
   const body = el('tbody')
-  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild, matched.has(i), namesProvider)))
+  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild, matched.has(i), namesProvider, traceRules.get(i))))
   table.append(body)
   return table
 }
 
-function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void, typeOptions: string[], namesProvider: () => string[]): HTMLElement {
+function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void, typeOptions: string[], namesProvider: () => string[], traceInput?: TraceInput): HTMLElement {
   const expr = el('input', { class: 'dt-head-field', value: col.expression ?? '', placeholder: 'FEEL' }) as HTMLInputElement
   const check = (): void => {
     const s = expr.value.trim()
@@ -199,11 +213,14 @@ function inputHeader(state: TableView, col: TableInput, k: number, names: string
   expr.addEventListener('input', check)
   attachCompletion(expr, () => feelItems(namesProvider()))
   check()
-  return el('th', { class: 'dt-in' }, el('div', { class: 'dt-colhead' }, expr, typeSelect(col, typeOptions), removeBtn(() => {
+  const colhead = el('div', { class: 'dt-colhead' }, expr, typeSelect(col, typeOptions), removeBtn(() => {
     state.inputs.splice(k, 1)
     state.rules.forEach((r) => r.inputEntries.splice(k, 1))
     rebuild()
-  })))
+  }))
+  // In trace mode, show the value this column was tested with (the input flowing in).
+  if (traceInput) colhead.append(el('span', { class: 'dt-trace-val', title: 'getesteter Eingabewert' }, '= ' + fmtVal(traceInput.value)))
+  return el('th', { class: 'dt-in' }, colhead)
 }
 
 function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: () => void, typeOptions: string[]): HTMLElement {
@@ -225,10 +242,16 @@ function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: ()
   return el('th', { class: 'dt-out' }, el('div', { class: 'dt-colhead' }, name, typeSelect(col, typeOptions), rm))
 }
 
-function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void, hit = false, namesProvider: () => string[] = () => names): HTMLElement {
+function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void, hit = false, namesProvider: () => string[] = () => names, tr?: TraceRule): HTMLElement {
   const row = el('tr', { class: hit ? 'dt-rule dt-hit' : 'dt-rule' }, el('td', { class: 'dt-idx' }, String(i + 1)))
-  state.inputs.forEach((_, k) => row.append(el('td', { class: 'dt-in' }, cell(r.inputEntries, k, 'in', names, namesProvider))))
-  state.outputs.forEach((_, k) => row.append(el('td', { class: 'dt-out' }, cell(r.outputEntries, k, 'out', names, namesProvider))))
+  // In trace mode each input cell is tinted by whether its condition held for the
+  // tested value — the per-cell heatmap that makes the taken path readable.
+  state.inputs.forEach((_, k) => {
+    const cond = tr?.conditions?.[k]
+    const tint = cond ? (cond.matched ? ' dt-c-ok' : ' dt-c-no') : ''
+    row.append(el('td', { class: 'dt-in' + tint }, cell(r.inputEntries, k, 'in', names, namesProvider)))
+  })
+  state.outputs.forEach((_, k) => row.append(el('td', { class: 'dt-out' + (hit && tr ? ' dt-out-hit' : '') }, cell(r.outputEntries, k, 'out', names, namesProvider))))
   const ann = el('input', { class: 'dt-cell dt-cell-ann', value: (r.annotations ?? [])[0] ?? '', placeholder: '—' }) as HTMLInputElement
   ann.addEventListener('input', () => {
     r.annotations = ann.value.trim() ? [ann.value] : []
@@ -298,6 +321,44 @@ function mark(box: HTMLInputElement, res: { ok: boolean; message?: string }): vo
   const invalid = box.classList.contains('dt-cell') ? 'dt-cell-invalid' : 'dt-head-invalid'
   box.classList.toggle(invalid, !res.ok)
   box.title = res.ok ? '' : res.message ?? 'ungültig'
+}
+
+// decisionPath draws the taken route as a chip-and-arrow summary bar:
+//   [Age = 85]  →  [Regel 2 · >= 18]  →  [Category = adult]
+// so the decision's way through the table reads left-to-right at a glance.
+function decisionPath(state: TableView, tr: TableTrace): HTMLElement {
+  const bar = el('div', { class: 'dt-path' })
+  const chip = (cls: string, label: string, value: string): HTMLElement =>
+    el('span', { class: 'dt-path-chip ' + cls }, el('span', { class: 'dt-path-lbl' }, label), el('span', { class: 'dt-path-val' }, value))
+  const arrow = (): HTMLElement => el('span', { class: 'dt-path-arrow' }, '→')
+
+  // The inputs that flowed in.
+  for (const in_ of tr.inputs ?? []) bar.append(chip('dt-path-in', in_.expression, fmtVal(in_.value)))
+
+  const hits = (tr.rules ?? []).filter((r) => r.matched)
+  if (hits.length) {
+    bar.append(arrow())
+    for (const r of hits) {
+      // The rule's non-trivial conditions, so the chip reads like the rule (">= 18").
+      const conds = r.conditions.map((c) => (c.entry ?? '').trim()).filter((e) => e !== '' && e !== '-')
+      bar.append(chip('dt-path-rule', 'Regel ' + (r.index + 1), conds.join(' · ') || 'sonst'))
+    }
+    bar.append(arrow())
+    // The outputs the winning rule produced.
+    const r0 = hits[0]
+    state.outputs.forEach((o, k) => bar.append(chip('dt-path-out', o.name || 'Output', fmtVal(r0.outputs?.[k]))))
+  } else {
+    bar.append(arrow(), chip('dt-path-rule dt-path-none', 'keine Regel', '—'))
+  }
+  return bar
+}
+
+// fmtVal renders a traced value compactly: strings as-is, null as a dash, other
+// JSON-serialisable values as compact JSON.
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'string') return v
+  return JSON.stringify(v)
 }
 
 // el is a tiny DOM builder: tag, attributes, then string/Node children.

@@ -46,7 +46,9 @@ func (s *Server) registerGitRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/git/branches", s.requireToken(s.handleGitBranches))
 	mux.HandleFunc("GET /v1/git/commits", s.requireToken(s.handleGitCommits))
 	mux.HandleFunc("GET /v1/git/models", s.requireToken(s.handleGitModels))
+	mux.HandleFunc("GET /v1/git/flows", s.requireToken(s.handleGitFlows))
 	mux.HandleFunc("POST /v1/git/load", s.requireToken(s.handleGitLoad))
+	mux.HandleFunc("POST /v1/git/load-flow", s.requireToken(s.handleGitLoadFlow))
 	mux.HandleFunc("POST /v1/git/save", s.requireToken(s.handleGitSave))
 	mux.HandleFunc("POST /v1/git/propose", s.requireToken(s.handleGitPropose))
 }
