@@ -46,6 +46,9 @@ type GraphNode struct {
 	// HasRelation marks a decision whose logic is a boxed relation, so the modeler
 	// opens the relation grid editor on double-click.
 	HasRelation bool `json:"hasRelation,omitempty"`
+	// HasFilter marks a decision whose logic is a boxed filter, so the modeler opens
+	// the filter editor on double-click.
+	HasFilter bool `json:"hasFilter,omitempty"`
 	// HasLogic marks a decision that has ANY executable logic (a table, a literal
 	// or another boxed expression), so the modeler can show a table icon vs a
 	// boxed-expression icon vs an "undecided" (no logic) icon.
@@ -76,12 +79,12 @@ func (d *Definitions) Graph() Graph {
 	if d.model.Diagram != nil {
 		shapes = d.model.Diagram.Shapes
 	}
-	add := func(id, typ, name, dataType, varName string, hasTable, hasLiteral, hasContext, hasConditional, hasList, hasRelation, hasLogic bool) {
+	add := func(id, typ, name, dataType, varName string, hasTable, hasLiteral, hasContext, hasConditional, hasList, hasRelation, hasFilter, hasLogic bool) {
 		if id == "" {
 			return
 		}
 		known[id] = true
-		n := GraphNode{ID: id, Type: typ, Name: name, DataType: dataType, VarName: varName, HasTable: hasTable, HasLiteral: hasLiteral, HasContext: hasContext, HasConditional: hasConditional, HasList: hasList, HasRelation: hasRelation, HasLogic: hasLogic}
+		n := GraphNode{ID: id, Type: typ, Name: name, DataType: dataType, VarName: varName, HasTable: hasTable, HasLiteral: hasLiteral, HasContext: hasContext, HasConditional: hasConditional, HasList: hasList, HasRelation: hasRelation, HasFilter: hasFilter, HasLogic: hasLogic}
 		if b, ok := shapes[id]; ok {
 			n.X, n.Y, n.Width, n.Height = b.X, b.Y, b.Width, b.Height
 		}
@@ -105,17 +108,17 @@ func (d *Definitions) Graph() Graph {
 		if t == "" {
 			t = canonicalType(in.TypeRef)
 		}
-		add(in.ID, "inputData", in.Name, t, "", false, false, false, false, false, false, false)
+		add(in.ID, "inputData", in.Name, t, "", false, false, false, false, false, false, false, false)
 	}
 	for _, b := range d.model.BKMs {
-		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "", false, false, false, false, false, false, false)
+		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "", false, false, false, false, false, false, false, false)
 	}
 	for _, dec := range d.model.Decisions {
 		varName := dec.VariableName
 		if varName == "" {
 			varName = dec.Name // DMN convention: result referenced by the decision name
 		}
-		add(dec.ID, "decision", dec.Name, decisionOutputType(dec), varName, dec.DecisionTable != nil, dec.LiteralExpression != nil, dec.Context != nil, dec.Conditional != nil, dec.List != nil, dec.Relation != nil, dec.Logic() != nil)
+		add(dec.ID, "decision", dec.Name, decisionOutputType(dec), varName, dec.DecisionTable != nil, dec.LiteralExpression != nil, dec.Context != nil, dec.Conditional != nil, dec.List != nil, dec.Relation != nil, dec.Filter != nil, dec.Logic() != nil)
 	}
 
 	edge := func(typ, source, target string) {

@@ -17,6 +17,7 @@ export type GraphNode = {
   hasConditional?: boolean
   hasList?: boolean
   hasRelation?: boolean
+  hasFilter?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -574,6 +575,43 @@ export async function saveRelation(modelId: string, decision: string, edit: Rela
 export async function createBoxedRelation(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-relation', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Relation anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// FilterView mirrors dmn.FilterView: a decision's boxed-filter logic — the
+// collection (in) and predicate (match, evaluated per element with `item`
+// bound). simple is false when a branch is a nested boxed expression, so the
+// editor opens read-only.
+export type FilterView = { decisionId: string; name: string; in: string; match: string; simple: boolean }
+// FilterEdit is the editable payload: the two FEEL branches.
+export type FilterEdit = { in: string; match: string }
+
+// getFilter fetches a decision's boxed-filter view, or null when the decision has
+// no filter logic (HTTP 404).
+export async function getFilter(modelId: string, decision: string): Promise<FilterView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Filter laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as FilterView
+}
+
+// saveFilter replaces a decision's in/match branches (POST), recompiles the model
+// and returns the saved detail with its new id and any diagnostics.
+export async function saveFilter(modelId: string, decision: string, edit: FilterEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Filter speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedFilter gives an undecided decision a fresh boxed filter and returns
+// the saved model's detail with its new id.
+export async function createBoxedFilter(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-filter', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Filter anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

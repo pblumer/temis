@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, listTypes, type ModelSummary } from './api'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -11,6 +11,7 @@ import { openBoxedContextOverlay } from './boxedcontext'
 import { openConditionalOverlay } from './conditional'
 import { openListOverlay } from './list'
 import { openRelationOverlay } from './relation'
+import { openFilterOverlay } from './filter'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
@@ -268,6 +269,28 @@ async function boot(root: HTMLElement): Promise<void> {
       await reselect(created.modelId)
       status.textContent = 'Relation angelegt ✓'
       openRelation(created.modelId, decisionId)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // openFilter opens a decision's boxed-filter editor — editable in Design,
+  // read-only in Operate. names are the in-scope variables the branches use.
+  const openFilter = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openFilterOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+  }
+
+  // createFilter gives a logic-less decision a fresh boxed filter: persist pending
+  // edits first, create it, switch to the saved revision and open for editing.
+  const createFilter = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Filter an …'
+    try {
+      const created = await createBoxedFilter(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Filter angelegt ✓'
+      openFilter(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -819,6 +842,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateList((decisionId) => void createList(decisionId))
       handle.onOpenRelation((decisionId) => openRelation(modelId, decisionId))
       handle.onCreateRelation((decisionId) => void createRelation(decisionId))
+      handle.onOpenFilter((decisionId) => openFilter(modelId, decisionId))
+      handle.onCreateFilter((decisionId) => void createFilter(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
