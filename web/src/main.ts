@@ -5,7 +5,8 @@ import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import { mountOperate } from './operate'
-import type { GraphEvalResult } from './api'
+import { mountImport } from './testimport'
+import type { GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
@@ -50,6 +51,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <span class="mode-toggle">
             <button id="modeDesign" class="mode-btn is-active" type="button" title="Bearbeiten">Design</button>
             <button id="modeOperate" class="mode-btn" type="button" title="Auswerten & beobachten">Operate</button>
+            <button id="modeImport" class="mode-btn" type="button" title="Testfälle importieren & durchlaufen lassen">Import</button>
           </span>
           <span class="design-only toolbar-group">
             <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
@@ -78,6 +80,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <h2 class="eval-title">Auswerten</h2>
           <div id="eval"></div>
         </section>
+        <section id="importCockpit" class="import-cockpit"></section>
       </main>
       <aside id="assist" class="assist-panel"></aside>
     </div>`
@@ -88,6 +91,8 @@ async function boot(root: HTMLElement): Promise<void> {
   const status = root.querySelector<HTMLElement>('#status')
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
+  const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
+  const importHost = root.querySelector<HTMLElement>('#importCockpit')
   const opHistoryHost = root.querySelector<HTMLElement>('#opHistory')
   const opOverlayHost = root.querySelector<HTMLElement>('#opOverlays')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
@@ -101,7 +106,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -122,9 +127,12 @@ async function boot(root: HTMLElement): Promise<void> {
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
-  let mode: 'design' | 'operate' = 'design'
+  let mode: 'design' | 'operate' | 'import' = 'design'
   let runs: EvalRun[] = []
   let activeRun: EvalRun | null = null
+  // The model detail currently loaded (schema + decisions), shared with the
+  // Import cockpit so it can build a matching test template and run cases.
+  let currentModel: ModelDetail | null = null
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -750,6 +758,15 @@ async function boot(root: HTMLElement): Promise<void> {
     },
   })
 
+  // The Import cockpit: a batch test-runner shaped like a conveyor belt. It reads
+  // the loaded model via getModel to build a matching CSV/JSON template and runs
+  // imported test cases against the same whole-graph evaluate endpoint, animating
+  // each record from the Eingang lane through Evaluation into the clio Store.
+  const importView = mountImport({
+    host: importHost,
+    getModel: () => currentModel,
+  })
+
   // recordRun is called after each evaluation: keep it in the session history
   // (newest first), highlight it, and refresh the Operate cockpit.
   const recordRun = (run: EvalRun): void => {
@@ -774,19 +791,23 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  const setMode = (m: 'design' | 'operate'): void => {
+  const setMode = (m: 'design' | 'operate' | 'import'): void => {
     mode = m
     appShell.dataset.mode = m
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
+    modeImportBtn.classList.toggle('is-active', m === 'import')
     if (m === 'operate') {
       operate.render()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
+    } else if (m === 'import') {
+      importView.render()
     }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
   modeOperateBtn.addEventListener('click', () => setMode('operate'))
+  modeImportBtn.addEventListener('click', () => setMode('import'))
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
@@ -794,9 +815,12 @@ async function boot(root: HTMLElement): Promise<void> {
     renderModelList()
     status.textContent = 'lädt …'
     dirty = false
-    // A fresh model view starts an empty run history (its decisions differ).
+    // A fresh model view starts an empty run history (its decisions differ) and
+    // an empty Import belt (the leaf inputs — hence any template — differ too).
     runs = []
     activeRun = null
+    currentModel = null
+    importView.reset()
     try {
       // Refresh the type options for this model (built-in + its custom types).
       try {
@@ -860,6 +884,9 @@ async function boot(root: HTMLElement): Promise<void> {
           status.classList.remove('status-problem')
         }
         renderEvaluatePanel(evalHost, detail, (run) => recordRun(run))
+        // Share the loaded model with the Import cockpit (template + run source).
+        currentModel = detail
+        if (mode === 'import') importView.render()
       } catch {
         evalHost.textContent = ''
       }

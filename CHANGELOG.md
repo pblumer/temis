@@ -69,6 +69,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   **Pass/Fail-Heatmap** über alle Regeln mit leuchtend hervorgehobener getroffener Regel. Das
   Hover-Popover der Ergebnis-Overlays wurde korrekt im Viewport positioniert (lag zuvor außerhalb des
   Sichtbereichs) und hoverbare Zeilen sind mit einem ⊞-Marker gekennzeichnet.
+- **Modeler – Import-Cockpit (ADR-0016):** Ein dritter Modus **Import** neben Design/Operate — ein
+  Testfall-Stapellauf als **Fließband**. Man lädt eine **Vorlage** (CSV **oder** JSON) herunter, die
+  exakt zu den Leaf-Inputs des Modells passt (dieselbe autoritative Eingabemenge wie das Auswerte-
+  Formular, `leafInputs`), füllt sie mit Testdaten — von Hand, in der Tabellenkalkulation oder von
+  einem **KI-Agenten** (dokumentiertes, agentenfreundliches Format) — und importiert sie (Datei-
+  Auswahl oder Drag & Drop). Optionale `→Decision`-Spalten machen aus einer Zeile eine **Pass/Fail-
+  Erwartung**. „Durchlaufen lassen" schickt jeden Datensatz animiert von links (**Eingang**) durch
+  die **Evaluation** (die echte Engine, über denselben Whole-Graph-Endpunkt wie Operate) nach rechts
+  in den **clio Store** — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-
+  Chrome-Farbwelt (`--imp`), respektiert `prefers-reduced-motion`. Reines Frontend, kein neuer
+  Endpunkt, keine neue Dependency.
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/

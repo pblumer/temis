@@ -1059,3 +1059,94 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   font-size: 11.5px;
   font-family: ui-monospace, monospace;
 }
+
+/* Import cockpit (Testfall-Import): a conveyor-belt batch runner, a third mode
+   next to Design/Operate. Records flow left (Eingang) → middle (Evaluation,
+   the live engine) → right (clio Store), carrying their computed results. Its
+   signature colour is cyan (--imp) to set it apart from Design green / Operate
+   blue. */
+#modeImport.is-active { background: #0e7490; }
+
+/* In Import mode the editor becomes the cockpit: the diagram, evaluate form and
+   Operate chrome step aside so the belt owns the space. */
+.import-cockpit { display: none; }
+.app-shell[data-mode="import"] { --imp: #0e7490; }
+.app-shell[data-mode="import"] .editor { background: linear-gradient(180deg, #f2fbfd, #eaf6f9); }
+.app-shell[data-mode="import"] .design-only,
+.app-shell[data-mode="import"] .zoom-group,
+.app-shell[data-mode="import"] .canvas-wrap,
+.app-shell[data-mode="import"] .eval-panel,
+.app-shell[data-mode="import"] .op-history,
+.app-shell[data-mode="import"] .op-overlays,
+.app-shell[data-mode="import"] .djs-palette { display: none !important; }
+.app-shell[data-mode="import"] .import-cockpit { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+/* Toolbar of the cockpit: template downloads, import, run, clear. */
+.imp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 14px; }
+.imp-bar-group { display: inline-flex; gap: 8px; }
+.imp-bar-group:last-of-type { margin-left: auto; }
+.imp-btn {
+  font: 13px/1 system-ui, sans-serif; padding: 7px 12px;
+  border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--fg); cursor: pointer;
+}
+.imp-btn:not(:disabled):hover { background: #eef7f9; border-color: #9cd0da; }
+.imp-btn:disabled { color: #c2c9d4; cursor: default; }
+.imp-btn.imp-primary { border-color: #9cd0da; color: var(--imp); font-weight: 600; }
+.imp-btn.imp-run { background: var(--imp); border-color: var(--imp); color: #fff; font-weight: 600; }
+.imp-btn.imp-run:disabled { background: #cfe6ea; border-color: #cfe6ea; color: #fff; }
+.imp-note { flex-basis: 100%; font-size: 12.5px; color: var(--imp); font-weight: 600; }
+
+/* The empty/hint state before any cases are imported. */
+.imp-empty-msg { color: var(--muted); font-size: 13px; max-width: 640px; line-height: 1.5; }
+
+/* Drag-over affordance when dropping a file on the cockpit. */
+.import-cockpit.imp-drop { outline: 2px dashed #9cd0da; outline-offset: -6px; border-radius: 12px; }
+
+/* The three-lane belt. */
+.imp-flow { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 14px; align-items: start; flex: 1 1 auto; min-height: 0; }
+.imp-lane { display: flex; flex-direction: column; min-height: 0; border: 1px solid #cfe0e4; border-radius: 12px; background: rgba(255, 255, 255, 0.7); padding: 10px; }
+.imp-lane-eval { background: linear-gradient(180deg, #ecfbfe, #e2f5f9); border-color: #a9d6df; }
+.imp-lane-title { display: flex; align-items: center; gap: 8px; font: 700 11px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--imp); margin-bottom: 10px; }
+.imp-lane-count { font-weight: 700; color: #fff; background: var(--imp); border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
+.imp-lane-none { color: var(--muted); font-size: 12.5px; padding: 8px 4px; }
+.imp-shelf { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 2px; }
+
+/* The engine (middle lane): the live model with its decisions; pulses when busy. */
+.imp-engine { border: 1px dashed #86c7d3; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: rgba(255, 255, 255, 0.6); }
+.imp-engine-name { font: 700 13px/1.2 system-ui, sans-serif; color: #0b5563; }
+.imp-engine-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.imp-chip { font: 11px/1 ui-monospace, monospace; background: #d8eff4; color: #0b5563; padding: 3px 7px; border-radius: 999px; }
+.imp-engine-pulse { height: 4px; border-radius: 999px; margin-top: 10px; background: #cfe6ea; overflow: hidden; position: relative; }
+.imp-lane-eval.is-busy .imp-engine-pulse::after {
+  content: ''; position: absolute; inset: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, var(--imp), transparent);
+  animation: imp-scan 900ms linear infinite;
+}
+@keyframes imp-scan { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+
+/* A test-case card — the thing that zips down the belt. */
+.imp-card { border: 1px solid #d4e2e6; border-radius: 9px; background: #fff; padding: 8px 10px; box-shadow: 0 1px 3px rgba(15, 40, 50, 0.08); }
+.imp-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.imp-card-name { font: 600 12.5px/1 system-ui, sans-serif; color: #0f172a; }
+.imp-kv { font: 11.5px/1.4 ui-monospace, monospace; color: #475569; word-break: break-word; }
+.imp-card-running { border-color: var(--imp); box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.18); }
+.imp-card-err { color: #b91c1c; font-size: 11.5px; margin-top: 5px; }
+.imp-out { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.imp-out-row { display: flex; justify-content: space-between; gap: 10px; font: 11.5px/1.3 ui-monospace, monospace; }
+.imp-out-k { color: #0b5563; font-weight: 600; }
+.imp-out-v { color: #0f172a; text-align: right; }
+.imp-out-row.imp-out-bad .imp-out-v { color: #b91c1c; font-weight: 700; }
+
+/* Pass/fail badges on landed cards. */
+.imp-badge { margin-left: auto; font: 700 10.5px/1 system-ui, sans-serif; padding: 3px 7px; border-radius: 999px; }
+.imp-pass { background: #dcfce7; color: #166534; }
+.imp-fail { background: #fee2e2; color: #b91c1c; }
+
+/* The "flitzt" — a card entering the Evaluation or Store lane slides in from the
+   left, so the eye reads records moving rightward down the belt. */
+.imp-fly { animation: imp-fly 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes imp-fly { from { opacity: 0; transform: translateX(-26px) scale(0.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .imp-fly { animation: none; }
+  .imp-lane-eval.is-busy .imp-engine-pulse::after { animation: none; }
+}

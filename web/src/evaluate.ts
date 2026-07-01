@@ -125,7 +125,9 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
 // leafInputs unions every decision's declared inputs into the model's leaf-input
 // list (deduped by name; type/constraint from the first that declares one;
 // required when any decision requires it). Falls back to the bare input names.
-function leafInputs(model: ModelDetail): InputField[] {
+// Exported so the Import cockpit can build a matching CSV/JSON test template
+// from the very same authoritative leaf-input set the evaluate form uses.
+export function leafInputs(model: ModelDetail): InputField[] {
   const schema = model.schema
   if (schema) {
     const byName = new Map<string, InputField>()
@@ -159,7 +161,9 @@ function leafInputs(model: ModelDetail): InputField[] {
 // coerce turns a raw form value into a JSON value: an empty box contributes
 // nothing (undefined); otherwise try JSON (numbers, booleans, null, lists,
 // objects) and fall back to the raw string for bare FEEL text like "2024-01-01".
-function coerce(raw: string): unknown {
+// Exported so the Import cockpit coerces imported CSV cells the same way the
+// evaluate form coerces typed input, keeping one parsing rule across the UI.
+export function coerce(raw: string): unknown {
   const s = raw.trim()
   if (s === '') return undefined
   try {
