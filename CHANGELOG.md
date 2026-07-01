@@ -75,11 +75,33 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Formular, `leafInputs`), füllt sie mit Testdaten — von Hand, in der Tabellenkalkulation oder von
   einem **KI-Agenten** (dokumentiertes, agentenfreundliches Format) — und importiert sie (Datei-
   Auswahl oder Drag & Drop). Optionale `→Decision`-Spalten machen aus einer Zeile eine **Pass/Fail-
-  Erwartung**. „Durchlaufen lassen" schickt jeden Datensatz animiert von links (**Eingang**) durch
-  die **Evaluation** (die echte Engine, über denselben Whole-Graph-Endpunkt wie Operate) nach rechts
-  in den **clio Store** — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-
-  Chrome-Farbwelt (`--imp`), respektiert `prefers-reduced-motion`. Reines Frontend, kein neuer
-  Endpunkt, keine neue Dependency.
+  Erwartung**. „Durchlaufen lassen" wertet den **ganzen Stapel in EINEM Batch-Request** aus und lässt
+  die Datensätze von links (**Eingang**) durch die **Evaluation** nach rechts in den **clio Store**
+  fliegen — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-Chrome-Farbwelt
+  (`--imp`), respektiert `prefers-reduced-motion`.
+  **Durchsatz (Folge-Fix):** Neuer Endpunkt **`POST /v1/models/{id}/evaluate-graph-batch`** wertet
+  viele Eingabezeilen in einem Round-Trip aus (die Engine schleift in-memory, ohne Traces; jede Zeile
+  unabhängig — eine abgelehnte Zeile bricht den Batch nicht ab). Damit laufen **5000 Testfälle in
+  ~50 ms** statt tausender Einzel-Requests. Das Cockpit ruft den Batch statt einer Schleife auf,
+  verzichtet auf künstliche Pro-Datensatz-Pausen und **begrenzt die gezeichneten Karten pro Lane**
+  (Zähler + Overflow-Hinweis zeigen die echte Menge) — die Animation ist bewusst nur *angedeutet* als
+  gestaffelte CSS-Kaskade, statt tausende DOM-Knoten einfrieren zu lassen.
+  **Test- vs. Produktivlauf & clio-Quality-Events (ADR-0031):** Das Cockpit unterscheidet einen
+  **Testlauf** (Default, schreibt **nichts**) von einem **Produktivlauf**, der pro ausgewertetem Fall
+  ein **Quality-Event** `com.temis.quality.evaluated.v1` **auf der Entität** nach clio schreibt
+  (Subject `/quality/<entity>`, mit `violation`-Flag aus den erwarteten Werten) — so werden Reports
+  über Verletzungen je Entität möglich. Die Entität kommt aus einer **`entity`-Vorlagenspalte**, sonst
+  einem wählbaren Eingabefeld, sonst dem Fall-Label. Die Zustellung läuft **entkoppelt über eine
+  garantierte Queue mit Backpressure** (`QualityQueue`): der Batch-Response kehrt sofort zurück,
+  Hintergrund-Worker liefern mit Retry & Idempotenz (clio-Precondition), `temisd` drainiert die Queue
+  beim **Graceful-Shutdown**. Ohne konfiguriertes clio wird ein Produktivlauf klar mit
+  **`409 CLIO_NOT_CONFIGURED`** abgelehnt (opt-in, Default aus — kein Datenabfluss).
+- **clio-Audit auch für Whole-Graph-Auswertung:** Der „Auswerten"-Pfad des Modelers
+  (`POST /v1/models/{id}/evaluate-graph`) wird jetzt ebenfalls protokolliert — **ein
+  `com.temis.decision.evaluated.v1`-Event je ausgewerteter Decision** (best-effort, bzw. `502` bei
+  `-clio-strict`; idempotent per `(modelId, decision, input)`). Zuvor auditierte der Sink nur
+  Einzel-Decision- und Flow-Auswertungen, sodass genau die interaktive Graph-Auswertung nicht im
+  Logbuch landete.
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/

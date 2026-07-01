@@ -23,7 +23,7 @@ test('import: seeded samples run down the belt into the clio store', async ({ pa
   await page.getByRole('button', { name: 'Beispiele einfügen' }).click()
   await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(3)
 
-  await page.getByRole('button', { name: /Durchlaufen lassen/ }).click()
+  await page.locator(".imp-btn.imp-run").click()
 
   // Every record lands in the clio Store lane, carrying the Discount result.
   await expect(page.locator('.imp-lane-store .imp-card')).toHaveCount(3, { timeout: 15_000 })
@@ -49,11 +49,60 @@ test('import: a CSV of test cases imports, runs and asserts expectations', async
   await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(2)
   await expect(page.locator('.imp-note')).toContainText('importiert')
 
-  await page.getByRole('button', { name: /Durchlaufen lassen/ }).click()
+  await page.locator(".imp-btn.imp-run").click()
   await expect(page.locator('.imp-lane-store .imp-card')).toHaveCount(2, { timeout: 15_000 })
   // Each asserted case lands with a pass/fail badge; the summary reports the tally.
   await expect(page.locator('.imp-lane-store .imp-badge')).toHaveCount(2)
   await expect(page.locator('.imp-note')).toContainText('bestanden')
+})
+
+test('import: a large batch runs fast and the lanes cap their cards', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('Discount', { exact: true }).first().click()
+  await page.locator('#modeImport').click()
+
+  // 300 rows — more than the per-lane render cap (120). The whole batch must run
+  // in one request, so this stays fast; the lanes must not render 300 DOM cards.
+  const N = 300
+  const rows = ['case,Customer Type,Order Total']
+  for (let i = 0; i < N; i++) rows.push(`Fall ${i},${i % 2 ? 'Private' : 'Business'},${100 + i}`)
+  await page.locator('input.imp-file').setInputFiles({ name: 'gross.csv', mimeType: 'text/csv', buffer: Buffer.from(rows.join('\n')) })
+
+  // The Eingang lane counts all 300 but draws at most 120 cards + an overflow note.
+  await expect(page.locator('.imp-lane-in .imp-lane-count')).toHaveText(String(N))
+  expect(await page.locator('.imp-lane-in .imp-card').count()).toBeLessThanOrEqual(120)
+  await expect(page.locator('.imp-lane-in .imp-lane-more')).toBeVisible()
+
+  // Run and time it: one batch round-trip, so this resolves in well under a second
+  // of engine work (allow generous wall-clock slack for CI/browser overhead).
+  const t0 = Date.now()
+  await page.locator(".imp-btn.imp-run").click()
+  await expect(page.locator('.imp-lane-store .imp-lane-count')).toHaveText(String(N), { timeout: 10_000 })
+  const elapsed = Date.now() - t0
+  expect(elapsed).toBeLessThan(6000)
+
+  // The store lane also caps its rendered cards and reports the batch duration.
+  expect(await page.locator('.imp-lane-store .imp-card').count()).toBeLessThanOrEqual(120)
+  await expect(page.locator('.imp-lane-store .imp-lane-more')).toBeVisible()
+  await expect(page.locator('.imp-note')).toContainText('Auswertung in')
+})
+
+test('import: a productive run without clio is refused with a clear message', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('Discount', { exact: true }).first().click()
+  await page.locator('#modeImport').click()
+
+  await page.getByRole('button', { name: 'Beispiele einfügen' }).click()
+  await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(3)
+
+  // Switch to Produktivlauf; the test server runs without a clio token, so the
+  // productive run must be refused with a clear, actionable message and the cases
+  // stay staged (nothing lands in the store).
+  await page.getByRole('button', { name: 'Produktivlauf' }).click()
+  await page.locator('.imp-btn.imp-run.imp-prod').click()
+  await expect(page.locator('.imp-note')).toContainText('clio ist nicht konfiguriert')
+  await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(3)
+  await expect(page.locator('.imp-lane-store .imp-card')).toHaveCount(0)
 })
 
 test('import: the CSV template downloads shaped to the model', async ({ page }) => {

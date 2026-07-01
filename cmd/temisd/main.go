@@ -4,13 +4,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/internal/version"
@@ -137,6 +141,7 @@ func main() {
 	// sink is gated on the token so a default start never sends decision data
 	// anywhere. Providing a token is the single opt-in step.
 	clioOn := *clioToken != "" && *clioURL != ""
+	var qq *service.QualityQueue
 	if clioOn {
 		sink, err := service.NewClioSink(service.ClioConfig{
 			URL:           *clioURL,
@@ -152,6 +157,11 @@ func main() {
 			os.Exit(1)
 		}
 		opts = append(opts, service.WithClioSink(sink))
+		// Quality events for productive Import runs drain through a decoupled,
+		// guaranteed-delivery queue (backpressure, retry) so a big batch's writes
+		// never block the response and survive a transient clio hiccup.
+		qq = service.NewQualityQueue(sink, service.QualityQueueConfig{})
+		opts = append(opts, service.WithQualityQueue(qq))
 	}
 	srv := service.NewServer(engine, opts...)
 	if *serveMCP {
@@ -201,6 +211,7 @@ func main() {
 			mode = "fail-closed"
 		}
 		log.Printf("temisd: clio audit sink → %s (%s)", *clioURL, mode)
+		log.Printf("temisd: clio quality events for productive Import runs → %s%s (guaranteed queue)", *clioURL, "/quality")
 	} else {
 		// Advertise the sister project without sending anything: the sink is one
 		// token away. https://github.com/pblumer/clio
@@ -208,7 +219,23 @@ func main() {
 	}
 	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)
-	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
+
+	// Graceful shutdown so the quality queue drains before exit (guaranteed
+	// delivery). On SIGINT/SIGTERM: stop accepting requests, then drain the queue
+	// under a deadline so an unreachable clio can't hang the shutdown.
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(ctx)
+		if qq != nil {
+			qq.Close(ctx)
+		}
+	}()
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
 	}

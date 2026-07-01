@@ -75,8 +75,10 @@ liefert nur `source`/`subject`/`type`/`data`.
 ## 2. Opt-in-Sink in `temisd` (WP-54, umgesetzt)
 
 `temisd` emittiert das Event **nach** jeder Einzel-Decision-Auswertung
-(`POST /v1/evaluate`, `POST /v1/models/{id}/evaluate`) — nur wenn konfiguriert. Default
-aus ⇒ Verhalten **byte-identisch** zu heute.
+(`POST /v1/evaluate`, `POST /v1/models/{id}/evaluate`) sowie nach jeder
+**Whole-Graph-Auswertung** (`POST /v1/models/{id}/evaluate-graph` — der „Auswerten"-Pfad
+des Modelers; **ein Decision-Event je ausgewerteter Decision**) — nur wenn konfiguriert.
+Default aus ⇒ Verhalten **byte-identisch** zu heute.
 
 ```sh
 temisd -addr :8080 \
@@ -156,6 +158,20 @@ Write-Key** sein, idealerweise auf den Subject-Teilbaum beschränkt
 Aktivieren klären: Welche Felder dürfen ins Logbuch? Bei Bedarf Subject/Felder
 einschränken. clios **Signaturen** (`CLIO_SIGNING_KEY`) und **Authorship**
 (`CLIO_EVENT_AUTHORSHIP`) erhöhen die Beweiskraft zusätzlich.
+
+### Quality-Events (Import-Cockpit, ADR-0031)
+
+Neben dem Decision- und dem Flow-Event schreibt ein **Produktivlauf** des Import-Cockpits
+ein **Quality-Event** `com.temis.quality.evaluated.v1` — **auf der Entität** (Subject
+`/quality/<entity>`), nicht pro Decision. Es hält Modell, Entität, Fall, Eingabe,
+Ergebnisse und die erwarteten Werte fest sowie ein **`violation`-Flag** (`true`, wenn ein
+erwarteter Wert verletzt wurde; `false` bei Deckung; weggelassen ohne Erwartung). So lassen
+sich **Verletzungen je Entität** reporten, z. B. per clio-Query
+`event.type == 'com.temis.quality.evaluated.v1' && event.data.violation == true`.
+Idempotenz wie sonst über die Precondition (Subject + `data.inputHash`). Die Zustellung
+läuft **entkoppelt über eine garantierte Queue mit Backpressure** (`QualityQueue`): der
+schnelle Batch-Response wartet nicht auf clio; Hintergrund-Worker liefern mit Retry, und
+`temisd` drainiert die Queue beim Graceful-Shutdown. Ein **Testlauf** schreibt **nichts**.
 
 ---
 

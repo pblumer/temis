@@ -372,5 +372,61 @@ func TestEvaluateGraphRejectsUnknownInput(t *testing.T) {
 	}
 }
 
+// TestEvaluateGraphBatchEndpoint drives the batch path behind the Import cockpit:
+// many input rows evaluated in one request, the response aligned 1:1 with the
+// inputs. A row that fails strict validation is reported as that row's problem and
+// does NOT abort the batch (the other rows still come back with their values).
+func TestEvaluateGraphBatchEndpoint(t *testing.T) {
+	h := newTestServer(t)
+	xml, err := os.ReadFile("../dmn/testdata/models/routing_13.dmn")
+	if err != nil {
+		t.Fatalf("read routing model: %v", err)
+	}
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	body := mustJSON(t, evaluateGraphBatchRequest{Strict: true, Inputs: []map[string]any{
+		{"Applicant Age": 20},         // valid → ELIGIBLE / ACCEPT
+		{"Applicant Age": 15},         // valid → a different branch
+		{"Applicant Age": 20, "X": 1}, // invalid strict input (unknown field)
+	}})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/evaluate-graph-batch", "application/json", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST evaluate-graph-batch = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+	res := decode[evaluateGraphBatchResponse](t, rec)
+	if len(res.Results) != 3 {
+		t.Fatalf("results len = %d, want 3", len(res.Results))
+	}
+	if res.Results[0].Problem != nil || res.Results[0].Values["Routing"] != "ACCEPT" {
+		t.Errorf("row 0 = %+v, want Routing=ACCEPT and no problem", res.Results[0])
+	}
+	if res.Results[1].Problem != nil || res.Results[1].Values["Eligibility"] == nil {
+		t.Errorf("row 1 = %+v, want a value and no problem", res.Results[1])
+	}
+	if res.Results[2].Problem == nil || res.Results[2].Problem.Code != "INVALID_INPUT" {
+		t.Errorf("row 2 = %+v, want INVALID_INPUT problem", res.Results[2])
+	}
+	if len(res.InputSchema) != 1 || res.InputSchema[0].Name != "Applicant Age" {
+		t.Errorf("inputSchema = %+v, want [Applicant Age]", res.InputSchema)
+	}
+}
+
+// TestEvaluateGraphBatchRejectsOversizeBatch checks the batch cap is enforced.
+func TestEvaluateGraphBatchRejectsOversizeBatch(t *testing.T) {
+	h := newTestServer(t)
+	xml, err := os.ReadFile("../dmn/testdata/models/routing_13.dmn")
+	if err != nil {
+		t.Fatalf("read routing model: %v", err)
+	}
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	inputs := make([]map[string]any, maxGraphBatchInputs+1)
+	body := mustJSON(t, evaluateGraphBatchRequest{Inputs: inputs})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/evaluate-graph-batch", "application/json", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("oversize batch = %d, want 400 (body %s)", rec.Code, rec.Body)
+	}
+}
+
 func strPtr(s string) *string     { return &s }
 func floatPtr(f float64) *float64 { return &f }

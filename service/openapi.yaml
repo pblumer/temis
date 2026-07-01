@@ -252,6 +252,45 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/evaluate-graph-batch:
+    post:
+      summary: Evaluate many input rows against one model in a single request
+      description: >-
+        The throughput path behind the modeler's Import cockpit: evaluate a whole
+        batch of input rows against one model in one round-trip. Each row is
+        evaluated independently and the response aligns 1:1 with the request's
+        inputs — a strict-input rejection or a runtime failure is recorded as that
+        row's problem and never aborts the batch. Traces are omitted by design
+        (use evaluate-graph for a single explained run); this keeps the payload
+        small so thousands of rows return quickly.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateGraphBatchRequest" }
+      responses:
+        "200":
+          description: Per-row results, aligned 1:1 with the request's inputs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateGraphBatchResponse" }
+        "400":
+          description: Invalid request body, or too many inputs in the batch
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown model
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   # --- Modeler endpoints (ADR-0016) ---
   # These back the server's built-in DMN modeler (served at /). They read a
   # model's structure and per-decision logic, and edit it: every mutating call
@@ -1313,6 +1352,84 @@ components:
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/Diagnostic" }
+    EvaluateGraphBatchRequest:
+      type: object
+      description: >-
+        A plain run supplies `inputs`. A PRODUCTIVE run supplies `cases` (which
+        also carry an entity + expectations) and sets `record: true`, so each
+        evaluated case is written to clio as a quality event on its entity.
+      properties:
+        inputs:
+          type: array
+          description: One input row per test case (at most 100000 per request). Ignored when `cases` is present.
+          items:
+            type: object
+            additionalProperties: true
+        cases:
+          type: array
+          description: Richer rows (entity + expectations); used for a productive run.
+          items: { $ref: "#/components/schemas/BatchCase" }
+        strict:
+          type: boolean
+          description: When true, validate each row against the model's whole-graph schema.
+        record:
+          type: boolean
+          description: When true, write one clio quality event per evaluated case (productive run); needs a configured clio quality queue, else 409 CLIO_NOT_CONFIGURED.
+        subjectKey:
+          type: string
+          description: Input field whose value is the entity when a case gives no explicit `entity`.
+    BatchCase:
+      type: object
+      properties:
+        name: { type: string, description: "Optional case label." }
+        entity: { type: string, description: "Entity the quality event is filed on (its clio subject)." }
+        input:
+          type: object
+          additionalProperties: true
+          description: The model's leaf inputs for this case.
+        expect:
+          type: object
+          additionalProperties: true
+          description: Expected decision values; sets the violation flag when they differ.
+    EvaluateGraphBatchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          description: Per-row results, aligned 1:1 with the request's inputs.
+          items: { $ref: "#/components/schemas/GraphCaseResult" }
+        inputSchema:
+          type: array
+          items: { $ref: "#/components/schemas/InputField" }
+          description: The leaf inputs the whole graph consumes (shared by every row).
+        recorded:
+          type: integer
+          description: How many quality events were queued to clio (0 for a test run).
+    GraphCaseResult:
+      type: object
+      description: >
+        One row's outcome: values+errors when it evaluated, or a problem when the
+        row was rejected (strict input) or failed at runtime. Traces are omitted.
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+          description: Each decision's evaluated value, keyed by decision name.
+        errors:
+          type: object
+          additionalProperties: { type: string }
+          description: Message for each decision that failed to evaluate, keyed by name.
+        problem:
+          $ref: "#/components/schemas/CaseProblem"
+    CaseProblem:
+      type: object
+      description: A per-row failure (INVALID_INPUT or EVALUATION_FAILED).
+      properties:
+        code: { type: string, enum: [INVALID_INPUT, EVALUATION_FAILED] }
+        message: { type: string }
+        problems:
+          type: array
+          items: { $ref: "#/components/schemas/InputProblem" }
     Trace:
       type: object
       description: >
