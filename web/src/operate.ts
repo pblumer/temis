@@ -155,19 +155,22 @@ export function mountOperate(opts: OperateOptions): OperateView {
     const rules = matchedRulesOf(active)
     const outRows = Object.entries(active.result.values)
     const outPanel = kvPanel('op-ov-results', 'Ergebnisse', 'group')
+    let hoverable = 0
     for (const [name, v] of outRows) {
       const chip = rules[name]?.length ? el('span', 'op-ov-rule', 'Regel ' + rules[name].join(', ')) : undefined
       const row = kvRow(name, v, numericBar(v, outRows.map(([, x]) => x)), chip)
       const tables = active.result.traces?.[name]?.tables ?? []
       if (tables.length || typeof v === 'number') {
+        hoverable++
+        // The ⊞ marker (see CSS) signals the row reveals a graphic on hover.
         row.classList.add('op-ov-hoverable')
-        row.addEventListener('mouseenter', () => showPop(row, name, v, tables))
-        row.addEventListener('mouseleave', () => { pop.hidden = true })
+        row.addEventListener('pointerenter', () => showPop(row, name, v, tables))
+        row.addEventListener('pointerleave', () => { pop.hidden = true })
       }
       outPanel.body.append(row)
     }
     if (!outRows.length) outPanel.body.append(el('div', 'op-ov-none', '(keine Ergebnisse)'))
-    outPanel.body.append(el('div', 'op-ov-tip', 'Tipp: über eine Zeile schweben zeigt die Tabelle/Regel grafisch.'))
+    if (hoverable) outPanel.body.append(el('div', 'op-ov-tip', 'Tipp: Zeilen mit ⊞ zeigen beim Überfahren die Tabelle mit der getroffenen Regel. Doppelklick auf die Decision im Diagramm öffnet die volle Ansicht.'))
     panels.append(outPanel.root)
   }
 
@@ -183,13 +186,14 @@ export function mountOperate(opts: OperateOptions): OperateView {
       pop.append(valueGauge(value))
     }
     pop.hidden = false
-    // Anchor above the row, clamped to the overlay host so it stays on-screen.
-    const host = overlayHost.getBoundingClientRect()
+    // The popover is position:fixed, so anchor it in viewport coordinates
+    // (independent of where the overlay host sits) — above the row, or below if
+    // there's no room, clamped to the viewport so it never lands off-screen.
     const r = row.getBoundingClientRect()
-    const top = r.top - host.top - pop.offsetHeight - 8
-    const left = Math.max(6, Math.min(r.left - host.left, host.width - pop.offsetWidth - 6))
+    const top = r.top - pop.offsetHeight - 10
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8))
     pop.style.left = left + 'px'
-    pop.style.top = (top < 0 ? r.bottom - host.top + 8 : top) + 'px'
+    pop.style.top = (top < 8 ? r.bottom + 10 : top) + 'px'
   }
 
   const render = (): void => {
