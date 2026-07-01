@@ -1293,10 +1293,6 @@ func asFloat(v any) (float64, bool) {
 	}
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
 // redirectTo permanently redirects to target. It keeps the retired /ui and /app/
 // paths pointing at the modeler's new home at the site root (ADR-0016 WP-67).
 func redirectTo(target string) http.HandlerFunc {
