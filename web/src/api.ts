@@ -71,6 +71,32 @@ export async function createModel(xml: string): Promise<ModelDetail> {
   return (await r.json()) as ModelDetail
 }
 
+// blankModelXML builds a minimal, valid DMN document for a brand-new model: an
+// empty definitions carrying the given display name and a unique id/namespace, so
+// two blank models never collide in temis's content-addressed cache. The modeler
+// fills it in afterwards via the palette + structural save (ADR-0016) — this is
+// the "create from scratch" counterpart to createModel's file/paste upload.
+export function blankModelXML(name: string): string {
+  const raw = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'm' + Date.now().toString(36)
+  const uid = raw.replace(/[^a-zA-Z0-9-]/g, '')
+  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             id="Definitions_${uid}"
+             name="${esc(name)}"
+             namespace="http://temis/models/${uid}">
+</definitions>`
+}
+
+// createBlankModel deploys a fresh, empty model with the given name to the engine
+// and returns its detail — the modeler's "new decision file" path (no upload).
+export async function createBlankModel(name: string): Promise<ModelDetail> {
+  return createModel(blankModelXML(name))
+}
+
 export async function getGraph(modelId: string): Promise<Graph> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/graph')
   if (!r.ok) throw new Error('Graph laden fehlgeschlagen (HTTP ' + r.status + ')')

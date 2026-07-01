@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, createBoxedContext, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
@@ -28,7 +28,8 @@ async function boot(root: HTMLElement): Promise<void> {
           <span>Modelle</span>
           <span class="sidebar-actions">
             <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
-            <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">+</button>
+            <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+            <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
           </span>
         </div>
         <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
@@ -83,13 +84,14 @@ async function boot(root: HTMLElement): Promise<void> {
   const redoBtn = root.querySelector<HTMLButtonElement>('#redo')
   const saveBtn = root.querySelector<HTMLButtonElement>('#save')
   const openBtn = root.querySelector<HTMLButtonElement>('#open')
+  const newModelBtn = root.querySelector<HTMLButtonElement>('#newModel')
   const newFolderBtn = root.querySelector<HTMLButtonElement>('#newFolder')
   const fileInput = root.querySelector<HTMLInputElement>('#file')
   const evalHost = root.querySelector<HTMLElement>('#eval')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !operateHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -246,6 +248,23 @@ async function boot(root: HTMLElement): Promise<void> {
     })
     assistBtn.addEventListener('click', () => assist.toggle())
   }
+
+  // Neues Modell… scaffolds an empty decision model server-side and switches to
+  // it, so a user can build a decision from scratch on a blank canvas (via the
+  // palette + save) instead of only uploading an existing .dmn file (ADR-0016).
+  newModelBtn.addEventListener('click', () => {
+    const name = (window.prompt('Name des neuen Modells:', 'Neues Modell') ?? '').trim()
+    if (!name) return
+    status.textContent = 'legt Modell an …'
+    void createBlankModel(name)
+      .then((m) => reselect(m.modelId))
+      .then(() => {
+        status.textContent = 'Modell angelegt ✓ — Elemente über die Palette (links) hinzufügen und speichern.'
+      })
+      .catch((e: Error) => {
+        status.textContent = e.message
+      })
+  })
 
   // Open… deploys a chosen .dmn/.xml file to the engine and switches to it.
   openBtn.addEventListener('click', () => fileInput.click())
