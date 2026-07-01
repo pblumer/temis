@@ -48,6 +48,8 @@ func (d *Definitions) BoxedConditional(idOrName string) (ConditionalView, bool)
 
 func (d *Definitions) BoxedContext(idOrName string) (ContextView, bool)
 
+func (d *Definitions) BoxedFilter(idOrName string) (FilterView, bool)
+
 func (d *Definitions) BoxedList(idOrName string) (ListView, bool)
 
 func (d *Definitions) BoxedRelation(idOrName string) (RelationView, bool)
@@ -104,6 +106,8 @@ func CreateBoxedConditional(src []byte, decisionID string) ([]byte, error)
 
 func CreateBoxedContext(src []byte, decisionID string) ([]byte, error)
 
+func CreateBoxedFilter(src []byte, decisionID string) ([]byte, error)
+
 func CreateBoxedList(src []byte, decisionID string) ([]byte, error)
 
 func CreateBoxedRelation(src []byte, decisionID string) ([]byte, error)
@@ -119,6 +123,8 @@ func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, err
 func SetBoxedConditional(src []byte, decisionID string, edit ConditionalEdit) ([]byte, error)
 
 func SetBoxedContext(src []byte, decisionID string, edit ContextEdit) ([]byte, error)
+
+func SetBoxedFilter(src []byte, decisionID string, edit FilterEdit) ([]byte, error)
 
 func SetBoxedList(src []byte, decisionID string, edit ListEdit) ([]byte, error)
 
@@ -226,6 +232,19 @@ type EvalError struct {
 
 type EvalOption func(*evalConfig)
 
+type FilterEdit struct {
+	In	string	`json:"in"`
+	Match	string	`json:"match"`
+}
+
+type FilterView struct {
+	DecisionID	string	`json:"decisionId"`
+	Name		string	`json:"name"`
+	In		string	`json:"in"`
+	Match		string	`json:"match"`
+	Simple		bool	`json:"simple"`
+}
+
 type Graph struct {
 	Nodes	[]GraphNode	`json:"nodes"`
 	Edges	[]GraphEdge	`json:"edges"`
@@ -268,6 +287,8 @@ type GraphNode struct {
 	HasList	bool	`json:"hasList,omitempty"`
 
 	HasRelation	bool	`json:"hasRelation,omitempty"`
+
+	HasFilter	bool	`json:"hasFilter,omitempty"`
 
 	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`

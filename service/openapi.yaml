@@ -521,6 +521,49 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/filter:
+    get:
+      summary: Get a decision's boxed-filter view
+      description: 404 when the decision's logic is not a boxed filter. simple=false when a branch is a nested boxed expression (the editor opens read-only).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The boxed filter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilterView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's boxed-filter logic
+      description: Replaces the decision's in/match branches (each a literal FEEL expression). Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FilterEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-filter:
+    post:
+      summary: Give an undecided decision a fresh boxed filter
+      description: Creates a filter with placeholder in/match branches. 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/bkm/{bkm}:
     get:
       summary: Get a business knowledge model's encapsulated-logic view
@@ -960,6 +1003,7 @@ components:
         hasConditional: { type: boolean, description: "Decision whose logic is a boxed conditional (if/then/else)." }
         hasList: { type: boolean, description: "Decision whose logic is a boxed list." }
         hasRelation: { type: boolean, description: "Decision whose logic is a boxed relation." }
+        hasFilter: { type: boolean, description: "Decision whose logic is a boxed filter." }
         hasLogic: { type: boolean, description: "Decision that has any executable logic (table, literal or other boxed expression)." }
         x: { type: number }
         y: { type: number }
@@ -1151,6 +1195,20 @@ components:
       properties:
         columns: { type: array, items: { type: string }, description: The column names (non-empty and unique). }
         rows: { type: array, items: { type: array, items: { type: string } }, description: The rows of FEEL cells (fully blank rows are dropped; other rows need one cell per column). }
+    FilterView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        in: { type: string, description: The collection to filter (FEEL). }
+        match: { type: string, description: "The predicate, evaluated per element with `item` bound (FEEL)." }
+        simple: { type: boolean, description: False when a branch is a nested boxed expression this text view cannot edit. }
+    FilterEdit:
+      type: object
+      required: [in, match]
+      properties:
+        in: { type: string, description: The collection to filter (FEEL). }
+        match: { type: string, description: The predicate (FEEL). }
     BKMView:
       type: object
       properties:

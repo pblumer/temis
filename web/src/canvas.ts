@@ -105,6 +105,12 @@ export type ModelerHandle = {
   // onCreateRelation fires with a decision's id when the user asks (via the context
   // pad) to give an undecided decision a boxed relation.
   onCreateRelation: (cb: (decisionId: string) => void) => void
+  // onOpenFilter fires with a decision's id when the user opens a decision whose
+  // logic is a boxed filter (double-click or the context pad), to edit it.
+  onOpenFilter: (cb: (decisionId: string) => void) => void
+  // onCreateFilter fires with a decision's id when the user asks (via the context
+  // pad) to give an undecided decision a boxed filter.
+  onCreateFilter: (cb: (decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
@@ -206,7 +212,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasLogic: n.hasLogic } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -232,8 +238,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let openConditionalCb = (_decisionId: string): void => {}
   let openListCb = (_decisionId: string): void => {}
   let openRelationCb = (_decisionId: string): void => {}
+  let openFilterCb = (_decisionId: string): void => {}
   let openBoxedCb = (_decisionId: string): void => {}
-  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean } }) => {
+  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean } }) => {
     const el = e.element
     if (!el || el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
@@ -242,6 +249,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     else if (el.hasConditional) openConditionalCb(el.id)
     else if (el.hasList) openListCb(el.id)
     else if (el.hasRelation) openRelationCb(el.id)
+    else if (el.hasFilter) openFilterCb(el.id)
     // Any other boxed-expression decision has none of these; double-click
     // inline-renames it (see dmn-label-editing). The "not editable" hint comes
     // from the context pad's boxed-info icon instead, so it doesn't clash.
@@ -270,6 +278,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   eventBus.on('dmn.openRelation', (e: { element?: Shape }) => {
     if (e.element) openRelationCb(e.element.id)
   })
+  eventBus.on('dmn.openFilter', (e: { element?: Shape }) => {
+    if (e.element) openFilterCb(e.element.id)
+  })
 
   let createTableCb = (_decisionId: string): void => {}
   let createLiteralCb = (_decisionId: string): void => {}
@@ -277,6 +288,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let createConditionalCb = (_decisionId: string): void => {}
   let createListCb = (_decisionId: string): void => {}
   let createRelationCb = (_decisionId: string): void => {}
+  let createFilterCb = (_decisionId: string): void => {}
   eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
     if (e.element) createTableCb(e.element.id)
   })
@@ -291,6 +303,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   })
   eventBus.on('dmn.createRelation', (e: { element?: Shape }) => {
     if (e.element) createRelationCb(e.element.id)
+  })
+  eventBus.on('dmn.createFilter', (e: { element?: Shape }) => {
+    if (e.element) createFilterCb(e.element.id)
   })
   eventBus.on('dmn.createConditional', (e: { element?: Shape }) => {
     if (e.element) createConditionalCb(e.element.id)
@@ -376,6 +391,12 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onCreateRelation: (cb) => {
       createRelationCb = cb
+    },
+    onOpenFilter: (cb) => {
+      openFilterCb = cb
+    },
+    onCreateFilter: (cb) => {
+      createFilterCb = cb
     },
     onOpenBKM: (cb) => {
       openBKMCb = cb

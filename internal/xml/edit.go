@@ -228,6 +228,41 @@ func (d *Definitions) CreateConditional(id string) bool {
 	return true
 }
 
+// SetFilter sets (or replaces) the boxed-filter logic of the decision identified
+// by id with literal `in` (collection) and `match` (predicate) branches. It
+// refuses (returns false) when the decision is unknown or already carries a
+// different boxed logic (a table, a list, …), which would conflict.
+func (d *Definitions) SetFilter(id, inText, matchText string) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		if dec.present() && dec.Filter == nil {
+			return false // some other boxed logic is present
+		}
+		dec.Filter = &Filter{In: litChild(inText), Match: litChild(matchText)}
+		return true
+	}
+	return false
+}
+
+// CreateFilter gives an undecided decision a fresh boxed filter with placeholder
+// branches, ready to edit in the modeler. It refuses (returns false) when the
+// decision is unknown or already has logic.
+func (d *Definitions) CreateFilter(id string) bool {
+	i := indexDecision(d.Decisions, id)
+	if i < 0 {
+		return false
+	}
+	dec := &d.Decisions[i]
+	if dec.present() {
+		return false
+	}
+	dec.Filter = &Filter{In: litChild("[1, 2, 3]"), Match: litChild("item > 1")}
+	return true
+}
+
 // SetList sets (or replaces) the boxed-list logic of the decision identified by
 // id with the given literal FEEL items (in order). It refuses (returns false)
 // when the decision is unknown or already carries a different boxed logic (a
