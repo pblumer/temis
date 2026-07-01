@@ -44,6 +44,11 @@ type Server struct {
 	// MCP and over HTTP are visible to both — one process, one address space.
 	store   Store
 	version string
+
+	// flows holds decision-flow descriptors registered over the load_flow tool
+	// (WP-92, ADR-0026), keyed by content hash. A flow resolves its model
+	// references through store, so a model loaded over any surface is reachable.
+	flows *flowStore
 	// token, when non-empty, is the bearer token required on the HTTP transport
 	// (HTTPHandler). It does not apply to the stdio transport, which is a trusted
 	// local subprocess.
@@ -120,7 +125,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{store: newMemStore(engine), version: "dev"}
+	s := &Server{store: newMemStore(engine), version: "dev", flows: newFlowStore()}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -249,6 +254,12 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		return s.toolDescribeDecision(p.Arguments)
 	case "evaluate":
 		return s.toolEvaluate(ctx, p.Arguments)
+	case "load_flow":
+		return s.toolLoadFlow(ctx, p.Arguments)
+	case "describe_flow":
+		return s.toolDescribeFlow(p.Arguments)
+	case "evaluate_flow":
+		return s.toolEvaluateFlow(ctx, p.Arguments)
 	case "git_list_models":
 		return s.toolGitListModels(ctx, p.Arguments)
 	case "git_load_model":
