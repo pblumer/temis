@@ -50,10 +50,31 @@ test('operate: run history is keyboard-navigable and drives overlays', async ({ 
   await expect(page.locator('.op-ov-results')).toContainText('Discount')
   await expect(page.locator('.node-result')).toHaveCount(1)
 
-  // Baustein 3: hovering a result row reveals the decision-table matrix.
-  await page.locator('.op-ov-results .op-ov-row.op-ov-hoverable').first().hover()
-  await expect(page.locator('.op-pop .op-mgrid')).toBeVisible()
+  // Baustein 3: hovering a result row reveals the decision-table matrix, and the
+  // popover is positioned within the viewport (regression: it used to render
+  // off-screen because it was offset against an unpositioned host).
+  const hoverRow = page.locator('.op-ov-results .op-ov-row.op-ov-hoverable').first()
+  await hoverRow.hover()
+  const popEl = page.locator('.op-pop .op-mgrid')
+  await expect(popEl).toBeVisible()
   await expect(page.locator('.op-pop .op-mrule.is-hit')).toBeVisible()
+  const popBox = await page.locator('.op-pop').boundingBox()
+  expect(popBox).not.toBeNull()
+  if (popBox) {
+    expect(popBox.x).toBeGreaterThanOrEqual(0)
+    expect(popBox.y).toBeGreaterThanOrEqual(0)
+    expect(popBox.x + popBox.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
+  }
+
+  // Double-clicking the decision opens the decision-PATH view: a chip-and-arrow
+  // summary bar, a per-cell pass/fail heatmap and the winning rule highlighted.
+  await page.locator('.djs-element:has-text("Discount")').first().dblclick({ force: true })
+  await expect(page.locator('.dt-modal.dt-trace')).toBeVisible()
+  await expect(page.locator('.dt-path')).toBeVisible()
+  await expect(page.locator('.dt-path-out')).toContainText('Discount')
+  await expect(page.locator('.dt-rule.dt-hit')).toBeVisible()
+  await expect(page.locator('td.dt-c-ok').first()).toBeVisible()
+  await page.locator('.dt-close').click()
 
   // Back in Design the cockpit chrome is hidden again.
   await page.locator('#modeDesign').click()

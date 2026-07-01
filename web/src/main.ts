@@ -766,7 +766,9 @@ async function boot(root: HTMLElement): Promise<void> {
       const tr = activeRun?.result.traces?.[name]
       const matched: number[] = []
       for (const t of tr?.tables ?? []) for (const m of t.matched ?? []) matched.push(m)
-      void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched })
+      // The first table's trace drives the decision-path view (a decision table
+      // decision has exactly one table; matched still spans all, for safety).
+      void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched, trace: tr?.tables?.[0] })
     } else {
       void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions)
     }
