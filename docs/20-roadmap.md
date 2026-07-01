@@ -174,6 +174,31 @@ Keystore + Lifecycle, P3 Parität/Ausbau.
 
 ---
 
+## Etappe Betriebs-Observability — „ist clio erreichbar, wie ist die Last?" (ADR-0030)
+
+**Ziel:** `temisd` **observierbar** machen, ohne es zu einer Monitoring-Plattform zu
+machen. Der Betrieb soll den **Zustand der Umsysteme** (clio/LLM/Git) und die **Auslastung**
+sehen — heute meldet `/readyz` statisch `ok` (auch wenn clio down ist), der clio-Sink hat
+**keinen** sichtbaren Zustand, und es gibt **keine** Metriken. Leitsatz: **temis ist
+observierbar, nicht selbst-überwachend** — das Binary *erzeugt* ehrliche Signale
+(Health/Readiness, `/v1/status`, `expvar`, `slog`); Dashboards/Alerting/Multi-Instanz
+*aggregiert* die externe Ops-Schicht (Prometheus/Grafana, Loki) oder ein künftiges eigenes
+Binary. Alles in der **Adapter-Schicht** (`service`/`cmd/temisd`), **kein** Kern-Import
+(ADR-0011), **reine stdlib** (`expvar`/`log/slog`/`sync/atomic` — keine neue Dependency,
+Golden Rule 6), alles **opt-in bzw. hinter einem ADR-0028-Scope** (`admin`/`audit`), **nie**
+ein Secret im Output. Ergänzt die Auth-Seite aus ADR-0028; zusammen ergeben sie das
+Betriebsbild.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-110 | Liveness/Readiness ehrlich trennen | WP-32 | **geplant** — `/healthz` = Liveness (bleibt statisch `ok`); `/readyz` = echte Readiness (Engine initialisiert, `-models-dir` lesbar falls gesetzt). **best-effort-Umsysteme färben `/readyz` nicht rot** — nur `-clio-strict` macht clio readiness-relevant. AK: `/readyz` liefert `503` wenn eine harte Startbedingung fehlt bzw. clio im `strict`-Modus unerreichbar; best-effort-clio-Ausfall lässt `/readyz` `200`; `/healthz` unverändert; httptest-Suite grün. |
+| WP-111 | Umsystem-Zähler & passive Health (Fundament) | WP-110, WP-54, WP-80 | **geplant** — thread-sichere Zähl-/Zustandsstruktur (`sync/atomic`) in `service`: clio `writesOk`/`writesFailed`/`idempotentSkips` + `lastOk`/`lastError`/`reachable` (aus echten Writes in `ClioSink.Record`), LLM `callsOk`/`callsFailed`/`lastOk`, Evaluate-Zähler ok/fehler, Cache-Hits/Misses/Evictions. Allokationsarm im Hot Path (Qualitätsziel 2), kein Kern-Import. AK: Unit-Tests — ein fehlgeschlagener clio-Write inkrementiert `writesFailed` + setzt `lastError`, ein 409 zählt als `idempotentSkip`; Zähler nebenläufig korrekt (`-race`); Evaluate-Pfad ohne messbare Regression (bench-smoke). |
+| WP-112 | `GET /v1/status` — Umsystem-Sicht | WP-111 | **geplant** — read-only JSON-Endpoint aus den WP-111-Zählern: `engine` (Version/Uptime/Modelle/Cache), `clio` (`enabled`/`mode`/`url`/Zähler/`lastOk`/`lastError`/`reachable`), `llm` (`enabled`/`provider`/`byok`/Zähler — **kein** aktiver Ping), `git` (`available`). **Nie** ein Secret im Output. Optionaler **aktiver** clio-`GET /healthz`-Ping per Flag. Hinter ADR-0028-Scope `admin`/`audit`; folgt dem „offen"-Default ohne Auth-Konfig. OpenAPI-Sync (Route + Schema). AK: httptest — Felder korrekt, kein Token/Key im Body, Scope erzwungen (403 ohne `admin`/`audit`), aktiver Ping togglebar; Routen/OpenAPI-Sync-Test grün. |
+| WP-113 | `expvar`-Metriken + optionaler `/metrics`-Exporter | WP-111 | **geplant** — dieselben Zähler als `expvar` unter `GET /debug/vars` (stdlib, kein Prometheus-Client): Evaluations gesamt/Fehler, clio ok/fail/idempotent, LLM ok/fail, Cache-Hits/Misses/Evictions, Modellanzahl, Uptime. Optionaler **Prometheus-Text-Exporter** `GET /metrics` über dieselbe Quelle (kleiner stdlib-Encoder). **opt-in** (`-metrics`/`$TEMIS_METRICS`), hinter `admin`/`audit`-Scope. AK: `/debug/vars` zeigt die Zähler, ein Evaluate/clio-Write erhöht sie; `/metrics` liefert gültiges Prometheus-Textformat; standardmäßig aus (404); `make verify` grün. |
+| WP-114 | Strukturierte Logs (`log/slog`) | WP-32 | **geplant** — `logf`-String-Logs auf `log/slog` heben (stdlib): key/value-strukturierte Ops-Logs, JSON-Handler optional, Level/Format über `-log-format`/`-log-level` (`$TEMIS_LOG_*`). AK: clio-best-effort-Fehler erscheint als strukturierter `slog`-Record (Feld `system=clio`, Fehler als Attribut); Textformat bleibt Default (rückwärtskompatible Ausgabe); `make verify` grün. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.
