@@ -18,6 +18,12 @@ import (
 	"github.com/pblumer/temis/service"
 )
 
+// defaultClioURL is the hosted clio the decision audit log points at unless
+// overridden. The sink still stays off until a TEMIS_CLIO_TOKEN is provided, so a
+// default start never sends decision data anywhere; setting the token is the single
+// opt-in step (or point -clio-url at your own clio).
+const defaultClioURL = "https://clio.blumer.cloud"
+
 // Zero-config by design: running the binary with no flags starts a fully featured
 // server (modeler, examples, MCP, model listing, and the modeling assistant in BYOK
 // mode). Every default below is sourced from a TEMIS_* environment variable, so an
@@ -52,10 +58,10 @@ func main() {
 		"override the provider's API base URL, e.g. a proxy (default $TEMIS_LLM_BASE_URL)")
 	llmAllowBYOK := flag.Bool("llm-allow-byok", envBool("TEMIS_LLM_ALLOW_BYOK", true),
 		"let a caller supply its own provider key via the X-LLM-Token header (used only for that request) (env TEMIS_LLM_ALLOW_BYOK)")
-	clioURL := flag.String("clio-url", os.Getenv("TEMIS_CLIO_URL"),
-		"record each evaluation as a tamper-evident event in this clio instance (default $TEMIS_CLIO_URL; empty = off)")
+	clioURL := flag.String("clio-url", envOr("TEMIS_CLIO_URL", defaultClioURL),
+		"clio instance that receives each evaluation as a tamper-evident event (default $TEMIS_CLIO_URL, else the hosted "+defaultClioURL+")")
 	clioToken := flag.String("clio-token", os.Getenv("TEMIS_CLIO_TOKEN"),
-		"clio API key (kid.secret) for the audit sink (default $TEMIS_CLIO_TOKEN)")
+		"clio API key (kid.secret); the audit sink stays OFF until this is set, so no decision data leaves the process by default (default $TEMIS_CLIO_TOKEN)")
 	clioSource := flag.String("clio-source", os.Getenv("TEMIS_CLIO_SOURCE"),
 		"CloudEvents source stamped on audit events (default $TEMIS_CLIO_SOURCE, else \"temisd\")")
 	clioSubjectPrefix := flag.String("clio-subject-prefix", envOr("TEMIS_CLIO_SUBJECT_PREFIX", "/decisions"),
@@ -106,7 +112,11 @@ func main() {
 			AllowBYOK: *llmAllowBYOK,
 		}))
 	}
-	if *clioURL != "" {
+	// Decision audit log (ADR-0023): the URL defaults to the hosted clio, but the
+	// sink is gated on the token so a default start never sends decision data
+	// anywhere. Providing a token is the single opt-in step.
+	clioOn := *clioToken != "" && *clioURL != ""
+	if clioOn {
 		sink, err := service.NewClioSink(service.ClioConfig{
 			URL:           *clioURL,
 			Token:         *clioToken,
@@ -155,12 +165,16 @@ func main() {
 		}
 		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, %s, BYOK=%v)", provider, keying, *llmAllowBYOK)
 	}
-	if *clioURL != "" {
+	if clioOn {
 		mode := "best-effort"
 		if *clioStrict {
 			mode = "fail-closed"
 		}
 		log.Printf("temisd: clio audit sink → %s (%s)", *clioURL, mode)
+	} else {
+		// Advertise the sister project without sending anything: the sink is one
+		// token away. https://github.com/pblumer/clio
+		log.Printf("temisd: tamper-evident decision log available — set TEMIS_CLIO_TOKEN to record to %s (clio, or -clio-url your own)", *clioURL)
 	}
 	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
 		ver, *addr, *addr, *addr)

@@ -130,7 +130,8 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_LLM_TOKEN` | *(leer)* | Serverseitiger LLM-Key (leer = BYOK-only) |
 | `TEMIS_LLM_PROVIDER` | `anthropic` | LLM-Provider (`anthropic`/`openai`) |
 | `TEMIS_LLM_ALLOW_BYOK` | `true` | Aufrufer-Key per `X-LLM-Token` zulassen |
-| `TEMIS_CLIO_URL` | *(leer)* | clio-Audit-Sink aktivieren (leer = aus) |
+| `TEMIS_CLIO_TOKEN` | *(leer)* | clio-Audit-Sink **anschalten** (`kid.secret`; leer = aus, kein Datenabfluss) |
+| `TEMIS_CLIO_URL` | `https://clio.blumer.cloud` | Ziel-clio (nur aktiv, wenn ein Token gesetzt ist) |
 | `TEMIS_CACHE_SIZE` | `0` | LRU-Cache-Größe (0 = Default, negativ = unbegrenzt) |
 
 ```sh
@@ -201,17 +202,24 @@ curl -H 'Authorization: Bearer gehenix' \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
 
-**Revisionssicheres Entscheidungs-Logbuch (clio, opt-in):** Mit `-clio-url`
-protokolliert `temisd` jede Einzel-Decision-Auswertung als manipulationssicheres
-CloudEvent im Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (append-only,
-hash-verkettet) — Eingabe, Ausgabe, optionale Spur und content-addressed `modelId`. Default
-**aus** (byte-identisch); die Kopplung läuft nur über clios HTTP-API, ohne Go-Import
-(ADR-0023, ADR-0011). Idempotent per clio-Precondition; `-clio-strict` macht den Sink
-fail-closed (`502`), sonst best-effort. Voller Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+**Revisionssicheres Entscheidungs-Logbuch (clio):** `temisd` protokolliert jede
+Einzel-Decision-Auswertung als manipulationssicheres CloudEvent im Schwesterprojekt
+**[clio](https://github.com/pblumer/clio)** (append-only, hash-verkettet) — Eingabe,
+Ausgabe, optionale Spur und content-addressed `modelId`. Der Sink zeigt standardmäßig
+auf die gehostete clio (`https://clio.blumer.cloud`), bleibt aber **aus, bis ein
+`TEMIS_CLIO_TOKEN` (`kid.secret`) gesetzt ist** — ohne Token verlässt keine Decision-Daten
+den Prozess (byte-identischer Default). Anschalten ist damit ein einziger Schritt: Token
+setzen (oder `-clio-url` auf die eigene clio zeigen). Die Kopplung läuft nur über clios
+HTTP-API, ohne Go-Import (ADR-0023, ADR-0011). Idempotent per clio-Precondition;
+`-clio-strict` macht den Sink fail-closed (`502`), sonst best-effort. Voller Vertrag &
+Betrieb: `docs/80-clio-decision-log.md`.
 
 ```sh
-go run ./cmd/temisd -addr :8080 \
-  -clio-url http://127.0.0.1:3000 -clio-token kid_ci01.geheim -clio-subject-key "Order ID"
+# Gehostete clio (Default-URL) — nur der Token schaltet an:
+TEMIS_CLIO_TOKEN=kid_ci01.geheim temisd
+
+# Oder die eigene clio:
+temisd -clio-url http://127.0.0.1:3000 -clio-token kid_ci01.geheim -clio-subject-key "Order ID"
 # entsprechend per Env: TEMIS_CLIO_URL / TEMIS_CLIO_TOKEN / TEMIS_CLIO_SOURCE
 ```
 

@@ -69,7 +69,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Umgebungsvariablen ab-/umschalten (`TEMIS_ADDR`, `TEMIS_EXAMPLES`, `TEMIS_MCP`,
   `TEMIS_LIST_MODELS`, `TEMIS_ASSIST`, `TEMIS_LLM_ALLOW_BYOK`, `TEMIS_CACHE_SIZE`,
   `TEMIS_MAX_*`, `TEMIS_CLIO_*` u. a.) — kein Flag nötig (container-freundlich); ein explizites
-  Flag hat weiterhin Vorrang vor der Env-Variable.
+  Flag hat weiterhin Vorrang vor der Env-Variable. Das clio-Audit-Logbuch zeigt jetzt
+  standardmäßig auf die gehostete clio (`https://clio.blumer.cloud`), bleibt aber **aus, bis
+  ein `TEMIS_CLIO_TOKEN` gesetzt ist** — kein Datenabfluss im Default, Anschalten ist ein
+  einziger Schritt (Token setzen oder `-clio-url` auf die eigene clio zeigen); der Start-Banner
+  weist auf die Verfügbarkeit hin.
 - **API-Stabilisierung (WP-43):** `package dmn` als v1 zugesagt; SemVer-/Deprecation-Policy;
   Golden-Surface-Test gegen unbeabsichtigte Brüche.
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte
