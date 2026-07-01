@@ -96,6 +96,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Hintergrund-Worker liefern mit Retry & Idempotenz (clio-Precondition), `temisd` drainiert die Queue
   beim **Graceful-Shutdown**. Ohne konfiguriertes clio wird ein Produktivlauf klar mit
   **`409 CLIO_NOT_CONFIGURED`** abgelehnt (opt-in, Default aus — kein Datenabfluss).
+  **Ergebnis-CSV:** Nach einem Lauf schreibt das Cockpit die **berechneten Decision-Ausgaben** je
+  Fall in eine CSV (Fall/Entität/Eingaben + eine Spalte je Decision, plus `status`-Spalte
+  OK/Abweichung/Fehler bei Erwartungen) und bietet sie als **„Ergebnisse · CSV ↓"** zum Download an —
+  das ausgefüllte Testblatt mit den Outputs.
 - **clio-Audit auch für Whole-Graph-Auswertung:** Der „Auswerten"-Pfad des Modelers
   (`POST /v1/models/{id}/evaluate-graph`) wird jetzt ebenfalls protokolliert — **ein
   `com.temis.decision.evaluated.v1`-Event je ausgewerteter Decision** (best-effort, bzw. `502` bei

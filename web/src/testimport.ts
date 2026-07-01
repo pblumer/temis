@@ -168,7 +168,7 @@ export function mountImport(opts: ImportOptions): ImportView {
     running = false
     animateOnce = true
     const tail = productive ? ` · ${recorded.toLocaleString('de-CH')} Quality Events an clio übergeben` : ''
-    note = `${verb} · ${summarize(cases)} · Auswertung in ${fmtDuration(ms)}${tail}`
+    note = `${verb} · ${summarize(cases)} · Auswertung in ${fmtDuration(ms)}${tail} · Ergebnisse als CSV herunterladbar ↓`
     render()
     animateOnce = false
   }
@@ -215,13 +215,18 @@ export function mountImport(opts: ImportOptions): ImportView {
     const impBtn = button('Testfälle importieren …', () => fileInput.click(), 'imp-primary')
     const sampleBtn = button('Beispiele einfügen', addSamples)
     const staged = cases.filter((c) => c.lane === 'in').length
+    const hasResults = cases.some((c) => c.lane === 'store')
+    // Offered after a run: the filled-in test sheet with the computed outputs.
+    const resultsBtn = button('Ergebnisse · CSV ↓', () => model && download(resultsCSV(model, cases), safeName(model) + '-ergebnisse.csv', 'text/csv'), 'imp-results' + (hasResults ? ' imp-primary' : ''))
+    resultsBtn.disabled = running || !hasResults
+    resultsBtn.title = hasResults ? 'Eingaben + berechnete Outputs als CSV herunterladen' : 'Erst einen Lauf ausführen'
     const runBtn = button(running ? 'läuft …' : productive ? 'Produktivlauf ▶' : 'Testlauf ▶', () => void runAll(), 'imp-run' + (productive ? ' imp-prod' : ''))
     runBtn.disabled = running || staged === 0
     const clearBtn = button('Leeren', clearAll)
     clearBtn.disabled = running || cases.length === 0
 
     const left = el('div', 'imp-bar-group', csvBtn, jsonBtn, impBtn, sampleBtn)
-    const right = el('div', 'imp-bar-group', modeToggle(model), clearBtn, runBtn)
+    const right = el('div', 'imp-bar-group', modeToggle(model), resultsBtn, clearBtn, runBtn)
     bar.append(left, right)
     if (note) bar.append(el('div', 'imp-note', note))
   }
@@ -391,6 +396,35 @@ export function templateCSV(model: ModelDetail): string {
   const rows = samples.map((inputs, i) => ['Fall ' + (i + 1), '', ...fields.map((f) => csvCell(inputs[f.name])), ...decisions.map(() => '')])
   const comment = `# Testfall-Vorlage für „${model.name || 'Modell'}". Eine Zeile = ein Testfall. „entity" ist die Entität, auf die ein Produktivlauf ein clio-Quality-Event schreibt (optional). Spalten „→Decision" sind erwartete Ergebnisse (optional, für Pass/Fail). Werte als FEEL/JSON: 1200, "Business", true.`
   return [comment, header.map(csvField).join(','), ...rows.map((r) => r.map(csvField).join(','))].join('\n') + '\n'
+}
+
+// resultsCSV renders the run's outcome as a spreadsheet: the same case/entity/
+// input columns as the template, plus one column per decision holding the
+// COMPUTED output, and a trailing `status` column (OK/Abweichung/Fehler) when any
+// case asserted or errored. This is what the cockpit offers for download after a
+// run — the filled-in test sheet with the output variables written back.
+export function resultsCSV(model: ModelDetail, cases: TestCase[]): string {
+  const fields = leafInputs(model)
+  const decisions = model.decisions ?? []
+  const withStatus = cases.some((c) => c.status === 'error' || c.pass !== undefined)
+  const header = ['case', 'entity', ...fields.map((f) => f.name), ...decisions, ...(withStatus ? ['status'] : [])]
+  const rows = cases.map((c) => [
+    c.name,
+    c.entity,
+    ...fields.map((f) => csvCell(c.inputs[f.name])),
+    ...decisions.map((d) => (c.status === 'error' || !c.values ? '' : csvCell(c.values[d]))),
+    ...(withStatus ? [statusText(c)] : []),
+  ])
+  const comment = `# Ergebnisse für „${model.name || 'Modell'}". Eingaben + berechnete Decision-Ausgaben je Testfall${withStatus ? ' (status: OK/Abweichung/Fehler)' : ''}.`
+  return [comment, header.map(csvField).join(','), ...rows.map((r) => r.map(csvField).join(','))].join('\n') + '\n'
+}
+
+// statusText labels a run case for the results CSV's status column.
+function statusText(c: TestCase): string {
+  if (c.status === 'error') return 'Fehler'
+  if (c.pass === true) return 'OK'
+  if (c.pass === false) return 'Abweichung'
+  return ''
 }
 
 // templateJSON builds the same template as a JSON document: a model name and a
