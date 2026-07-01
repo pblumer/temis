@@ -1,4 +1,4 @@
-import { APP_NAME } from './build-info'
+import { initBranding, brandName, brandLogoHTML } from './branding'
 import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -25,7 +25,7 @@ async function boot(root: HTMLElement): Promise<void> {
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-title">${APP_NAME}</div>
+        <div class="sidebar-title"><span class="brand-logo">${brandLogoHTML()}</span>${brandName()}</div>
         <div class="sidebar-section">
           <span>Modelle</span>
           <span class="sidebar-actions">
@@ -721,5 +721,6 @@ async function boot(root: HTMLElement): Promise<void> {
   await showModel(best.revisions[0].modelId)
 }
 
+initBranding()
 const root = document.getElementById('app')
 if (root) void boot(root)

@@ -62,3 +62,24 @@ Modeler, und gilt für die dmn-js-Einbettung wie für einen späteren eigenen Mo
   müssen separat ausgeliefert/gehostet werden, sofern kein Data-URI verwendet wird.
 - **Folgeaufgaben:** keine zwingenden; weitere eingebaute Themes oder ein serverseitig
   konfigurierbares Branding sind optional nachziehbar.
+
+## Nachtrag (nach WP-67-Cutover)
+Der ursprüngliche Träger `service/ui.go` (dmn-js-Playground) wurde beim WP-67-Cutover durch
+das **eigene Modeler-Frontend** (`web/`, TypeScript/Vite, ADR-0016) ersetzt, das nun unter
+`GET /` ausgeliefert wird. Beim Umbau gingen die hier beschriebenen Features zunächst
+unbeabsichtigt verloren und wurden im neuen Frontend wieder eingesetzt — an die dortige
+Architektur angepasst:
+
+- **CI-Branding** lebt in `web/src/branding.ts`: `window.TEMIS_BRANDING` setzt Produktname,
+  Logo und **Akzentfarbe** (`--accent`, plus `--accent-fg` für Text auf der Akzentfläche)
+  sowie beliebige weitere CSS-Variablen. Kein Neubau nötig; das Global kann per Reverse-Proxy
+  injiziert werden. Das erfüllt das Kernziel (Oberfläche an Firmen-CI anpassen), da `--accent`
+  bereits eine CSS-Variable ist.
+- **Logo/Favicon** (Raute + Häkchen) wie gehabt; das Kopfzeilen-Logo erbt die Akzentfarbe über
+  `currentColor`, Firmen überschreiben es per `branding.logo`.
+- **Link-Vorschau:** OG-/Twitter-Tags in `web/index.html` mit `__OG_BASE__`-Platzhaltern; der
+  Service ersetzt sie in `handleAppIndex` durch die absolute Request-Origin und liefert das
+  eingebettete Vorschaubild unter `/og-image.png` (`service/appui.go`).
+- **Offen:** Der eingebaute **Hell/Dunkel-Umschalter** ist noch nicht zurückportiert — das
+  neue Frontend nutzt viele fest verdrahtete Flächenfarben; ein Dunkelmodus erfordert einen
+  CSS-Refactor auf einen vollständigen Variablensatz und folgt separat.

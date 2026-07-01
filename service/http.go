@@ -226,6 +226,12 @@ func (s *Server) Handler() http.Handler {
 	// path prefix below (a method-specific "GET /" would tie with it and panic);
 	// more specific routes still take precedence.
 	mux.Handle("/", http.FileServerFS(webui.Assets()))
+	// The SPA shell is served with absolute Open Graph URLs injected so shared
+	// links unfurl a preview (Teams/Slack/…); the preview image is embedded. These
+	// exact-match routes take precedence over the file-server catch-all above.
+	mux.HandleFunc("GET /{$}", s.handleAppIndex)
+	mux.HandleFunc("GET /index.html", s.handleAppIndex)
+	mux.HandleFunc("GET /og-image.png", s.handleOGImage)
 	mux.HandleFunc("GET /ui", redirectTo("/"))
 	mux.HandleFunc("GET /app/", redirectTo("/"))
 	mux.HandleFunc("GET /healthz", s.handleHealth)

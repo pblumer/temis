@@ -336,11 +336,30 @@ func TestModelerAtRoot(t *testing.T) {
 		t.Errorf("/ content-type = %q, want text/html", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Temis Modeler") {
+	if !strings.Contains(body, "DMN Modeler") {
 		t.Errorf("/ body does not look like the own modeler page")
 	}
 	if strings.Contains(body, "dmn-js") {
 		t.Error("/ still embeds dmn-js; the cutover should have removed it")
+	}
+
+	// Link-preview (Open Graph) tags are present and the base-URL placeholder is
+	// substituted with the request's absolute origin so shared links unfurl.
+	if !strings.Contains(body, `property="og:image"`) {
+		t.Error("/ is missing Open Graph tags for link previews")
+	}
+	if strings.Contains(body, "__OG_BASE__") {
+		t.Error("/ still has the unsubstituted __OG_BASE__ placeholder")
+	}
+	if !strings.Contains(body, "http://example.com/og-image.png") {
+		t.Error("/ og:image was not made absolute for the request")
+	}
+
+	// The preview image is served publicly as PNG.
+	if img := do(t, h, "GET", "/og-image.png", "", nil); img.Code != http.StatusOK ||
+		img.Header().Get("Content-Type") != "image/png" ||
+		!bytes.HasPrefix(img.Body.Bytes(), []byte("\x89PNG\r\n\x1a\n")) {
+		t.Errorf("GET /og-image.png = %d ct=%q, want 200 image/png PNG", img.Code, img.Header().Get("Content-Type"))
 	}
 
 	// The embedded SPA assets are served from the same root.
