@@ -31,7 +31,7 @@ Schicht mit **genau einem** Owner; Abhängigkeiten zeigen nur nach unten.
 |---|---|---|---|
 | **L0 Foundation** | ItemDefinitions, Enums, geteilte BKM (Vokabular) | Plattform-Team | temis |
 | **L1 Domain Decisions** | Kernregeln je Domäne (Pricing, Risk, …) | Domänen-Team | temis |
-| **L2a Decision-Flow** | Decision komponiert Decisions, **stateless** | Prozess-/Fach-Owner | temis |
+| **L2a Decision-Flow** | Decision komponiert Decisions, **stateless** (JSON-Flow-Deskriptor, ADR-0026) | Prozess-/Fach-Owner | temis |
 | **L2b Prozess** | BPMN: durable state, Zeit, Mensch, Events | Prozess-Owner | chrampfer |
 | **L3 Policy/Guardrails** | Regulatorik als Override-Decisions | Compliance | temis |
 
@@ -98,7 +98,34 @@ models/
 - **Zentrales Team besitzt** Vokabular (L0), Namens-/Modellier-Konventionen, CI-Gate,
   Plattformbetrieb — **nicht** die Fachregeln.
 
-## 5. Die temis↔chrampfer-Naht (Kurzform)
+## 5. Der Decision-Flow (L2a) — konkret
+
+Ein L2a-Flow ist ein **JSON-Deskriptor** (ADR-0026, `*.flow.json` im `flows/`-Verzeichnis),
+der mehrere per `modelId` gepinnte Decisions/Services zu **einer** zustandslosen,
+deterministischen Auswertung verkettet — Daten-Mapping über FEEL, Vorrang als *aufgerufene*
+Auflösungs-Decision:
+
+```jsonc
+{
+  "flow": "loan-decisioning",
+  "steps": [
+    { "id": "risk",    "model": "sha256:1a2b…", "decision": "Risk Level",
+      "in": { "Credit Score": "Credit Score" } },
+    { "id": "pricing", "model": "sha256:7c3d…", "decision": "Base Price",
+      "in": { "Amount": "Loan Amount" } },
+    { "id": "resolve", "model": "sha256:9f8e…", "decision": "Final Decision",
+      "in": { "Risk": "risk.Risk Level", "Price": "pricing.Base Price" } }
+  ],
+  "output": { "Decision": "resolve.Final Decision" }
+}
+```
+
+Warum ein Deskriptor und **kein** DMN-`import`: jede DMN-Datei bleibt autark ownbar/testbar,
+die Komposition ist ein eigenes reviewbares Artefakt mit eigenem Owner (`flows/` +
+CODEOWNERS), und weil jeder Step ein `modelId` pinnt, ist der ganze Flow **re-auditierbar**
+(ADR-0023). Umsetzung: Etappe „Decision-Flow" (WP-90–94) in `docs/20-roadmap.md`.
+
+## 6. Die temis↔chrampfer-Naht (Kurzform)
 
 Vollständig in ADR-0025. Merksätze:
 
