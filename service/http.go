@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -58,6 +59,13 @@ type Server struct {
 	// unbounded. NewServer builds cache from it after options run.
 	cacheSize int
 	cache     *modelCache
+
+	// storeDir, when non-empty, is a filesystem directory that persists uploaded
+	// and edited models so they survive a restart (ADR-0027); set via
+	// WithModelStore. NewServer opens store from it after options run. Empty
+	// leaves the server purely in-memory (the default).
+	storeDir string
+	store    *diskStore
 
 	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
 	// this server's mux so it shares this server's model cache — one process, one
@@ -114,6 +122,15 @@ func WithCacheSize(size int) Option {
 	return func(s *Server) { s.cacheSize = size }
 }
 
+// WithModelStore persists uploaded and edited models to dir on disk and reloads
+// them into the cache on the next start, so the server's models survive a restart
+// (ADR-0027). Models are stored content-addressed as raw DMN XML; the bundled
+// examples are not persisted (they re-embed on every start). An empty dir keeps
+// the server purely in-memory — the default, byte-identical to before.
+func WithModelStore(dir string) Option {
+	return func(s *Server) { s.storeDir = dir }
+}
+
 // storedModel is a compiled model held in the cache together with the index and
 // any diagnostics produced while compiling it.
 type storedModel struct {
@@ -139,10 +156,41 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 		opt(s)
 	}
 	s.cache = newModelCache(s.cacheSize)
+	// Examples load first, while store is still nil, so the bundled models are
+	// never written to disk — they re-embed on every start (ADR-0027).
 	if s.loadExamplesOnInit {
 		s.loadExamples(context.Background())
 	}
+	// Then open the optional on-disk store and repopulate the cache from it, so a
+	// user's own uploaded/edited models survive a restart. A store that cannot be
+	// opened is logged and disabled rather than blocking startup.
+	if s.storeDir != "" {
+		store, err := newDiskStore(s.storeDir)
+		if err != nil {
+			log.Printf("temis: model store disabled: %v", err)
+		} else {
+			s.store = store
+			s.loadPersisted(context.Background())
+		}
+	}
 	return s
+}
+
+// loadPersisted repopulates the cache from the on-disk store (ADR-0027). It runs
+// at construction, before the server serves, so it needs no locking beyond the
+// cache's own. A model that no longer compiles is skipped — never blocking the
+// server — and left on disk so a later fix can recover it.
+func (s *Server) loadPersisted(ctx context.Context) {
+	xmls, err := s.store.load()
+	if err != nil {
+		log.Printf("temis: model store: %v", err)
+		return
+	}
+	for _, xml := range xmls {
+		if _, err := s.compileAndStore(ctx, xml); err != nil {
+			continue
+		}
+	}
 }
 
 // route is one token-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
@@ -990,11 +1038,33 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 	}
 	sm := &storedModel{id: id, name: defs.ModelName(), xml: xml, defs: defs, index: defs.Index(), diags: diags}
 	s.cache.add(sm)
+	// Persist the raw XML so this model survives a restart (ADR-0027). Idempotent:
+	// a content-addressed file that already exists is left untouched. A failed
+	// write is logged but never fails the request — the model is already cached
+	// and serving.
+	if s.store != nil {
+		if err := s.store.put(id, xml); err != nil {
+			log.Printf("temis: model store: persisting %s: %v", id, err)
+		}
+	}
 	return sm, nil
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {
-	return s.cache.get(id)
+	if sm, ok := s.cache.get(id); ok {
+		return sm, true
+	}
+	// Fall back to the on-disk store: a persisted model that was evicted from the
+	// bounded in-memory cache is still durably available and recompiles on demand
+	// (ADR-0027), re-entering the cache as most-recently-used.
+	if s.store != nil {
+		if xml, ok := s.store.get(id); ok {
+			if sm, err := s.compileAndStore(context.Background(), xml); err == nil {
+				return sm, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"
