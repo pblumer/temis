@@ -9,17 +9,25 @@ info:
     experimental until the v1 stabilisation (roadmap WP-43).
 
 
-    When the server is started with a token (`temisd -token …` or
-    `TEMIS_API_TOKEN`), the `/v1` endpoints require an
-    `Authorization: Bearer <token>` header — click **Authorize** and paste the
-    token to try them here. When no token is configured the API is open and the
-    header is ignored.
+    Authentication (ADR-0028): when the server is configured with scoped API keys
+    (`temisd -keys-file …` / `$TEMIS_KEYS_FILE`, or a bootstrap admin key), the
+    `/v1` endpoints require an `Authorization: Bearer <kid>.<secret>` header. Each
+    route needs a scope — `evaluate`, `models:read`, `models:write`, `git`,
+    `assist`, `flow` or `admin` (a super-scope). A missing/invalid/expired/revoked
+    key is `401`; a valid key lacking the route's scope is `403 FORBIDDEN`. The
+    deprecated single token (`temisd -token` / `TEMIS_API_TOKEN`) still works as a
+    legacy admin key that satisfies every scope. When neither keys nor a legacy
+    token are configured the API is open and the header is ignored. Click
+    **Authorize** and paste your `kid.secret` (or legacy token) to try the
+    endpoints here.
 servers:
   - url: /
-# Bearer auth is optional: when the server runs without a token the empty
-# requirement ({}) makes every endpoint callable; when a token is set, callers
-# present it via the bearerAuth scheme. Swagger UI's "Authorize" button binds to
-# bearerAuth.
+# Bearer auth is optional: when the server runs without keys or a legacy token the
+# empty requirement ({}) makes every endpoint callable; when auth is configured,
+# callers present a kid.secret key (or the legacy token) via the bearerAuth scheme.
+# Per-route scope requirements (ADR-0028 §2) are described in each operation's
+# summary and the info block; OpenAPI's http-bearer scheme carries no scope list,
+# so the scope→route mapping is documented in docs/40-api-contract.md.
 security:
   - bearerAuth: []
   - {}
@@ -843,9 +851,13 @@ components:
       type: http
       scheme: bearer
       description: >
-        Opaque token configured via `temisd -token` / `TEMIS_API_TOKEN`. Sent as
-        `Authorization: Bearer <token>`. Only enforced when the server is started
-        with a token.
+        A scoped `kid.secret` API key (ADR-0028), sent as
+        `Authorization: Bearer <kid>.<secret>`. The keystore holds only the
+        SHA-256 of each secret; each route requires a scope (evaluate ·
+        models:read · models:write · git · assist · flow · admin). The deprecated
+        single token (`temisd -token` / `TEMIS_API_TOKEN`) is also accepted as a
+        legacy admin key. Only enforced when the server is configured with keys or
+        a legacy token.
   responses:
     Unauthorized:
       description: Missing or invalid bearer token (only when the server requires one)

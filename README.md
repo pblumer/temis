@@ -122,7 +122,9 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | Env-Variable | Default | Wirkung |
 |---|---|---|
 | `TEMIS_ADDR` | `:8080` | Listen-Adresse (`host:port`) |
-| `TEMIS_API_TOKEN` | *(leer)* | Bearer-Token für `/v1` erzwingen (leer = offen) |
+| `TEMIS_KEYS_FILE` | *(leer)* | JSON-Datei mit scoped `kid.secret`-API-Keys für `/v1`, `/mcp`, gRPC (leer = keine; ADR-0028) |
+| `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
+| `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
 | `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
@@ -220,13 +222,45 @@ go run ./cmd/temisd -addr :8080
 # Browser: http://localhost:8080/docs
 ```
 
-**Optionaler Token-Schutz:** Mit `-token <token>` (oder `TEMIS_API_TOKEN`) verlangen
-die `/v1`-Endpunkte `Authorization: Bearer <token>` (sonst `401`,
-`code: UNAUTHORIZED`); `/docs`, `/openapi.yaml` und die Health-Probes bleiben offen.
-In Swagger UI den Token über **Authorize** eintragen.
+**Scoped API-Keys (ADR-0028):** Mit `-keys-file <datei>` (oder `TEMIS_KEYS_FILE`)
+schützt `temisd` `/v1`, `/mcp` und gRPC über `kid.secret`-Keys im Modell von
+[clio](https://github.com/pblumer/clio). Der Bearer ist `Authorization: Bearer <kid>.<secret>`;
+die Keystore hält **nur** `sha256(secret)` (Klartext nie), verglichen in Konstantzeit.
+Jede Route braucht einen **Scope** — `evaluate`, `models:read`, `models:write`, `git`,
+`assist`, `flow`, `admin` (Super-Scope). Fehlender/ungültiger/abgelaufener/widerrufener
+Key → `401` (`code: UNAUTHORIZED`, `WWW-Authenticate: Bearer`); gültiger Key ohne den
+Scope → `403` (`code: FORBIDDEN`). `/docs`, `/openapi.yaml` und die Health-Probes bleiben
+offen. Ohne Keys **und** ohne Legacy-Token bleibt die API offen (heutiger Default).
+
+Der `keys-file` ist JSON; je Key wird bevorzugt der Hex-`secretHash` hinterlegt
+(so berührt kein Klartext die Platte); alternativ `secret` (wird beim Laden gehasht):
+
+```json
+{ "keys": [
+  { "kid": "ci01",  "secretHash": "<hex sha256(secret)>", "scopes": ["models:write"], "owner": "CI" },
+  { "kid": "agent", "secret": "s3cret",                    "scopes": ["evaluate"] }
+] }
+```
+
+Ein **Bootstrap-Admin-Key** entsteht aus `TEMIS_BOOTSTRAP_ADMIN_KEY` (das Secret); der
+daraus abgeleitete `kid` wird beim Start geloggt, das Secret nie. Der Bearer ist dann
+`<geloggter-kid>.<secret>`.
 
 ```sh
-go run ./cmd/temisd -addr :8080 -token gehenix
+printf '%s' "s3cret" | sha256sum   # Hash für secretHash erzeugen
+go run ./cmd/temisd -addr :8080 -keys-file keys.json
+curl -H 'Authorization: Bearer agent.s3cret' \
+     -d '{"decision":"Dish","input":{"Season":"Winter","Guest Count":8}}' \
+     -H 'Content-Type: application/json' localhost:8080/v1/models/<id>/evaluate
+```
+
+**DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als
+**Legacy-Admin-Key** — der ganze Token als `Authorization: Bearer <token>` deckt alle
+Routen (Admin), byte-identisch zum bisherigen Verhalten. Für neue Deployments `-keys-file`
+verwenden.
+
+```sh
+go run ./cmd/temisd -addr :8080 -token gehenix   # DEPRECATED, deckt alles als admin
 curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
@@ -351,8 +385,12 @@ go run ./cmd/temisd                 # /, /v1/... UND POST /mcp auf einem geteilt
 go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
 ```
 
-`/mcp` wird vom selben optionalen `-token` bewacht wie die `/v1`-Endpunkte. Das
-eigenständige `temis-mcp` bleibt für reines stdio/lokales Einbetten erhalten.
+In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
+(ADR-0028): jedes Tool verlangt seinen Scope (`evaluate`→`evaluate`,
+`list_models`/`load_model`/`describe_decision`→`models:read`, `git_*`→`git`,
+`*_flow`→`flow`), gültiger Key ohne Scope → `403`. Das eigenständige `temis-mcp`
+bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
+`-token` nur über HTTP).
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine

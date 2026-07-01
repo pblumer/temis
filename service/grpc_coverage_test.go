@@ -207,7 +207,7 @@ func TestDiagnosticsPBEmpty(t *testing.T) {
 func TestWrapStreamingClientPassthrough(t *testing.T) {
 	called := false
 	next := func(context.Context, connect.Spec) connect.StreamingClientConn { called = true; return nil }
-	ic := tokenInterceptor("tok").(*authInterceptor)
+	ic := &authInterceptor{auth: newKeystore()}
 	wrapped := ic.WrapStreamingClient(connect.StreamingClientFunc(next))
 	wrapped(context.Background(), connect.Spec{})
 	if !called {

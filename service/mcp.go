@@ -21,6 +21,33 @@ func (s *Server) AttachMCP(m *mcp.Server) { s.mcpServer = m }
 // both.
 func (s *Server) ModelStore() mcp.Store { return mcpStore{s} }
 
+// MCPAuth exposes this server's keystore as an mcp.Auth gate, so a co-located MCP
+// endpoint enforces the same scoped keys (ADR-0028) as the /v1 surface — one
+// keystore, one process. It returns nil when no authentication is configured, so
+// mcp.WithAuth leaves the endpoint open (the historical default).
+func (s *Server) MCPAuth() mcp.Auth {
+	if !s.auth.enabled() {
+		return nil
+	}
+	return mcpAuth{s.auth}
+}
+
+// mcpAuth adapts the service keystore to mcp.Auth: it authenticates the bearer
+// and checks the tool's scope, mapping the outcome to mcp's verdict enum.
+type mcpAuth struct{ ks Authenticator }
+
+func (a mcpAuth) Authorize(bearer, scope string) mcp.AuthResult {
+	key, ok := a.ks.authenticate(bearer)
+	if !ok {
+		return mcp.AuthUnauthenticated
+	}
+	// An empty scope (discovery messages) needs only a valid key.
+	if scope != "" && !key.HasScope(Scope(scope)) {
+		return mcp.AuthForbidden
+	}
+	return mcp.AuthAllowed
+}
+
 // mcpStore adapts the service's content-addressed cache to the mcp.Store
 // interface, delegating to the same compileAndStore/lookup/snapshot the HTTP
 // handlers use.

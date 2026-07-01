@@ -273,11 +273,15 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   antwortet dann `404` mit `code: NOT_FOUND`. Standard: aktiviert.
 - Fehlerantworten: RFC-7807 `application/problem+json` mit stabilem `code`.
 - Limits (WP-34) gelten pro Request.
-- **Optionaler Token-Schutz:** Mit `temisd -token <token>` (oder `TEMIS_API_TOKEN`)
-  verlangen die `/v1`-Endpunkte `Authorization: Bearer <token>`; fehlt/falsch →
-  `401` mit `code: UNAUTHORIZED` (`WWW-Authenticate: Bearer`). Ohne Token ist die
-  API offen. `/docs`, `/openapi.yaml` und die Health-Probes sind nie gegated. Das
-  OpenAPI-Dokument beschreibt das `bearerAuth`-Schema (Swagger-UI-**Authorize**).
+- **Scoped API-Keys (ADR-0028, WP-100–102):** siehe §2.2 für den Scope-Vertrag.
+  Mit `temisd -keys-file <datei>` (oder `TEMIS_KEYS_FILE`) verlangen `/v1`, `/mcp`
+  und gRPC einen `Authorization: Bearer <kid>.<secret>`-Key; fehlt/ungültig/
+  abgelaufen/widerrufen → `401` mit `code: UNAUTHORIZED` (`WWW-Authenticate: Bearer`),
+  gültig aber ohne den nötigen Scope → `403` mit `code: FORBIDDEN`. Der deprecated
+  `-token`/`TEMIS_API_TOKEN` läuft als Legacy-Admin-Key weiter (deckt alle Routen).
+  Ohne Keys **und** ohne Legacy-Token ist die API offen. `/docs`, `/openapi.yaml`
+  und die Health-Probes sind nie gegated. Das OpenAPI-Dokument beschreibt das
+  `bearerAuth`-Schema (Swagger-UI-**Authorize**).
 - **Optionales Audit-Logbuch (clio, ADR-0023, WP-54):** Mit `temisd -clio-url …`
   protokolliert der Server jede Einzel-Decision-Auswertung (`/v1/evaluate`,
   `/v1/models/{id}/evaluate`) als `com.temis.decision.evaluated.v1`-CloudEvent in einer
@@ -285,6 +289,39 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   best-effort-Default verändert der Sink die Antwort nie; mit `-clio-strict` (fail-closed)
   kann eine fehlgeschlagene Audit-Schreibung den Request mit `502` und
   `code: AUDIT_WRITE_FAILED` beenden. Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+
+### 2.2 Scope-Vertrag (ADR-0028)
+
+Der Auth-Vertrag spiegelt clios `kid.secret`-Modell und ist Teil der stabilen
+Oberfläche (unterliegt SemVer): eine neue Route braucht eine bewusste Scope-Zuordnung.
+
+- **Token-Format:** `Authorization: Bearer <kid>.<secret>`. Der `kid` ist öffentlich
+  (loggbar), das `secret` geheim. Gespeichert wird je Key nur
+  `{kid, sha256(secret), scopes[], owner, expiresAt?, revoked}` — **kein Klartext**,
+  Vergleich in Konstantzeit (`crypto/subtle`).
+- **Semantik:** kein/unbekannter `kid`/falsches Secret/abgelaufen/widerrufen → `401`
+  (`UNAUTHORIZED`, `WWW-Authenticate: Bearer`); gültig, aber Scope fehlt → `403`
+  (`FORBIDDEN`, RFC-7807). Ohne Keys **und** ohne Legacy-Token bleibt die API offen.
+- **`admin` ist ein Super-Scope:** ein Admin-Key erfüllt jede Scope-Anforderung; der
+  deprecated Legacy-Token ist ein synthetischer Admin-Key (byte-identisches Verhalten).
+
+| Scope | Deckt ab |
+|---|---|
+| `evaluate` | `POST /v1/evaluate`, `/v1/models/{id}/evaluate`, `/v1/models/{id}/evaluate-graph`; gRPC `Evaluate`/`EvaluateBatch`; MCP `evaluate` |
+| `models:read` | `GET /v1/models` (Listing), `/{id}`, `/xml`, `/graph`, `/types`, alle `GET …/decisions/*`, `…/bkm/*`; MCP `list_models`/`load_model`/`describe_decision` |
+| `models:write` | `POST /v1/models`, `save`/`rename`/`create-*`, alle Modeler-Edits (auch `DELETE …/types/{name}`); gRPC `Compile` |
+| `git` | alle `/v1/git/*` und MCP `git_*` (Provider-Token bleibt per-Request `X-Git-Token`) |
+| `assist` | `POST /v1/chat` (LLM-Assistent, kostenverursachend) |
+| `flow` | `POST /v1/flows`, `/v1/flows/{id}/evaluate`, `/v1/flow/evaluate`; MCP `load_flow`/`describe_flow`/`evaluate_flow` |
+| `admin` | `DELETE /v1/models/{id}` (Modell-Löschung), Key-Management (Phase 2), Betriebs-/Dev-Routen; Super-Scope |
+| `audit` | read-only Auth-/Audit-Log (Phase 3) |
+
+**Statische Konfiguration (WP-102):** Keys kommen aus einer JSON-Datei
+(`-keys-file`/`$TEMIS_KEYS_FILE`; je Eintrag bevorzugt `secretHash` (hex `sha256`),
+alternativ Klartext-`secret`, plus `scopes[]`, `owner?`, `expiresAt?` RFC-3339,
+`revoked?`) und/oder einem Bootstrap-Admin-Key (`$TEMIS_BOOTSTRAP_ADMIN_KEY` = das
+Secret; der abgeleitete `kid` wird beim Start geloggt, das Secret nie). Persistenz
+und Lifecycle-API (`/v1/keys*`) folgen in Phase 2 (WP-103/104).
 
 ### 2.1 Modeler-Endpunkte (ADR-0016)
 

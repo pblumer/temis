@@ -151,3 +151,61 @@ func TestGRPCTokenAuth(t *testing.T) {
 		t.Fatalf("Compile with token: %v", err)
 	}
 }
+
+// TestGRPCScopeAuthorization verifies the per-procedure scope mapping (ADR-0028):
+// Compile needs models:write, Evaluate needs evaluate. A key with the wrong
+// scope is PermissionDenied; a matching key succeeds; no/invalid key is
+// Unauthenticated.
+func TestGRPCScopeAuthorization(t *testing.T) {
+	path := writeKeysFile(t, []scopedKey{
+		{"writer", "w", []Scope{ScopeModelsWrite}},
+		{"runner", "e", []Scope{ScopeEvaluate}},
+	})
+	client := newGRPCClient(t, WithKeysFile(path))
+	ctx := context.Background()
+	xml := dishXML(t)
+
+	// Compile with the evaluate-only key → PermissionDenied.
+	req := connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
+	req.Header().Set("Authorization", "Bearer runner.e")
+	if _, err := client.Compile(ctx, req); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("Compile with evaluate key: code = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Compile with the write key → ok.
+	req = connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
+	req.Header().Set("Authorization", "Bearer writer.w")
+	comp, err := client.Compile(ctx, req)
+	if err != nil {
+		t.Fatalf("Compile with write key: %v", err)
+	}
+	id := comp.Msg.GetModelId()
+
+	// Evaluate with the write-only key → PermissionDenied.
+	ev := connect.NewRequest(&dmnv1.EvaluateRequest{
+		Model:    &dmnv1.EvaluateRequest_ModelId{ModelId: id},
+		Decision: "Dish",
+		Input:    mustStruct(t, map[string]any{"Season": "Winter", "Guest Count": 4}),
+	})
+	ev.Header().Set("Authorization", "Bearer writer.w")
+	if _, err := client.Evaluate(ctx, ev); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("Evaluate with write key: code = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Evaluate with the evaluate key → ok.
+	ev = connect.NewRequest(&dmnv1.EvaluateRequest{
+		Model:    &dmnv1.EvaluateRequest_ModelId{ModelId: id},
+		Decision: "Dish",
+		Input:    mustStruct(t, map[string]any{"Season": "Winter", "Guest Count": 4}),
+	})
+	ev.Header().Set("Authorization", "Bearer runner.e")
+	if _, err := client.Evaluate(ctx, ev); err != nil {
+		t.Fatalf("Evaluate with evaluate key: %v", err)
+	}
+
+	// No credentials → Unauthenticated.
+	bare := connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
+	if _, err := client.Compile(ctx, bare); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("Compile with no key: code = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}

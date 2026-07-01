@@ -40,17 +40,18 @@ func (s *Server) gitModels(token string) *vcs.Models {
 	return vcs.NewModelsWithWriter(c, c, s.engine)
 }
 
-// registerGitRoutes mounts the /v1/git endpoints on mux, gated by the same
-// optional API token as the other data endpoints.
+// registerGitRoutes mounts the /v1/git endpoints on mux, gated by the git scope
+// (ADR-0028 §2: git covers all /v1/git/*). The git-provider token stays per
+// request (X-Git-Token), separate from the temis API key.
 func (s *Server) registerGitRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/git/branches", s.requireToken(s.handleGitBranches))
-	mux.HandleFunc("GET /v1/git/commits", s.requireToken(s.handleGitCommits))
-	mux.HandleFunc("GET /v1/git/models", s.requireToken(s.handleGitModels))
-	mux.HandleFunc("GET /v1/git/flows", s.requireToken(s.handleGitFlows))
-	mux.HandleFunc("POST /v1/git/load", s.requireToken(s.handleGitLoad))
-	mux.HandleFunc("POST /v1/git/load-flow", s.requireToken(s.handleGitLoadFlow))
-	mux.HandleFunc("POST /v1/git/save", s.requireToken(s.handleGitSave))
-	mux.HandleFunc("POST /v1/git/propose", s.requireToken(s.handleGitPropose))
+	mux.HandleFunc("GET /v1/git/branches", s.requireScope(ScopeGit, s.handleGitBranches))
+	mux.HandleFunc("GET /v1/git/commits", s.requireScope(ScopeGit, s.handleGitCommits))
+	mux.HandleFunc("GET /v1/git/models", s.requireScope(ScopeGit, s.handleGitModels))
+	mux.HandleFunc("GET /v1/git/flows", s.requireScope(ScopeGit, s.handleGitFlows))
+	mux.HandleFunc("POST /v1/git/load", s.requireScope(ScopeGit, s.handleGitLoad))
+	mux.HandleFunc("POST /v1/git/load-flow", s.requireScope(ScopeGit, s.handleGitLoadFlow))
+	mux.HandleFunc("POST /v1/git/save", s.requireScope(ScopeGit, s.handleGitSave))
+	mux.HandleFunc("POST /v1/git/propose", s.requireScope(ScopeGit, s.handleGitPropose))
 }
 
 // --- request/response DTOs ---
