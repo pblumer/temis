@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, listTypes, getStatus, type ModelSummary, type Status } from './api'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -70,6 +70,7 @@ async function boot(root: HTMLElement): Promise<void> {
           </span>
           <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
+          <span id="clioStatus" class="conn-badge" hidden><span class="conn-dot"></span><span class="conn-label"></span></span>
         </div>
         <div id="opHistory" class="op-history"></div>
         <div class="canvas-wrap">
@@ -354,6 +355,65 @@ async function boot(root: HTMLElement): Promise<void> {
     })
     assistBtn.addEventListener('click', () => assist.toggle())
   }
+
+  // clio connection indicator (ADR-0030): a small toolbar badge that shows, at a
+  // glance, whether the tamper-evident decision log (clio) is reachable. It polls
+  // GET /v1/status; the badge never shows a secret. Green = reachable, red =
+  // configured but unreachable, grey = not configured (or hidden behind the audit
+  // scope). Absent endpoint (older server) simply hides the badge.
+  const clioBadge = root.querySelector<HTMLElement>('#clioStatus')
+  const clioDot = clioBadge?.querySelector<HTMLElement>('.conn-dot')
+  const clioLabel = clioBadge?.querySelector<HTMLElement>('.conn-label')
+  const renderClioStatus = (st: Status | null): void => {
+    if (!clioBadge || !clioDot || !clioLabel) return
+    clioBadge.classList.remove('conn-ok', 'conn-bad', 'conn-off')
+    if (!st) {
+      // No /v1/status endpoint (older server) or a network error: hide the badge
+      // rather than assert anything about clio.
+      clioBadge.hidden = true
+      return
+    }
+    clioBadge.hidden = false
+    const c = st.clio
+    if (st.gated) {
+      clioBadge.classList.add('conn-off')
+      clioLabel.textContent = 'clio ?'
+      clioBadge.title = 'clio-Status ist audit-/admin-geschützt — mit einem Key mit dem Scope „audit" sichtbar.'
+      return
+    }
+    if (!c.enabled) {
+      clioBadge.classList.add('conn-off')
+      clioLabel.textContent = 'clio aus'
+      clioBadge.title = 'Kein clio-Audit-Sink konfiguriert. Anschalten: TEMIS_CLIO_TOKEN setzen (oder -clio-url auf die eigene clio).'
+      return
+    }
+    const where = c.url ? ' — ' + c.url : ''
+    const counts = `ok ${c.writesOk ?? 0}, Fehler ${c.writesFailed ?? 0}, idempotent ${c.idempotentSkips ?? 0}`
+    if (c.reachable) {
+      clioBadge.classList.add('conn-ok')
+      clioLabel.textContent = 'clio verbunden'
+      clioBadge.title = `clio erreichbar${where} (${c.mode ?? 'best-effort'}). Writes: ${counts}.`
+    } else {
+      clioBadge.classList.add('conn-bad')
+      clioLabel.textContent = 'clio getrennt'
+      const why = c.lastError ? '\nLetzter Fehler: ' + c.lastError : ''
+      clioBadge.title = `clio nicht erreichbar${where} (${c.mode ?? 'best-effort'}). Writes: ${counts}.${why}`
+    }
+  }
+  const refreshClioStatus = async (): Promise<void> => {
+    try {
+      renderClioStatus(await getStatus())
+    } catch {
+      renderClioStatus(null)
+    }
+  }
+  void refreshClioStatus()
+  window.setInterval(() => void refreshClioStatus(), 20000)
+  // Refresh promptly when the operator returns to the tab, so a clio outage that
+  // happened while the tab was hidden shows up without waiting for the next poll.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshClioStatus()
+  })
 
   // Neues Modell… scaffolds an empty decision model server-side and switches to
   // it, so a user can build a decision from scratch on a blank canvas (via the
