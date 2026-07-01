@@ -124,6 +124,7 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_ADDR` | `:8080` | Listen-Adresse (`host:port`) |
 | `TEMIS_API_TOKEN` | *(leer)* | Bearer-Token für `/v1` erzwingen (leer = offen) |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
+| `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
 | `TEMIS_LIST_MODELS` | `true` | `GET /v1/models` (false → `404`, Decisions privat) |
 | `TEMIS_ASSIST` | `true` | Modellier-Assistent `POST /v1/chat` |
@@ -167,6 +168,26 @@ hält Routen und OpenAPI in synch. Fehler als RFC-7807 `application/problem+json
 liegenden Modelle (id, Decisions, Inputs). Wer nicht möchte, dass jemand die
 hinterlegten Decisions einsehen kann, schaltet den Endpunkt mit
 `-list-models=false` ab — er antwortet dann mit `404`, als gäbe es ihn nicht.
+
+**Modelle über Neustarts hinweg behalten (`-models-dir`, ADR-0027):** Der Modell-Cache
+lebt normalerweise nur im RAM — nach einem Neustart sind selbst hochgeladene und im
+Modeler gebaute Modelle weg (die gebündelten Beispiele kommen per `go:embed` zurück).
+Setzt man `-models-dir` (oder `TEMIS_MODELS_DIR`) auf ein Verzeichnis, persistiert `temisd`
+jedes hochgeladene/editierte Modell **content-adressiert als rohes DMN-XML** (`<sha256>.dmn`)
+und lädt es beim Start wieder in den Cache. Reine Standardbibliothek, kein neuer Dependency;
+per Default aus (dann byte-identisch rein in-memory). Ideal im Container mit einem
+gemounteten Volume:
+
+```sh
+temisd -models-dir /data/models
+# oder: docker run -v temis-models:/data/models -e TEMIS_MODELS_DIR=/data/models …
+```
+
+Nur das rohe XML liegt auf der Platte — Kompilat, Index und Diagnostik werden beim Laden
+deterministisch neu erzeugt, können also nie vom Engine-Verhalten abdriften. Ein aus dem
+beschränkten LRU-Cache verdrängtes, aber persistiertes Modell wird bei Bedarf on-demand
+von der Platte rekompiliert. Für **versionierte** Modelle mit Review/PR bleibt die
+Git-Anbindung (`/v1/git/*`, ADR-0022) die richtige Wahl.
 
 **Web-UI (eigener DMN-Modeler):** Der Server liefert unter `GET /` einen
 eigenständigen, abhängigkeitsfreien DMN-Modeler (ADR-0016, kein dmn-js, kein CDN,
@@ -452,7 +473,7 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
 | `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
 | `docs/80-clio-decision-log.md` | Revisionssicheres Entscheidungs-Logbuch via clio (ADR-0023) |
-| `docs/90-decision-organization.md` | Decision-Organisation im Großen (Schichten, Ownership, Repo-Layout; ADR-0025) |
+| `docs/90-decision-organization.md` | Decision-Organisation im Großen (Schichten, Ownership, Repo-Layout; ADR-0027) |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken

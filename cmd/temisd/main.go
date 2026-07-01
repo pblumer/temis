@@ -44,6 +44,8 @@ func main() {
 	maxListSize := flag.Int("max-list-size", envInt("TEMIS_MAX_LIST_SIZE", 0), "limit on the size of any single produced list (0 = default) (env TEMIS_MAX_LIST_SIZE)")
 	examples := flag.Bool("examples", envBool("TEMIS_EXAMPLES", true),
 		"preload the bundled example DMN models so they appear in the modeler on start (env TEMIS_EXAMPLES)")
+	modelsDir := flag.String("models-dir", os.Getenv("TEMIS_MODELS_DIR"),
+		"persist uploaded/edited models to this directory and reload them on start, so they survive a restart; empty = in-memory only (default $TEMIS_MODELS_DIR)")
 	serveMCP := flag.Bool("mcp", envBool("TEMIS_MCP", true),
 		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples) (env TEMIS_MCP)")
 	assist := flag.Bool("assist", envBool("TEMIS_ASSIST", true),
@@ -92,6 +94,9 @@ func main() {
 	}
 	if *examples {
 		opts = append(opts, service.WithExamples())
+	}
+	if *modelsDir != "" {
+		opts = append(opts, service.WithModelStore(*modelsDir))
 	}
 	// Modeling assistant (ADR-0024): on by default so the binary is fully featured
 	// out of the box. With no server-side key it runs BYOK-only — the endpoint is
@@ -150,6 +155,9 @@ func main() {
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
+	}
+	if *modelsDir != "" {
+		log.Printf("temisd: persisting models to %s (survives restart)", *modelsDir)
 	}
 	if *serveMCP {
 		log.Printf("temisd: MCP endpoint at POST /mcp (shared model cache)")

@@ -59,6 +59,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   **aus** (byte-identisch). Idempotent per clio-Precondition (`inputHash`); `-clio-strict` macht den
   Sink fail-closed (`502 AUDIT_WRITE_FAILED`), sonst best-effort. Reine stdlib, kein Go-Import von
   clio (Kopplung nur über dessen HTTP-API, ADR-0011/0014).
+- **Dateisystem-Modell-Store (ADR-0027):** `temisd` persistiert seinen Modell-Cache optional
+  auf das Dateisystem — Flag `-models-dir` (`$TEMIS_MODELS_DIR`), Default **aus** (byte-identisch
+  rein in-memory). Hochgeladene und im Modeler editierte Modelle werden content-adressiert als rohes
+  DMN-XML (`<sha256>.dmn`, atomarer Write) abgelegt und beim Start wieder in den Cache geladen, sodass
+  sie einen Neustart überleben. Nur das rohe XML liegt auf der Platte (Kompilat/Index/Diagnostik werden
+  deterministisch neu erzeugt); ein aus dem LRU-Cache verdrängtes, aber persistiertes Modell wird
+  on-demand von der Platte rekompiliert. Die gebündelten Beispiele werden nie persistiert (re-embed per
+  `go:embed`). Reine stdlib, kein neuer Dependency; Persistenz hängt am einzigen Choke-Point
+  `compileAndStore`/`lookup`, greift also auch für Modeler-Saves, MCP, gRPC und Git-Load.
 - **Re-Audit-/Replay-Tool `temis-reaudit` (WP-55, ADR-0023):** `package audit` + Binary
   `cmd/temis-reaudit` lesen die Decision-Events aus clio (`run-query`), rechnen jede Entscheidung
   `input`@`modelId` über die `dmn`-API erneut nach und vergleichen kanonisch mit den protokollierten
