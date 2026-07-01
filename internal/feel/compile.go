@@ -2,6 +2,7 @@ package feel
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/pblumer/temis/internal/feel/builtins"
 	"github.com/pblumer/temis/internal/value"
@@ -60,6 +61,35 @@ func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledEx
 	return CompileWith(expr, env, funcs)
 }
 
+// CompileStringRefs is CompileString that also returns which of env's variable
+// names the expression references (its free variables drawn from env). It lets a
+// caller learn an expression's dependencies without a separate AST walk — used by
+// package dmn's CompiledExpression to report references (full-FEEL flow mappings).
+// The returned names are sorted and unique.
+func CompileStringRefs(src string, env *Env) (CompiledExpr, []string, error) {
+	expr, err := ParseWithNames(src, nameOracle(nil))
+	if err != nil {
+		return nil, nil, err
+	}
+	c := &compiler{env: env, builtins: builtins.Default(), used: map[string]bool{}}
+	if env != nil {
+		c.rootNames = make(map[string]bool, len(env.Names()))
+		for _, n := range env.Names() {
+			c.rootNames[n] = true
+		}
+	}
+	ce := c.compile(expr)
+	if c.err != nil {
+		return nil, nil, c.err
+	}
+	refs := make([]string, 0, len(c.used))
+	for n := range c.used {
+		refs = append(refs, n)
+	}
+	sort.Strings(refs)
+	return ce, refs, nil
+}
+
 // nameOracle returns the parser name oracle covering the built-ins and any
 // user-function names, so multi-word names from either source assemble.
 func nameOracle(funcs map[string]*Func) NameSet {
@@ -75,6 +105,11 @@ type compiler struct {
 	builtins *builtins.Registry
 	funcs    map[string]*Func
 	err      *CompileError
+	// rootNames and used, when non-nil, track which of the root env's variable
+	// names the expression actually references (CompileStringRefs). They stay nil
+	// on the normal compile path, so it keeps its allocation-free behaviour.
+	rootNames map[string]bool
+	used      map[string]bool
 	// implicit holds the scope slots of enclosing filter elements (innermost
 	// last). A name that resolves to no static slot is looked up against these
 	// at runtime, so filter predicates can reference the keys of context
@@ -132,6 +167,9 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 		return func(*Scope) (value.Value, error) { return v, nil }
 	case *NameRef:
 		if i, ok := c.env.slot(n.Name); ok {
+			if c.used != nil && c.rootNames[n.Name] {
+				c.used[n.Name] = true
+			}
 			return func(s *Scope) (value.Value, error) { return s.at(i), nil }
 		}
 		// A named user function (BKM / function definition) referenced as a value

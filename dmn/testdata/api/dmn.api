@@ -42,6 +42,10 @@ func (c *CompiledDecision) Name() string
 
 func (c *CompiledDecision) ValidateInput(in Input) []InputProblem
 
+func (c *CompiledExpression) Evaluate(ctx context.Context, in Input) (any, error)
+
+func (c *CompiledExpression) References() []string
+
 func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool)
 
 func (d *Definitions) BoxedConditional(idOrName string) (ConditionalView, bool)
@@ -101,6 +105,8 @@ func ApplyEdits(src []byte, edits []NodeEdit) ([]byte, error)
 func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error)
 
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error)
+
+func CompileExpression(expr string, names ...string) (*CompiledExpression, error)
 
 func CreateBoxedConditional(src []byte, decisionID string) ([]byte, error)
 
@@ -163,6 +169,10 @@ type BKMView struct {
 }
 
 type CompiledDecision struct {
+	// contains filtered or unexported fields
+}
+
+type CompiledExpression struct {
 	// contains filtered or unexported fields
 }
 

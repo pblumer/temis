@@ -14,8 +14,10 @@
 // A Resolver turns a modelId into a compiled model, letting the caller back the
 // flow with a cache, a git source (package vcs) or an in-memory map.
 //
-// Scope (WP-90): step-input mappings are references — a flow-input name or a
-// "stepID.output" reference into an earlier step's result. Full FEEL expressions
-// in mappings are a deliberate follow-up: they need a public FEEL-evaluation
-// primitive in package dmn, which is its own additive-surface decision.
+// Step-input and output mappings are FEEL (WP-95, ADR-0029). A plain reference —
+// a declared flow-input name or "stepID.output" — is resolved directly (the
+// backward-compatible fast path); anything else is a full FEEL expression
+// (arithmetic, if/then/else, built-ins) over the flow's inputs and the earlier
+// steps' outputs, compiled once via dmn.CompileExpression. A step depends on
+// every step its mappings reference, so the topological order still holds.
 package flow
