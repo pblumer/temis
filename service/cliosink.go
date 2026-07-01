@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/pblumer/temis/dmn"
@@ -71,6 +72,103 @@ type ClioSink struct {
 	engine        string
 	strict        bool
 	logf          func(format string, args ...any)
+
+	// health tracks the outcome of real writes so the status endpoint (WP-112)
+	// and the readiness probe (WP-110) can report whether audits are getting
+	// through — without any extra network call. Safe for concurrent use.
+	health clioHealth
+}
+
+// clioHealth accumulates the outcome of clio writes: how many succeeded, failed
+// or were idempotent no-ops, and when the last success/failure happened. All
+// fields are atomic; observe is allocation-free on the success path.
+type clioHealth struct {
+	writesOk        atomic.Uint64
+	writesFailed    atomic.Uint64
+	idempotentSkips atomic.Uint64
+	lastOkUnix      atomic.Int64
+	lastErrUnix     atomic.Int64
+	lastErr         atomic.Pointer[string]
+}
+
+// observe records one write outcome: a non-nil err is a failure, otherwise
+// idempotent distinguishes a 409 no-op (already logged) from a fresh write.
+func (h *clioHealth) observe(idempotent bool, err error) {
+	if err != nil {
+		h.writesFailed.Add(1)
+		h.lastErrUnix.Store(time.Now().Unix())
+		msg := err.Error()
+		h.lastErr.Store(&msg)
+		return
+	}
+	if idempotent {
+		h.idempotentSkips.Add(1)
+	} else {
+		h.writesOk.Add(1)
+	}
+	h.lastOkUnix.Store(time.Now().Unix())
+}
+
+// clioSnapshot is a point-in-time, secret-free view of the sink for the status
+// endpoint. reachable is derived from the last observed outcome: true until a
+// write fails and stays failed (no later success) — no network call needed.
+type clioSnapshot struct {
+	writesOk        uint64
+	writesFailed    uint64
+	idempotentSkips uint64
+	lastOkUnix      int64
+	lastErrUnix     int64
+	lastErr         string
+	reachable       bool
+	url             string
+	strict          bool
+}
+
+// snapshot returns the sink's current health and configuration for GET
+// /v1/status. It never exposes the API token.
+func (c *ClioSink) snapshot() clioSnapshot {
+	okUnix := c.health.lastOkUnix.Load()
+	errUnix := c.health.lastErrUnix.Load()
+	var lastErr string
+	if p := c.health.lastErr.Load(); p != nil {
+		lastErr = *p
+	}
+	return clioSnapshot{
+		writesOk:        c.health.writesOk.Load(),
+		writesFailed:    c.health.writesFailed.Load(),
+		idempotentSkips: c.health.idempotentSkips.Load(),
+		lastOkUnix:      okUnix,
+		lastErrUnix:     errUnix,
+		lastErr:         lastErr,
+		reachable:       errUnix == 0 || okUnix >= errUnix,
+		url:             c.baseURL,
+		strict:          c.strict,
+	}
+}
+
+// Ping actively checks whether clio is reachable by issuing a GET to its health
+// endpoint. It is used only by the optional active probe in the status endpoint
+// (WP-112); the passive health derived from real writes needs no network call.
+func (c *ClioSink) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET healthz: %w", err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("clio healthz: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // NewClioSink builds a ClioSink from cfg. It returns an error when cfg.URL is
@@ -130,7 +228,9 @@ type DecisionRecord struct {
 // request. In best-effort mode a failed write is logged and Record returns nil,
 // so the evaluation result is never withheld because of an audit problem.
 func (c *ClioSink) Record(ctx context.Context, rec DecisionRecord) error {
-	if err := c.write(ctx, rec); err != nil {
+	idempotent, err := c.write(ctx, rec)
+	c.health.observe(idempotent, err)
+	if err != nil {
 		if c.strict {
 			return err
 		}
@@ -172,9 +272,10 @@ type clioPrecondition struct {
 }
 
 // write builds the decision event and posts it to clio. A 409 (precondition
-// failed) means an identical decision was already recorded and is treated as
-// success — that is what makes recording idempotent under retries.
-func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) error {
+// failed) means an identical decision was already recorded and is reported as an
+// idempotent no-op (still a success) — that is what makes recording idempotent
+// under retries.
+func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bool, err error) {
 	subject := c.subjectFor(rec.Decision, rec.Input)
 	hash := inputHash(rec.ModelID, rec.Decision, rec.Input)
 
@@ -205,19 +306,19 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) error {
 
 	buf, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("encode event: %w", err)
+		return false, fmt.Errorf("encode event: %w", err)
 	}
 	return c.send(ctx, buf)
 }
 
 // send POSTs a pre-marshaled write-events body to clio and maps the response. A
-// 409 (precondition failed) means the event is already logged and is treated as
-// success — that is what makes recording idempotent under retries. Shared by the
-// decision and flow write paths.
-func (c *ClioSink) send(ctx context.Context, buf []byte) error {
+// 409 (precondition failed) means the event is already logged and is reported as
+// an idempotent no-op (idempotent=true, err=nil) — that is what makes recording
+// idempotent under retries. Shared by the decision and flow write paths.
+func (c *ClioSink) send(ctx context.Context, buf []byte) (idempotent bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/write-events", bytes.NewReader(buf))
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return false, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
@@ -226,7 +327,7 @@ func (c *ClioSink) send(ctx context.Context, buf []byte) error {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST write-events: %w", err)
+		return false, fmt.Errorf("POST write-events: %w", err)
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -235,12 +336,12 @@ func (c *ClioSink) send(ctx context.Context, buf []byte) error {
 
 	switch {
 	case resp.StatusCode == http.StatusConflict:
-		return nil
+		return true, nil
 	case resp.StatusCode/100 == 2:
-		return nil
+		return false, nil
 	default:
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("clio write-events: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+		return false, fmt.Errorf("clio write-events: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 }
 
@@ -282,7 +383,9 @@ type FlowRecord struct {
 // RecordFlow emits a flow event to clio. Like Record, it returns a non-nil error
 // only when the sink is fail-closed (Strict) and the write failed.
 func (c *ClioSink) RecordFlow(ctx context.Context, rec FlowRecord) error {
-	if err := c.writeFlow(ctx, rec); err != nil {
+	idempotent, err := c.writeFlow(ctx, rec)
+	c.health.observe(idempotent, err)
+	if err != nil {
 		if c.strict {
 			return err
 		}
@@ -319,7 +422,7 @@ type flowEventData struct {
 
 // writeFlow builds the flow event and posts it to clio, idempotent on (subject,
 // inputHash) like the decision path.
-func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) error {
+func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bool, err error) {
 	entity := rec.Name
 	if entity == "" {
 		entity = rec.FlowID
@@ -355,7 +458,7 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) error {
 
 	buf, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("encode flow event: %w", err)
+		return false, fmt.Errorf("encode flow event: %w", err)
 	}
 	return c.send(ctx, buf)
 }
