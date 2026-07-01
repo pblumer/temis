@@ -1,5 +1,6 @@
 import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
+import { attachCompletion, feelItems } from './complete'
 import { FEEL_TYPES } from './feeltypes'
 
 // openBKMOverlay edits a business knowledge model's encapsulated function (ADR-
@@ -103,6 +104,9 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   renderParams()
 
   body.append(paramsHost, el('div', { class: 'bkm-body-title' }, 'Body (FEEL)'), textarea)
+  // Completion over the BKM's own parameters (read live so newly added/renamed
+  // parameters appear immediately) plus the engine's built-in functions.
+  attachCompletion(textarea, () => feelItems(params.map((p) => p.name.trim()).filter((n) => n !== '')))
 
   const saveBtn = el('button', { class: 'tbtn dt-save', type: 'button' }, 'Speichern') as HTMLButtonElement
   const save = async (): Promise<void> => {
