@@ -452,6 +452,7 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 | `docs/60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten |
 | `docs/70-integration-guide.md` | Quickstart (Library + Service) & DMN-Editor-Integration |
 | `docs/80-clio-decision-log.md` | Revisionssicheres Entscheidungs-Logbuch via clio (ADR-0023) |
+| `docs/90-decision-organization.md` | Decision-Organisation im Großen (Schichten, Ownership, Repo-Layout; ADR-0025) |
 | `docs/adr/` | Architecture Decision Records |
 
 ## Mitwirken
