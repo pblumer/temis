@@ -861,6 +861,23 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/status:
+    get:
+      summary: Operational status of the connected Umsysteme (ADR-0030)
+      description: >
+        Read-only view of the engine's load and the state of the systems temis
+        talks to — the clio audit sink, the LLM assistant provider and git. Shows
+        counters, last-success/last-error and reachability, but never a secret
+        (no API key or token appears in the body). Gated by the same optional /v1
+        token as the other data routes.
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /docs:
     get:
       summary: Interactive Swagger UI
@@ -882,8 +899,18 @@ paths:
   /readyz:
     get:
       summary: Readiness probe
+      description: >
+        Reports real readiness (ADR-0030): 200 when the server can serve, 503
+        with the failing checks when a hard start condition is unmet. A
+        best-effort clio hiccup does not fail readiness; a fail-closed (strict)
+        clio does.
       responses:
-        "200": { description: OK }
+        "200": { description: Ready }
+        "503":
+          description: Not ready — one or more hard start conditions are unmet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadyResponse" }
 components:
   securitySchemes:
     bearerAuth:
@@ -1585,3 +1612,60 @@ components:
         dataType: { type: string }
         x: { type: number }
         y: { type: number }
+    StatusResponse:
+      type: object
+      description: >
+        Operational status (ADR-0030): the engine's load and the state of the
+        connected Umsysteme. Secret-free — no API key or token ever appears.
+      properties:
+        engine:
+          type: object
+          properties:
+            version: { type: string }
+            uptime: { type: string, description: Human-readable uptime, e.g. "3h12m". }
+            uptimeSeconds: { type: integer }
+            models: { type: integer, description: Models currently in the cache. }
+            cache:
+              type: object
+              properties:
+                size: { type: integer }
+                capacity: { type: integer, description: 0 means unbounded. }
+                hits: { type: integer }
+                misses: { type: integer }
+                evictions: { type: integer }
+        clio:
+          type: object
+          description: Audit sink state (ADR-0023). Never carries the clio token.
+          properties:
+            enabled: { type: boolean }
+            mode: { type: string, enum: [best-effort, strict] }
+            url: { type: string }
+            writesOk: { type: integer }
+            writesFailed: { type: integer }
+            idempotentSkips: { type: integer }
+            lastOk: { type: string, format: date-time }
+            lastError: { type: string }
+            lastErrorAt: { type: string, format: date-time }
+            reachable: { type: boolean }
+        llm:
+          type: object
+          description: Modeling-assistant provider state (ADR-0024). Never carries the provider key.
+          properties:
+            enabled: { type: boolean }
+            provider: { type: string }
+            byok: { type: boolean, description: Whether a caller may bring its own key (X-LLM-Token). }
+            callsOk: { type: integer }
+            callsFailed: { type: integer }
+            lastOk: { type: string, format: date-time }
+        git:
+          type: object
+          properties:
+            available: { type: boolean }
+    ReadyResponse:
+      type: object
+      description: Readiness result (ADR-0030). Checks lists the unmet hard start conditions.
+      properties:
+        status: { type: string, enum: [ready, "not ready"] }
+        checks:
+          type: array
+          items: { type: string }

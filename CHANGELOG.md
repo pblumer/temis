@@ -139,6 +139,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   ein `TEMIS_CLIO_TOKEN` gesetzt ist** — kein Datenabfluss im Default, Anschalten ist ein
   einziger Schritt (Token setzen oder `-clio-url` auf die eigene clio zeigen); der Start-Banner
   weist auf die Verfügbarkeit hin.
+- **Betriebs-Observability (WP-110–112, ADR-0030):** `temisd` ist jetzt *observierbar*.
+  `/healthz` (Liveness) und `/readyz` (echte Readiness) sind **ehrlich getrennt** — `/readyz`
+  liefert `503`, wenn eine harte Startbedingung fehlt (z. B. ein fail-closed `-clio-strict`
+  clio unerreichbar ist); ein best-effort-clio-Ausfall lässt es bewusst bei `200`. Neu:
+  **`GET /v1/status`** zeigt den Zustand der Umsysteme (clio/LLM/Git) und die Last der Engine
+  — clio `writesOk`/`writesFailed`/`idempotentSkips`, `lastOk`/`lastError`, `reachable`, dazu
+  Version/Uptime/Cache-Zähler; **secret-frei** (kein Token/Key im Body) und hinter dem
+  `audit`-Scope (ADR-0028; `admin`-Keys lesen ebenfalls, offen ohne Auth-Konfig).
+  clio-Erreichbarkeit standardmäßig **passiv** aus echten Writes;
+  `-clio-active-probe`/`TEMIS_CLIO_ACTIVE_PROBE` schaltet einen aktiven Health-Ping zu. Reine
+  stdlib (`sync/atomic`), Zähler allokationsfrei im Hot Path, Engine-Kern unberührt (ADR-0011).
 - **API-Stabilisierung (WP-43):** `package dmn` als v1 zugesagt; SemVer-/Deprecation-Policy;
   Golden-Surface-Test gegen unbeabsichtigte Brüche.
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte

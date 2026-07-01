@@ -3,6 +3,7 @@ package service
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 )
 
 // defaultCacheSize bounds the model cache by default, so a long-running server
@@ -23,6 +24,22 @@ type modelCache struct {
 	ll       *list.List               // front = most recently used; values are *storedModel
 	items    map[string]*list.Element // id → element
 	nextSeq  uint64                   // monotonic creation order stamped onto each new model
+
+	// Operational counters (WP-111): read by GET /v1/status and the expvar
+	// exporter. Atomic so they need no lock and never perturb the hot path.
+	hits      atomic.Uint64
+	misses    atomic.Uint64
+	evictions atomic.Uint64
+}
+
+// cacheStats is a point-in-time view of the model cache for the status endpoint
+// (WP-112). Size/Capacity are current; the counters are cumulative since start.
+type cacheStats struct {
+	Size      int    `json:"size"`
+	Capacity  int    `json:"capacity"`
+	Hits      uint64 `json:"hits"`
+	Misses    uint64 `json:"misses"`
+	Evictions uint64 `json:"evictions"`
 }
 
 func newModelCache(capacity int) *modelCache {
@@ -38,8 +55,10 @@ func (c *modelCache) get(id string) (*storedModel, bool) {
 	defer c.mu.Unlock()
 	el, ok := c.items[id]
 	if !ok {
+		c.misses.Add(1)
 		return nil, false
 	}
+	c.hits.Add(1)
 	c.ll.MoveToFront(el)
 	return el.Value.(*storedModel), true
 }
@@ -64,6 +83,7 @@ func (c *modelCache) add(sm *storedModel) {
 		if oldest := c.ll.Back(); oldest != nil {
 			c.ll.Remove(oldest)
 			delete(c.items, oldest.Value.(*storedModel).id)
+			c.evictions.Add(1)
 		}
 	}
 }
@@ -88,6 +108,22 @@ func (c *modelCache) len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.ll.Len()
+}
+
+// stats returns a point-in-time view of the cache for the status endpoint: the
+// current size and capacity plus the cumulative hit/miss/eviction counters.
+func (c *modelCache) stats() cacheStats {
+	c.mu.Lock()
+	size := c.ll.Len()
+	capacity := c.capacity
+	c.mu.Unlock()
+	return cacheStats{
+		Size:      size,
+		Capacity:  capacity,
+		Hits:      c.hits.Load(),
+		Misses:    c.misses.Load(),
+		Evictions: c.evictions.Load(),
+	}
 }
 
 // snapshot returns the cached models from most- to least-recently-used. It does

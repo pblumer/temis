@@ -110,6 +110,19 @@ type Server struct {
 	// Enterprise or tests. The git-provider token is supplied per request
 	// (X-Git-Token), never stored on the server (WP-72, auth model A).
 	gitBaseURL string
+
+	// version is the build version reported by GET /v1/status; set via
+	// WithVersion. Empty falls back to the development placeholder.
+	version string
+
+	// clioActiveProbe makes GET /v1/status issue a live GET to clio's health
+	// endpoint to determine reachability, instead of the passive last-write
+	// outcome; set via WithClioActiveProbe. Off by default (ADR-0030, WP-112).
+	clioActiveProbe bool
+
+	// metrics holds the process-level operational counters reported by the status
+	// endpoint (ADR-0030). Always set by NewServer.
+	metrics *metrics
 }
 
 // Option configures a Server at construction time.
@@ -139,6 +152,20 @@ func WithKeysFile(path string) Option {
 // logged or stored in plaintext. An empty secret registers nothing.
 func WithBootstrapAdminKey(secret string) Option {
 	return func(s *Server) { s.bootstrapAdminKey = secret }
+}
+
+// WithVersion sets the build version reported by GET /v1/status (ADR-0030). An
+// empty version falls back to the development placeholder.
+func WithVersion(v string) Option {
+	return func(s *Server) { s.version = v }
+}
+
+// WithClioActiveProbe makes GET /v1/status determine clio reachability with a
+// live GET to clio's health endpoint rather than the passive last-write outcome
+// (ADR-0030, WP-112). Off by default: reachability then comes from real writes
+// with no extra network call.
+func WithClioActiveProbe(enabled bool) Option {
+	return func(s *Server) { s.clioActiveProbe = enabled }
 }
 
 // WithModelListing toggles the GET /v1/models endpoint that enumerates every
@@ -203,7 +230,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize}
+	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize, metrics: newMetrics()}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -331,6 +358,11 @@ func (s *Server) dataRoutes() []route {
 		// decisions. Its own scope because it can incur LLM cost. Dormant (503)
 		// until enabled with WithAssist.
 		{"POST", "/v1/chat", ScopeAssist, s.handleChat},
+		// Operational status (ADR-0030, WP-112): the state of the connected
+		// Umsysteme (clio/LLM/git) and the engine's load. Read-only and
+		// secret-free. Guarded by the audit scope — admin keys pass too (admin is
+		// a super-scope), so both admin and audit callers can read it.
+		{"GET", "/v1/status", ScopeAudit, s.handleStatus},
 	}
 }
 
@@ -364,8 +396,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", http.FileServerFS(webui.Assets()))
 	mux.HandleFunc("GET /ui", redirectTo("/"))
 	mux.HandleFunc("GET /app/", redirectTo("/"))
-	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /readyz", s.handleHealth)
+	// Liveness vs. readiness are honestly split (ADR-0030, WP-110): /healthz is
+	// pure liveness (process up); /readyz reflects real readiness and can answer
+	// 503 when a hard start condition is unmet.
+	mux.HandleFunc("GET /healthz", s.handleLive)
+	mux.HandleFunc("GET /readyz", s.handleReady)
 
 	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
 	// model cache (and its preloaded examples), so a model is visible whether it
@@ -1065,6 +1100,7 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := sm.defs.EvaluateGraph(r.Context(), dmn.Input(req.Input), opts...)
 	if err != nil {
+		s.metrics.evalFailed.Add(1)
 		var ie *dmn.InputError
 		if errors.As(err, &ie) {
 			writeProblemDetail(w, problem{
@@ -1102,6 +1138,7 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.metrics.evalOk.Add(1)
 	writeJSON(w, http.StatusOK, evaluateGraphResponse{
 		Values:      res.Values,
 		Traces:      res.Traces,
@@ -1290,6 +1327,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 	}
 	res, err := dec.Evaluate(ctx, dmn.Input(input), opts...)
 	if err != nil {
+		s.metrics.evalFailed.Add(1)
 		var ie *dmn.InputError
 		if errors.As(err, &ie) {
 			writeProblemDetail(w, problem{
@@ -1304,6 +1342,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
 	}
+	s.metrics.evalOk.Add(1)
 	// Audit the decision before answering. In fail-closed mode a failed write
 	// aborts the request (the decision must be recorded to count as made); in
 	// best-effort mode Record logs and returns nil so the result still flows.

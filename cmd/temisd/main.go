@@ -78,6 +78,8 @@ func main() {
 		"input field whose value becomes the subject's entity segment (empty = decision name) (env TEMIS_CLIO_SUBJECT_KEY)")
 	clioStrict := flag.Bool("clio-strict", envBool("TEMIS_CLIO_STRICT", false),
 		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue) (env TEMIS_CLIO_STRICT)")
+	clioActiveProbe := flag.Bool("clio-active-probe", envBool("TEMIS_CLIO_ACTIVE_PROBE", false),
+		"GET /v1/status actively pings clio's health endpoint for reachability instead of using the passive last-write outcome (env TEMIS_CLIO_ACTIVE_PROBE)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -99,6 +101,10 @@ func main() {
 		service.WithKeysFile(*keysFile),
 		service.WithBootstrapAdminKey(bootstrapAdminKey),
 		service.WithModelListing(*listModels),
+		service.WithVersion(ver),
+	}
+	if *clioActiveProbe {
+		opts = append(opts, service.WithClioActiveProbe(true))
 	}
 	if *cacheSize != 0 {
 		opts = append(opts, service.WithCacheSize(*cacheSize))

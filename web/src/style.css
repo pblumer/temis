@@ -258,6 +258,28 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
 .toolbar .type-editor select { max-width: 170px; }
 .toolbar .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
+/* clio connection indicator (ADR-0030): a compact pill with a coloured dot. */
+.toolbar .conn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 12px/1 system-ui, sans-serif;
+  color: var(--muted);
+  background: #f8fafc;
+  white-space: nowrap;
+  cursor: help;
+  user-select: none;
+}
+.toolbar .conn-badge[hidden] { display: none; }
+.toolbar .conn-badge .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; flex: none; }
+.toolbar .conn-badge.conn-ok { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.toolbar .conn-badge.conn-ok .conn-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
+.toolbar .conn-badge.conn-bad { color: #b42318; border-color: #fecaca; background: #fef2f2; }
+.toolbar .conn-badge.conn-bad .conn-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+.toolbar .conn-badge.conn-off { color: var(--muted); }
 code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 
 /* Evaluate panel — feature parity with the legacy editor (ADR-0016 WP-67). */
