@@ -389,6 +389,8 @@ func (s *Server) dataRoutes() []route {
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
 		{"POST", "/v1/flows", ScopeFlow, s.handleCreateFlow},
+		{"GET", "/v1/flows", ScopeFlow, s.handleListFlows},
+		{"GET", "/v1/flows/{id}", ScopeFlow, s.handleGetFlow},
 		{"POST", "/v1/flows/{id}/evaluate", ScopeFlow, s.handleEvaluateFlow},
 		{"POST", "/v1/flow/evaluate", ScopeFlow, s.handleEvaluateFlowStateless},
 		// Modeling assistant (ADR-0024): an LLM drives temis's tools to help build
