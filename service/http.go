@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -162,7 +163,9 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models", s.handleCreateModel},
 		{"GET", "/v1/models", s.handleListModels},
 		{"GET", "/v1/models/{id}", s.handleGetModel},
+		{"DELETE", "/v1/models/{id}", s.handleDeleteModel},
 		{"GET", "/v1/models/{id}/xml", s.handleGetModelXML},
+		{"POST", "/v1/models/{id}/rename", s.handleRenameModel},
 		// Modeler (ADR-0016): structure, types and per-decision logic editing that
 		// backs the built-in DMN modeler frontend; all on the same token-gated /v1
 		// surface. The mutating ones recompile and return the saved model (201).
@@ -296,6 +299,10 @@ type saveModelRequest struct {
 	Nodes []dmn.NodeEdit `json:"nodes"`
 }
 
+type renameModelRequest struct {
+	Name string `json:"name"`
+}
+
 type evaluateModelRequest struct {
 	Decision string         `json:"decision"`
 	Input    map[string]any `json:"input"`
@@ -412,6 +419,60 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
+	})
+}
+
+// handleDeleteModel drops a cached model (one revision) from the cache. The
+// modeler uses it to remove a model the user no longer wants — deleting a whole
+// named group is done by the client calling this once per revision. It responds
+// 204 on success and 404 when no model has that id.
+func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
+	if !s.cache.delete(r.PathValue("id")) {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRenameModel sets a cached model's display name (the DMN definitions name)
+// and caches the recompiled document under its new content hash, responding 201
+// with the saved model's id so the client can switch to it — the model-level
+// counterpart to renaming an element via /save (ADR-0016). The original revision
+// stays cached; the modeler removes it (and renames the rest of the group) via
+// DELETE when it renames a whole named model.
+func (s *Server) handleRenameModel(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req renameModelRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "name must not be empty")
+		return
+	}
+	patched, err := dmn.SetModelName(sm.xml, name)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	saved, err := s.compileAndStore(r.Context(), patched)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, modelResponse{
+		ModelID:     saved.id,
+		Name:        saved.name,
+		Decisions:   saved.index.Decisions,
+		Inputs:      saved.index.Inputs,
+		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
 

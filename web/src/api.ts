@@ -65,6 +65,28 @@ export async function getModel(modelId: string): Promise<ModelDetail> {
   return (await r.json()) as ModelDetail
 }
 
+// renameModel sets a model's display name (the DMN definitions name), recompiles
+// it server-side and returns the saved model's detail with its new id — the
+// content hash changes, so the caller switches to the new revision. The original
+// stays cached (the modeler cleans it up when it renames a whole named group).
+export async function renameModel(modelId: string, name: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Umbenennen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// deleteModel removes one cached model revision (DELETE /v1/models/{id}). The
+// modeler deletes a whole named model by calling this once per revision. A 404
+// (already gone) is treated as success so a group delete is idempotent.
+export async function deleteModel(modelId: string): Promise<void> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId), { method: 'DELETE' })
+  if (!r.ok && r.status !== 404) throw new Error(await problemMessage(r, 'Löschen fehlgeschlagen'))
+}
+
 // createModel uploads a DMN-XML document to the engine, which compiles and caches
 // it (POST /v1/models), and returns its detail incl. the typed input schema. This
 // is the own modeler's file/paste-deploy path — no dmn-js needed (ADR-0016).

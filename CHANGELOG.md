@@ -46,6 +46,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Default an) auf **demselben Modell-Cache** wie Modeler und `/v1`-API — vorgeladene Beispiele und
   Modeler-Modelle sind über MCP sichtbar und umgekehrt, eine `modelId` über alle Oberflächen; das
   eigenständige `temis-mcp` (stdio/HTTP) bleibt unverändert.
+- **Modeler – Modelle verwalten (ADR-0016):** Im Modeler lässt sich ein Modell jetzt komplett neu
+  (leer) anlegen statt nur eine `.dmn`-Datei hochzuladen, sowie **umbenennen** und **löschen**
+  (inkl. des gesamten Revisions-Verlaufs). Zwei neue HTTP-Endpunkte: `POST /v1/models/{id}/rename`
+  (setzt den Definitions-Namen, legt eine neue Revision an) und `DELETE /v1/models/{id}` (entfernt
+  eine Revision aus dem Cache); neue Library-Funktion `dmn.SetModelName`. Anlegen, Umbenennen und
+  Löschen laufen über eigene In-App-Dialoge (kein `window.prompt`), mit Hinweis bei Namensdopplung.
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/

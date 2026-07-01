@@ -68,6 +68,21 @@ func (c *modelCache) add(sm *storedModel) {
 	}
 }
 
+// delete removes the model with the given id from the cache, reporting whether
+// it was present. It is used by the modeler to drop a model (or a whole named
+// group, one revision at a time) the user no longer wants.
+func (c *modelCache) delete(id string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[id]
+	if !ok {
+		return false
+	}
+	c.ll.Remove(el)
+	delete(c.items, id)
+	return true
+}
+
 // len reports the number of cached models.
 func (c *modelCache) len() int {
 	c.mu.Lock()

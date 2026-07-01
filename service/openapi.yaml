@@ -90,6 +90,60 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+    delete:
+      summary: Remove a cached model
+      description: Drops one cached revision from the model cache. The modeler deletes a whole named model by calling this once per revision.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Model removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/rename:
+    post:
+      summary: Rename a cached model
+      description: >-
+        Sets the model's display name (the DMN definitions name) and caches the
+        recompiled document under its new content hash, returning the saved
+        model's id so the client can switch to it. The original revision stays
+        cached.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RenameModelRequest" }
+      responses:
+        "201":
+          description: The renamed model's index
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelResponse" }
+        "400":
+          description: Invalid request body or empty name
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/models/{id}/xml:
     get:
       summary: Get a cached model's raw DMN XML
@@ -1175,6 +1229,12 @@ components:
           items: { $ref: "#/components/schemas/BKMParam" }
         bodyText: { type: string }
         bodyTypeRef: { type: string }
+    RenameModelRequest:
+      type: object
+      description: The model's new display name (the DMN definitions name).
+      required: [name]
+      properties:
+        name: { type: string }
     SaveModelRequest:
       type: object
       description: Per-node edits (position, name, type) to patch into the model's XML.
