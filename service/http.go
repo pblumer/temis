@@ -304,6 +304,7 @@ func (s *Server) dataRoutes() []route {
 		// Evaluation.
 		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
 		{"POST", "/v1/models/{id}/evaluate-graph", ScopeEvaluate, s.handleEvaluateGraph},
+		{"POST", "/v1/models/{id}/evaluate-graph-batch", ScopeEvaluate, s.handleEvaluateGraphBatch},
 		{"POST", "/v1/evaluate", ScopeEvaluate, s.handleEvaluateStateless},
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
@@ -453,6 +454,44 @@ type evaluateGraphResponse struct {
 	Errors      map[string]string     `json:"errors,omitempty"`
 	InputSchema []dmn.InputField      `json:"inputSchema"`
 	Diagnostics []diagnosticDTO       `json:"diagnostics,omitempty"`
+}
+
+// maxGraphBatchInputs caps how many input rows one batch evaluate accepts, so a
+// single request cannot pin the server on an unbounded loop.
+const maxGraphBatchInputs = 100000
+
+// evaluateGraphBatchRequest carries many input rows evaluated against one model
+// in a single request — the throughput path behind the modeler's Import cockpit,
+// where thousands of test cases run at once.
+type evaluateGraphBatchRequest struct {
+	Inputs []map[string]any `json:"inputs"`
+	Strict bool             `json:"strict,omitempty"`
+}
+
+// graphCaseResult is one row's outcome in a batch: the per-decision values and
+// errors, or a whole-case problem (strict input rejected, or evaluation failed).
+// Traces are intentionally omitted — a batch is for throughput (thousands of
+// rows), where per-row traces would balloon the payload; use evaluate-graph for a
+// single explained run.
+type graphCaseResult struct {
+	Values  map[string]any    `json:"values,omitempty"`
+	Errors  map[string]string `json:"errors,omitempty"`
+	Problem *caseProblem      `json:"problem,omitempty"`
+}
+
+// caseProblem is a per-row failure in a batch, kept out of the RFC-7807 envelope
+// so one bad row never fails the whole request.
+type caseProblem struct {
+	Code     string             `json:"code"`
+	Message  string             `json:"message"`
+	Problems []dmn.InputProblem `json:"problems,omitempty"`
+}
+
+// evaluateGraphBatchResponse aligns 1:1 with the request's inputs and echoes the
+// leaf-input schema once (shared by every row).
+type evaluateGraphBatchResponse struct {
+	Results     []graphCaseResult `json:"results"`
+	InputSchema []dmn.InputField  `json:"inputSchema"`
 }
 
 type diagnosticDTO struct {
@@ -1011,6 +1050,59 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 		Errors:      res.Errors,
 		InputSchema: sm.defs.ModelInputSchema(),
 		Diagnostics: toDiagnosticDTOs(res.Diags),
+	})
+}
+
+// handleEvaluateGraphBatch evaluates many input rows against one model in a
+// single request — the throughput path behind the modeler's Import cockpit, where
+// thousands of test cases run at once. Each row is evaluated independently: a
+// strict-input rejection or a runtime failure is recorded as that row's problem
+// and never aborts the batch, so the response aligns 1:1 with the request's
+// inputs. Traces are omitted by design (see graphCaseResult) — this keeps the
+// engine in-memory and the payload small, so 5000 rows come back in one fast
+// round-trip instead of 5000.
+func (s *Server) handleEvaluateGraphBatch(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req evaluateGraphBatchRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if len(req.Inputs) > maxGraphBatchInputs {
+		writeProblem(w, http.StatusBadRequest, "BATCH_TOO_LARGE", fmt.Sprintf("at most %d inputs per batch (got %d)", maxGraphBatchInputs, len(req.Inputs)))
+		return
+	}
+	var opts []dmn.EvalOption
+	if req.Strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
+	ctx := r.Context()
+	results := make([]graphCaseResult, len(req.Inputs))
+	for i, in := range req.Inputs {
+		// A cancelled request (client navigated away) stops the loop promptly.
+		if err := ctx.Err(); err != nil {
+			writeProblem(w, http.StatusRequestTimeout, "REQUEST_CANCELLED", err.Error())
+			return
+		}
+		res, err := sm.defs.EvaluateGraph(ctx, dmn.Input(in), opts...)
+		if err != nil {
+			var ie *dmn.InputError
+			if errors.As(err, &ie) {
+				results[i] = graphCaseResult{Problem: &caseProblem{Code: "INVALID_INPUT", Message: "input does not satisfy the model's schema", Problems: ie.Problems}}
+			} else {
+				results[i] = graphCaseResult{Problem: &caseProblem{Code: "EVALUATION_FAILED", Message: err.Error()}}
+			}
+			continue
+		}
+		results[i] = graphCaseResult{Values: res.Values, Errors: res.Errors}
+	}
+	writeJSON(w, http.StatusOK, evaluateGraphBatchResponse{
+		Results:     results,
+		InputSchema: sm.defs.ModelInputSchema(),
 	})
 }
 

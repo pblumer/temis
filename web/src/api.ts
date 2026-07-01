@@ -255,6 +255,36 @@ export async function evaluateGraph(modelId: string, input: Record<string, unkno
   return (await r.json()) as GraphEvalResult
 }
 
+// CaseProblem mirrors the service caseProblem: a single batch row's failure —
+// either its strict input was rejected (INVALID_INPUT, with per-field problems)
+// or it failed at runtime (EVALUATION_FAILED).
+export type CaseProblem = { code: string; message: string; problems?: InputProblem[] }
+// GraphCaseResult mirrors the service graphCaseResult: one row's per-decision
+// values and errors, or a whole-row problem. Traces are omitted in batch mode.
+export type GraphCaseResult = { values?: Record<string, unknown>; errors?: Record<string, string>; problem?: CaseProblem }
+// GraphBatchResult mirrors evaluateGraphBatchResponse: per-row results aligned
+// 1:1 with the request's inputs, plus the shared leaf-input schema.
+export type GraphBatchResult = { results: GraphCaseResult[]; inputSchema: InputField[] }
+
+// evaluateGraphBatch evaluates many input rows against one model in a single
+// request (POST /v1/models/{id}/evaluate-graph-batch) — the throughput path
+// behind the Import cockpit, so thousands of test cases run in one round-trip
+// instead of one HTTP call each. Each row is evaluated independently; a bad row
+// comes back as that row's `problem` rather than failing the whole request.
+// Traces are omitted by design (use evaluateGraph for a single explained run).
+export async function evaluateGraphBatch(modelId: string, inputs: Record<string, unknown>[], strict = false): Promise<GraphBatchResult> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate-graph-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inputs, strict }),
+  })
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(problem.detail || 'Batch-Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
+  }
+  return (await r.json()) as GraphBatchResult
+}
+
 // TableView mirrors dmn.TableView: a decision's static decision-table logic for
 // display in the modeler.
 export type TableInput = { label?: string; expression: string; typeRef?: string }

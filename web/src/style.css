@@ -1109,6 +1109,9 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .imp-lane-title { display: flex; align-items: center; gap: 8px; font: 700 11px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--imp); margin-bottom: 10px; }
 .imp-lane-count { font-weight: 700; color: #fff; background: var(--imp); border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
 .imp-lane-none { color: var(--muted); font-size: 12.5px; padding: 8px 4px; }
+/* Overflow footer: the belt caps how many cards it draws (LANE_CAP); this names
+   the rest so a 5000-case run stays instant without a wall of DOM nodes. */
+.imp-lane-more { color: var(--imp); font-weight: 600; font-size: 12px; padding: 8px 4px 2px; text-align: center; }
 .imp-shelf { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 2px; }
 
 /* The engine (middle lane): the live model with its decisions; pulses when busy. */

@@ -75,11 +75,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Formular, `leafInputs`), füllt sie mit Testdaten — von Hand, in der Tabellenkalkulation oder von
   einem **KI-Agenten** (dokumentiertes, agentenfreundliches Format) — und importiert sie (Datei-
   Auswahl oder Drag & Drop). Optionale `→Decision`-Spalten machen aus einer Zeile eine **Pass/Fail-
-  Erwartung**. „Durchlaufen lassen" schickt jeden Datensatz animiert von links (**Eingang**) durch
-  die **Evaluation** (die echte Engine, über denselben Whole-Graph-Endpunkt wie Operate) nach rechts
-  in den **clio Store** — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-
-  Chrome-Farbwelt (`--imp`), respektiert `prefers-reduced-motion`. Reines Frontend, kein neuer
-  Endpunkt, keine neue Dependency.
+  Erwartung**. „Durchlaufen lassen" wertet den **ganzen Stapel in EINEM Batch-Request** aus und lässt
+  die Datensätze von links (**Eingang**) durch die **Evaluation** nach rechts in den **clio Store**
+  fliegen — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-Chrome-Farbwelt
+  (`--imp`), respektiert `prefers-reduced-motion`.
+  **Durchsatz (Folge-Fix):** Neuer Endpunkt **`POST /v1/models/{id}/evaluate-graph-batch`** wertet
+  viele Eingabezeilen in einem Round-Trip aus (die Engine schleift in-memory, ohne Traces; jede Zeile
+  unabhängig — eine abgelehnte Zeile bricht den Batch nicht ab). Damit laufen **5000 Testfälle in
+  ~50 ms** statt tausender Einzel-Requests. Das Cockpit ruft den Batch statt einer Schleife auf,
+  verzichtet auf künstliche Pro-Datensatz-Pausen und **begrenzt die gezeichneten Karten pro Lane**
+  (Zähler + Overflow-Hinweis zeigen die echte Menge) — die Animation ist bewusst nur *angedeutet* als
+  gestaffelte CSS-Kaskade, statt tausende DOM-Knoten einfrieren zu lassen.
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/
