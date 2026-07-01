@@ -16,6 +16,7 @@ export type GraphNode = {
   hasContext?: boolean
   hasConditional?: boolean
   hasList?: boolean
+  hasRelation?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -512,6 +513,45 @@ export async function saveList(modelId: string, decision: string, edit: ListEdit
 export async function createBoxedList(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-list', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Liste anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// RelationView mirrors dmn.RelationView: a decision's boxed-relation logic — named
+// columns and rows of FEEL cells. simple is false when a cell is a nested boxed
+// expression, so the editor opens read-only.
+export type RelationView = { decisionId: string; name: string; columns: string[]; rows: string[][]; simple: boolean }
+// RelationEdit is the editable payload: the column names and rows of FEEL cells.
+export type RelationEdit = { columns: string[]; rows: string[][] }
+
+// getRelation fetches a decision's boxed-relation view, or null when the decision
+// has no relation logic (HTTP 404).
+export async function getRelation(modelId: string, decision: string): Promise<RelationView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Relation laden fehlgeschlagen (HTTP ' + r.status + ')')
+  const rv = (await r.json()) as RelationView
+  rv.columns = rv.columns ?? []
+  rv.rows = rv.rows ?? []
+  return rv
+}
+
+// saveRelation replaces a decision's relation columns and rows (POST), recompiles
+// the model and returns the saved detail with its new id and any diagnostics.
+export async function saveRelation(modelId: string, decision: string, edit: RelationEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Relation speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedRelation gives an undecided decision a fresh boxed relation and
+// returns the saved model's detail with its new id.
+export async function createBoxedRelation(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-relation', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Relation anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

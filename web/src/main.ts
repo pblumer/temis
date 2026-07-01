@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
@@ -9,6 +9,7 @@ import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
 import { openConditionalOverlay } from './conditional'
 import { openListOverlay } from './list'
+import { openRelationOverlay } from './relation'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
@@ -244,6 +245,28 @@ async function boot(root: HTMLElement): Promise<void> {
       await reselect(created.modelId)
       status.textContent = 'Liste angelegt ✓'
       openList(created.modelId, decisionId)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // openRelation opens a decision's boxed-relation grid editor — editable in
+  // Design, read-only in Operate. names are the in-scope variables the cells use.
+  const openRelation = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openRelationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+  }
+
+  // createRelation gives a logic-less decision a fresh boxed relation: persist
+  // pending edits first, create it, switch to the saved revision and open.
+  const createRelation = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Relation an …'
+    try {
+      const created = await createBoxedRelation(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Relation angelegt ✓'
+      openRelation(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -669,6 +692,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateConditional((decisionId) => void createConditional(decisionId))
       handle.onOpenList((decisionId) => openList(modelId, decisionId))
       handle.onCreateList((decisionId) => void createList(decisionId))
+      handle.onOpenRelation((decisionId) => openRelation(modelId, decisionId))
+      handle.onCreateRelation((decisionId) => void createRelation(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
