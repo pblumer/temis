@@ -260,6 +260,10 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		return s.toolDescribeFlow(p.Arguments)
 	case "evaluate_flow":
 		return s.toolEvaluateFlow(ctx, p.Arguments)
+	case "git_list_flows":
+		return s.toolGitListFlows(ctx, p.Arguments)
+	case "git_load_flow":
+		return s.toolGitLoadFlow(ctx, p.Arguments)
 	case "git_list_models":
 		return s.toolGitListModels(ctx, p.Arguments)
 	case "git_load_model":
