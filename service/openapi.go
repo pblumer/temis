@@ -77,11 +77,16 @@ func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFu
 			writeProblem(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid bearer token")
 			return
 		}
-		if !key.HasScope(scope) {
+		// The resource a prefix-scope (WP-105) constrains against is the request's
+		// model/flow id where present ("/v1/models/{id}/…"); resource-less routes
+		// pass "" and only an unconstrained grant satisfies them.
+		if !key.HasScopeFor(scope, r.PathValue("id")) {
 			writeProblem(w, http.StatusForbidden, "FORBIDDEN", "the key lacks the required scope: "+string(scope))
 			return
 		}
-		next(w, r)
+		// Stash the authenticated kid so the audit sink can stamp authorship
+		// (clioauthkid) on the decision/flow event (ADR-0023, WP-105).
+		next(w, r.WithContext(withAuthKid(r.Context(), key.Kid)))
 	}
 }
 

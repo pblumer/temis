@@ -338,7 +338,29 @@ Nur über die API erzeugte (**managed**) Keys sind rotier-/widerrufbar; ein
 statischer/Bootstrap-Key → `409 KEY_NOT_MANAGED`, ein unbekannter `kid` → `404`.
 Ohne `-keys-dir` sind die Endpunkte dormant (`404`). Persistiert wird eine einzige
 `keys.json` (Datei `0600`, Verzeichnis `0700`, nur Hashes) — die Keys **überleben
-einen Neustart**. Offline-CLI für den Lockout-Fall folgt in WP-104.
+einen Neustart**.
+
+**Offline-Key-CLI (WP-104):** `temisd keys create|list|rotate|revoke -keys-dir <dir>`
+verwaltet denselben Keystore **bei gestopptem Server** (Lockout-Recovery, wenn kein
+nutzbarer Admin-Key mehr existiert). Ein offline erzeugter Key ist byte-identisch zu
+einem über die API erzeugten und wird beim nächsten Start akzeptiert; `create` zeigt
+das Secret einmalig, `list` nie.
+
+**Prefix-Scopes (WP-105, analog clio ADR-033):** ein Grant darf auf einen
+Ressourcen-Prefix eingeschränkt werden — Form `base:prefix`, z. B.
+`evaluate:/orders/*` oder eine auf eine `modelId` gepinnte `models:read:sha256:…`.
+Der Grant greift nur, wenn die Ressource der Anfrage (der `{id}`-Pfadwert, d. h.
+modelId bzw. flowId) mit dem Prefix beginnt (ein optionales End-`*` ist reine
+Lesbarkeit). Ein **unbeschränkter** Grant (`evaluate`) deckt alles ab; ein
+**beschränkter** Grant erfüllt eine ressourcenlose Route (Listing, stateless
+`/v1/evaluate`, gRPC, MCP) **nicht** — dort greift nur der unbeschränkte Grant.
+`admin` bleibt Super-Scope.
+
+**Authorship (WP-105):** bei aktiver Auth stempelt der clio-Sink die
+authentifizierte `kid` als CloudEvents-Extension **`clioauthkid`** auf jedes
+Decision- und Flow-Event (ausgelassen bei offener API oder Legacy-Token); clio
+bindet die Extension in seine Hash-Kette. `temis-reaudit` verträgt Events mit
+`clioauthkid` unverändert.
 
 ### 2.1 Modeler-Endpunkte (ADR-0016)
 

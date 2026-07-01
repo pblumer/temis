@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // createManagedKey POSTs /v1/keys as admin and returns the created key response.
@@ -92,7 +93,7 @@ func TestKeyListHasNoSecrets(t *testing.T) {
 		t.Fatalf("listing exposes a secret/hash field: %s", body)
 	}
 	list := decode[listKeysResponse](t, rec)
-	var found *keyView
+	var found *KeyView
 	for i := range list.Keys {
 		if list.Keys[i].Kid == created.Kid {
 			found = &list.Keys[i]
@@ -166,5 +167,62 @@ func TestRotateUnmanagedKeyConflicts(t *testing.T) {
 	}
 	if rec := doAuth(t, h, "POST", "/v1/keys/nope/revoke", "", nil, admin); rec.Code != http.StatusNotFound {
 		t.Fatalf("revoke unknown key = %d, want 404 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// TestOfflineKeyAdmin covers WP-104: a key minted offline (server stopped) is
+// accepted by the running server; listing carries no secret; rotate invalidates
+// the old secret; the running server picks up the offline rotation on restart.
+func TestOfflineKeyAdmin(t *testing.T) {
+	dir := t.TempDir()
+
+	admin, err := OpenKeyStore(dir)
+	if err != nil {
+		t.Fatalf("OpenKeyStore: %v", err)
+	}
+	kid, secret, err := admin.Create([]string{"models:read"}, "recovery", time.Time{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A server started on the same dir accepts the offline-minted key.
+	h := NewServer(nil, WithToken("admintok"), WithKeyStore(dir)).Handler()
+	if rec := doAuth(t, h, "GET", "/v1/models", "", nil, kid+"."+secret); rec.Code != http.StatusOK {
+		t.Fatalf("offline key on running server = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	// List carries no secret material.
+	for _, v := range admin.List() {
+		if v.Kid == kid && (v.Revoked || !v.Managed) {
+			t.Errorf("offline view = %+v, want managed && !revoked", v)
+		}
+	}
+
+	// Rotate offline: the old secret stops working, the new one works — on a fresh
+	// server (simulating the operator restarting after recovery).
+	admin2, err := OpenKeyStore(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	newSecret, err := admin2.Rotate(kid)
+	if err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+	if newSecret == secret {
+		t.Fatal("rotate returned the same secret")
+	}
+	h2 := NewServer(nil, WithToken("admintok"), WithKeyStore(dir)).Handler()
+	if rec := doAuth(t, h2, "GET", "/v1/models", "", nil, kid+"."+secret); rec.Code != http.StatusUnauthorized {
+		t.Errorf("old secret after offline rotate = %d, want 401", rec.Code)
+	}
+	if rec := doAuth(t, h2, "GET", "/v1/models", "", nil, kid+"."+newSecret); rec.Code != http.StatusOK {
+		t.Errorf("new secret after offline rotate = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// TestOpenKeyStoreEmptyDir rejects an empty directory argument.
+func TestOpenKeyStoreEmptyDir(t *testing.T) {
+	if _, err := OpenKeyStore(""); err == nil {
+		t.Error("OpenKeyStore(\"\") = nil error, want failure")
 	}
 }

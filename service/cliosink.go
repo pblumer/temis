@@ -236,6 +236,10 @@ type DecisionRecord struct {
 	Outputs  map[string]any
 	Trace    *dmn.Trace
 	Strict   bool
+	// AuthKid is the kid of the API key that authorised the evaluation, stamped on
+	// the event as the clioauthkid CloudEvents extension for authorship (WP-105).
+	// Empty when the API is open or the caller used the legacy token.
+	AuthKid string
 }
 
 // Record emits rec to clio. It returns a non-nil error only when the sink is
@@ -266,6 +270,10 @@ type clioEvent struct {
 	Subject string            `json:"subject"`
 	Type    string            `json:"type"`
 	Data    decisionEventData `json:"data"`
+	// ClioAuthKid is the authorship CloudEvents extension: the kid of the key that
+	// authorised the evaluation (WP-105, ADR-0028 §3 Phase 3). Omitted when unknown
+	// (open API or legacy token). clio binds it into the event's hash chain.
+	ClioAuthKid string `json:"clioauthkid,omitempty"`
 }
 
 // decisionEventData is the versioned data payload of a decision event
@@ -296,9 +304,10 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bo
 
 	body := clioWriteRequest{
 		Events: []clioEvent{{
-			Source:  c.source,
-			Subject: subject,
-			Type:    DecisionEventType,
+			Source:      c.source,
+			Subject:     subject,
+			Type:        DecisionEventType,
+			ClioAuthKid: rec.AuthKid,
 			Data: decisionEventData{
 				ModelID:   rec.ModelID,
 				Decision:  rec.Decision,
@@ -393,6 +402,9 @@ type FlowRecord struct {
 	Descriptor []byte
 	Input      map[string]any
 	Outputs    map[string]any
+	// AuthKid is the kid of the key that authorised the flow evaluation, stamped as
+	// the clioauthkid extension for authorship (WP-105). Empty when unknown.
+	AuthKid string
 }
 
 // RecordFlow emits a flow event to clio. Like Record, it returns a non-nil error
@@ -415,10 +427,11 @@ type clioFlowWriteRequest struct {
 }
 
 type clioFlowEvent struct {
-	Source  string        `json:"source"`
-	Subject string        `json:"subject"`
-	Type    string        `json:"type"`
-	Data    flowEventData `json:"data"`
+	Source      string        `json:"source"`
+	Subject     string        `json:"subject"`
+	Type        string        `json:"type"`
+	Data        flowEventData `json:"data"`
+	ClioAuthKid string        `json:"clioauthkid,omitempty"`
 }
 
 // flowEventData is the versioned payload of a flow event (FlowEventType). The
@@ -447,9 +460,10 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 
 	body := clioFlowWriteRequest{
 		Events: []clioFlowEvent{{
-			Source:  c.source,
-			Subject: subject,
-			Type:    FlowEventType,
+			Source:      c.source,
+			Subject:     subject,
+			Type:        FlowEventType,
+			ClioAuthKid: rec.AuthKid,
 			Data: flowEventData{
 				FlowID:     rec.FlowID,
 				Flow:       rec.Name,

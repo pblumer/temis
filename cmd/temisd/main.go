@@ -34,6 +34,13 @@ const defaultClioURL = "https://clio.blumer.cloud"
 // operator opts out of any feature via the environment alone — no flags required
 // (handy for containers). An explicit flag always overrides the environment.
 func main() {
+	// Offline key CLI (WP-104): `temisd keys …` manages the persistent keystore
+	// directly (server stopped), for lockout recovery. It is a distinct entrypoint
+	// from the server, so dispatch before the server's flag set is parsed.
+	if len(os.Args) > 1 && os.Args[1] == "keys" {
+		os.Exit(runKeysCommand(os.Args[2:]))
+	}
+
 	showVersion := flag.Bool("version", false, "print the temisd version and exit")
 	addr := flag.String("addr", envOr("TEMIS_ADDR", ":8080"),
 		"address to listen on (host:port) (default $TEMIS_ADDR, else :8080)")
