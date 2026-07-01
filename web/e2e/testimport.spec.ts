@@ -36,6 +36,39 @@ test('import: seeded samples run down the belt into the clio store', async ({ pa
   await expect(page.locator('.imp-empty-msg')).toBeVisible()
 })
 
+test('import: after a run the results CSV downloads with the computed outputs', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('Discount', { exact: true }).first().click()
+  await page.locator('#modeImport').click()
+
+  const csv = ['case,Customer Type,Order Total', 'Großkunde,Business,1200', 'Klein,Private,300'].join('\n')
+  await page.locator('input.imp-file').setInputFiles({ name: 'faelle.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
+  await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(2)
+
+  // Before a run the results download is disabled; after it, it is offered.
+  await expect(page.getByRole('button', { name: /Ergebnisse · CSV/ })).toBeDisabled()
+  await page.locator('.imp-btn.imp-run').click()
+  await expect(page.locator('.imp-lane-store .imp-card')).toHaveCount(2, { timeout: 15_000 })
+  await expect(page.locator('.imp-note')).toContainText('Ergebnisse als CSV herunterladbar')
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Ergebnisse · CSV/ }).click()])
+  expect(download.suggestedFilename()).toContain('-ergebnisse.csv')
+  const stream = await download.createReadStream()
+  const text = await new Promise<string>((resolve, reject) => {
+    let acc = ''
+    stream.on('data', (c) => (acc += c))
+    stream.on('end', () => resolve(acc))
+    stream.on('error', reject)
+  })
+  // The header carries a Discount output column, and each row has its computed value.
+  const lines = text.trim().split('\n')
+  expect(lines[1]).toContain('Discount') // header row (after the comment line)
+  const dataRows = lines.slice(2)
+  expect(dataRows).toHaveLength(2)
+  // Every data row ends with a numeric Discount output (not empty).
+  for (const row of dataRows) expect(row.split(',').at(-1)).toMatch(/^"?-?\d/)
+})
+
 test('import: a CSV of test cases imports, runs and asserts expectations', async ({ page }) => {
   await page.goto('/')
   await page.getByText('Discount', { exact: true }).first().click()
