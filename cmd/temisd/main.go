@@ -34,7 +34,9 @@ func main() {
 	addr := flag.String("addr", envOr("TEMIS_ADDR", ":8080"),
 		"address to listen on (host:port) (default $TEMIS_ADDR, else :8080)")
 	token := flag.String("token", os.Getenv("TEMIS_API_TOKEN"),
-		"require this bearer token on /v1 endpoints (default $TEMIS_API_TOKEN; empty = open)")
+		"DEPRECATED legacy admin token on /v1 endpoints; use -keys-file for scoped keys (default $TEMIS_API_TOKEN; empty = none)")
+	keysFile := flag.String("keys-file", os.Getenv("TEMIS_KEYS_FILE"),
+		"JSON file of scoped kid.secret API keys guarding /v1, /mcp and gRPC (default $TEMIS_KEYS_FILE; empty = none)")
 	listModels := flag.Bool("list-models", envBool("TEMIS_LIST_MODELS", true),
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private (env TEMIS_LIST_MODELS)")
 	cacheSize := flag.Int("cache-size", envInt("TEMIS_CACHE_SIZE", 0),
@@ -85,8 +87,13 @@ func main() {
 		MaxIterations: *maxIterations,
 		MaxListSize:   *maxListSize,
 	}))
+	// Scoped API keys (ADR-0028). The bootstrap admin key is env-only so a secret
+	// never lands in a process listing or shell history via a flag.
+	bootstrapAdminKey := os.Getenv("TEMIS_BOOTSTRAP_ADMIN_KEY")
 	opts := []service.Option{
 		service.WithToken(*token),
+		service.WithKeysFile(*keysFile),
+		service.WithBootstrapAdminKey(bootstrapAdminKey),
 		service.WithModelListing(*listModels),
 	}
 	if *cacheSize != 0 {
@@ -145,13 +152,19 @@ func main() {
 		// guards /mcp as the /v1 endpoints.
 		mcpSrv := mcp.NewServer(engine,
 			mcp.WithVersion(ver),
-			mcp.WithHTTPToken(*token),
+			mcp.WithAuth(srv.MCPAuth()),
 			mcp.WithStore(srv.ModelStore()),
 		)
 		srv.AttachMCP(mcpSrv)
 	}
-	if *token != "" {
-		log.Printf("temisd: /v1 endpoints require a bearer token")
+	switch {
+	case *keysFile != "" || bootstrapAdminKey != "":
+		log.Printf("temisd: /v1, /mcp and gRPC require a scoped API key (kid.secret)")
+		if *token != "" {
+			log.Printf("temisd: DEPRECATED -token / TEMIS_API_TOKEN accepted as a legacy admin key")
+		}
+	case *token != "":
+		log.Printf("temisd: /v1, /mcp and gRPC require the DEPRECATED legacy admin token — migrate to -keys-file (ADR-0028)")
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")

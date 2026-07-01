@@ -42,9 +42,20 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 type Server struct {
 	engine *dmn.Engine
 
-	// token, when non-empty, is the bearer token required on the /v1 data
-	// endpoints. Empty means the API is open.
+	// token, when non-empty, is the deprecated legacy bearer token (WithToken /
+	// -token / TEMIS_API_TOKEN). It is folded into auth as a synthetic admin key
+	// (ADR-0028) so existing clients keep working byte-identically.
 	token string
+
+	// keysFile / bootstrapAdminKey configure the static keystore (WP-102): a JSON
+	// file of scoped keys and a bootstrap admin secret. Empty leaves them unset.
+	keysFile          string
+	bootstrapAdminKey string
+
+	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
+	// NewServer. It authenticates kid.secret bearers and drives requireScope.
+	// When it reports !enabled() the /v1 surface is open (the historical default).
+	auth Authenticator
 
 	// listModels enables the GET /v1/models listing endpoint. When false the
 	// handler responds 404, so callers cannot enumerate the cached models (and
@@ -97,11 +108,30 @@ type Server struct {
 // Option configures a Server at construction time.
 type Option func(*Server)
 
-// WithToken requires callers of the /v1 data endpoints to present
-// "Authorization: Bearer <token>". An empty token leaves the API open. The
+// WithToken configures the deprecated legacy admin token (ADR-0028). Callers
+// presenting "Authorization: Bearer <token>" are treated as a synthetic admin
+// key that satisfies every scope, so pre-scopes clients keep working unchanged.
+// An empty token contributes nothing. Prefer WithKeysFile for scoped keys. The
 // docs, OpenAPI spec and health endpoints are never gated.
 func WithToken(token string) Option {
 	return func(s *Server) { s.token = token }
+}
+
+// WithKeysFile loads scoped kid.secret API keys from a JSON file at construction
+// (WP-102). Each key holds only the SHA-256 of its secret, its scopes, owner and
+// optional expiry. A file that cannot be read or parsed makes NewServer panic, so
+// a misconfigured keystore fails loudly rather than leaving the API open. An
+// empty path loads no file.
+func WithKeysFile(path string) Option {
+	return func(s *Server) { s.keysFile = path }
+}
+
+// WithBootstrapAdminKey registers a bootstrap admin key from a secret (WP-102),
+// typically sourced from $TEMIS_BOOTSTRAP_ADMIN_KEY. The key's kid is derived
+// deterministically from the secret and logged by the caller; the secret is never
+// logged or stored in plaintext. An empty secret registers nothing.
+func WithBootstrapAdminKey(secret string) Option {
+	return func(s *Server) { s.bootstrapAdminKey = secret }
 }
 
 // WithModelListing toggles the GET /v1/models endpoint that enumerates every
@@ -161,6 +191,18 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
 	}
+	// Assemble the keystore from the static config (ADR-0028, WP-102): scoped keys
+	// from the JSON file, an optional bootstrap admin key and the deprecated legacy
+	// token (a synthetic admin key). A malformed keys file is fatal — better to fail
+	// startup loudly than to serve an open API by accident.
+	auth, bootKid, err := buildKeystore(s.keysFile, s.bootstrapAdminKey, s.token)
+	if err != nil {
+		panic("temis: keystore: " + err.Error())
+	}
+	s.auth = auth
+	if bootKid != "" {
+		log.Printf("temis: bootstrap admin key registered: kid=%s (use Authorization: Bearer %s.<secret>)", bootKid, bootKid)
+	}
 	s.cache = newModelCache(s.cacheSize)
 	s.flows = newFlowStore()
 	// Examples load first, while store is still nil, so the bundled models are
@@ -200,70 +242,78 @@ func (s *Server) loadPersisted(ctx context.Context) {
 	}
 }
 
-// route is one token-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
-// pattern and the handler that serves it. dataRoutes() is the single list of
-// them, so registration (Handler) and the OpenAPI-sync test share one source.
+// route is one scope-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
+// pattern, the required Scope (ADR-0028 §2) and the handler that serves it.
+// dataRoutes() is the single list of them, so registration (Handler) and the
+// OpenAPI-sync test share one source.
 type route struct {
 	method  string
 	pattern string
+	scope   Scope
 	handler http.HandlerFunc
 }
 
-// dataRoutes is the canonical list of token-gated /v1 endpoints. Every entry
-// must have a matching path+method in service/openapi.yaml (enforced by
-// TestOpenAPICoversDataRoutes); adding a route here without documenting it — or
-// vice versa — breaks that test on purpose.
+// dataRoutes is the canonical list of scope-gated /v1 endpoints. Each entry
+// carries its required scope from the ADR-0028 §2 mapping (evaluate · models:read
+// · models:write · git · assist · flow · admin). Every entry must have a matching
+// path+method in service/openapi.yaml (enforced by TestOpenAPICoversDataRoutes);
+// adding a route here without documenting it — or vice versa — breaks that test
+// on purpose.
 func (s *Server) dataRoutes() []route {
 	return []route{
-		{"POST", "/v1/models", s.handleCreateModel},
-		{"GET", "/v1/models", s.handleListModels},
-		{"GET", "/v1/models/{id}", s.handleGetModel},
-		{"DELETE", "/v1/models/{id}", s.handleDeleteModel},
-		{"GET", "/v1/models/{id}/xml", s.handleGetModelXML},
-		{"POST", "/v1/models/{id}/rename", s.handleRenameModel},
+		{"POST", "/v1/models", ScopeModelsWrite, s.handleCreateModel},
+		{"GET", "/v1/models", ScopeModelsRead, s.handleListModels},
+		{"GET", "/v1/models/{id}", ScopeModelsRead, s.handleGetModel},
+		// Deleting a model is an operational/admin action (ADR-0028 §2: admin covers
+		// model DELETE), distinct from the modeler's per-element edits.
+		{"DELETE", "/v1/models/{id}", ScopeAdmin, s.handleDeleteModel},
+		{"GET", "/v1/models/{id}/xml", ScopeModelsRead, s.handleGetModelXML},
+		{"POST", "/v1/models/{id}/rename", ScopeModelsWrite, s.handleRenameModel},
 		// Modeler (ADR-0016): structure, types and per-decision logic editing that
-		// backs the built-in DMN modeler frontend; all on the same token-gated /v1
-		// surface. The mutating ones recompile and return the saved model (201).
-		{"GET", "/v1/models/{id}/graph", s.handleGetModelGraph},
-		{"POST", "/v1/models/{id}/graph", s.handleSaveGraph},
-		{"GET", "/v1/models/{id}/types", s.handleGetTypes},
-		{"POST", "/v1/models/{id}/types", s.handleSaveType},
-		{"DELETE", "/v1/models/{id}/types/{name}", s.handleDeleteType},
-		{"GET", "/v1/models/{id}/decisions/{decision}/table", s.handleGetDecisionTable},
-		{"POST", "/v1/models/{id}/decisions/{decision}/table", s.handleSaveDecisionTable},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
-		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
-		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
-		{"GET", "/v1/models/{id}/decisions/{decision}/context", s.handleGetContext},
-		{"POST", "/v1/models/{id}/decisions/{decision}/context", s.handleSaveContext},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", s.handleCreateContext},
-		{"GET", "/v1/models/{id}/decisions/{decision}/conditional", s.handleGetConditional},
-		{"POST", "/v1/models/{id}/decisions/{decision}/conditional", s.handleSaveConditional},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-conditional", s.handleCreateConditional},
-		{"GET", "/v1/models/{id}/decisions/{decision}/list", s.handleGetList},
-		{"POST", "/v1/models/{id}/decisions/{decision}/list", s.handleSaveList},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-list", s.handleCreateList},
-		{"GET", "/v1/models/{id}/decisions/{decision}/relation", s.handleGetRelation},
-		{"POST", "/v1/models/{id}/decisions/{decision}/relation", s.handleSaveRelation},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-relation", s.handleCreateRelation},
-		{"GET", "/v1/models/{id}/decisions/{decision}/filter", s.handleGetFilter},
-		{"POST", "/v1/models/{id}/decisions/{decision}/filter", s.handleSaveFilter},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-filter", s.handleCreateFilter},
-		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
-		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
-		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
+		// backs the built-in DMN modeler frontend. Reads need models:read, mutating
+		// edits need models:write. The mutating ones recompile and return the saved
+		// model (201).
+		{"GET", "/v1/models/{id}/graph", ScopeModelsRead, s.handleGetModelGraph},
+		{"POST", "/v1/models/{id}/graph", ScopeModelsWrite, s.handleSaveGraph},
+		{"GET", "/v1/models/{id}/types", ScopeModelsRead, s.handleGetTypes},
+		{"POST", "/v1/models/{id}/types", ScopeModelsWrite, s.handleSaveType},
+		{"DELETE", "/v1/models/{id}/types/{name}", ScopeModelsWrite, s.handleDeleteType},
+		{"GET", "/v1/models/{id}/decisions/{decision}/table", ScopeModelsRead, s.handleGetDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/table", ScopeModelsWrite, s.handleSaveDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", ScopeModelsWrite, s.handleCreateDecisionTable},
+		{"GET", "/v1/models/{id}/decisions/{decision}/literal", ScopeModelsRead, s.handleGetLiteral},
+		{"POST", "/v1/models/{id}/decisions/{decision}/literal", ScopeModelsWrite, s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/decisions/{decision}/context", ScopeModelsRead, s.handleGetContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/context", ScopeModelsWrite, s.handleSaveContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", ScopeModelsWrite, s.handleCreateContext},
+		{"GET", "/v1/models/{id}/decisions/{decision}/conditional", ScopeModelsRead, s.handleGetConditional},
+		{"POST", "/v1/models/{id}/decisions/{decision}/conditional", ScopeModelsWrite, s.handleSaveConditional},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-conditional", ScopeModelsWrite, s.handleCreateConditional},
+		{"GET", "/v1/models/{id}/decisions/{decision}/list", ScopeModelsRead, s.handleGetList},
+		{"POST", "/v1/models/{id}/decisions/{decision}/list", ScopeModelsWrite, s.handleSaveList},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-list", ScopeModelsWrite, s.handleCreateList},
+		{"GET", "/v1/models/{id}/decisions/{decision}/relation", ScopeModelsRead, s.handleGetRelation},
+		{"POST", "/v1/models/{id}/decisions/{decision}/relation", ScopeModelsWrite, s.handleSaveRelation},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-relation", ScopeModelsWrite, s.handleCreateRelation},
+		{"GET", "/v1/models/{id}/decisions/{decision}/filter", ScopeModelsRead, s.handleGetFilter},
+		{"POST", "/v1/models/{id}/decisions/{decision}/filter", ScopeModelsWrite, s.handleSaveFilter},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-filter", ScopeModelsWrite, s.handleCreateFilter},
+		{"GET", "/v1/models/{id}/bkm/{bkm}", ScopeModelsRead, s.handleGetBKM},
+		{"POST", "/v1/models/{id}/bkm/{bkm}", ScopeModelsWrite, s.handleSaveBKM},
+		{"POST", "/v1/models/{id}/save", ScopeModelsWrite, s.handleSaveModel},
 		// Evaluation.
-		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
-		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
-		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
+		{"POST", "/v1/models/{id}/evaluate-graph", ScopeEvaluate, s.handleEvaluateGraph},
+		{"POST", "/v1/evaluate", ScopeEvaluate, s.handleEvaluateStateless},
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
-		{"POST", "/v1/flows", s.handleCreateFlow},
-		{"POST", "/v1/flows/{id}/evaluate", s.handleEvaluateFlow},
-		{"POST", "/v1/flow/evaluate", s.handleEvaluateFlowStateless},
+		{"POST", "/v1/flows", ScopeFlow, s.handleCreateFlow},
+		{"POST", "/v1/flows/{id}/evaluate", ScopeFlow, s.handleEvaluateFlow},
+		{"POST", "/v1/flow/evaluate", ScopeFlow, s.handleEvaluateFlowStateless},
 		// Modeling assistant (ADR-0024): an LLM drives temis's tools to help build
-		// decisions. Dormant (503) until enabled with WithAssist.
-		{"POST", "/v1/chat", s.handleChat},
+		// decisions. Its own scope because it can incur LLM cost. Dormant (503)
+		// until enabled with WithAssist.
+		{"POST", "/v1/chat", ScopeAssist, s.handleChat},
 	}
 }
 
@@ -276,7 +326,7 @@ func (s *Server) Handler() http.Handler {
 	// single dataRoutes() table so the route set has one source of truth — the
 	// OpenAPI-sync test reads the same table (see http_test.go).
 	for _, rt := range s.dataRoutes() {
-		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
+		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireScope(rt.scope, rt.handler))
 	}
 	// Git-backed models: browse, load, save and propose against a repository
 	// (WP-72). Registered outside the dataRoutes() table (and thus the
