@@ -93,6 +93,12 @@ export type ModelerHandle = {
   // onCreateConditional fires with a decision's id when the user asks (via the
   // context pad) to give an undecided decision a boxed conditional.
   onCreateConditional: (cb: (decisionId: string) => void) => void
+  // onOpenList fires with a decision's id when the user opens a decision whose
+  // logic is a boxed list (double-click or the context pad), to edit it.
+  onOpenList: (cb: (decisionId: string) => void) => void
+  // onCreateList fires with a decision's id when the user asks (via the context
+  // pad) to give an undecided decision a boxed list.
+  onCreateList: (cb: (decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
@@ -194,7 +200,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasLogic: n.hasLogic } as never)
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -218,14 +224,16 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let openLiteralCb = (_decisionId: string): void => {}
   let openContextCb = (_decisionId: string): void => {}
   let openConditionalCb = (_decisionId: string): void => {}
+  let openListCb = (_decisionId: string): void => {}
   let openBoxedCb = (_decisionId: string): void => {}
-  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean } }) => {
+  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean } }) => {
     const el = e.element
     if (!el || el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
     else if (el.hasContext) openContextCb(el.id)
     else if (el.hasConditional) openConditionalCb(el.id)
+    else if (el.hasList) openListCb(el.id)
     // Any other boxed-expression decision has none of these; double-click
     // inline-renames it (see dmn-label-editing). The "not editable" hint comes
     // from the context pad's boxed-info icon instead, so it doesn't clash.
@@ -248,11 +256,15 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   eventBus.on('dmn.openConditional', (e: { element?: Shape }) => {
     if (e.element) openConditionalCb(e.element.id)
   })
+  eventBus.on('dmn.openList', (e: { element?: Shape }) => {
+    if (e.element) openListCb(e.element.id)
+  })
 
   let createTableCb = (_decisionId: string): void => {}
   let createLiteralCb = (_decisionId: string): void => {}
   let createContextCb = (_decisionId: string): void => {}
   let createConditionalCb = (_decisionId: string): void => {}
+  let createListCb = (_decisionId: string): void => {}
   eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
     if (e.element) createTableCb(e.element.id)
   })
@@ -261,6 +273,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   })
   eventBus.on('dmn.createContext', (e: { element?: Shape }) => {
     if (e.element) createContextCb(e.element.id)
+  })
+  eventBus.on('dmn.createList', (e: { element?: Shape }) => {
+    if (e.element) createListCb(e.element.id)
   })
   eventBus.on('dmn.createConditional', (e: { element?: Shape }) => {
     if (e.element) createConditionalCb(e.element.id)
@@ -334,6 +349,12 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     },
     onCreateConditional: (cb) => {
       createConditionalCb = cb
+    },
+    onOpenList: (cb) => {
+      openListCb = cb
+    },
+    onCreateList: (cb) => {
+      createListCb = cb
     },
     onOpenBKM: (cb) => {
       openBKMCb = cb

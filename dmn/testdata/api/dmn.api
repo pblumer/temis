@@ -48,6 +48,8 @@ func (d *Definitions) BoxedConditional(idOrName string) (ConditionalView, bool)
 
 func (d *Definitions) BoxedContext(idOrName string) (ContextView, bool)
 
+func (d *Definitions) BoxedList(idOrName string) (ListView, bool)
+
 func (d *Definitions) Decision(idOrName string) (*CompiledDecision, error)
 
 func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
@@ -100,6 +102,8 @@ func CreateBoxedConditional(src []byte, decisionID string) ([]byte, error)
 
 func CreateBoxedContext(src []byte, decisionID string) ([]byte, error)
 
+func CreateBoxedList(src []byte, decisionID string) ([]byte, error)
+
 func CreateDecisionTable(src []byte, decisionID string) ([]byte, error)
 
 func New(opts ...Option) *Engine
@@ -111,6 +115,8 @@ func SetBKMFunction(src []byte, bkmID string, edit BKMFunctionEdit) ([]byte, err
 func SetBoxedConditional(src []byte, decisionID string, edit ConditionalEdit) ([]byte, error)
 
 func SetBoxedContext(src []byte, decisionID string, edit ContextEdit) ([]byte, error)
+
+func SetBoxedList(src []byte, decisionID string, edit ListEdit) ([]byte, error)
 
 func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
@@ -253,6 +259,8 @@ type GraphNode struct {
 
 	HasConditional	bool	`json:"hasConditional,omitempty"`
 
+	HasList	bool	`json:"hasList,omitempty"`
+
 	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`
 	Y		float64	`json:"y,omitempty"`
@@ -320,6 +328,17 @@ type Limits struct {
 	MaxIterations	int
 	MaxListSize	int
 	CompileTimeout	time.Duration
+}
+
+type ListEdit struct {
+	Items []string `json:"items"`
+}
+
+type ListView struct {
+	DecisionID	string		`json:"decisionId"`
+	Name		string		`json:"name"`
+	Items		[]string	`json:"items"`
+	Simple		bool		`json:"simple"`
 }
 
 type LiteralView struct {

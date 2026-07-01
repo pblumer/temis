@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
@@ -8,6 +8,7 @@ import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
 import { openConditionalOverlay } from './conditional'
+import { openListOverlay } from './list'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
@@ -221,6 +222,28 @@ async function boot(root: HTMLElement): Promise<void> {
       await reselect(created.modelId)
       status.textContent = 'Conditional angelegt ✓'
       openConditional(created.modelId, decisionId)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // openList opens a decision's boxed-list editor — editable in Design, read-only
+  // in Operate. names are the in-scope variables the items may reference.
+  const openList = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openListOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+  }
+
+  // createList gives a logic-less decision a fresh boxed list: persist pending
+  // edits first, create it, switch to the saved revision and open for editing.
+  const createList = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Liste an …'
+    try {
+      const created = await createBoxedList(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Liste angelegt ✓'
+      openList(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -644,6 +667,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateContext((decisionId) => void createContext(decisionId))
       handle.onOpenConditional((decisionId) => openConditional(modelId, decisionId))
       handle.onCreateConditional((decisionId) => void createConditional(decisionId))
+      handle.onOpenList((decisionId) => openList(modelId, decisionId))
+      handle.onCreateList((decisionId) => void createList(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
