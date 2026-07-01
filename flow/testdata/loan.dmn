@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="flow_loan_defs" name="Loan Model"
+             namespace="http://temis.test/flow/loan">
+  <inputData id="id_risk" name="Risk"/>
+  <inputData id="id_age" name="Applicant Age"/>
+  <decision id="id_loan" name="Loan Decision">
+    <informationRequirement id="ir_risk">
+      <requiredInput href="#id_risk"/>
+    </informationRequirement>
+    <informationRequirement id="ir_age">
+      <requiredInput href="#id_age"/>
+    </informationRequirement>
+    <decisionTable id="dt_loan" hitPolicy="FIRST">
+      <input id="in_risk" label="Risk">
+        <inputExpression typeRef="string"><text>Risk</text></inputExpression>
+      </input>
+      <input id="in_age" label="Applicant Age">
+        <inputExpression typeRef="number"><text>Applicant Age</text></inputExpression>
+      </input>
+      <output id="out_dec" name="Loan Decision" typeRef="string"/>
+      <rule id="r1">
+        <inputEntry><text>"high"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"decline"</text></outputEntry>
+      </rule>
+      <rule id="r2">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&lt; 18</text></inputEntry>
+        <outputEntry><text>"decline"</text></outputEntry>
+      </rule>
+      <rule id="r3">
+        <inputEntry><text>"low"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"approve"</text></outputEntry>
+      </rule>
+      <rule id="r4">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"review"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

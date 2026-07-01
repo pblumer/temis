@@ -201,8 +201,13 @@ Flow-Replay: Event → Flow neu auswerten → kanonisch vergleichen (Folge-WP).
 - Neue Oberflächenfläche (HTTP/MCP/Git-Wrapper) mit eigenem OpenAPI-/Test-Aufwand.
 
 **Folgeaufgaben**
-- Etappe „Decision-Flow" in `docs/20-roadmap.md`: WP-90 (Kern-Package), WP-91 (HTTP),
-  WP-92 (MCP), WP-93 (Audit/Re-Audit), WP-94 (Git) — mit dieser ADR angelegt.
+- Etappe „Decision-Flow" in `docs/20-roadmap.md`: WP-90 (Kern-Package, ✅ umgesetzt),
+  WP-91 (HTTP), WP-92 (MCP), WP-93 (Audit/Re-Audit), WP-94 (Git) — mit dieser ADR angelegt.
+- **Mapping-Ausbau:** WP-90 liefert **referenzbasierte** Mappings (Flow-Input-Name oder
+  `stepID.output`) — den in §3 genannten Normalfall. Die **vollen FEEL-Mapping-Ausdrücke**
+  (`"Credit Score - 50"`) sind ein Folge-WP: sie brauchen ein öffentliches FEEL-Eval-Primitive
+  in `package dmn` (eigene additive-Surface-Entscheidung, damit `flow` nicht `internal/feel`
+  importiert).
 - Deskriptor-Schema formal (JSON-Schema) unter `docs/` festschreiben, sobald WP-90 steht.
 - `docs/90-decision-organization.md` um einen konkreten Flow-Beispielabschnitt ergänzen.
 - ADR-0025 bleibt gültig; diese ADR ist ihre konkrete L2a-Umsetzung und ersetzt sie nicht.

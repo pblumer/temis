@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="flow_risk_defs" name="Risk Model"
+             namespace="http://temis.test/flow/risk">
+  <inputData id="id_score" name="Credit Score"/>
+  <decision id="id_risklevel" name="Risk Level">
+    <informationRequirement id="ir_score">
+      <requiredInput href="#id_score"/>
+    </informationRequirement>
+    <decisionTable id="dt_risk" hitPolicy="UNIQUE">
+      <input id="in_score" label="Credit Score">
+        <inputExpression typeRef="number"><text>Credit Score</text></inputExpression>
+      </input>
+      <output id="out_level" name="Risk Level" typeRef="string"/>
+      <rule id="r1">
+        <inputEntry><text>&gt;= 700</text></inputEntry>
+        <outputEntry><text>"low"</text></outputEntry>
+      </rule>
+      <rule id="r2">
+        <inputEntry><text>[600..700)</text></inputEntry>
+        <outputEntry><text>"medium"</text></outputEntry>
+      </rule>
+      <rule id="r3">
+        <inputEntry><text>&lt; 600</text></inputEntry>
+        <outputEntry><text>"high"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>
