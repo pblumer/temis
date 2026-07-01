@@ -60,6 +60,47 @@ export async function listModels(): Promise<ModelSummary[]> {
   return body.models ?? []
 }
 
+// ClioStatus mirrors the clio block of the service statusResponse (ADR-0030): the
+// audit sink's configuration and observed health. It never carries a secret.
+export type ClioStatus = {
+  enabled: boolean
+  mode?: string
+  url?: string
+  writesOk?: number
+  writesFailed?: number
+  idempotentSkips?: number
+  lastOk?: string
+  lastError?: string
+  lastErrorAt?: string
+  reachable?: boolean
+}
+
+// Status mirrors the service statusResponse; only the fields the modeler surfaces
+// are typed. gated is a client-only flag set when /v1/status is present but
+// auth-gated (401/403) — the modeler then shows the indicator as unknown rather
+// than pretending clio is off.
+export type Status = {
+  engine?: { version?: string }
+  clio: ClioStatus
+  gated?: boolean
+}
+
+// getStatus fetches GET /v1/status. It resolves to null when the endpoint is
+// unavailable (older server, network error) and to a gated marker when it exists
+// but the caller lacks the audit scope — so the caller can distinguish "clio is
+// off" from "I'm not allowed to see it".
+export async function getStatus(): Promise<Status | null> {
+  let r: Response
+  try {
+    r = await fetch('/v1/status')
+  } catch {
+    return null
+  }
+  if (r.status === 401 || r.status === 403) return { clio: { enabled: false }, gated: true }
+  if (!r.ok) return null
+  return (await r.json()) as Status
+}
+
 export async function getModel(modelId: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId))
   if (!r.ok) throw new Error('Modell laden fehlgeschlagen (HTTP ' + r.status + ')')
