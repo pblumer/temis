@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# `npm ci` would otherwise auto-download Playwright browsers in every Node job;
+# the e2e job installs Chromium explicitly via `npx playwright install`.
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -57,6 +62,35 @@ jobs:
 
       - name: Verify committed dist is up to date
         run: git diff --exit-code -- dist
+        working-directory: web
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend (wasm + dist)
+        run: make web
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
         working-directory: web
 
   proto:

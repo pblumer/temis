@@ -5,7 +5,7 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help web web-wasm web-check web-e2e
 
 # Pinned codegen tools (ADR-0020). go-1.23-compatible versions.
 CONNECT_VERSION ?= v1.18.1
@@ -100,7 +100,10 @@ feel-spike:
 ## web-wasm: build the FEEL validator (cmd/feel-wasm) into web/public/ for the modeler
 web-wasm:
 	GOOS=js GOARCH=wasm $(GO) build -o web/public/feel.wasm ./cmd/feel-wasm
-	cp "$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js" web/public/wasm_exec.js
+	@wexec="$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js"; \
+	[ -f "$$wexec" ] || wexec="$$($(GO) env GOROOT)/misc/wasm/wasm_exec.js"; \
+	cp "$$wexec" web/public/wasm_exec.js
+
 
 ## web: build the embedded modeler frontend (ADR-0016 WP-60) into web/dist/
 web: web-wasm
@@ -109,6 +112,10 @@ web: web-wasm
 ## web-check: type-check the frontend without emitting (CI frontend lane)
 web-check:
 	cd web && npm ci && npm run typecheck
+
+## web-e2e: build the frontend and run the Playwright end-to-end tests (browser)
+web-e2e: web
+	cd web && npx playwright test
 
 ## tidy: tidy go.mod/go.sum
 tidy:

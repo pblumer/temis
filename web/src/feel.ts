@@ -5,12 +5,17 @@
 
 type CellResult = { ok: boolean; line?: number; col?: number; message?: string }
 
+// A FEEL built-in function as the engine reports it: its name plus the ordered
+// parameter names (and whether it is variadic) for signature hints.
+export type FeelBuiltin = { name: string; params: string[]; variadic: boolean }
+
 declare global {
   interface Window {
     Go: new () => { run: (instance: WebAssembly.Instance) => void; importObject: WebAssembly.Imports }
     temisFeelValidateName?: (name: string) => { ok: boolean; message?: string }
     temisFeelValidate?: (expr: string, namesCsv: string) => CellResult
     temisFeelValidateUnary?: (test: string, namesCsv: string) => CellResult
+    temisFeelBuiltins?: () => FeelBuiltin[]
   }
 }
 
@@ -70,4 +75,17 @@ export function validateUnary(test: string, names: string[]): CellCheck {
   const fn = window.temisFeelValidateUnary
   if (!fn) return { ok: true }
   return fn(test, names.join(','))
+}
+
+// builtins returns the engine's catalog of FEEL built-in functions, or an empty
+// list until the module has loaded. The catalog is the engine's own registry, so
+// completions can never drift from what actually evaluates.
+export function builtins(): FeelBuiltin[] {
+  const fn = window.temisFeelBuiltins
+  if (!fn) return []
+  try {
+    return fn()
+  } catch {
+    return []
+  }
 }

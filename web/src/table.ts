@@ -1,5 +1,6 @@
 import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit } from './api'
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
+import { attachCompletion, feelItems, type CompletionItem } from './complete'
 import { FEEL_TYPES } from './feeltypes'
 
 // Hit policies offered in the editor (single-letter DMN codes) and the Collect
@@ -82,7 +83,9 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   const matched = new Set(opts.matched ?? [])
   const rebuild = (): void => {
     scroll.textContent = ''
-    scroll.append(buildGrid(state, inputNames(), rebuild, typeOptions, matched))
+    // inputNames is passed as a live provider so completion always reflects the
+    // current input-column expressions, even while they are being edited.
+    scroll.append(buildGrid(state, inputNames, rebuild, typeOptions, matched))
   }
   rebuild()
 
@@ -157,8 +160,10 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
 }
 
 // buildGrid renders the editable table from the working state. rebuild is called
-// after a structural change (column/row add/remove) to redraw.
-function buildGrid(state: TableView, names: string[], rebuild: () => void, typeOptions: string[], matched: Set<number>): HTMLElement {
+// after a structural change (column/row add/remove) to redraw. namesProvider
+// yields the in-scope input names live (for validation snapshots and completion).
+function buildGrid(state: TableView, namesProvider: () => string[], rebuild: () => void, typeOptions: string[], matched: Set<number>): HTMLElement {
+  const names = namesProvider()
   const table = el('table', { class: 'dt' })
   const head = el('thead')
 
@@ -171,7 +176,7 @@ function buildGrid(state: TableView, names: string[], rebuild: () => void, typeO
 
   // Column header row: editable expression/name + type + remove.
   const cols = el('tr', { class: 'dt-cols' }, el('th', { class: 'dt-idx' }, '#'))
-  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild, typeOptions)))
+  state.inputs.forEach((c, k) => cols.append(inputHeader(state, c, k, names, rebuild, typeOptions, namesProvider)))
   state.outputs.forEach((c, k) => cols.append(outputHeader(state, c, k, rebuild, typeOptions)))
   cols.append(el('th', { class: 'dt-ann' }, ''), el('th', { class: 'dt-del' }, ''))
   head.append(cols)
@@ -179,12 +184,12 @@ function buildGrid(state: TableView, names: string[], rebuild: () => void, typeO
 
   // Rule rows.
   const body = el('tbody')
-  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild, matched.has(i))))
+  state.rules.forEach((r, i) => body.append(ruleRow(state, r, i, names, rebuild, matched.has(i), namesProvider)))
   table.append(body)
   return table
 }
 
-function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void, typeOptions: string[]): HTMLElement {
+function inputHeader(state: TableView, col: TableInput, k: number, names: string[], rebuild: () => void, typeOptions: string[], namesProvider: () => string[]): HTMLElement {
   const expr = el('input', { class: 'dt-head-field', value: col.expression ?? '', placeholder: 'FEEL' }) as HTMLInputElement
   const check = (): void => {
     const s = expr.value.trim()
@@ -192,6 +197,7 @@ function inputHeader(state: TableView, col: TableInput, k: number, names: string
     mark(expr, s === '' ? { ok: false, message: 'Input-Ausdruck darf nicht leer sein' } : validateExpr(s, names))
   }
   expr.addEventListener('input', check)
+  attachCompletion(expr, () => feelItems(namesProvider()))
   check()
   return el('th', { class: 'dt-in' }, el('div', { class: 'dt-colhead' }, expr, typeSelect(col, typeOptions), removeBtn(() => {
     state.inputs.splice(k, 1)
@@ -219,10 +225,10 @@ function outputHeader(state: TableView, col: TableOutput, k: number, rebuild: ()
   return el('th', { class: 'dt-out' }, el('div', { class: 'dt-colhead' }, name, typeSelect(col, typeOptions), rm))
 }
 
-function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void, hit = false): HTMLElement {
+function ruleRow(state: TableView, r: TableRule, i: number, names: string[], rebuild: () => void, hit = false, namesProvider: () => string[] = () => names): HTMLElement {
   const row = el('tr', { class: hit ? 'dt-rule dt-hit' : 'dt-rule' }, el('td', { class: 'dt-idx' }, String(i + 1)))
-  state.inputs.forEach((_, k) => row.append(el('td', { class: 'dt-in' }, cell(r.inputEntries, k, 'in', names))))
-  state.outputs.forEach((_, k) => row.append(el('td', { class: 'dt-out' }, cell(r.outputEntries, k, 'out', names))))
+  state.inputs.forEach((_, k) => row.append(el('td', { class: 'dt-in' }, cell(r.inputEntries, k, 'in', names, namesProvider))))
+  state.outputs.forEach((_, k) => row.append(el('td', { class: 'dt-out' }, cell(r.outputEntries, k, 'out', names, namesProvider))))
   const ann = el('input', { class: 'dt-cell dt-cell-ann', value: (r.annotations ?? [])[0] ?? '', placeholder: '—' }) as HTMLInputElement
   ann.addEventListener('input', () => {
     r.annotations = ann.value.trim() ? [ann.value] : []
@@ -237,7 +243,7 @@ function ruleRow(state: TableView, r: TableRule, i: number, names: string[], reb
 
 // cell renders one editable rule cell, writing back to entries[k] and validating
 // (input cells are unary tests with empty=any; output cells are FEEL expressions).
-function cell(entries: string[], k: number, kind: 'in' | 'out', names: string[]): HTMLInputElement {
+function cell(entries: string[], k: number, kind: 'in' | 'out', names: string[], namesProvider: () => string[] = () => names): HTMLInputElement {
   const box = el('input', { class: 'dt-cell dt-cell-' + kind, value: entries[k] ?? '', placeholder: kind === 'in' ? '–' : '' }) as HTMLInputElement
   const check = (): void => {
     entries[k] = box.value
@@ -246,6 +252,10 @@ function cell(entries: string[], k: number, kind: 'in' | 'out', names: string[])
     else mark(box, s === '' ? { ok: false, message: 'Output darf nicht leer sein' } : validateExpr(s, names))
   }
   box.addEventListener('input', check)
+  // Input cells are unary tests over the column value, bound to `?` by the engine,
+  // so offer it alongside the in-scope names; output cells are plain expressions.
+  const extra: CompletionItem[] = kind === 'in' ? [{ label: '?', kind: 'variable', detail: 'Eingabewert dieser Spalte' }] : []
+  attachCompletion(box, () => feelItems(namesProvider(), extra))
   check()
   return box
 }

@@ -1,5 +1,6 @@
 import { getLiteral, saveLiteral, type LiteralView } from './api'
 import { ensureFeel, validateExpr } from './feel'
+import { attachCompletion, feelItems } from './complete'
 import { FEEL_TYPES } from './feeltypes'
 
 // openLiteralOverlay shows a decision's literal FEEL expression in an editable
@@ -102,7 +103,10 @@ export async function openLiteralOverlay(modelId: string, decisionId: string, ti
 
   document.body.append(overlay)
   check()
-  if (!opts?.readOnly) textarea.focus()
+  if (!opts?.readOnly) {
+    attachCompletion(textarea, () => feelItems(names))
+    textarea.focus()
+  }
 }
 
 // el is a tiny DOM builder: tag, attributes, then string/Node children.
