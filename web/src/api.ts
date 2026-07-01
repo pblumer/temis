@@ -14,6 +14,7 @@ export type GraphNode = {
   hasTable?: boolean
   hasLiteral?: boolean
   hasContext?: boolean
+  hasConditional?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -436,6 +437,42 @@ export async function saveContext(modelId: string, decision: string, edit: Conte
 export async function createBoxedContext(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-context', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Boxed Context anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// ConditionalView mirrors dmn.ConditionalView: a decision's boxed-conditional
+// logic — the three FEEL branches of an if/then/else. simple is false when a
+// branch is a nested boxed expression, so the editor opens read-only.
+export type ConditionalView = { decisionId: string; name: string; if: string; then: string; else: string; simple: boolean }
+// ConditionalEdit is the editable payload: the three FEEL branches.
+export type ConditionalEdit = { if: string; then: string; else: string }
+
+// getConditional fetches a decision's boxed-conditional view, or null when the
+// decision has no conditional logic (HTTP 404).
+export async function getConditional(modelId: string, decision: string): Promise<ConditionalView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Conditional laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as ConditionalView
+}
+
+// saveConditional replaces a decision's if/then/else branches (POST), recompiles
+// the model and returns the saved detail with its new id and any diagnostics.
+export async function saveConditional(modelId: string, decision: string, edit: ConditionalEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Conditional speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedConditional gives an undecided decision a fresh boxed conditional and
+// returns the saved model's detail with its new id.
+export async function createBoxedConditional(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-conditional', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Conditional anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

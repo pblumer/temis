@@ -19,6 +19,7 @@ const ICON_BKM = svg(`<path d="M6 5h9v6l-2 2H3V7z" ${stroke}/>`)
 const ICON_TABLE = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M2.5 7h13M7 7v7.5" ${stroke}/>`)
 const ICON_LITERAL = svg(`<path d="M6 4 3 9l3 5M12 4l3 5-3 5" ${stroke}/>`)
 const ICON_CONTEXT = svg(`<path d="M6 3.5C4.7 3.5 4.7 6 4.7 7.2c0 1.1-1 1.8-1.7 1.8.7 0 1.7.7 1.7 1.8 0 1.2 0 3.7 1.3 3.7M12 3.5c1.3 0 1.3 2.5 1.3 3.7 0 1.1 1 1.8 1.7 1.8-.7 0-1.7.7-1.7 1.8 0 1.2 0 3.7-1.3 3.7" ${stroke}/>`)
+const ICON_CONDITIONAL = svg(`<path d="M9 2.5v13M9 6l4-3M9 10l-4-3" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -86,7 +87,7 @@ class DmnContextPadProvider {
       // A decided decision: open its logic with a single click on the icon —
       // the table view or the FEEL-expression editor (also reachable by
       // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasLogic?: boolean })
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasLogic?: boolean })
       if (decided.hasTable) {
         entries['open-table'] = {
           group: 'edit',
@@ -110,6 +111,14 @@ class DmnContextPadProvider {
           title: 'Boxed Context bearbeiten',
           imageUrl: ICON_CONTEXT,
           action: { click: () => this.eventBus.fire('dmn.openContext', { element }) },
+        }
+      } else if (decided.hasConditional) {
+        entries['open-conditional'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Conditional (if/then/else) bearbeiten',
+          imageUrl: ICON_CONDITIONAL,
+          action: { click: () => this.eventBus.fire('dmn.openConditional', { element }) },
         }
       } else if (decided.hasLogic) {
         // A decided decision whose logic is another boxed expression (list,
@@ -146,6 +155,13 @@ class DmnContextPadProvider {
           title: 'Boxed Context anlegen',
           imageUrl: ICON_CONTEXT,
           action: { click: () => this.eventBus.fire('dmn.createContext', { element }) },
+        }
+        entries['create-conditional'] = {
+          group: 'add',
+          className: 'cp-icon',
+          title: 'Conditional (if/then/else) anlegen',
+          imageUrl: ICON_CONDITIONAL,
+          action: { click: () => this.eventBus.fire('dmn.createConditional', { element }) },
         }
       }
     }

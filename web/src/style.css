@@ -548,6 +548,25 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .lit-invalid { border-color: #e5484d; background: #fff4f4; }
 
 /* Boxed-context editor (WP-66): named literal entries + an optional result. */
+/* Boxed-conditional editor: three FEEL branches (if / then / else). */
+.cond-modal { width: min(640px, 94vw); }
+.cond-body { padding: 16px 18px; }
+.cond-grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px 14px; align-items: start; }
+.cond-label { font-size: 13px; font-weight: 600; color: var(--muted); padding-top: 9px; }
+.cond-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: 13.5px/1.45 ui-monospace, SFMono-Regular, monospace;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fcfdff;
+  color: var(--fg);
+}
+.cond-text:focus { outline: none; border-color: var(--accent); background: #fff; }
+.cond-invalid { border-color: #e5484d; background: #fff4f4; }
+
 .ctx-modal { width: min(760px, 95vw); }
 .ctx-body { padding: 14px 18px; }
 .ctx-grid {
