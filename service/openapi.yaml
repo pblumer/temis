@@ -761,6 +761,44 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List the registered decision flows (WP-96)
+      description: >-
+        Returns a summary (flowId, name, declared input names, step count) of
+        every flow currently registered in memory — the catalog a UI lists.
+      responses:
+        "200":
+          description: The registered flows
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/flows/{id}:
+    get:
+      summary: Get a registered flow's steps, inputs and output wiring (WP-96)
+      description: >-
+        Returns the flow's declared inputs, its steps (id, model, decision,
+        input wiring) and output mapping, plus fresh validation diagnostics
+        against the loaded models — the data a UI draws as a graph.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The flow's drawing data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowDetail" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown flow
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/flows/{id}/evaluate:
     post:
       summary: Evaluate a registered decision flow
@@ -1289,6 +1327,54 @@ components:
       properties:
         flowId: { type: string }
         name: { type: string }
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/FlowDiagnostic" }
+    FlowListResponse:
+      type: object
+      properties:
+        flows:
+          type: array
+          items: { $ref: "#/components/schemas/FlowSummary" }
+        count: { type: integer }
+    FlowSummary:
+      type: object
+      properties:
+        flowId: { type: string }
+        name: { type: string }
+        inputs:
+          type: array
+          items: { type: string }
+          description: The declared flow-input names.
+        steps: { type: integer, description: Number of steps. }
+    FlowDetail:
+      type: object
+      description: A flow's steps, inputs and output wiring — the graph a UI draws.
+      properties:
+        flowId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              model: { type: string }
+              decision: { type: string }
+              in:
+                type: object
+                additionalProperties: { type: string }
+        output:
+          type: object
+          additionalProperties: { type: string }
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/FlowDiagnostic" }
