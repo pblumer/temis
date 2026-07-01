@@ -30,3 +30,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0023 | Entscheidungs-Logbuch über clio (revisionssicherer Event-Sink, opt-in) | proposed |
 | 0024 | Eingebauter Modellierungs-Assistent über LLM-Provider (Standardbibliothek, kein SDK; Anthropic/OpenAI; opt-in) | accepted |
 | 0025 | Decision- vs. Prozess-Orchestrierung: Schichtenmodell und die temis↔chrampfer-Naht | proposed |
+| 0026 | Decision-Flow-Deskriptor (L2a): externe JSON-Komposition statt DMN-`import` | proposed |

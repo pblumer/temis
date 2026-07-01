@@ -114,9 +114,9 @@ komponierten Modelle (per content-addressed `modelId`, ADR-0011/WP-70) und den D
 zwischen ihnen; er dehnt den DMN-Standard **nicht** und führt **keinen** Zustand ein.
 Hier — und nur hier auf der Decisioning-Seite — wird stateless Vorrang zwischen
 konkurrierenden Domänen-Ergebnissen aufgelöst (als *aufgerufene* Vorrang-Decision, nicht
-als impliziter Aufrufreihenfolge-Zufall). Die konkrete Umsetzung (nativer DMN-`import`
-vs. leichter Flow-Deskriptor) ist Folgeaufgabe und eigener Scope; diese ADR legt nur das
-Prinzip fest.
+als impliziter Aufrufreihenfolge-Zufall). Die konkrete Umsetzung ist in **ADR-0026**
+entschieden: ein externer **JSON-Flow-Deskriptor** (statt DMN-`import`), ausgewertet von
+einem eigenen `flow`-Package; diese ADR legt nur das Prinzip fest.
 
 Der praktische Leitfaden (Schichten-Ownership, föderierte Governance, Repo-Layout,
 Klassen von Regelkonflikten und ihre Gegenmaßnahmen) steht in
@@ -144,8 +144,8 @@ Klassen von Regelkonflikten und ihre Gegenmaßnahmen) steht in
 **Folgeaufgaben**
 - `docs/90-decision-organization.md` als praktischen Leitfaden pflegen (mit dieser ADR
   angelegt).
-- Scope-Entscheidung für L2a: nativer DMN-`import`/`includedModels` vs. leichter
-  Flow-Deskriptor — eigenes WP/ADR, sobald angegangen.
+- Scope-Entscheidung für L2a getroffen in **ADR-0026**: externer JSON-**Flow-Deskriptor**
+  (statt DMN-`import`), Umsetzung als Etappe „Decision-Flow" (WP-90–94).
 - Bei Start von chrampfer: den Business-Rule-Task-Adapter gegen `package dmn` in-process
   bauen (nicht gegen `temisd`-HTTP), konform zu ADR-0011.
 - ADR-0011 und ADR-0016 bleiben gültig; diese ADR verfeinert sie und ersetzt sie nicht.
