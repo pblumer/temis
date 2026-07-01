@@ -18,6 +18,14 @@ type Flow struct {
 	order   []int                // topological evaluation order (indices into desc.Steps)
 	inputs  map[string]InputDecl // declared flow inputs, by name
 	diags   Diagnostics          // structural diagnostics from Compile
+
+	// feelNames is the variable namespace a FEEL mapping compiles against: every
+	// declared flow input plus every step id.
+	feelNames []string
+	// compiledIn holds each step's compiled input wirings, keyed by step index
+	// then target input name. compiledOut holds the flow's output wirings by name.
+	compiledIn  map[int]map[string]mapping
+	compiledOut map[string]mapping
 }
 
 // Name returns the flow's declared identifier.
@@ -74,7 +82,16 @@ func Compile(data []byte) (*Flow, Diagnostics, error) {
 		}
 	}
 
-	diags = append(diags, f.checkRefs()...)
+	// The FEEL namespace is every declared input plus every step id (sorted for a
+	// deterministic slot layout). Mappings are then compiled against it.
+	f.feelNames = make([]string, 0, len(f.inputs)+len(f.stepIdx))
+	for name := range f.inputs {
+		f.feelNames = append(f.feelNames, name)
+	}
+	f.feelNames = append(f.feelNames, f.sortedIDs()...)
+	sort.Strings(f.feelNames)
+
+	diags = append(diags, f.compileMappings()...)
 
 	order, cyclic := f.topoOrder()
 	if cyclic {
@@ -85,37 +102,39 @@ func Compile(data []byte) (*Flow, Diagnostics, error) {
 	return f, diags, nil
 }
 
-// checkRefs verifies that every mapping and output reference points at a known
-// step output or, when flow inputs are declared, a known flow input. When inputs
-// are undeclared, non-step references are accepted (assumed flow inputs) and left
-// for runtime resolution.
-func (f *Flow) checkRefs() Diagnostics {
+// compileMappings classifies and compiles every step-input and output wiring,
+// storing the results and returning any diagnostics (bad references, FEEL
+// expressions that do not compile).
+func (f *Flow) compileMappings() Diagnostics {
 	var diags Diagnostics
-	check := func(step, target, ref string) {
-		if _, _, isStep := f.parseStepRef(ref); isStep {
-			return
-		}
-		if len(f.inputs) == 0 {
-			return // inputs undeclared: cannot validate, allow
-		}
-		if _, ok := f.inputs[ref]; !ok {
-			diags = append(diags, Diagnostic{Code: CodeUnknownRef, Step: step, Message: fmt.Sprintf("%s references %q, which is neither a step output nor a declared flow input", target, ref)})
-		}
-	}
+	f.compiledIn = make(map[int]map[string]mapping, len(f.stepIdx))
 	for _, id := range f.sortedIDs() {
-		s := f.desc.Steps[f.stepIdx[id]]
-		for target, ref := range s.In {
-			check(id, "input "+strconv.Quote(target), ref)
+		idx := f.stepIdx[id]
+		s := f.desc.Steps[idx]
+		if len(s.In) == 0 {
+			continue
 		}
+		m := make(map[string]mapping, len(s.In))
+		for target, ref := range s.In {
+			cm, ds := f.classify(id, "input "+strconv.Quote(target), ref)
+			diags = append(diags, ds...)
+			m[target] = cm
+		}
+		f.compiledIn[idx] = m
 	}
+	f.compiledOut = make(map[string]mapping, len(f.desc.Output))
 	for name, ref := range f.desc.Output {
-		check("", "output "+strconv.Quote(name), ref)
+		cm, ds := f.classify("", "output "+strconv.Quote(name), ref)
+		diags = append(diags, ds...)
+		f.compiledOut[name] = cm
 	}
 	return diags
 }
 
 // topoOrder returns a deterministic topological order of the valid steps and
-// whether the reference graph is cyclic (Kahn's algorithm; ties broken by id).
+// whether the dependency graph is cyclic (Kahn's algorithm; ties broken by id).
+// A step depends on every step its input mappings reference — whether by a plain
+// "stepID.output" reference or by naming the step inside a FEEL expression.
 func (f *Flow) topoOrder() (order []int, cyclic bool) {
 	ids := f.sortedIDs()
 	indeg := make(map[string]int, len(ids))
@@ -124,16 +143,17 @@ func (f *Flow) topoOrder() (order []int, cyclic bool) {
 		indeg[id] = 0
 	}
 	for _, id := range ids {
-		s := f.desc.Steps[f.stepIdx[id]]
+		idx := f.stepIdx[id]
 		seen := make(map[string]bool)
-		for _, ref := range s.In {
-			dep, _, isStep := f.parseStepRef(ref)
-			if !isStep || dep == id || seen[dep] {
-				continue
+		for _, m := range f.compiledIn[idx] {
+			for _, dep := range m.stepDeps() {
+				if dep == id || seen[dep] {
+					continue
+				}
+				seen[dep] = true
+				adj[dep] = append(adj[dep], id) // dep must run before id
+				indeg[id]++
 			}
-			seen[dep] = true
-			adj[dep] = append(adj[dep], id) // dep must run before id
-			indeg[id]++
 		}
 	}
 

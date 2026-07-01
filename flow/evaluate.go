@@ -123,7 +123,7 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 
 		var res dmn.Result
 		if dec, decErr := defs.Decision(s.Decision); decErr == nil {
-			stepIn, berr := f.buildInput(s, dec.InputSchema(), in, stepOut)
+			stepIn, berr := f.buildInput(ctx, idx, dec.InputSchema(), in, stepOut)
 			if berr != nil {
 				return dmn.Result{}, berr
 			}
@@ -133,7 +133,7 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 			}
 			res, err = dec.Evaluate(ctx, stepIn, evalOpts...)
 		} else if svc, svcErr := defs.Service(s.Decision); svcErr == nil {
-			stepIn, berr := f.buildInput(s, nil, in, stepOut)
+			stepIn, berr := f.buildInput(ctx, idx, nil, in, stepOut)
 			if berr != nil {
 				return dmn.Result{}, berr
 			}
@@ -154,7 +154,7 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 		}
 	}
 
-	outputs, err := f.assembleOutput(in, stepOut)
+	outputs, err := f.assembleOutput(ctx, in, stepOut)
 	if err != nil {
 		return dmn.Result{}, err
 	}
@@ -165,19 +165,23 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 	return result, nil
 }
 
-// buildInput resolves a step's wiring into a dmn.Input, coercing each value to
-// the target input's declared FEEL type (so a numeric output — rendered by dmn
-// as a decimal string — feeds a numeric input as a number, not a string).
-func (f *Flow) buildInput(s Step, schema []dmn.InputField, in dmn.Input, stepOut map[string]map[string]any) (dmn.Input, error) {
+// buildInput resolves a step's compiled wirings into a dmn.Input, coercing each
+// value to the target input's declared FEEL type (so a numeric output — rendered
+// by dmn as a decimal string — feeds a numeric input as a number, not a string).
+func (f *Flow) buildInput(ctx context.Context, idx int, schema []dmn.InputField, in dmn.Input, stepOut map[string]map[string]any) (dmn.Input, error) {
 	typeOf := make(map[string]string, len(schema))
 	for _, fld := range schema {
 		typeOf[fld.Name] = fld.Type
 	}
-	out := make(dmn.Input, len(s.In))
-	for target, ref := range s.In {
-		v, ok := f.resolveRef(ref, in, stepOut)
+	wirings := f.compiledIn[idx]
+	out := make(dmn.Input, len(wirings))
+	for target, m := range wirings {
+		v, ok, err := f.resolveMapping(ctx, m, in, stepOut)
+		if err != nil {
+			return nil, &Error{Diagnostics: Diagnostics{{Code: CodeMappingInvalid, Step: f.desc.Steps[idx].ID, Message: fmt.Sprintf("input %q: evaluating %q: %v", target, m.raw, err)}}}
+		}
 		if !ok {
-			return nil, &Error{Diagnostics: Diagnostics{{Code: CodeUnknownRef, Step: s.ID, Message: fmt.Sprintf("input %q references %q, which did not resolve", target, ref)}}}
+			return nil, &Error{Diagnostics: Diagnostics{{Code: CodeUnknownRef, Step: f.desc.Steps[idx].ID, Message: fmt.Sprintf("input %q references %q, which did not resolve", target, m.raw)}}}
 		}
 		out[target] = coerce(v, typeOf[target])
 	}
@@ -185,14 +189,17 @@ func (f *Flow) buildInput(s Step, schema []dmn.InputField, in dmn.Input, stepOut
 }
 
 // assembleOutput builds the flow's output map from the descriptor's output
-// references, or falls back to the last step's outputs when none are declared.
-func (f *Flow) assembleOutput(in dmn.Input, stepOut map[string]map[string]any) (map[string]any, error) {
-	if len(f.desc.Output) > 0 {
-		out := make(map[string]any, len(f.desc.Output))
-		for name, ref := range f.desc.Output {
-			v, ok := f.resolveRef(ref, in, stepOut)
+// wirings, or falls back to the last step's outputs when none are declared.
+func (f *Flow) assembleOutput(ctx context.Context, in dmn.Input, stepOut map[string]map[string]any) (map[string]any, error) {
+	if len(f.compiledOut) > 0 {
+		out := make(map[string]any, len(f.compiledOut))
+		for name, m := range f.compiledOut {
+			v, ok, err := f.resolveMapping(ctx, m, in, stepOut)
+			if err != nil {
+				return nil, &Error{Diagnostics: Diagnostics{{Code: CodeMappingInvalid, Message: fmt.Sprintf("output %q: evaluating %q: %v", name, m.raw, err)}}}
+			}
 			if !ok {
-				return nil, &Error{Diagnostics: Diagnostics{{Code: CodeUnknownRef, Message: fmt.Sprintf("output %q references %q, which did not resolve", name, ref)}}}
+				return nil, &Error{Diagnostics: Diagnostics{{Code: CodeUnknownRef, Message: fmt.Sprintf("output %q references %q, which did not resolve", name, m.raw)}}}
 			}
 			out[name] = v
 		}
@@ -209,16 +216,36 @@ func (f *Flow) assembleOutput(in dmn.Input, stepOut map[string]map[string]any) (
 	return out, nil
 }
 
-// resolveRef looks a reference up against the flow inputs and prior step outputs.
-// A "stepID.key" reference resolves against that step's outputs (ok=false when
-// the key is absent — a real wiring fault). Any other reference is a flow input;
-// an absent flow input resolves to nil (FEEL null), which is legitimate.
-func (f *Flow) resolveRef(ref string, in dmn.Input, stepOut map[string]map[string]any) (any, bool) {
-	if stepID, key, isStep := f.parseStepRef(ref); isStep {
-		v, ok := stepOut[stepID][key]
-		return v, ok
+// resolveMapping produces a mapping's value. A step reference reads the earlier
+// step's output (ok=false when the key is absent — a real wiring fault); a flow
+// input reads the input (absent → nil, i.e. FEEL null, which is legitimate); a
+// FEEL expression is evaluated against the flow inputs plus each prior step's
+// outputs (exposed as a context named by the step id).
+func (f *Flow) resolveMapping(ctx context.Context, m mapping, in dmn.Input, stepOut map[string]map[string]any) (any, bool, error) {
+	switch m.kind {
+	case mStep:
+		v, ok := stepOut[m.stepID][m.key]
+		return v, ok, nil
+	case mInput:
+		return in[m.name], true, nil
+	default: // mFeel
+		v, err := m.expr.Evaluate(ctx, f.feelContext(in, stepOut))
+		return v, true, err
 	}
-	return in[ref], true
+}
+
+// feelContext builds the variable context a FEEL mapping evaluates against: every
+// flow input, plus each completed step's outputs exposed as a context under the
+// step's id (so "risk.Risk Level" is FEEL path access into step "risk").
+func (f *Flow) feelContext(in dmn.Input, stepOut map[string]map[string]any) dmn.Input {
+	ctx := make(dmn.Input, len(in)+len(stepOut))
+	for k, v := range in {
+		ctx[k] = v
+	}
+	for stepID, outs := range stepOut {
+		ctx[stepID] = map[string]any(outs)
+	}
+	return ctx
 }
 
 // coerce converts a value to the target FEEL type where a round-trip would

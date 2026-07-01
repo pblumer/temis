@@ -42,6 +42,7 @@ const (
 	CodeMissingField    = "FLOW_MISSING_FIELD"    // a step lacks id/model/decision
 	CodeDuplicateStep   = "FLOW_DUPLICATE_STEP"   // two steps share an id
 	CodeUnknownRef      = "FLOW_UNKNOWN_REF"      // a reference resolves to nothing
+	CodeMappingInvalid  = "FLOW_MAPPING_INVALID"  // a FEEL mapping expression does not compile
 	CodeCycle           = "FLOW_CYCLE"            // step references form a cycle
 	CodeModelUnresolved = "FLOW_MODEL_UNRESOLVED" // Resolver could not supply a model
 	CodeTargetNotFound  = "FLOW_TARGET_NOT_FOUND" // model has no such decision/service

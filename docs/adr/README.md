@@ -33,3 +33,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0026 | Decision-Flow-Deskriptor (L2a): externe JSON-Komposition statt DMN-`import` | proposed |
 | 0027 | Dateisystem-Modell-Store (optionale Persistenz des Modell-Cache, content-adressiert, stdlib, opt-in) | accepted |
 | 0028 | Scoped API-Key-Authentifizierung (`kid.secret`, Keystore, Scopes) — angeglichen an clio | proposed |
+| 0029 | Öffentliches FEEL-Ausdruck-Primitive (`dmn.CompileExpression`) für volle Flow-Mappings | proposed |

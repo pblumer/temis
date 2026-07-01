@@ -3,6 +3,7 @@ package flow_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -185,8 +186,10 @@ func TestCompileStructural(t *testing.T) {
 		{"cycle", `{"flow":"x","steps":[
             {"id":"a","model":"m","decision":"d","in":{"x":"b.d"}},
             {"id":"b","model":"m","decision":"d","in":{"y":"a.d"}}]}`, false, flow.CodeCycle},
-		{"unknown ref", `{"flow":"x","inputs":[{"name":"Known"}],"steps":[
-            {"id":"a","model":"m","decision":"d","in":{"x":"Missing"}}]}`, false, flow.CodeUnknownRef},
+		// A name that is neither a step output nor a declared input is an
+		// undeclared FEEL variable → the mapping does not compile.
+		{"undeclared name", `{"flow":"x","inputs":[{"name":"Known"}],"steps":[
+            {"id":"a","model":"m","decision":"d","in":{"x":"Missing"}}]}`, false, flow.CodeMappingInvalid},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -367,6 +370,100 @@ func TestEvaluateWithTrace(t *testing.T) {
 	}
 	if plain.Trace != nil {
 		t.Fatalf("expected no trace without WithTrace")
+	}
+}
+
+// TestFeelMappingArithmetic: a mapping is a full FEEL expression — arithmetic on
+// a flow input changes the outcome (800-200=600 → medium, not low).
+func TestFeelMappingArithmetic(t *testing.T) {
+	src := `{
+      "flow":"feel",
+      "inputs":[{"name":"Credit Score","type":"number"},{"name":"Applicant Age","type":"number"}],
+      "steps":[
+        {"id":"risk","model":"sha256:risk-model","decision":"Risk Level","in":{"Credit Score":"Credit Score - 200"}},
+        {"id":"decide","model":"sha256:loan-model","decision":"Loan Decision","in":{"Risk":"risk.Risk Level","Applicant Age":"Applicant Age"}}
+      ],
+      "output":{"Decision":"decide.Loan Decision"}
+    }`
+	f := compile(t, src)
+	res, err := f.Evaluate(context.Background(), dmn.Input{"Credit Score": 800, "Applicant Age": 40}, resolver(t))
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if got := res.Outputs["Decision"]; got != "review" {
+		t.Fatalf("Decision = %v, want review (FEEL arithmetic 800-200=600→medium)", got)
+	}
+}
+
+// TestFeelMappingConditional: an `if` expression over a flow input.
+func TestFeelMappingConditional(t *testing.T) {
+	src := `{
+      "flow":"cond",
+      "inputs":[{"name":"Credit Score","type":"number"},{"name":"Under Age","type":"boolean"}],
+      "steps":[
+        {"id":"risk","model":"sha256:risk-model","decision":"Risk Level","in":{"Credit Score":"Credit Score"}},
+        {"id":"decide","model":"sha256:loan-model","decision":"Loan Decision",
+         "in":{"Risk":"risk.Risk Level","Applicant Age":"if Under Age then 16 else 40"}}
+      ],
+      "output":{"Decision":"decide.Loan Decision"}
+    }`
+	f := compile(t, src)
+	r := resolver(t)
+	for _, tc := range []struct {
+		under bool
+		want  string
+	}{{true, "decline"}, {false, "approve"}} { // 750→low; minor→decline, adult→approve
+		res, err := f.Evaluate(context.Background(), dmn.Input{"Credit Score": 750, "Under Age": tc.under}, r)
+		if err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+		if got := res.Outputs["Decision"]; got != tc.want {
+			t.Fatalf("Under Age=%v: Decision = %v, want %q", tc.under, got, tc.want)
+		}
+	}
+}
+
+// TestFeelMappingDependencyOrder: a FEEL mapping that names another step (inside
+// an expression) still creates a dependency, so the topological order is correct
+// even when the dependent step is listed first.
+func TestFeelMappingDependencyOrder(t *testing.T) {
+	src := `{
+      "flow":"deporder",
+      "inputs":[{"name":"Credit Score","type":"number"},{"name":"Applicant Age","type":"number"}],
+      "steps":[
+        {"id":"decide","model":"sha256:loan-model","decision":"Loan Decision",
+         "in":{"Risk":"risk.Risk Level","Applicant Age":"if get value(risk, \"Risk Level\") = \"high\" then 16 else Applicant Age"}},
+        {"id":"risk","model":"sha256:risk-model","decision":"Risk Level","in":{"Credit Score":"Credit Score"}}
+      ],
+      "output":{"Decision":"decide.Loan Decision"}
+    }`
+	f := compile(t, src)
+	// If ordering were wrong (decide before risk), risk.Risk Level would be unresolved.
+	res, err := f.Evaluate(context.Background(), dmn.Input{"Credit Score": 750, "Applicant Age": 40}, resolver(t))
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if got := res.Outputs["Decision"]; got != "approve" {
+		t.Fatalf("Decision = %v, want approve", got)
+	}
+}
+
+func TestFeelMappingInvalid(t *testing.T) {
+	for _, tc := range []struct{ name, expr string }{
+		{"syntax error", "Credit Score +"},
+		{"undeclared name", "Bogus + 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := fmt.Sprintf(`{"flow":"bad","inputs":[{"name":"Credit Score","type":"number"}],"steps":[
+                {"id":"risk","model":"sha256:risk-model","decision":"Risk Level","in":{"Credit Score":%q}}]}`, tc.expr)
+			_, diags, err := flow.Compile([]byte(src))
+			if err != nil {
+				t.Fatalf("compile: %v", err)
+			}
+			if !hasCode(diags, flow.CodeMappingInvalid) {
+				t.Fatalf("want FLOW_MAPPING_INVALID, got %v", diags)
+			}
+		})
 	}
 }
 

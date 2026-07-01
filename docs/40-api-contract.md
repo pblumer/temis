@@ -68,6 +68,25 @@ type EvalOption func(*evalConfig)
 func WithTrace() EvalOption   // opt-in: füllt Result.Trace
 ```
 
+#### Standalone-FEEL-Ausdruck (`CompileExpression`) — ADR-0029
+
+Der FEEL-Evaluator ist auch **ohne umgebende Decision** nutzbar: ein Ausdruck über einem
+Namenskontext. Genutzt u. a. von `package flow` für volle FEEL-Step-Mappings (ADR-0026).
+
+```go
+type CompiledExpression struct { /* opaque */ }
+
+// Kompiliert einen FEEL-Ausdruck, der die genannten Namen referenzieren darf.
+// Ein benutzter, nicht deklarierter Name ist ein Compile-Fehler.
+func CompileExpression(expr string, names ...string) (*CompiledExpression, error)
+func (c *CompiledExpression) References() []string                 // referenzierte Namen (sortiert)
+func (c *CompiledExpression) Evaluate(ctx context.Context, in Input) (any, error)
+```
+
+Default-Config (volle Built-ins, Decimal; `now()`/`today()` lesen die Prozess-Uhr →
+nicht-deterministisch, ggf. Fixwert als Input geben). Ein deklarierter, aber fehlender Name
+wertet zu `null`; ein spec-konformes FEEL-`null` ist ein `nil`-Wert, kein `error`.
+
 #### Entscheidungsspur (`Trace`) — opt-in, ADR-0013/WP-51
 
 `WithTrace()` lässt `Evaluate` eine **strukturierte, aus der echten Auswertung
