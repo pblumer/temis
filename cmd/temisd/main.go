@@ -37,6 +37,8 @@ func main() {
 		"DEPRECATED legacy admin token on /v1 endpoints; use -keys-file for scoped keys (default $TEMIS_API_TOKEN; empty = none)")
 	keysFile := flag.String("keys-file", os.Getenv("TEMIS_KEYS_FILE"),
 		"JSON file of scoped kid.secret API keys guarding /v1, /mcp and gRPC (default $TEMIS_KEYS_FILE; empty = none)")
+	keysDir := flag.String("keys-dir", os.Getenv("TEMIS_KEYS_DIR"),
+		"directory for the persistent managed keystore + lifecycle API (POST /v1/keys …); keys survive a restart; empty = key management off (default $TEMIS_KEYS_DIR)")
 	listModels := flag.Bool("list-models", envBool("TEMIS_LIST_MODELS", true),
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private (env TEMIS_LIST_MODELS)")
 	cacheSize := flag.Int("cache-size", envInt("TEMIS_CACHE_SIZE", 0),
@@ -96,6 +98,7 @@ func main() {
 		service.WithToken(*token),
 		service.WithKeysFile(*keysFile),
 		service.WithBootstrapAdminKey(bootstrapAdminKey),
+		service.WithKeyStore(*keysDir),
 		service.WithModelListing(*listModels),
 		service.WithVersion(ver),
 	}

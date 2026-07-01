@@ -10,6 +10,7 @@ package service
 // exactly as before. Pure stdlib: crypto/sha256, crypto/subtle, encoding/json.
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -17,7 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -55,6 +59,11 @@ type Key struct {
 	Owner     string    // free-form owner label, for audit/identity
 	ExpiresAt time.Time // zero = never expires
 	Revoked   bool      // a revoked key never authenticates
+	// managed marks a key created through the lifecycle API (WP-103); only managed
+	// keys are persisted and may be rotated/revoked. Static-file keys, the
+	// bootstrap key and the legacy token are unmanaged (operator-owned, immutable
+	// at runtime).
+	managed bool
 }
 
 // HasScope reports whether the key grants scope. A key with admin grants every
@@ -88,13 +97,17 @@ type Authenticator interface {
 var _ Authenticator = (*keystore)(nil)
 
 // keystore is the in-memory Authenticator: keys by kid plus an optional legacy
-// raw token that authenticates as a synthetic admin key. It is read-only after
-// construction (Phase 1 is static config), so it needs no locking.
+// raw token that authenticates as a synthetic admin key. Static config is loaded
+// at construction; the lifecycle API (WP-103) can then create/rotate/revoke
+// managed keys at runtime, so a mutex guards the map and mutations flush to the
+// optional persistent store.
 type keystore struct {
+	mu          sync.RWMutex
 	keys        map[string]*Key
 	legacyToken string           // raw -token / TEMIS_API_TOKEN; empty = none
 	legacyKey   *Key             // the synthetic admin key the legacy token maps to
 	now         func() time.Time // injectable clock for expiry (tests)
+	persist     *keyPersist      // nil = keys are in-memory only (no -keys-dir)
 }
 
 func newKeystore() *keystore {
@@ -104,14 +117,22 @@ func newKeystore() *keystore {
 // enabled reports whether any authentication is configured. When false the API
 // is open (the historical default) and the gates are transparent.
 func (ks *keystore) enabled() bool {
-	return ks != nil && (len(ks.keys) > 0 || ks.legacyToken != "")
+	if ks == nil {
+		return false
+	}
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+	return len(ks.keys) > 0 || ks.legacyToken != ""
 }
 
-// add registers a key, rejecting a duplicate or empty kid.
+// add registers a key, rejecting a duplicate or empty kid. It is used at
+// construction (single-threaded) and under the write lock by the lifecycle API.
 func (ks *keystore) add(k *Key) error {
 	if k.Kid == "" {
 		return errors.New("key has empty kid")
 	}
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
 	if _, dup := ks.keys[k.Kid]; dup {
 		return fmt.Errorf("duplicate kid %q", k.Kid)
 	}
@@ -137,6 +158,8 @@ func (ks *keystore) authenticate(bearer string) (*Key, bool) {
 	if bearer == "" {
 		return nil, false
 	}
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
 	// Legacy path: a whole-string constant-time match grants the synthetic admin
 	// key. Checked first so a byte-identical legacy token keeps working.
 	if ks.legacyToken != "" && subtle.ConstantTimeCompare([]byte(bearer), []byte(ks.legacyToken)) == 1 {
@@ -306,4 +329,301 @@ func buildKeystore(keysFile, bootstrapSecret, legacyToken string) (ks *keystore,
 	}
 	ks.setLegacyToken(legacyToken)
 	return ks, bootKid, nil
+}
+
+// attachKeyStore opens the persistent managed-key store at dir, loads its keys
+// into ks and wires ks to flush future mutations there (WP-103). A managed key
+// whose kid collides with an existing static/bootstrap key is skipped (the
+// operator-owned key wins) and reported via the returned skipped count so the
+// caller can log it. It is called at construction, before serving.
+func (ks *keystore) attachKeyStore(dir string) (loaded, skipped int, err error) {
+	persist, err := newKeyPersist(dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	keys, err := persist.load()
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, k := range keys {
+		if err := ks.add(k); err != nil {
+			skipped++
+			continue
+		}
+		loaded++
+	}
+	ks.persist = persist
+	return loaded, skipped, nil
+}
+
+// --- lifecycle: managed keys (WP-103) ---
+
+// Sentinel errors for the lifecycle API, mapped to HTTP status by the handlers.
+var (
+	errKeyNotFound   = errors.New("no key with that kid")
+	errKeyNotManaged = errors.New("key is not server-managed (created outside the lifecycle API)")
+)
+
+// keyView is a secret-free snapshot of a key for the listing endpoint. It never
+// carries the hash or any secret material.
+type keyView struct {
+	Kid       string  `json:"kid"`
+	Scopes    []Scope `json:"scopes"`
+	Owner     string  `json:"owner,omitempty"`
+	ExpiresAt string  `json:"expiresAt,omitempty"` // RFC3339, empty = never
+	Revoked   bool    `json:"revoked"`
+	Managed   bool    `json:"managed"`
+}
+
+func viewOf(k *Key) keyView {
+	v := keyView{Kid: k.Kid, Scopes: k.Scopes, Owner: k.Owner, Revoked: k.Revoked, Managed: k.managed}
+	if !k.ExpiresAt.IsZero() {
+		v.ExpiresAt = k.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return v
+}
+
+// createKey mints a new managed key with a random kid and secret, stores only the
+// secret's hash and flushes the managed set to disk. It returns the kid and the
+// one-time plaintext secret — the caller shows it once and never again. The
+// bearer the client uses is "<kid>.<secret>".
+func (ks *keystore) createKey(scopes []Scope, owner string, expires time.Time) (kid, secret string, err error) {
+	if len(scopes) == 0 {
+		return "", "", errors.New("no scopes")
+	}
+	secret, err = randToken(24)
+	if err != nil {
+		return "", "", err
+	}
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	kid, err = ks.freshKidLocked()
+	if err != nil {
+		return "", "", err
+	}
+	ks.keys[kid] = &Key{
+		Kid:       kid,
+		hash:      sha256.Sum256([]byte(secret)),
+		Scopes:    scopes,
+		Owner:     owner,
+		ExpiresAt: expires,
+		managed:   true,
+	}
+	if err := ks.saveManagedLocked(); err != nil {
+		delete(ks.keys, kid) // roll back so memory matches disk
+		return "", "", err
+	}
+	return kid, secret, nil
+}
+
+// rotateKey replaces a managed key's secret with a fresh one (invalidating the
+// old secret) and persists. It returns the new one-time secret. Rotating an
+// unknown or unmanaged key is an error.
+func (ks *keystore) rotateKey(kid string) (secret string, err error) {
+	secret, err = randToken(24)
+	if err != nil {
+		return "", err
+	}
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	k, err := ks.managedLocked(kid)
+	if err != nil {
+		return "", err
+	}
+	old := k.hash
+	k.hash = sha256.Sum256([]byte(secret))
+	if err := ks.saveManagedLocked(); err != nil {
+		k.hash = old // roll back
+		return "", err
+	}
+	return secret, nil
+}
+
+// revokeKey marks a managed key revoked (it never authenticates again) and
+// persists. Revocation marks, never deletes, so the kid stays a stable audit
+// handle. Revoking an already-revoked key is idempotent.
+func (ks *keystore) revokeKey(kid string) error {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	k, err := ks.managedLocked(kid)
+	if err != nil {
+		return err
+	}
+	if k.Revoked {
+		return nil
+	}
+	k.Revoked = true
+	if err := ks.saveManagedLocked(); err != nil {
+		k.Revoked = false // roll back
+		return err
+	}
+	return nil
+}
+
+// listKeys returns a secret-free snapshot of every key (managed and unmanaged),
+// sorted by kid for a stable order.
+func (ks *keystore) listKeys() []keyView {
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+	out := make([]keyView, 0, len(ks.keys))
+	for _, k := range ks.keys {
+		out = append(out, viewOf(k))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Kid < out[j].Kid })
+	return out
+}
+
+// managedLocked resolves kid to a managed key, distinguishing "unknown" from
+// "exists but not server-managed" so the API can answer 404 vs 409. Caller holds
+// the lock.
+func (ks *keystore) managedLocked(kid string) (*Key, error) {
+	k, ok := ks.keys[kid]
+	if !ok {
+		return nil, errKeyNotFound
+	}
+	if !k.managed {
+		return nil, errKeyNotManaged
+	}
+	return k, nil
+}
+
+// freshKidLocked returns a random, currently-unused kid. Caller holds the lock.
+func (ks *keystore) freshKidLocked() (string, error) {
+	for i := 0; i < 8; i++ {
+		suffix, err := randToken(6)
+		if err != nil {
+			return "", err
+		}
+		kid := "k_" + suffix
+		if _, exists := ks.keys[kid]; !exists {
+			return kid, nil
+		}
+	}
+	return "", errors.New("could not allocate a unique kid")
+}
+
+// saveManagedLocked flushes every managed key to the persistent store. It is a
+// no-op when no store is configured (keys then live only in memory). Caller holds
+// the lock.
+func (ks *keystore) saveManagedLocked() error {
+	if ks.persist == nil {
+		return nil
+	}
+	managed := make([]*Key, 0, len(ks.keys))
+	for _, k := range ks.keys {
+		if k.managed {
+			managed = append(managed, k)
+		}
+	}
+	sort.Slice(managed, func(i, j int) bool { return managed[i].Kid < managed[j].Kid })
+	return ks.persist.save(managed)
+}
+
+// randToken returns a URL-safe random string carrying n bytes of entropy, hex
+// encoded (2n chars). Used for key secrets and kid suffixes.
+func randToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// --- persistent managed-key store (WP-103, ADR-0027) ---
+
+// keyPersist is the optional filesystem home of the managed keys, a single
+// atomically-written JSON file. It reuses the keys-file schema (secretHash only,
+// never plaintext) so a persisted keystore is human-readable and identical in
+// shape to a static -keys-file. Pure stdlib; no new dependency (no bbolt).
+type keyPersist struct {
+	path string
+}
+
+// keysFileName is the managed keystore's file within the -keys-dir.
+const keysFileName = "keys.json"
+
+// newKeyPersist opens (creating if needed) the key store rooted at dir. The
+// directory is created 0700 because it holds credential material (secret hashes).
+func newKeyPersist(dir string) (*keyPersist, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("key store: %w", err)
+	}
+	return &keyPersist{path: filepath.Join(dir, keysFileName)}, nil
+}
+
+// load reads the persisted managed keys. A missing file is an empty store (first
+// run), not an error. Every loaded key is marked managed.
+func (p *keyPersist) load() ([]*Key, error) {
+	data, err := os.ReadFile(p.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read key store: %w", err)
+	}
+	keys, err := loadKeysFile(data)
+	if err != nil {
+		return nil, fmt.Errorf("key store %s: %w", p.path, err)
+	}
+	for _, k := range keys {
+		k.managed = true
+	}
+	return keys, nil
+}
+
+// save writes keys to disk atomically (temp file + rename in the same directory),
+// so a crash mid-write never leaves a half-written keystore. Only secret hashes
+// are written, never plaintext. The file is 0600.
+func (p *keyPersist) save(keys []*Key) error {
+	doc := keyFile{Keys: make([]keyFileEntry, 0, len(keys))}
+	for _, k := range keys {
+		e := keyFileEntry{
+			Kid:        k.Kid,
+			SecretHash: hex.EncodeToString(k.hash[:]),
+			Scopes:     scopeStrings(k.Scopes),
+			Owner:      k.Owner,
+			Revoked:    k.Revoked,
+		}
+		if !k.ExpiresAt.IsZero() {
+			e.ExpiresAt = k.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		doc.Keys = append(doc.Keys, e)
+	}
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(p.path)
+	tmp, err := os.CreateTemp(dir, ".tmp-keys-*.json")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, p.path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+func scopeStrings(scopes []Scope) []string {
+	out := make([]string, len(scopes))
+	for i, s := range scopes {
+		out[i] = string(s)
+	}
+	return out
 }
