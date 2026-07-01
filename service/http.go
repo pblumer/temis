@@ -60,6 +60,12 @@ type Server struct {
 	cacheSize int
 	cache     *modelCache
 
+	// flows holds decision-flow descriptors registered over POST /v1/flows
+	// (WP-91, ADR-0026), keyed by their content hash. A flow composes several
+	// cached models into one stateless evaluation; it resolves its models through
+	// this server's model cache.
+	flows *flowStore
+
 	// storeDir, when non-empty, is a filesystem directory that persists uploaded
 	// and edited models so they survive a restart (ADR-0027); set via
 	// WithModelStore. NewServer opens store from it after options run. Empty
@@ -156,6 +162,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 		opt(s)
 	}
 	s.cache = newModelCache(s.cacheSize)
+	s.flows = newFlowStore()
 	// Examples load first, while store is still nil, so the bundled models are
 	// never written to disk — they re-embed on every start (ADR-0027).
 	if s.loadExamplesOnInit {
@@ -249,6 +256,11 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
 		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
 		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
+		// evaluate it as one stateless composition over the cached models.
+		{"POST", "/v1/flows", s.handleCreateFlow},
+		{"POST", "/v1/flows/{id}/evaluate", s.handleEvaluateFlow},
+		{"POST", "/v1/flow/evaluate", s.handleEvaluateFlowStateless},
 		// Modeling assistant (ADR-0024): an LLM drives temis's tools to help build
 		// decisions. Dormant (503) until enabled with WithAssist.
 		{"POST", "/v1/chat", s.handleChat},
@@ -1116,6 +1128,9 @@ type problem struct {
 	Detail   string             `json:"detail,omitempty"`
 	Code     string             `json:"code"`
 	Problems []dmn.InputProblem `json:"problems,omitempty"`
+	// FlowProblems carries structured decision-flow diagnostics (code FLOW_INVALID),
+	// the flow analogue of Problems (WP-91).
+	FlowProblems []flowDiagnosticDTO `json:"flowProblems,omitempty"`
 }
 
 func writeProblem(w http.ResponseWriter, status int, code, detail string) {

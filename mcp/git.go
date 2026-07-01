@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/flow"
 	"github.com/pblumer/temis/vcs"
 	"github.com/pblumer/temis/vcs/github"
 )
@@ -77,7 +78,92 @@ var gitTools = []toolSpec{
 	},
 }
 
+// gitFlowTools are the git-backed decision-flow tools (WP-94), registered
+// alongside the model git tools.
+var gitFlowTools = []toolSpec{
+	{
+		Name: "git_list_flows",
+		Description: "List the decision-flow descriptors (*.flow.json files) in a git " +
+			"repository at a ref. Use this to discover which flows live in a repo.",
+		InputSchema: obj(map[string]any{
+			"owner":    str("The repository owner."),
+			"repo":     str("The repository name."),
+			"ref":      str("Branch, tag or commit SHA to read at. Empty = the default branch."),
+			"dir":      str("Directory to list (slash-separated). Empty = repository root."),
+			"gitToken": str("The caller's git-provider token. Optional for public repos."),
+		}, "owner", "repo"),
+	},
+	{
+		Name: "git_load_flow",
+		Description: "Read a decision-flow descriptor from a git repository at a ref and " +
+			"register it, returning a flowId you can pass to evaluate_flow. The models the " +
+			"flow references must be loaded separately (e.g. with git_load_model).",
+		InputSchema: obj(map[string]any{
+			"owner":    str("The repository owner."),
+			"repo":     str("The repository name."),
+			"ref":      str("Branch, tag or commit SHA to read at. Empty = the default branch."),
+			"path":     str("Path to the .flow.json descriptor in the repository."),
+			"gitToken": str("The caller's git-provider token. Optional for public repos."),
+		}, "owner", "repo", "path"),
+	},
+}
+
 func init() { tools = append(tools, gitTools...) }
+func init() { tools = append(tools, gitFlowTools...) }
+
+func (s *Server) toolGitListFlows(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		Owner, Repo, Ref, Dir, GitToken string
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.Owner == "" || a.Repo == "" {
+		return toolError("missing required argument: owner and repo"), nil
+	}
+	models := vcs.NewModels(s.gitClient(a.GitToken), nil)
+	files, err := models.ListFlows(ctx, vcs.RepoRef{Owner: a.Owner, Name: a.Repo}, a.Ref, a.Dir)
+	if err != nil {
+		return toolError("git: " + err.Error()), nil
+	}
+	return toolText(map[string]any{"flows": files, "count": len(files)})
+}
+
+func (s *Server) toolGitLoadFlow(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		Owner, Repo, Ref, Path, GitToken string
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.Owner == "" || a.Repo == "" {
+		return toolError("missing required argument: owner and repo"), nil
+	}
+	if a.Path == "" {
+		return toolError("missing required argument: path"), nil
+	}
+	desc, err := s.gitClient(a.GitToken).ReadFile(ctx, vcs.RepoRef{Owner: a.Owner, Name: a.Repo}, a.Ref, a.Path)
+	if err != nil {
+		return toolError("git: " + err.Error()), nil
+	}
+	f, _, err := flow.Compile(desc)
+	if err != nil {
+		return toolError("could not compile flow: " + err.Error()), nil
+	}
+	var d flow.Descriptor
+	_ = json.Unmarshal(desc, &d)
+	id := flowID(desc)
+	s.flows.put(&storedFlow{id: id, flow: f, desc: d})
+	diags := f.Validate(ctx, storeResolver{s.store})
+	return toolText(map[string]any{
+		"flowId":      id,
+		"flow":        f.Name(),
+		"repo":        a.Owner + "/" + a.Repo,
+		"ref":         a.Ref,
+		"path":        a.Path,
+		"diagnostics": toFlowDiagnosticDTOs(diags),
+	})
+}
 
 func (s *Server) toolGitListModels(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
 	var a struct {

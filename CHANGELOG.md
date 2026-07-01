@@ -103,11 +103,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   README entsprechend ergänzt. Ein neuer Test (`TestOpenAPICoversDataRoutes`) gleicht die
   registrierten `/v1`-Routen gegen die OpenAPI-Pfade ab, sodass die Spec nicht mehr stillschweigend
   von der Implementierung abdriften kann.
-- **Entscheidungs-Logbuch via clio (ADR-0023, WP-54–56):** ADR-0023 und
-  `docs/80-clio-decision-log.md` spezifizieren ein revisionssicheres Entscheidungs-Logbuch über das
-  Schwesterprojekt [clio](https://github.com/pblumer/clio) — ein versionierter
-  `com.temis.decision.evaluated.v1`-CloudEvent-Vertrag (Eingabe/Ausgabe/Spur/content-addressed
-  `modelId`), der opt-in-Sink in `temisd` (umgesetzt, siehe oben) und ein noch offenes
-  Re-Audit-/Replay-Werkzeug (WP-55).
+- **Entscheidungs-Logbuch via clio (ADR-0023, WP-54–56 komplett):** ADR-0023 und
+  `docs/80-clio-decision-log.md` beschreiben ein revisionssicheres Entscheidungs-Logbuch über das
+  Schwesterprojekt [clio](https://github.com/pblumer/clio) — versionierter
+  `com.temis.decision.evaluated.v1`-CloudEvent-Vertrag, opt-in-Sink in `temisd` (WP-54, siehe oben)
+  und Re-Audit-Tool `temis-reaudit` (WP-55, siehe oben). WP-56 ergänzt das **Agent-Muster
+  „delegieren → protokollieren"** (`docs/80` §5 mit lauffähigem Beispiel, `docs/60-ai-agent-guide.md`
+  §8) — ein Agent gibt die Entscheidung an temis (`evaluate`) und schreibt sie selbst nach clio
+  (`write-events`), ganz ohne neuen temis-Code.
 
 [Unreleased]: https://github.com/pblumer/temis/commits/main

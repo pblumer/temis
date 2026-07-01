@@ -23,12 +23,19 @@ import (
 	"strings"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/flow"
 )
 
 // DecisionEventType is the CloudEvents type of the decision events this tool
 // re-audits. It mirrors service.DecisionEventType — the wire contract from
 // ADR-0023 — kept here so the package does not import the HTTP server.
 const DecisionEventType = "com.temis.decision.evaluated.v1"
+
+// FlowEventType is the CloudEvents type of the decision-flow events this tool
+// re-audits (WP-93, ADR-0026). It mirrors service.FlowEventType. A flow event
+// carries the flow descriptor, so replay recompiles it and resolves each step's
+// model from the same ModelSource used for decision events.
+const FlowEventType = "com.temis.flow.evaluated.v1"
 
 // Status is the verdict for one re-audited event.
 type Status string
@@ -100,6 +107,21 @@ type decisionData struct {
 	Outputs  map[string]any `json:"outputs"`
 }
 
+// flowCloudEvent is the slice of a clio flow event this tool reads.
+type flowCloudEvent struct {
+	ID      string
+	Subject string
+	Data    flowData
+}
+
+type flowData struct {
+	FlowID     string          `json:"flowId"`
+	Flow       string          `json:"flow"`
+	Descriptor json.RawMessage `json:"descriptor"`
+	Input      map[string]any  `json:"input"`
+	Outputs    map[string]any  `json:"outputs"`
+}
+
 // ReAudit reads decision events as NDJSON (or any whitespace-separated JSON) from
 // r, re-evaluates each against the model resolved from models, and returns a
 // report. Events whose type is not DecisionEventType are ignored, so the caller
@@ -115,17 +137,38 @@ func ReAudit(ctx context.Context, eng *dmn.Engine, r io.Reader, models ModelSour
 
 	dec := json.NewDecoder(r)
 	for {
-		var ev cloudEvent
-		if err := dec.Decode(&ev); err != nil {
+		var raw struct {
+			ID      string          `json:"id"`
+			Subject string          `json:"subject"`
+			Type    string          `json:"type"`
+			Data    json.RawMessage `json:"data"`
+		}
+		if err := dec.Decode(&raw); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			return rep, fmt.Errorf("decode event stream: %w", err)
 		}
-		if ev.Type != "" && ev.Type != DecisionEventType {
+		switch raw.Type {
+		case "", DecisionEventType:
+			var d decisionData
+			if len(raw.Data) > 0 {
+				if err := json.Unmarshal(raw.Data, &d); err != nil {
+					return rep, fmt.Errorf("decode decision data: %w", err)
+				}
+			}
+			rep.add(verify(ctx, eng, cloudEvent{ID: raw.ID, Subject: raw.Subject, Type: raw.Type, Data: d}, models, compiled))
+		case FlowEventType:
+			var d flowData
+			if len(raw.Data) > 0 {
+				if err := json.Unmarshal(raw.Data, &d); err != nil {
+					return rep, fmt.Errorf("decode flow data: %w", err)
+				}
+			}
+			rep.add(verifyFlow(ctx, eng, flowCloudEvent{ID: raw.ID, Subject: raw.Subject, Data: d}, models, compiled))
+		default:
 			continue
 		}
-		rep.add(verify(ctx, eng, ev, models, compiled))
 	}
 	return rep, nil
 }
@@ -189,6 +232,70 @@ func verify(ctx context.Context, eng *dmn.Engine, ev cloudEvent, models ModelSou
 	}
 	out.Status = Reproduced
 	return out
+}
+
+// verifyFlow re-evaluates one flow event and classifies the result. It recompiles
+// the recorded descriptor and resolves each step's model from the same source used
+// for decision events, so a flow replays deterministically end to end.
+func verifyFlow(ctx context.Context, eng *dmn.Engine, ev flowCloudEvent, models ModelSource, compiled map[string]*dmn.Definitions) Outcome {
+	out := Outcome{EventID: ev.ID, Subject: ev.Subject, Decision: ev.Data.Flow, ModelID: ev.Data.FlowID}
+
+	f, _, err := flow.Compile(ev.Data.Descriptor)
+	if err != nil {
+		out.Status = EvalError
+		out.Detail = "compile flow: " + err.Error()
+		return out
+	}
+	res, err := f.Evaluate(ctx, dmn.Input(ev.Data.Input), &sourceResolver{eng: eng, models: models, compiled: compiled})
+	if err != nil {
+		// A missing model surfaces as a flow diagnostic; classify it as
+		// inconclusive (model_unavailable) rather than a reproduction failure.
+		var fe *flow.Error
+		if errors.As(err, &fe) {
+			for _, d := range fe.Diagnostics {
+				if d.Code == flow.CodeModelUnresolved {
+					out.Status = ModelUnavailable
+					out.Detail = d.Message
+					return out
+				}
+			}
+		}
+		out.Status = EvalError
+		out.Detail = "evaluate flow: " + err.Error()
+		return out
+	}
+	if same, detail := outputsEqual(ev.Data.Outputs, res.Outputs); !same {
+		out.Status = Discrepancy
+		out.Detail = detail
+		return out
+	}
+	out.Status = Reproduced
+	return out
+}
+
+// sourceResolver is a flow.Resolver backed by a ModelSource: it compiles each
+// referenced model on demand and caches it in the shared compiled map (also used
+// by decision re-audit), so a model is compiled once per run.
+type sourceResolver struct {
+	eng      *dmn.Engine
+	models   ModelSource
+	compiled map[string]*dmn.Definitions
+}
+
+func (r *sourceResolver) Resolve(ctx context.Context, modelID string) (*dmn.Definitions, error) {
+	if d, ok := r.compiled[modelID]; ok {
+		return d, nil
+	}
+	xml, ok := r.models.Model(modelID)
+	if !ok {
+		return nil, fmt.Errorf("model %q not found in source", modelID)
+	}
+	d, _, err := r.eng.Compile(ctx, xml)
+	if err != nil {
+		return nil, err
+	}
+	r.compiled[modelID] = d
+	return d, nil
 }
 
 // outputsEqual compares recorded and re-evaluated outputs by canonical JSON.

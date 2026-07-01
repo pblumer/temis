@@ -18,6 +18,7 @@ type Option func(*evalConfig)
 
 type evalConfig struct {
 	maxSteps int
+	trace    bool
 }
 
 // WithMaxSteps overrides the per-evaluation step guard (ADR-0008). Non-positive
@@ -28,6 +29,14 @@ func WithMaxSteps(n int) Option {
 			c.maxSteps = n
 		}
 	}
+}
+
+// WithTrace makes Evaluate attach a decision trace to Result.Trace: the table
+// traces of every decision step, in evaluation order, so a caller can see which
+// rules fired across the whole flow. Service steps contribute no trace (the dmn
+// service API produces none). Without it, Result.Trace stays nil.
+func WithTrace() Option {
+	return func(c *evalConfig) { c.trace = true }
 }
 
 // Validate runs model-aware validation: every step's model resolves, its target
@@ -100,6 +109,7 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 
 	stepOut := make(map[string]map[string]any, len(f.order))
 	all := make(map[string]any)
+	var traceTables []dmn.TableTrace
 
 	for _, idx := range f.order {
 		if err := ctx.Err(); err != nil {
@@ -117,7 +127,11 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 			if berr != nil {
 				return dmn.Result{}, berr
 			}
-			res, err = dec.Evaluate(ctx, stepIn, dmn.WithStrictInput())
+			evalOpts := []dmn.EvalOption{dmn.WithStrictInput()}
+			if cfg.trace {
+				evalOpts = append(evalOpts, dmn.WithTrace())
+			}
+			res, err = dec.Evaluate(ctx, stepIn, evalOpts...)
 		} else if svc, svcErr := defs.Service(s.Decision); svcErr == nil {
 			stepIn, berr := f.buildInput(s, nil, in, stepOut)
 			if berr != nil {
@@ -135,13 +149,20 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 		for k, v := range res.Outputs {
 			all[s.ID+"."+k] = v
 		}
+		if cfg.trace && res.Trace != nil {
+			traceTables = append(traceTables, res.Trace.Tables...)
+		}
 	}
 
 	outputs, err := f.assembleOutput(in, stepOut)
 	if err != nil {
 		return dmn.Result{}, err
 	}
-	return dmn.Result{Outputs: outputs, Decisions: all}, nil
+	result := dmn.Result{Outputs: outputs, Decisions: all}
+	if cfg.trace && len(traceTables) > 0 {
+		result.Trace = &dmn.Trace{Tables: traceTables}
+	}
+	return result, nil
 }
 
 // buildInput resolves a step's wiring into a dmn.Input, coercing each value to
