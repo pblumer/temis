@@ -362,15 +362,31 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .node-result-rule { background: rgba(255, 255, 255, 0.28); border-radius: 999px; padding: 0 5px; font-size: 10px; }
 
 /* Design / Operate views. In Operate the editor is read-only (palette, context
-   pad and editing toolbar hidden) and the run history/inspector is shown. */
+   pad and editing toolbar hidden) and the runtime cockpit is shown: a keyboard-
+   navigable run history above the diagram and frosted summary overlays over it.
+   Operate has its own cool "cockpit" colour world (--op, blue) to set it apart
+   from Design's green — while computed result pills stay green (success). */
 .mode-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .mode-btn { font: 13px/1 system-ui, sans-serif; padding: 6px 12px; border: 0; background: #fff; color: var(--muted); cursor: pointer; }
 .mode-btn.is-active { background: var(--accent); color: #fff; font-weight: 600; }
 .mode-btn:not(.is-active):hover { background: #f1f4f9; }
-.operate-panel { display: none; }
-.app-shell[data-mode="operate"] .operate-panel { display: block; }
+/* The Operate toggle is blue when active — the cockpit's signature colour. */
+#modeOperate.is-active { background: #1d4ed8; }
+
+/* Cockpit chrome: a cool tint over the editor + canvas so Operate reads as a
+   different place than the Design editor at a glance. */
+.app-shell[data-mode="operate"] { --op: #1d4ed8; }
+.app-shell[data-mode="operate"] .editor { background: linear-gradient(180deg, #f5f8ff, #eef3fb); }
+.app-shell[data-mode="operate"] .canvas {
+  background-color: #f3f7ff;
+  background-image: radial-gradient(#d2ddf3 1px, transparent 1px);
+  border-color: #c7d6f2;
+}
 .app-shell[data-mode="operate"] .design-only { display: none !important; }
 .app-shell[data-mode="operate"] .djs-palette { display: none !important; }
+/* In Operate the whole-graph result/trace tables under the form are redundant
+   with the overlays + on-node pills, so hide them (errors still show). */
+.app-shell[data-mode="operate"] #evalResult:not(.eval-error) { display: none; }
 /* In Operate the context pad keeps only the read actions (open table/expression);
    the editing entries (append/create/connect/delete/edit) are hidden. */
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="append-input"],
@@ -381,20 +397,90 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edit-bkm"],
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="connect"],
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="delete"] { display: none !important; }
-.op-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; }
-.op-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+
+/* Baustein 1 — the run-history listbox above the diagram (Operate only). */
+.op-history { display: none; }
+.app-shell[data-mode="operate"] .op-history { display: block; flex: 0 0 auto; margin: 0 0 10px; }
+.op-history:focus { outline: none; }
+.op-history:focus-visible { outline: none; }
+.op-history:focus .op-run.is-active { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--op); }
+.op-empty { color: var(--muted); font-size: 13px; margin: 4px 0; }
+.op-runs { display: flex; flex-direction: column; gap: 4px; max-height: 168px; overflow-y: auto; padding: 2px; }
 .op-run { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; }
-.op-run:hover { background: #f1f5f9; }
-.op-run.is-active { border-color: var(--accent); background: #f0fdf4; }
-.op-run-n { font-weight: 600; white-space: nowrap; }
+.op-run:hover { background: #eef3fb; }
+.op-run.is-active { border-color: var(--op); background: #eaf1ff; }
+.op-run-n { font-weight: 700; white-space: nowrap; color: var(--op); }
 .op-run-in { color: var(--muted); font: 12px/1.4 ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.op-detail { border-top: 1px solid var(--line); padding-top: 12px; }
-.op-subtitle { font-size: 11.5px; font-weight: 700; color: var(--muted); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
-.op-kv { border-collapse: collapse; margin-bottom: 6px; }
-.op-kv th, .op-kv td { border: 1px solid var(--line); padding: 3px 9px; text-align: left; font-size: 13px; }
-.op-kv th { background: #f1f5f9; font-weight: 600; }
-.op-rule { margin-left: 8px; font: 600 11px/1 ui-monospace, monospace; color: var(--accent); background: #dcfce7; padding: 1px 6px; border-radius: 999px; }
-.op-hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+@keyframes op-run-pulse { 0% { box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.5); } 100% { box-shadow: 0 0 0 10px rgba(29, 78, 216, 0); } }
+.op-run-pulse { animation: op-run-pulse 500ms ease-out; }
+
+/* Baustein 2 — frosted, floating summary overlays over the diagram. The wrapper
+   scopes their absolute positioning to the canvas. */
+.canvas-wrap { position: relative; flex: 0 0 auto; }
+.op-overlays { display: none; }
+.app-shell[data-mode="operate"] .op-overlays { display: block; }
+.op-ov-toggle {
+  position: absolute; top: 10px; right: 12px; z-index: 3;
+  font: 600 12px/1 system-ui, sans-serif; padding: 5px 10px;
+  border: 1px solid #c7d6f2; border-radius: 999px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: var(--op);
+}
+.op-ov-toggle.is-off { color: var(--muted); }
+.op-ov-panels { pointer-events: none; }
+.op-overlays.op-ov-off .op-ov-panels { display: none; }
+.op-ov {
+  position: absolute; z-index: 2; pointer-events: auto;
+  min-width: 172px; max-width: 44%;
+  border-radius: 12px; padding: 9px 11px 10px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(9px) saturate(1.2); -webkit-backdrop-filter: blur(9px) saturate(1.2);
+  border: 1px solid rgba(199, 214, 242, 0.9);
+  box-shadow: 0 6px 22px rgba(20, 33, 61, 0.14);
+}
+.op-ov-inputs { top: 12px; left: 12px; }
+.op-ov-results { bottom: 12px; right: 12px; }
+.op-ov-title { font: 700 10.5px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--op); margin-bottom: 6px; }
+.op-ov-body { display: flex; flex-direction: column; gap: 3px; }
+.op-ov-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; font-size: 12.5px; padding: 1px 0; }
+.op-ov-row.op-ov-hoverable { cursor: help; border-radius: 5px; }
+.op-ov-row.op-ov-hoverable:hover { background: rgba(29, 78, 216, 0.08); }
+.op-ov-key { color: #334155; font-weight: 600; white-space: nowrap; }
+.op-ov-val { font: 12px/1.3 ui-monospace, monospace; color: #0f172a; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-ov-rule { grid-column: 2 / 4; justify-self: end; font: 600 10px/1 ui-monospace, monospace; color: var(--accent); background: #dcfce7; padding: 1px 6px; border-radius: 999px; }
+.op-ov-none { color: var(--muted); font-size: 12px; }
+.op-ov-tip { color: var(--muted); font-size: 10.5px; margin-top: 6px; }
+
+/* Mini value bar (numeric row / hover gauge). */
+.op-bar { grid-column: 1 / 4; height: 4px; border-radius: 999px; background: rgba(29, 78, 216, 0.14); overflow: hidden; }
+.op-bar-lg { height: 8px; margin: 4px 0; }
+.op-bar-fill { display: block; height: 100%; background: var(--op); border-radius: 999px; }
+.op-bar-fill.is-neg { background: #dc2626; }
+
+/* Baustein 3 — hover popover: decision table as a matrix, or a value gauge. */
+.op-pop {
+  position: absolute; z-index: 5; pointer-events: none; max-width: 460px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid #c7d6f2; border-radius: 10px; padding: 9px 11px;
+  box-shadow: 0 10px 30px rgba(20, 33, 61, 0.22);
+}
+.op-pop-title { font: 700 12px/1 system-ui, sans-serif; margin-bottom: 6px; color: #0f172a; }
+.op-pop-gauge { display: flex; align-items: center; gap: 8px; }
+.op-pop-num { font: 600 13px/1 ui-monospace, monospace; color: var(--op); }
+.op-mtable { margin-top: 6px; }
+.op-mtable-head { display: flex; align-items: center; gap: 8px; font: 600 11px/1 system-ui, sans-serif; margin-bottom: 4px; }
+.op-mtable-policy { font: 10px/1 ui-monospace, monospace; background: #eef2f7; color: #334155; padding: 2px 5px; border-radius: 5px; font-weight: 400; }
+.op-mgrid { border-collapse: collapse; font-size: 11px; }
+.op-mgrid th, .op-mgrid td { border: 1px solid var(--line); padding: 2px 6px; text-align: left; white-space: nowrap; }
+.op-mgrid th { background: #f4f7fd; font-weight: 600; }
+.op-mcol-idx { width: 20px; text-align: center; color: var(--muted); }
+.op-mrule.is-hit { background: #eaf1ff; }
+.op-mrule.is-hit .op-mcol-idx { color: var(--op); font-weight: 700; }
+.op-mcell.is-ok { color: #166534; background: rgba(22, 163, 74, 0.08); }
+.op-mcell.is-no { color: #b91c1c; }
+.op-mcell.is-skip { color: #cbd5e1; }
+.op-mout { font: 11px/1.2 ui-monospace, monospace; }
 
 /* Decision-table overlay (double-click a table-decision in the DRD). */
 .dt-overlay {

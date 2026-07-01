@@ -52,6 +52,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   (setzt den Definitions-Namen, legt eine neue Revision an) und `DELETE /v1/models/{id}` (entfernt
   eine Revision aus dem Cache); neue Library-Funktion `dmn.SetModelName`. Anlegen, Umbenennen und
   Löschen laufen über eigene In-App-Dialoge (kein `window.prompt`), mit Hinweis bei Namensdopplung.
+- **Modeler – Operate-Cockpit (ADR-0016):** Die **Operate**-Sicht (Auswerten/Betreiben) ist jetzt klar
+  von der **Design**-Sicht abgegrenzt — eigener, kühler „Cockpit"-Look (blaue Chrome-Farbwelt, getönter
+  Canvas) und read-only Graph. Sie besteht aus drei Bausteinen: (1) eine **Läufe-Historie oben** über
+  dem Diagramm, rein per Tastatur blätterbar (↑/↓/←/→/j/k, Pos1/Ende, Enter) als ARIA-`listbox` mit
+  `aria-activedescendant`/`aria-selected`; der Wechsel des aktiven Laufs aktualisiert Diagramm und
+  Overlays. (2) **Halbtransparente, schwebende Overlays** (frosted/Backdrop-Blur, ein-/ausblendbar)
+  direkt über dem Diagramm fassen Eingangsdaten (links/oben) und Ergebnisse (rechts/unten) zusammen,
+  während die grünen Ergebnis-Pills an den Knoten erhalten bleiben. (3) **Hover-Grafik**: über einer
+  Ergebniszeile erscheint die Entscheidungstabelle als Matrix mit hervorgehobener getroffener Regel,
+  numerische Werte als Mini-Bars. Reines Frontend, baut auf derselben Auswerte-Logik auf (kein neuer
+  Endpunkt, keine neue Dependency).
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/
