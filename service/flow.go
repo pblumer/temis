@@ -178,7 +178,7 @@ func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flo
 	// Audit the flow before answering (WP-93). Fail-closed aborts the request; in
 	// best-effort mode RecordFlow logs and returns nil so the result still flows.
 	if s.sink != nil {
-		if err := s.sink.RecordFlow(ctx, flowRecordFrom(desc, input, res.Outputs)); err != nil {
+		if err := s.sink.RecordFlow(ctx, flowRecordFrom(desc, input, res.Outputs, authKidFromContext(ctx))); err != nil {
 			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
 			return
 		}
@@ -193,7 +193,7 @@ func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flo
 // flowRecordFrom builds a clio FlowRecord from the descriptor bytes and the
 // evaluation's input/outputs. The descriptor is parsed for the flow name, version
 // and ordered step modelIds; it is also carried verbatim so a re-audit can replay.
-func flowRecordFrom(desc []byte, input, outputs map[string]any) FlowRecord {
+func flowRecordFrom(desc []byte, input, outputs map[string]any, authKid string) FlowRecord {
 	var d flow.Descriptor
 	_ = json.Unmarshal(desc, &d)
 	models := make([]string, 0, len(d.Steps))
@@ -208,6 +208,7 @@ func flowRecordFrom(desc []byte, input, outputs map[string]any) FlowRecord {
 		Descriptor: desc,
 		Input:      input,
 		Outputs:    outputs,
+		AuthKid:    authKid,
 	}
 }
 

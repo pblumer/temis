@@ -1152,6 +1152,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 			Outputs:  res.Outputs,
 			Trace:    res.Trace,
 			Strict:   strict,
+			AuthKid:  authKidFromContext(ctx),
 		}); err != nil {
 			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
 			return

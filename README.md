@@ -280,6 +280,26 @@ curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rota
 curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
 ```
 
+**Lockout-Recovery — Offline-CLI (WP-104):** Ist kein nutzbarer Admin-Key mehr da,
+verwaltet `temisd keys …` denselben Keystore **bei gestopptem Server** direkt am
+Verzeichnis. Ein so erzeugter Key wird beim nächsten Start akzeptiert:
+
+```sh
+temisd keys create -keys-dir ./keystore -scopes admin -owner recovery
+temisd keys list   -keys-dir ./keystore          # ohne Secrets
+temisd keys rotate -keys-dir ./keystore k_abc123 # entwertet das alte Secret
+temisd keys revoke -keys-dir ./keystore k_abc123
+```
+
+**Prefix-Scopes (WP-105):** Ein Scope lässt sich auf einen Ressourcen-Prefix
+einschränken — `evaluate:/orders/*` oder eine auf eine `modelId` gepinnte
+`models:read:sha256:…`. Der Grant greift nur, wenn die Request-Ressource (`{id}` =
+modelId/flowId) mit dem Prefix beginnt; ressourcenlose Routen (Listing, stateless
+`/v1/evaluate`, gRPC, MCP) erfüllt nur ein **unbeschränkter** Grant. **Authorship:**
+bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als CloudEvents-Extension
+`clioauthkid` auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
+(`expiresAt`) werden abgewiesen (`401`).
+
 **DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als
 **Legacy-Admin-Key** — der ganze Token als `Authorization: Bearer <token>` deckt alle
 Routen (Admin), byte-identisch zum bisherigen Verhalten. Für neue Deployments `-keys-file`

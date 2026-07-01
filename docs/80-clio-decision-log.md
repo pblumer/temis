@@ -33,9 +33,10 @@ unverändert annimmt. Der `type` ist **versioniert** (`.v1`) und unterliegt SemV
 
 ```json
 {
-  "source":  "temisd",
-  "subject": "/orders/42",
-  "type":    "com.temis.decision.evaluated.v1",
+  "source":      "temisd",
+  "subject":     "/orders/42",
+  "type":        "com.temis.decision.evaluated.v1",
+  "clioauthkid": "k_ci01",
   "data": {
     "modelId":  "sha256-1f3a…",
     "decision": "Dish",
@@ -58,6 +59,7 @@ liefert nur `source`/`subject`/`type`/`data`.
 | `source` | Konfiguration (`-clio-source`, Default `temisd`) | identifiziert die schreibende Instanz |
 | `subject` | Mapping aus der Eingabe/Decision (Abschnitt 3) | die clio-Geschäftsentität, hierarchischer Pfad |
 | `type` | konstant `com.temis.decision.evaluated.v1` | versioniert; Schema-Änderung ⇒ `.v2` |
+| `clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | CloudEvents-**Extension** für Authorship; **ausgelassen** bei offener API/Legacy-Token; clio bindet sie in die Hash-Kette |
 | `data.modelId` | content-addressed `modelId` (`load_model` / Modell-Cache) | **exakte** Modellversion ⇒ reproduzierbar |
 | `data.decision` | `decision`-Argument der Auswertung | Name oder ID |
 | `data.input` | die übergebene `Input` | FEEL-Numbers als exakter **Dezimal-String** (ADR-0007) |

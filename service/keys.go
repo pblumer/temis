@@ -33,7 +33,7 @@ type createdKeyResponse struct {
 }
 
 type listKeysResponse struct {
-	Keys  []keyView `json:"keys"`
+	Keys  []KeyView `json:"keys"`
 	Count int       `json:"count"`
 }
 

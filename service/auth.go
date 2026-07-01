@@ -10,6 +10,7 @@ package service
 // exactly as before. Pure stdlib: crypto/sha256, crypto/subtle, encoding/json.
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -24,6 +25,27 @@ import (
 	"sync"
 	"time"
 )
+
+// authKidContextKey carries the authenticated key's kid through the request
+// context so the audit sink can stamp authorship (clioauthkid) without threading
+// it through every handler signature (WP-105).
+type authKidContextKey struct{}
+
+// withAuthKid returns a context carrying kid (no-op for an empty kid, e.g. the
+// open API or a legacy token).
+func withAuthKid(ctx context.Context, kid string) context.Context {
+	if kid == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, authKidContextKey{}, kid)
+}
+
+// authKidFromContext returns the authenticated kid stashed by requireScope, or ""
+// when the request was unauthenticated (open API) or carried no kid.
+func authKidFromContext(ctx context.Context) string {
+	kid, _ := ctx.Value(authKidContextKey{}).(string)
+	return kid
+}
 
 // Scope is a coarse permission label attached to each key and required by each
 // route (ADR-0028 §2). admin is a super-scope: a key holding it satisfies every
@@ -66,15 +88,68 @@ type Key struct {
 	managed bool
 }
 
-// HasScope reports whether the key grants scope. A key with admin grants every
-// scope (super-scope), so a legacy admin key covers the whole surface.
+// HasScope reports whether the key grants scope for a request with no resource
+// to constrain against (gRPC, MCP). A resource-prefixed grant (WP-105) does not
+// satisfy a resource-less check, since there is nothing to match the prefix on.
 func (k *Key) HasScope(scope Scope) bool {
-	for _, s := range k.Scopes {
-		if s == ScopeAdmin || s == scope {
+	return k.HasScopeFor(scope, "")
+}
+
+// HasScopeFor reports whether the key grants scope for the given resource
+// identifier (e.g. a modelId on /v1/models/{id}/… routes). A grant is satisfied
+// when: it is admin (super-scope, no prefix); or its base equals scope and either
+// it carries no resource prefix (unconstrained) or resource starts with that
+// prefix (WP-105, clio ADR-033-style prefix scopes like "evaluate:/orders/*" or a
+// pinned "models:read:sha256:…"). An empty resource can only be satisfied by an
+// unconstrained grant.
+func (k *Key) HasScopeFor(scope Scope, resource string) bool {
+	for _, g := range k.Scopes {
+		if grantSatisfies(g, scope, resource) {
 			return true
 		}
 	}
 	return false
+}
+
+// grantSatisfies reports whether one granted scope entry authorises want for
+// resource. See HasScopeFor for the rules.
+func grantSatisfies(grant, want Scope, resource string) bool {
+	base, prefix := splitGrant(grant)
+	if base == ScopeAdmin && prefix == "" {
+		return true // admin is a super-scope
+	}
+	if base != want {
+		return false
+	}
+	if prefix == "" {
+		return true // unconstrained grant for this scope
+	}
+	if resource == "" {
+		return false // a constrained grant cannot satisfy a resource-less check
+	}
+	// A trailing "*" is allowed for readability ("/orders/*"); the match is a plain
+	// prefix either way.
+	return strings.HasPrefix(resource, strings.TrimSuffix(prefix, "*"))
+}
+
+// splitGrant splits a granted scope entry into its base scope and optional
+// resource prefix. "evaluate" → (evaluate, ""); "evaluate:/orders/*" →
+// (evaluate, "/orders/*"); "models:read:sha256:ab" → ("models:read", "sha256:ab").
+// The base is matched against the known scope set so the internal colon in
+// "models:read"/"models:write" is not mistaken for a prefix separator. An
+// unrecognised base is returned as-is with no prefix (and will match nothing
+// known).
+func splitGrant(grant Scope) (base Scope, prefix string) {
+	s := string(grant)
+	if knownScopes[grant] {
+		return grant, ""
+	}
+	for k := range knownScopes {
+		if p := string(k) + ":"; strings.HasPrefix(s, p) {
+			return k, s[len(p):]
+		}
+	}
+	return grant, ""
 }
 
 // Authenticator verifies a kid.secret bearer against a set of scoped keys and
@@ -278,7 +353,10 @@ func parseScopes(raw []string) ([]Scope, error) {
 	out := make([]Scope, 0, len(raw))
 	for _, s := range raw {
 		sc := Scope(strings.TrimSpace(s))
-		if !knownScopes[sc] {
+		// Accept a bare scope or a resource-prefixed one ("evaluate:/orders/*"); the
+		// base must be a known scope (WP-105).
+		base, _ := splitGrant(sc)
+		if !knownScopes[base] {
 			return nil, fmt.Errorf("unknown scope %q", s)
 		}
 		out = append(out, sc)
@@ -364,9 +442,9 @@ var (
 	errKeyNotManaged = errors.New("key is not server-managed (created outside the lifecycle API)")
 )
 
-// keyView is a secret-free snapshot of a key for the listing endpoint. It never
+// KeyView is a secret-free snapshot of a key for the listing endpoint. It never
 // carries the hash or any secret material.
-type keyView struct {
+type KeyView struct {
 	Kid       string  `json:"kid"`
 	Scopes    []Scope `json:"scopes"`
 	Owner     string  `json:"owner,omitempty"`
@@ -375,8 +453,8 @@ type keyView struct {
 	Managed   bool    `json:"managed"`
 }
 
-func viewOf(k *Key) keyView {
-	v := keyView{Kid: k.Kid, Scopes: k.Scopes, Owner: k.Owner, Revoked: k.Revoked, Managed: k.managed}
+func viewOf(k *Key) KeyView {
+	v := KeyView{Kid: k.Kid, Scopes: k.Scopes, Owner: k.Owner, Revoked: k.Revoked, Managed: k.managed}
 	if !k.ExpiresAt.IsZero() {
 		v.ExpiresAt = k.ExpiresAt.UTC().Format(time.RFC3339)
 	}
@@ -462,10 +540,10 @@ func (ks *keystore) revokeKey(kid string) error {
 
 // listKeys returns a secret-free snapshot of every key (managed and unmanaged),
 // sorted by kid for a stable order.
-func (ks *keystore) listKeys() []keyView {
+func (ks *keystore) listKeys() []KeyView {
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
-	out := make([]keyView, 0, len(ks.keys))
+	out := make([]KeyView, 0, len(ks.keys))
 	for _, k := range ks.keys {
 		out = append(out, viewOf(k))
 	}
