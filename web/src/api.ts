@@ -18,6 +18,7 @@ export type GraphNode = {
   hasList?: boolean
   hasRelation?: boolean
   hasFilter?: boolean
+  hasIterator?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -612,6 +613,43 @@ export async function saveFilter(modelId: string, decision: string, edit: Filter
 export async function createBoxedFilter(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-filter', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Filter anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// IteratorView mirrors dmn.IteratorView: a decision's boxed-iteration logic — a
+// for (yields a list via return) or a some/every quantifier (yields a boolean via
+// satisfies). The variable is bound in the body while `in` is iterated. simple is
+// false when a branch is a nested boxed expression, so the editor opens read-only.
+export type IteratorView = { decisionId: string; name: string; kind: 'for' | 'some' | 'every'; variable: string; in: string; body: string; simple: boolean }
+// IteratorEdit is the editable payload: kind, iterator variable, collection, body.
+export type IteratorEdit = { kind: string; variable: string; in: string; body: string }
+
+// getIterator fetches a decision's boxed-iteration view, or null when the decision
+// has no for/some/every logic (HTTP 404).
+export async function getIterator(modelId: string, decision: string): Promise<IteratorView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Iteration laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as IteratorView
+}
+
+// saveIterator replaces a decision's iteration (POST), recompiles the model and
+// returns the saved detail with its new id and any diagnostics.
+export async function saveIterator(modelId: string, decision: string, edit: IteratorEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Iteration speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedIterator gives an undecided decision a fresh boxed iteration and
+// returns the saved model's detail with its new id.
+export async function createBoxedIterator(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-iterator', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Iteration anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 
