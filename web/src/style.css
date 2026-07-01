@@ -170,6 +170,23 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .canvas .djs-shape {
   filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.10));
 }
+/* Alignment guides shown while dragging a node (see dmn-snapping.ts): fine,
+   dashed helper lines in the brand colour that ease in when the node lines up
+   with another and ease back out when it no longer does. The line lives in the
+   DOM at zero opacity; the snapping code flips --active to reveal it, so the
+   transition can run both ways for the slow fade in/out. */
+.canvas .djs-snap-line {
+  stroke: var(--accent);
+  stroke-width: 1px;
+  stroke-dasharray: 4 5;
+  stroke-linecap: round;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms ease;
+}
+.canvas .djs-snap-line--active {
+  opacity: 0.55;
+}
 /* Inline rename box (diagram-js-direct-editing ships no CSS). */
 .canvas .djs-direct-editing-parent {
   box-sizing: border-box;

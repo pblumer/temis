@@ -25,6 +25,7 @@ import { dmnContextPadModule } from './dmn-context-pad'
 import { dmnLabelEditingModule } from './dmn-label-editing'
 import { dmnLayouterModule } from './dmn-layouter'
 import { dmnPaletteModule } from './dmn-palette'
+import { dmnSnappingModule } from './dmn-snapping'
 import type { Laid } from './layout'
 
 // What the toolbar needs to know about the current selection to offer the type
@@ -196,6 +197,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       dmnPaletteModule, ModelingModule, MoveModule, ContextPadModule, ConnectModule,
       PaletteModule, CreateModule, HandToolModule, KeyboardModule, EditorActionsModule,
       MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
+      dmnSnappingModule,
     ],
   })
   current = diagram
