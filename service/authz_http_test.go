@@ -59,6 +59,7 @@ func TestHTTPScopeAuthorization(t *testing.T) {
 		{"flower", "f", []Scope{ScopeFlow}},
 		{"chatter", "c", []Scope{ScopeAssist}},
 		{"gitter", "g", []Scope{ScopeGit}},
+		{"auditor", "au", []Scope{ScopeAudit}},
 		{"boss", "a", []Scope{ScopeAdmin}},
 	})
 	h := NewServer(nil, WithKeysFile(path), WithAssist(AssistConfig{Provider: "anthropic", AllowBYOK: true})).Handler()
@@ -82,6 +83,7 @@ func TestHTTPScopeAuthorization(t *testing.T) {
 	flow := call{"POST", "/v1/flows", "application/json", []byte(`{"name":"x","steps":[]}`)}
 	chat := call{"POST", "/v1/chat", "application/json", []byte(`{"messages":[]}`)}
 	git := call{"GET", "/v1/git/branches?owner=o&repo=r", "", nil}
+	status := call{"GET", "/v1/status", "", nil}
 
 	tests := []struct {
 		name    string
@@ -100,6 +102,11 @@ func TestHTTPScopeAuthorization(t *testing.T) {
 		{"admin delete ok", "boss.a", del, 0, "pass"},
 		// admin reaches a non-admin route too (super-scope).
 		{"admin reaches read", "boss.a", read, 0, "pass"},
+		// Status (ADR-0030) is guarded by the audit scope; admin (super-scope)
+		// reaches it too, an unrelated scope is 403.
+		{"audit reaches status", "auditor.au", status, 0, "pass"},
+		{"admin reaches status", "boss.a", status, 0, "pass"},
+		{"eval lacks status", "runner.e", status, 0, "403"},
 
 		// Negative: wrong scope → 403.
 		{"read lacks write", "reader.r", write, 0, "403"},

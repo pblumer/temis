@@ -135,6 +135,7 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_LLM_ALLOW_BYOK` | `true` | Aufrufer-Key per `X-LLM-Token` zulassen |
 | `TEMIS_CLIO_TOKEN` | *(leer)* | clio-Audit-Sink **anschalten** (`kid.secret`; leer = aus, kein Datenabfluss) |
 | `TEMIS_CLIO_URL` | `https://clio.blumer.cloud` | Ziel-clio (nur aktiv, wenn ein Token gesetzt ist) |
+| `TEMIS_CLIO_ACTIVE_PROBE` | `false` | `GET /v1/status` pingt clios Health-Endpunkt aktiv (statt passiver Last-Write-Health) |
 | `TEMIS_CACHE_SIZE` | `0` | LRU-Cache-Größe (0 = Default, negativ = unbegrenzt) |
 
 ```sh
@@ -160,7 +161,8 @@ curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "
 
 Kern-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
 `GET /v1/models/{id}/xml`, `POST /v1/models/{id}/evaluate`,
-`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
+`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /v1/status`,
+`GET /healthz`/`/readyz`.
 Dazu die Modeler-Endpunkte (ADR-0016), die den eingebauten DMN-Modeler bedienen
 (Graph, Typen, Decision-Tables, Literal-Expressions, BKM, Save). Vollständig — Pfade
 und Schemas — in `service/openapi.yaml` und `docs/40-api-contract.md` §2; ein Test
@@ -264,6 +266,23 @@ go run ./cmd/temisd -addr :8080 -token gehenix   # DEPRECATED, deckt alles als a
 curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
+```
+
+**Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
+ist *observierbar*, überwacht sich aber nicht selbst. `GET /v1/status` zeigt den Zustand
+der **Umsysteme** (clio/LLM/Git) und die Last der Engine — für clio `writesOk`/
+`writesFailed`/`idempotentSkips`, `lastOk`/`lastError` und `reachable`, dazu Version,
+Uptime und Cache-Zähler. Der Output ist **secret-frei** (kein Token/Key erscheint je) und
+liegt hinter dem `audit`-Scope (ADR-0028; `admin`-Keys lesen ebenfalls, offen ohne Auth-Konfig). clio-Erreichbarkeit kommt per Default
+**passiv** aus echten Writes; `-clio-active-probe` (oder `TEMIS_CLIO_ACTIVE_PROBE`) schaltet
+einen aktiven Health-Ping zu. `/healthz` ist reine Liveness (Prozess lebt); `/readyz` meldet
+jetzt **echte** Readiness — `503`, wenn eine harte Startbedingung fehlt (z. B. ein
+fail-closed `-clio-strict` clio unerreichbar ist); ein **best-effort**-clio-Ausfall lässt
+`/readyz` bewusst bei `200`. Dashboards/Alerting bleiben die externe Ops-Schicht.
+
+```sh
+curl localhost:8080/v1/status | jq .clio
+# → {"enabled":true,"mode":"best-effort","writesOk":128,"writesFailed":0,"reachable":true,…}
 ```
 
 **Revisionssicheres Entscheidungs-Logbuch (clio):** `temisd` protokolliert jede
