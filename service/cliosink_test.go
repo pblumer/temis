@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 type captureClio struct {
 	mu     sync.Mutex
 	reqs   []clioWriteRequest
+	raws   [][]byte
 	auths  []string
 	paths  []string
 	status int // status to return; 0 means 200
@@ -22,12 +24,14 @@ type captureClio struct {
 func (c *captureClio) start(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
 		var req clioWriteRequest
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.Unmarshal(raw, &req)
 		c.mu.Lock()
 		c.paths = append(c.paths, r.URL.Path)
 		c.auths = append(c.auths, r.Header.Get("Authorization"))
 		c.reqs = append(c.reqs, req)
+		c.raws = append(c.raws, raw)
 		status := c.status
 		c.mu.Unlock()
 		if status == 0 {
@@ -45,6 +49,16 @@ func (c *captureClio) calls() []clioWriteRequest {
 	defer c.mu.Unlock()
 	out := make([]clioWriteRequest, len(c.reqs))
 	copy(out, c.reqs)
+	return out
+}
+
+// rawBodies returns the raw request bodies captured, for decoding event shapes
+// (e.g. flow events) the typed clioWriteRequest does not model.
+func (c *captureClio) rawBodies() [][]byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([][]byte, len(c.raws))
+	copy(out, c.raws)
 	return out
 }
 
