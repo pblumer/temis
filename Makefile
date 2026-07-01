@@ -100,7 +100,10 @@ feel-spike:
 ## web-wasm: build the FEEL validator (cmd/feel-wasm) into web/public/ for the modeler
 web-wasm:
 	GOOS=js GOARCH=wasm $(GO) build -o web/public/feel.wasm ./cmd/feel-wasm
-	cp "$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js" web/public/wasm_exec.js
+	@wexec="$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js"; \
+	[ -f "$$wexec" ] || wexec="$$($(GO) env GOROOT)/misc/wasm/wasm_exec.js"; \
+	cp "$$wexec" web/public/wasm_exec.js
+
 
 ## web: build the embedded modeler frontend (ADR-0016 WP-60) into web/dist/
 web: web-wasm
