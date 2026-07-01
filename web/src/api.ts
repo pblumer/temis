@@ -15,6 +15,7 @@ export type GraphNode = {
   hasLiteral?: boolean
   hasContext?: boolean
   hasConditional?: boolean
+  hasList?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -473,6 +474,44 @@ export async function saveConditional(modelId: string, decision: string, edit: C
 export async function createBoxedConditional(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-conditional', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Conditional anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// ListView mirrors dmn.ListView: a decision's boxed-list logic — its ordered FEEL
+// items. simple is false when an item is a nested boxed expression, so the editor
+// opens read-only.
+export type ListView = { decisionId: string; name: string; items: string[]; simple: boolean }
+// ListEdit is the editable payload: the ordered FEEL items.
+export type ListEdit = { items: string[] }
+
+// getList fetches a decision's boxed-list view, or null when the decision has no
+// list logic (HTTP 404).
+export async function getList(modelId: string, decision: string): Promise<ListView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Liste laden fehlgeschlagen (HTTP ' + r.status + ')')
+  const lv = (await r.json()) as ListView
+  lv.items = lv.items ?? []
+  return lv
+}
+
+// saveList replaces a decision's list items (POST), recompiles the model and
+// returns the saved detail with its new id and any diagnostics.
+export async function saveList(modelId: string, decision: string, edit: ListEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Liste speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedList gives an undecided decision a fresh boxed list and returns the
+// saved model's detail with its new id.
+export async function createBoxedList(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-list', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Liste anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

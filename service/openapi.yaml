@@ -435,6 +435,49 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/list:
+    get:
+      summary: Get a decision's boxed-list view
+      description: 404 when the decision's logic is not a boxed list. simple=false when an item is a nested boxed expression (the editor opens read-only).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The boxed list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's boxed-list logic
+      description: Replaces the decision's list items (each a literal FEEL expression). Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-list:
+    post:
+      summary: Give an undecided decision a fresh boxed list
+      description: Creates a list with a single placeholder item. 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/bkm/{bkm}:
     get:
       summary: Get a business knowledge model's encapsulated-logic view
@@ -872,6 +915,7 @@ components:
         hasLiteral: { type: boolean, description: "Decision whose logic is a literal FEEL expression." }
         hasContext: { type: boolean, description: "Decision whose logic is a boxed context." }
         hasConditional: { type: boolean, description: "Decision whose logic is a boxed conditional (if/then/else)." }
+        hasList: { type: boolean, description: "Decision whose logic is a boxed list." }
         hasLogic: { type: boolean, description: "Decision that has any executable logic (table, literal or other boxed expression)." }
         x: { type: number }
         y: { type: number }
@@ -1037,6 +1081,18 @@ components:
         if: { type: string, description: The condition (FEEL). }
         then: { type: string, description: The then branch (FEEL). }
         else: { type: string, description: The else branch (FEEL). }
+    ListView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        items: { type: array, items: { type: string }, description: The ordered FEEL item expressions. }
+        simple: { type: boolean, description: False when an item is a nested boxed expression this text view cannot edit. }
+    ListEdit:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { type: string }, description: The ordered FEEL items (blank items are dropped). }
     BKMView:
       type: object
       properties:

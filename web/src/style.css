@@ -567,6 +567,29 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .cond-text:focus { outline: none; border-color: var(--accent); background: #fff; }
 .cond-invalid { border-color: #e5484d; background: #fff4f4; }
 
+/* Boxed-list editor: an ordered list of FEEL item rows. */
+.list-modal { width: min(560px, 94vw); }
+.list-body { padding: 14px 18px; max-height: 60vh; overflow: auto; }
+.list-rows { display: flex; flex-direction: column; gap: 7px; }
+.list-row { display: flex; align-items: center; gap: 9px; }
+.list-idx { min-width: 20px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.list-item {
+  flex: 1;
+  box-sizing: border-box;
+  font: 13.5px/1.4 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fcfdff;
+  color: var(--fg);
+}
+.list-item:focus { outline: none; border-color: var(--accent); background: #fff; }
+.list-invalid { border-color: #e5484d; background: #fff4f4; }
+.list-del { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 5px; border-radius: 5px; }
+.list-del:hover:not(:disabled) { color: #c0392b; background: #fbecec; }
+.list-del:disabled { color: #d6dbe3; cursor: default; }
+.dt-readonly-note { font-size: 12.5px; color: var(--muted); margin-right: auto; }
+
 .ctx-modal { width: min(760px, 95vw); }
 .ctx-body { padding: 14px 18px; }
 .ctx-grid {
