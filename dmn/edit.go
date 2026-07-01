@@ -47,3 +47,17 @@ func ApplyEdits(src []byte, edits []NodeEdit) ([]byte, error) {
 	}
 	return dmnxml.Encode(def)
 }
+
+// SetModelName sets the DMN definitions' name (the model's editable display name)
+// and returns the updated XML. Like ApplyEdits it patches the existing document
+// in place, so all decisions, logic and the DMNDI diagram are preserved untouched
+// — only the top-level name attribute changes. It is the model-rename counterpart
+// to ApplyEdits' per-element renames (ADR-0016).
+func SetModelName(src []byte, name string) ([]byte, error) {
+	def, err := dmnxml.Decode(src)
+	if err != nil {
+		return nil, err
+	}
+	def.Name = name
+	return dmnxml.Encode(def)
+}

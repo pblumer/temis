@@ -134,6 +134,8 @@ func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
 func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
 
+func SetModelName(src []byte, name string) ([]byte, error)
+
 func WithLimits(l Limits) Option
 
 func WithStrictInput() EvalOption

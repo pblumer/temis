@@ -128,6 +128,26 @@ Provider-Interface, reine Standardbibliothek (kein SDK, konsistent mit ADR-0014)
 
 ---
 
+## Etappe Decision-Flow — „stateless über Modellgrenzen komponieren" (L2a, ADR-0025/0026)
+
+**Ziel:** Mehrere per `modelId` gepinnte Decisions/Services zu **einer** zustandslosen,
+deterministischen, re-auditierbaren Auswertung verketten — die L2a-Schicht aus ADR-0025,
+umgesetzt als externer **JSON-Flow-Deskriptor** (ADR-0026), **nicht** als DMN-`import`. Kern
+als eigenes Library-Package (`package flow` über der stabilen `dmn`-API — v1-Surface bleibt
+eingefroren), Oberflächen als dünne Wrapper (ADR-0005). Daten-Mapping über **FEEL**, Vorrang
+als aufgerufene Decision, geteiltes Eval-Budget (ADR-0008), **keine neue Dependency**
+(stdlib-JSON, Goldene Regel 6). Flows leben versioniert im Repo (`flows/`, `docs/90`).
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-90 | Flow-Deskriptor: Kern-Package | WP-28, WP-29, WP-52 | **geplant** — neues `package flow` (über `dmn`, kein `internal/`-Import): `Compile([]byte) (*Flow, Diagnostics, error)` parst+validiert den JSON-Deskriptor, `Resolver`-Interface (`modelId → *dmn.Definitions`, Quellen: Cache/Git/Inline), `Flow.Evaluate(ctx, dmn.Input, Resolver, …) (dmn.Result, error)` wertet die Steps topologisch über den bestehenden `dmn`-Evaluator aus (memoisiert, DAG-azyklisch). Mapping-`in`-Einträge als FEEL über {Flow-Inputs + frühere Step-Outputs}. **Validierung (compile-before-eval):** modelIds resolvebar, referenzierte Decision/Service existiert, `in`-Verdrahtung typgeprüft gegen `InputSchema` (WP-52), Azyklizität, Mapping-FEEL kompiliert → präzise `Diagnostics` statt stillem `null`. Geteiltes per-Evaluation-Budget über alle Steps + `MaxSteps`-Guard (ADR-0008). AK: Deskriptor mit ≥ 2 Modellen → deterministische `dmn.Result`; kaputte Verdrahtung → Diagnostic vor Auswertung; `make verify` grün. (HTTP/MCP/Audit/Git → WP-91–94.) |
+| WP-91 | Flow über HTTP (`temisd`) | WP-90, WP-32 | **geplant** — `POST /v1/flows` (Deskriptor registrieren/validieren → `flowId`), `POST /v1/flows/{id}/evaluate`, `POST /v1/flow/evaluate` (stateless inline). Resolver über den geteilten Modell-Cache; `explain`/`strict` analog zur Einzel-Decision. Fehler als RFC-7807 (`FLOW_*`), OpenAPI-Sync (Routen + Schemas, Sync-Test). AK: load→evaluate-E2E über zwei gecachte Modelle; `make verify` grün. |
+| WP-92 | Flow über MCP (`temis-mcp`/`temisd`) | WP-90, WP-50 | **geplant** — Tools `load_flow` (Deskriptor → `flowId`), `describe_flow` (Steps + erwartete Flow-Inputs), `evaluate_flow` (per `flowId` oder inline). Über den geteilten Store (ADR-0021) auch in `temisd`. AK: Agent komponiert + wertet einen Flow end-to-end aus; `httptest`-E2E; `make verify` grün. |
+| WP-93 | Flow-Audit & Re-Audit (clio) | WP-90, WP-54, WP-55 | **geplant** — clio-Sink protokolliert zusätzlich ein **Flow-Event** `com.temis.flow.evaluated.v1` (Flow-`id`/`version`, geordnete Step-`modelId`s, Flow-Ein-/Ausgabe); `audit.ReAudit` bekommt einen Flow-Replay (Event → Flow neu auswerten → kanonisch vergleichen). AK: Flow-Auswertung wird protokolliert und exakt reproduziert (`reproduced`); `make verify` grün. |
+| WP-94 | Flows in Git (`vcs`) | WP-90, WP-70 | **geplant** — Optional: `flows/`-Deskriptoren im Repo listen/laden über `vcs` (Git-Referenzen `{owner,repo,ref,path}` → `modelId` aufgelöst und gepinnt); `git_load_flow` analog zu `git_load_model`. AK: Flow aus (Fake-)GitHub@ref laden → auswerten. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.
@@ -206,7 +226,10 @@ E2E-headless grün.
 | WP-66 ◑ | Boxed-Expression-Editor (1.5) | WP-64 | context/list/invocation/function/conditional/filter/iterator als rekursive Forms. AK: ein Boxed-1.5-Konstrukt **visuell anlegbar** und round-trip-fest. **Teil-Fortschritt — Boxed Context ✅:** Erste Form vollständig & round-trip-fest. `dmn`: `ContextView`/`BoxedContext(idOrName)`-Leseansicht, `SetBoxedContext`/`CreateBoxedContext` (decode→mutieren→encode wie Literal/Table, ADR-0010), `model.ContextEntry.TypeRef` ergänzt (Variablentyp bleibt erhalten), Graph-Knoten-Flag `HasContext`. Go-Tests: View, Set→Compile→Evaluate (`Score(Points=5)`=25 nach Edit), Create auf undecided Decision, Reject auf Nicht-Context — plus bestehende Round-trip-/Golden-Suite. **HTTP** (`service/context.go`): `GET/POST …/decisions/{d}/context`, `POST …/create-context` (in `dataRoutes()` + `openapi.yaml`, Sync-Test grün); `httptest`-Suite inkl. Save→Evaluate-Round-trip. **Frontend** (`web/src/boxedcontext.ts`): Overlay-Editor mit dynamischen `Name | Typ | FEEL`-Zeilen + optionalem Ergebnis, **live gegen die echte FEEL-Engine validiert** (Namen kaskadieren: spätere Einträge sehen frühere); Context-Pad „Boxed Context anlegen/bearbeiten", Doppelklick öffnet den Editor (kein Rename-Konflikt). Verschachtelte Einträge (`simple=false`) read-only. Headless (Chromium) verifiziert: Score-Context öffnen, Eintrag editieren, speichern→neue Revision, keine Konsolenfehler. `make verify` grün. **Offen:** verschachtelte Boxed-Werte in Einträgen sowie list/invocation/function/conditional/filter/iterator als eigene Forms (WP-66b ff.). |
 | WP-67 ✅ | `/ui`-Migration & F-01/F-02-Ablösung | WP-64, WP-65 | **done — Cutover vollzogen.** `service/ui.go` (CDN-dmn-js, bpmn.io-Logo) **gelöscht**; der eigene eingebettete Modeler ist jetzt **THE** Editor, ausgeliefert an der **Wurzel `/`** (`go:embed`, Vite-`base: './'`). Routen: `/` liefert die SPA + ihre Assets (`assets/`, `feel.wasm`, `wasm_exec.js`), `/ui` und `/app/` **301 → `/`** (Alt-Links bleiben gültig). Fluss komplett offline & ohne CDN: Öffnen (Datei→`POST /v1/models`) → bearbeiten (Verschieben/Umbenennen/Typ/Decision-Table-Zellen+Regeln, FEEL-validiert) → speichern (`/save`, `/decisions/{d}/table`) → auswerten (`/evaluate`). Headless an `/` verifiziert: 3 Shapes, **kein bpmn.io-Logo** (`a[href*=bpmn.io]`/`.bjs-powered-by`=0), **0 Fremd-Host-Requests**, Tabelle editierbar, keine Konsolenfehler. |
 
-> **BPMN-Synergie (später, eigenes ADR):** `bpmn-js` sitzt auf demselben MIT-Kern. Der hier
+> **BPMN-Synergie (später, siehe ADR-0025):** `bpmn-js` sitzt auf demselben MIT-Kern. Der hier
 > entstehende Fork (Canvas/Command-Stack/Palette aus WP-61/63/65) ist das Fundament für einen
-> **eigenen BPMN-Editor** in der künftigen BPMN-Workflow-Engine — gleiche Toolchain, gemeinsame
-> FEEL-Integration; DMN ist die erste fachliche Schicht, BPMN die zweite.
+> **eigenen BPMN-Editor** in der künftigen BPMN-Workflow-Engine (`pblumer/chrampfer`) — gleiche
+> Toolchain, gemeinsame FEEL-Integration; DMN ist die erste fachliche Schicht, BPMN die zweite.
+> Die Grenze zwischen (stateless, deterministischer) Decision-Orchestrierung in temis und
+> (durable, zustandsbehafteter) Prozess-Orchestrierung in chrampfer legt **ADR-0025** fest; der
+> praktische Organisations-Leitfaden für tausende Modelle steht in `docs/90-decision-organization.md`.

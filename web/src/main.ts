@@ -1,5 +1,6 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, listTypes, type ModelSummary } from './api'
+import { promptDialog, confirmDialog } from './dialog'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
@@ -345,17 +346,24 @@ async function boot(root: HTMLElement): Promise<void> {
   // it, so a user can build a decision from scratch on a blank canvas (via the
   // palette + save) instead of only uploading an existing .dmn file (ADR-0016).
   newModelBtn.addEventListener('click', () => {
-    const name = (window.prompt('Name des neuen Modells:', 'Neues Modell') ?? '').trim()
-    if (!name) return
-    status.textContent = 'legt Modell an …'
-    void createBlankModel(name)
-      .then((m) => reselect(m.modelId))
-      .then(() => {
+    void (async () => {
+      const name = await promptDialog({
+        title: 'Neues Modell',
+        label: 'Name des Modells',
+        value: 'Neues Modell',
+        okLabel: 'Anlegen',
+        hint: dupHint(),
+      })
+      if (!name) return
+      status.textContent = 'legt Modell an …'
+      try {
+        const m = await createBlankModel(name)
+        await reselect(m.modelId)
         status.textContent = 'Modell angelegt ✓ — Elemente über die Palette (links) hinzufügen und speichern.'
-      })
-      .catch((e: Error) => {
-        status.textContent = e.message
-      })
+      } catch (e) {
+        status.textContent = (e as Error).message
+      }
+    })()
   })
 
   // Open… deploys a chosen .dmn/.xml file to the engine and switches to it.
@@ -468,11 +476,19 @@ async function boot(root: HTMLElement): Promise<void> {
     renderModelList()
   }
   const createFolder = (): void => {
-    const name = (window.prompt('Name des neuen Ordners:') ?? '').trim()
-    if (!name || folderState.folders.includes(name)) return
-    folderState.folders.push(name)
-    saveFolders()
-    renderModelList()
+    void (async () => {
+      const name = await promptDialog({
+        title: 'Neuer Ordner',
+        label: 'Name des Ordners',
+        placeholder: 'z. B. Kunde A',
+        okLabel: 'Anlegen',
+        hint: (v) => (v && folderState.folders.includes(v) ? 'Ein Ordner mit diesem Namen existiert bereits.' : null),
+      })
+      if (!name || folderState.folders.includes(name)) return
+      folderState.folders.push(name)
+      saveFolders()
+      renderModelList()
+    })()
   }
   const deleteFolder = (name: string): void => {
     folderState.folders = folderState.folders.filter((f) => f !== name)
@@ -488,6 +504,74 @@ async function boot(root: HTMLElement): Promise<void> {
     if (name) assignModel(name, null)
   })
 
+  // existingNames is the set of distinct non-empty model names on the server. A
+  // dupHint(exclude) warns — without blocking — when a new or renamed model would
+  // land on a name already in use (the two would merge into one history group).
+  const existingNames = (): Set<string> => new Set(models.map((m) => m.name ?? '').filter((s) => s !== ''))
+  const dupHint =
+    (exclude?: string) =>
+    (v: string): string | null =>
+      v && v !== exclude && existingNames().has(v) ? 'Ein Modell mit diesem Namen existiert bereits — die beiden werden zusammengeführt.' : null
+
+  // renameGroup renames every revision of a named model so its whole history
+  // stays together under the new name: it re-stores each revision (oldest-first,
+  // to keep the seq order) under the new name, drops the old-named revisions,
+  // carries the folder assignment over and selects the renamed current revision.
+  const renameGroup = async (group: Group, newName: string): Promise<void> => {
+    const current = group.revisions[0]
+    const ordered = group.revisions.slice().sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    status.textContent = 'benennt um …'
+    try {
+      let newCurrentId = current.modelId
+      for (const rev of ordered) {
+        const saved = await renameModel(rev.modelId, newName)
+        if (rev.modelId === current.modelId) newCurrentId = saved.modelId
+        if (saved.modelId !== rev.modelId) await deleteModel(rev.modelId)
+      }
+      const folder = folderState.assign[group.name]
+      if (folder) {
+        delete folderState.assign[group.name]
+        folderState.assign[newName] = folder
+        saveFolders()
+      }
+      await reselect(newCurrentId)
+      status.textContent = 'umbenannt ✓'
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // deleteGroup removes a whole named model — every revision — from the server
+  // cache, drops its folder assignment and selects another model (or shows the
+  // empty state when none remain).
+  const deleteGroup = async (group: Group): Promise<void> => {
+    status.textContent = 'löscht …'
+    try {
+      for (const rev of group.revisions) await deleteModel(rev.modelId)
+      if (folderState.assign[group.name]) {
+        delete folderState.assign[group.name]
+        saveFolders()
+      }
+      models = await listModels()
+      if (models.length) {
+        await showModel(models.some((m) => m.modelId === currentId) ? currentId : models[0].modelId)
+        status.textContent = 'gelöscht ✓'
+      } else {
+        currentId = ''
+        modelList.innerHTML = '<p class="model-empty">Keine Modelle auf dem Server.</p>'
+        status.textContent = 'gelöscht ✓'
+      }
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // Sidebar row-action icons (rename/delete), shown on hover of a model row.
+  const ICON_RENAME =
+    '<svg width="13" height="13" viewBox="0 0 18 18"><path d="M3 12.9 12 3.9l2.1 2.1-9 9H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10.8 6.1 12 7.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>'
+  const ICON_DELETE =
+    '<svg width="13" height="13" viewBox="0 0 18 18"><path d="M4 5h10M7 5V3.6h4V5M5.6 5l.6 9.4h5.6L12.4 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
   // renderGroup draws one model (its current revision + a collapsible history of
   // older ones) into container. The current row is draggable so it can be dropped
   // onto a folder (drag by model name — the stable identity across revisions).
@@ -500,6 +584,47 @@ async function boot(root: HTMLElement): Promise<void> {
     const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
     row.append(el('span', 'model-name', group.name))
     if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
+
+    // Per-model actions (rename / delete the whole named model incl. history),
+    // revealed on row hover. stopPropagation keeps a click off the row's select.
+    const actions = el('span', 'model-actions')
+    const renameBtn = el('button', 'model-act') as HTMLButtonElement
+    renameBtn.type = 'button'
+    renameBtn.title = 'Modell umbenennen'
+    renameBtn.innerHTML = ICON_RENAME
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void (async () => {
+        const cur = current.name ?? ''
+        const newName = await promptDialog({
+          title: 'Modell umbenennen',
+          label: 'Neuer Name',
+          value: cur,
+          okLabel: 'Umbenennen',
+          hint: dupHint(cur),
+        })
+        if (newName && newName !== cur) await renameGroup(group, newName)
+      })()
+    })
+    const delBtn = el('button', 'model-act model-act-del') as HTMLButtonElement
+    delBtn.type = 'button'
+    delBtn.title = 'Modell löschen'
+    delBtn.innerHTML = ICON_DELETE
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void (async () => {
+        const ok = await confirmDialog({
+          title: 'Modell löschen',
+          message: total > 1 ? `„${group.name}" und den gesamten Verlauf (${total} Revisionen) unwiderruflich löschen?` : `„${group.name}" unwiderruflich löschen?`,
+          okLabel: 'Löschen',
+          danger: true,
+        })
+        if (ok) await deleteGroup(group)
+      })()
+    })
+    actions.append(renameBtn, delBtn)
+    row.append(actions)
+
     row.draggable = true
     row.addEventListener('dragstart', (e) => e.dataTransfer?.setData('text/plain', group.name))
     row.addEventListener('click', () => void showModel(current.modelId))

@@ -39,7 +39,11 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 - **Kein** Decision-Management-UI (Versionierung, Deployment-Konsole) im MVP.
 - **Kein** PMML/ONNX-Import (DMN 1.5 erlaubt es; bewusst Post-1.0).
 - **Kein** verteilter Cluster-Betrieb / kein eingebauter Persistenzlayer im MVP.
-- **Keine** BPMN/CMMN-Integration (nur DMN).
+- **Keine** BPMN/CMMN-Integration (nur DMN). temis orchestriert **keine Prozesse**
+  (Zustand/Zeit/Human Tasks); diese gehören in eine BPMN-Engine (`pblumer/chrampfer`),
+  die temis über einen Business Rule Task **in-process** aufruft. Die Grenze zwischen
+  Decision- und Prozess-Orchestrierung samt Schichtenmodell: **ADR-0025** und
+  `90-decision-organization.md`.
 
 ## 4. Qualitätsziele (priorisiert)
 
