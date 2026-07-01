@@ -149,10 +149,12 @@ func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
 }
 
-// WithClioSink attaches a clio audit sink so each single-decision evaluation
-// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) is recorded as a
-// tamper-evident decision event in clio (ADR-0023). A nil sink is ignored,
-// leaving the server's behaviour unchanged.
+// WithClioSink attaches a clio audit sink so each evaluation is recorded as a
+// tamper-evident decision event in clio (ADR-0023): single-decision evals
+// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) and whole-graph evals
+// (POST /v1/models/{id}/evaluate-graph, one event per evaluated decision — the
+// modeler's "Auswerten" path). A nil sink is ignored, leaving behaviour
+// unchanged.
 func WithClioSink(sink *ClioSink) Option {
 	return func(s *Server) { s.sink = sink }
 }
@@ -1076,6 +1078,29 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 		}
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
+	}
+	// Audit the whole-graph evaluation: one decision event per successfully
+	// evaluated decision (the modeler's "Auswerten" runs this path, so a graph
+	// eval lands in clio just like a single-decision one). Best-effort by default;
+	// fail-closed (Strict sink) aborts with 502 on a write error. Idempotent per
+	// (modelId, decision, input), so re-running the same inputs does not duplicate.
+	if s.sink != nil {
+		for name, val := range res.Values {
+			rec := DecisionRecord{
+				ModelID:  sm.id,
+				Decision: name,
+				Input:    req.Input,
+				Outputs:  map[string]any{name: val},
+				Strict:   req.Strict,
+			}
+			if res.Traces != nil {
+				rec.Trace = res.Traces[name]
+			}
+			if err := s.sink.Record(r.Context(), rec); err != nil {
+				writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+				return
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, evaluateGraphResponse{
 		Values:      res.Values,

@@ -75,8 +75,10 @@ liefert nur `source`/`subject`/`type`/`data`.
 ## 2. Opt-in-Sink in `temisd` (WP-54, umgesetzt)
 
 `temisd` emittiert das Event **nach** jeder Einzel-Decision-Auswertung
-(`POST /v1/evaluate`, `POST /v1/models/{id}/evaluate`) — nur wenn konfiguriert. Default
-aus ⇒ Verhalten **byte-identisch** zu heute.
+(`POST /v1/evaluate`, `POST /v1/models/{id}/evaluate`) sowie nach jeder
+**Whole-Graph-Auswertung** (`POST /v1/models/{id}/evaluate-graph` — der „Auswerten"-Pfad
+des Modelers; **ein Decision-Event je ausgewerteter Decision**) — nur wenn konfiguriert.
+Default aus ⇒ Verhalten **byte-identisch** zu heute.
 
 ```sh
 temisd -addr :8080 \

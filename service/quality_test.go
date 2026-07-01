@@ -179,6 +179,45 @@ func TestEvaluateGraphBatchProductiveRecords(t *testing.T) {
 	}
 }
 
+// TestEvaluateGraphAudited checks the whole-graph evaluation (the modeler's
+// "Auswerten" path) records one decision event per evaluated decision to clio —
+// closing the gap where only single-decision and flow evals were audited.
+func TestEvaluateGraphAudited(t *testing.T) {
+	clio := &captureClio{}
+	h := auditServer(t, clio, nil)
+
+	xml, err := os.ReadFile("../dmn/testdata/models/routing_13.dmn")
+	if err != nil {
+		t.Fatalf("read routing model: %v", err)
+	}
+	id := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", xml)).ModelID
+
+	body := mustJSON(t, evaluateGraphRequest{Input: map[string]any{"Applicant Age": 20}, Explain: true, Strict: true})
+	rec := do(t, h, "POST", "/v1/models/"+id+"/evaluate-graph", "application/json", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("evaluate-graph = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+
+	// One decision event per evaluated decision (Eligibility + Routing).
+	decisions := map[string]bool{}
+	for _, call := range clio.calls() {
+		if len(call.Events) == 0 {
+			continue
+		}
+		ev := call.Events[0]
+		if ev.Type != DecisionEventType {
+			t.Errorf("event type = %q, want %q", ev.Type, DecisionEventType)
+		}
+		if ev.Data.InputHash == "" {
+			t.Error("inputHash empty")
+		}
+		decisions[ev.Data.Decision] = true
+	}
+	if !decisions["Eligibility"] || !decisions["Routing"] {
+		t.Errorf("audited decisions = %v, want Eligibility and Routing", decisions)
+	}
+}
+
 // TestEvaluateGraphBatchProductiveNeedsQueue checks a productive run is refused
 // with a clear code when no quality queue (clio) is configured.
 func TestEvaluateGraphBatchProductiveNeedsQueue(t *testing.T) {
