@@ -343,6 +343,33 @@ func TestErrorFormatting(t *testing.T) {
 	}
 }
 
+// TestEvaluateWithTrace: explain aggregates the decision-table traces of every
+// decision step in evaluation order.
+func TestEvaluateWithTrace(t *testing.T) {
+	f := compile(t, loanFlowJSON)
+	res, err := f.Evaluate(context.Background(),
+		dmn.Input{"Credit Score": 750, "Applicant Age": 30}, resolver(t), flow.WithTrace())
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if res.Trace == nil {
+		t.Fatalf("expected a trace")
+	}
+	// One table per decision step (risk, decide).
+	if len(res.Trace.Tables) != 2 {
+		t.Fatalf("expected 2 table traces, got %d", len(res.Trace.Tables))
+	}
+	// Without the option, no trace.
+	plain, err := f.Evaluate(context.Background(),
+		dmn.Input{"Credit Score": 750, "Applicant Age": 30}, resolver(t))
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if plain.Trace != nil {
+		t.Fatalf("expected no trace without WithTrace")
+	}
+}
+
 func hasCode(diags flow.Diagnostics, code string) bool {
 	for _, d := range diags {
 		if d.Code == code {

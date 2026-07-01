@@ -688,6 +688,89 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/flows:
+    post:
+      summary: Register a decision-flow descriptor (WP-91, ADR-0026)
+      description: >-
+        Stores a JSON flow descriptor (the raw request body) and returns its
+        content-addressed flowId. Diagnostics from validating the flow against
+        the currently loaded models are returned; an unresolved model is reported
+        but does not block registration (it may be loaded before evaluation).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FlowDescriptor" }
+      responses:
+        "201":
+          description: The registered flow's id, name and validation diagnostics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowResponse" }
+        "400":
+          description: Malformed flow descriptor
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/flows/{id}/evaluate:
+    post:
+      summary: Evaluate a registered decision flow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateFlowRequest" }
+      responses:
+        "200":
+          description: Flow evaluation result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown flow
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: The flow is not valid or could not be evaluated
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/flow/evaluate:
+    post:
+      summary: Stateless evaluate an inline decision flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateFlowStatelessRequest" }
+      responses:
+        "200":
+          description: Flow evaluation result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateResponse" }
+        "400":
+          description: Missing or malformed flow
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: The flow is not valid or could not be evaluated
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/chat:
     post:
       summary: Modeling assistant — one assistant turn (ADR-0024)
@@ -924,6 +1007,69 @@ components:
           items: { $ref: "#/components/schemas/Diagnostic" }
         trace:
           $ref: "#/components/schemas/Trace"
+    FlowDescriptor:
+      type: object
+      description: A decision-flow descriptor (ADR-0026); composes several models into one stateless evaluation.
+      required: [steps]
+      properties:
+        flow: { type: string }
+        version: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, model, decision]
+            properties:
+              id: { type: string }
+              model: { type: string, description: The content-addressed modelId to resolve. }
+              decision: { type: string, description: The decision or decision-service name/id. }
+              in:
+                type: object
+                additionalProperties: { type: string }
+                description: Input name → reference (a flow input or "stepID.output").
+        output:
+          type: object
+          additionalProperties: { type: string }
+    FlowResponse:
+      type: object
+      properties:
+        flowId: { type: string }
+        name: { type: string }
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/FlowDiagnostic" }
+    FlowDiagnostic:
+      type: object
+      properties:
+        code: { type: string, description: Stable FLOW_* class. }
+        message: { type: string }
+        step: { type: string }
+    EvaluateFlowRequest:
+      type: object
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+        explain:
+          type: boolean
+          description: When true, the response carries the aggregated decision trace.
+    EvaluateFlowStatelessRequest:
+      type: object
+      required: [flow]
+      properties:
+        flow: { $ref: "#/components/schemas/FlowDescriptor" }
+        input:
+          type: object
+          additionalProperties: true
+        explain:
+          type: boolean
     EvaluateGraphRequest:
       type: object
       properties:
