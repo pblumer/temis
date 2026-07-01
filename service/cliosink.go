@@ -42,6 +42,10 @@ type ClioConfig struct {
 	// segment of the subject (e.g. SubjectKey "Order ID" → /decisions/42). Empty
 	// uses the decision name instead.
 	SubjectKey string
+	// QualitySubjectPrefix is the clio subject quality events are filed under;
+	// default "/quality". Quality events are written on an ENTITY (their subject is
+	// this prefix plus the entity id), so reports can query violations per entity.
+	QualitySubjectPrefix string
 	// Engine identifies the producing engine in data.engine, e.g. "temisd v1.2.3".
 	Engine string
 	// Strict makes the sink fail-closed: when the write to clio fails, the
@@ -67,6 +71,7 @@ type ClioSink struct {
 	token         string
 	source        string
 	subjectPrefix string
+	qualityPrefix string
 	subjectKey    string
 	engine        string
 	strict        bool
@@ -89,6 +94,15 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 	}
 	prefix = strings.TrimRight(prefix, "/")
 
+	qualityPrefix := strings.TrimSpace(cfg.QualitySubjectPrefix)
+	if qualityPrefix == "" {
+		qualityPrefix = "/quality"
+	}
+	if !strings.HasPrefix(qualityPrefix, "/") {
+		qualityPrefix = "/" + qualityPrefix
+	}
+	qualityPrefix = strings.TrimRight(qualityPrefix, "/")
+
 	source := cfg.Source
 	if source == "" {
 		source = "temisd"
@@ -107,6 +121,7 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 		token:         cfg.Token,
 		source:        source,
 		subjectPrefix: prefix,
+		qualityPrefix: qualityPrefix,
 		subjectKey:    cfg.SubjectKey,
 		engine:        cfg.Engine,
 		strict:        cfg.Strict,
@@ -367,6 +382,127 @@ func flowInputHash(flowID string, input map[string]any) string {
 		FlowID string         `json:"flowId"`
 		Input  map[string]any `json:"input"`
 	}{flowID, input}
+	buf, _ := json.Marshal(payload)
+	sum := sha256.Sum256(buf)
+	return hex.EncodeToString(sum[:])
+}
+
+// QualityEventType is the CloudEvents `type` of a quality event emitted for a
+// test case run against a model (Import cockpit productive run). Unlike the
+// decision event, it is written ON AN ENTITY (its subject is the entity id) and
+// carries a `violation` flag, so clio can report quality violations per entity.
+// Versioned via the `.v1` suffix.
+const QualityEventType = "com.temis.quality.evaluated.v1"
+
+// QualityRecord is one test case's quality observation on an entity: the model it
+// ran against, the entity the observation is filed on, the case's decision
+// outputs and (optional) expectations, and whether they were violated. Input is
+// carried for the idempotency key (a re-run of the same case+input on the same
+// entity is deduplicated by clio's precondition).
+type QualityRecord struct {
+	ModelID   string
+	ModelName string
+	Entity    string
+	Case      string
+	Input     map[string]any
+	Decisions map[string]any
+	Expected  map[string]any
+	// Violation is true when Expected is non-empty and some expected value did not
+	// match the computed one; false when all matched; nil when the case declared no
+	// expectations (a coverage observation without a pass/fail).
+	Violation *bool
+}
+
+// RecordQuality writes rec to clio and returns the real error (nil on success or
+// idempotent 409). Unlike Record/RecordFlow it does NOT swallow errors in
+// best-effort mode: the QualityQueue owns retry/guaranteed delivery and needs the
+// true outcome to decide whether to retry.
+func (c *ClioSink) RecordQuality(ctx context.Context, rec QualityRecord) error {
+	return c.writeQuality(ctx, rec)
+}
+
+type clioQualityWriteRequest struct {
+	Events        []clioQualityEvent `json:"events"`
+	Preconditions []clioPrecondition `json:"preconditions,omitempty"`
+}
+
+type clioQualityEvent struct {
+	Source  string           `json:"source"`
+	Subject string           `json:"subject"`
+	Type    string           `json:"type"`
+	Data    qualityEventData `json:"data"`
+}
+
+// qualityEventData is the versioned payload of a quality event (QualityEventType).
+type qualityEventData struct {
+	ModelID   string         `json:"modelId"`
+	Model     string         `json:"model,omitempty"`
+	Entity    string         `json:"entity"`
+	Case      string         `json:"case,omitempty"`
+	Input     map[string]any `json:"input"`
+	Decisions map[string]any `json:"decisions"`
+	Expected  map[string]any `json:"expected,omitempty"`
+	Violation *bool          `json:"violation,omitempty"`
+	Engine    string         `json:"engine,omitempty"`
+	InputHash string         `json:"inputHash"`
+}
+
+// writeQuality builds the quality event and posts it to clio, idempotent on
+// (subject, inputHash) so a retry — or a re-run of the identical case+input on the
+// same entity — is deduplicated.
+func (c *ClioSink) writeQuality(ctx context.Context, rec QualityRecord) error {
+	entity := strings.TrimSpace(rec.Entity)
+	if entity == "" {
+		entity = strings.TrimSpace(rec.Case)
+	}
+	if entity == "" {
+		entity = "unknown"
+	}
+	subject := c.qualityPrefix + "/" + entity
+	hash := qualityHash(rec.ModelID, entity, rec.Input)
+
+	body := clioQualityWriteRequest{
+		Events: []clioQualityEvent{{
+			Source:  c.source,
+			Subject: subject,
+			Type:    QualityEventType,
+			Data: qualityEventData{
+				ModelID:   rec.ModelID,
+				Model:     rec.ModelName,
+				Entity:    entity,
+				Case:      rec.Case,
+				Input:     rec.Input,
+				Decisions: rec.Decisions,
+				Expected:  rec.Expected,
+				Violation: rec.Violation,
+				Engine:    c.engine,
+				InputHash: hash,
+			},
+		}},
+		Preconditions: []clioPrecondition{{
+			Type: "isQueryResultEmpty",
+			Payload: map[string]any{
+				"subject": subject,
+				"where":   fmt.Sprintf("event.type == %q && event.data.inputHash == %q", QualityEventType, hash),
+			},
+		}},
+	}
+
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encode quality event: %w", err)
+	}
+	return c.send(ctx, buf)
+}
+
+// qualityHash is the idempotency key for a quality observation: a stable digest
+// over the model, entity and input.
+func qualityHash(modelID, entity string, input map[string]any) string {
+	payload := struct {
+		ModelID string         `json:"modelId"`
+		Entity  string         `json:"entity"`
+		Input   map[string]any `json:"input"`
+	}{modelID, entity, input}
 	buf, _ := json.Marshal(payload)
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:])

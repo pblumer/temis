@@ -1158,16 +1158,43 @@ components:
           items: { $ref: "#/components/schemas/Diagnostic" }
     EvaluateGraphBatchRequest:
       type: object
+      description: >-
+        A plain run supplies `inputs`. A PRODUCTIVE run supplies `cases` (which
+        also carry an entity + expectations) and sets `record: true`, so each
+        evaluated case is written to clio as a quality event on its entity.
       properties:
         inputs:
           type: array
-          description: One input row per test case (at most 100000 per request).
+          description: One input row per test case (at most 100000 per request). Ignored when `cases` is present.
           items:
             type: object
             additionalProperties: true
+        cases:
+          type: array
+          description: Richer rows (entity + expectations); used for a productive run.
+          items: { $ref: "#/components/schemas/BatchCase" }
         strict:
           type: boolean
           description: When true, validate each row against the model's whole-graph schema.
+        record:
+          type: boolean
+          description: When true, write one clio quality event per evaluated case (productive run); needs a configured clio quality queue, else 409 CLIO_NOT_CONFIGURED.
+        subjectKey:
+          type: string
+          description: Input field whose value is the entity when a case gives no explicit `entity`.
+    BatchCase:
+      type: object
+      properties:
+        name: { type: string, description: "Optional case label." }
+        entity: { type: string, description: "Entity the quality event is filed on (its clio subject)." }
+        input:
+          type: object
+          additionalProperties: true
+          description: The model's leaf inputs for this case.
+        expect:
+          type: object
+          additionalProperties: true
+          description: Expected decision values; sets the violation flag when they differ.
     EvaluateGraphBatchResponse:
       type: object
       properties:
@@ -1179,6 +1206,9 @@ components:
           type: array
           items: { $ref: "#/components/schemas/InputField" }
           description: The leaf inputs the whole graph consumes (shared by every row).
+        recorded:
+          type: integer
+          description: How many quality events were queued to clio (0 for a test run).
     GraphCaseResult:
       type: object
       description: >

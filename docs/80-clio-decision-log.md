@@ -157,6 +157,20 @@ Aktivieren klären: Welche Felder dürfen ins Logbuch? Bei Bedarf Subject/Felder
 einschränken. clios **Signaturen** (`CLIO_SIGNING_KEY`) und **Authorship**
 (`CLIO_EVENT_AUTHORSHIP`) erhöhen die Beweiskraft zusätzlich.
 
+### Quality-Events (Import-Cockpit, ADR-0031)
+
+Neben dem Decision- und dem Flow-Event schreibt ein **Produktivlauf** des Import-Cockpits
+ein **Quality-Event** `com.temis.quality.evaluated.v1` — **auf der Entität** (Subject
+`/quality/<entity>`), nicht pro Decision. Es hält Modell, Entität, Fall, Eingabe,
+Ergebnisse und die erwarteten Werte fest sowie ein **`violation`-Flag** (`true`, wenn ein
+erwarteter Wert verletzt wurde; `false` bei Deckung; weggelassen ohne Erwartung). So lassen
+sich **Verletzungen je Entität** reporten, z. B. per clio-Query
+`event.type == 'com.temis.quality.evaluated.v1' && event.data.violation == true`.
+Idempotenz wie sonst über die Precondition (Subject + `data.inputHash`). Die Zustellung
+läuft **entkoppelt über eine garantierte Queue mit Backpressure** (`QualityQueue`): der
+schnelle Batch-Response wartet nicht auf clio; Hintergrund-Worker liefern mit Retry, und
+`temisd` drainiert die Queue beim Graceful-Shutdown. Ein **Testlauf** schreibt **nichts**.
+
 ---
 
 ## 4. Re-Audit / Replay-Verifikation (WP-55, umgesetzt)

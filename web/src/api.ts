@@ -262,24 +262,42 @@ export type CaseProblem = { code: string; message: string; problems?: InputProbl
 // GraphCaseResult mirrors the service graphCaseResult: one row's per-decision
 // values and errors, or a whole-row problem. Traces are omitted in batch mode.
 export type GraphCaseResult = { values?: Record<string, unknown>; errors?: Record<string, string>; problem?: CaseProblem }
+// BatchCase mirrors the service batchCase: one richer row with the entity a
+// quality event is filed on and the expected decision values (productive run).
+export type BatchCase = { name?: string; entity?: string; input: Record<string, unknown>; expect?: Record<string, unknown> }
 // GraphBatchResult mirrors evaluateGraphBatchResponse: per-row results aligned
-// 1:1 with the request's inputs, plus the shared leaf-input schema.
-export type GraphBatchResult = { results: GraphCaseResult[]; inputSchema: InputField[] }
+// 1:1 with the request's inputs, the shared leaf-input schema, and how many
+// quality events were queued to clio (0 for a test run).
+export type GraphBatchResult = { results: GraphCaseResult[]; inputSchema: InputField[]; recorded: number }
+// BatchRequest is the evaluate-graph-batch payload: plain `inputs` for a test
+// run, or richer `cases` + `record` for a productive run that writes quality
+// events (with `subjectKey` naming the entity input field as a fallback).
+export type BatchRequest = { inputs?: Record<string, unknown>[]; cases?: BatchCase[]; strict?: boolean; record?: boolean; subjectKey?: string }
 
-// evaluateGraphBatch evaluates many input rows against one model in a single
-// request (POST /v1/models/{id}/evaluate-graph-batch) — the throughput path
-// behind the Import cockpit, so thousands of test cases run in one round-trip
-// instead of one HTTP call each. Each row is evaluated independently; a bad row
-// comes back as that row's `problem` rather than failing the whole request.
-// Traces are omitted by design (use evaluateGraph for a single explained run).
-export async function evaluateGraphBatch(modelId: string, inputs: Record<string, unknown>[], strict = false): Promise<GraphBatchResult> {
+// ClioNotConfiguredError signals a productive run was refused because the server
+// has no clio quality queue (no TEMIS_CLIO_TOKEN) — the cockpit offers a test run.
+export class ClioNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ClioNotConfiguredError'
+  }
+}
+
+// evaluateGraphBatch evaluates many rows against one model in a single request
+// (POST /v1/models/{id}/evaluate-graph-batch) — the throughput path behind the
+// Import cockpit, so thousands of test cases run in one round-trip instead of one
+// HTTP call each. Each row is evaluated independently; a bad row comes back as
+// that row's `problem` rather than failing the whole request. With record=true
+// (productive run) each evaluated case is written to clio as a quality event.
+export async function evaluateGraphBatch(modelId: string, req: BatchRequest): Promise<GraphBatchResult> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate-graph-batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inputs, strict }),
+    body: JSON.stringify(req),
   })
   if (!r.ok) {
-    const problem = (await r.json().catch(() => ({}))) as { detail?: string }
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; detail?: string }
+    if (problem.code === 'CLIO_NOT_CONFIGURED') throw new ClioNotConfiguredError(problem.detail || 'clio ist nicht konfiguriert')
     throw new Error(problem.detail || 'Batch-Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
   }
   return (await r.json()) as GraphBatchResult

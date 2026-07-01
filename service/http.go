@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/http2"
@@ -98,6 +99,12 @@ type Server struct {
 	// logging, leaving behaviour byte-identical to a server without it.
 	sink *ClioSink
 
+	// quality, when set via WithQualityQueue, is the decoupled guaranteed-delivery
+	// queue that writes clio quality events for a PRODUCTIVE Import run (one event
+	// per evaluated case, on its entity). Nil means productive runs are refused
+	// (CLIO_NOT_CONFIGURED) — a test run never writes and needs no queue.
+	quality *QualityQueue
+
 	// gitBaseURL overrides the GitHub REST API root for the /v1/git endpoints
 	// (default https://api.github.com); set via WithGitHubBaseURL for GitHub
 	// Enterprise or tests. The git-provider token is supplied per request
@@ -148,6 +155,13 @@ func WithModelListing(enabled bool) Option {
 // leaving the server's behaviour unchanged.
 func WithClioSink(sink *ClioSink) Option {
 	return func(s *Server) { s.sink = sink }
+}
+
+// WithQualityQueue attaches the decoupled queue that writes clio quality events
+// for a productive Import run (evaluate-graph-batch with record=true). A nil queue
+// is ignored, leaving productive runs refused (CLIO_NOT_CONFIGURED).
+func WithQualityQueue(q *QualityQueue) Option {
+	return func(s *Server) { s.quality = q }
 }
 
 // WithCacheSize bounds how many compiled models the server keeps in memory.
@@ -463,9 +477,26 @@ const maxGraphBatchInputs = 100000
 // evaluateGraphBatchRequest carries many input rows evaluated against one model
 // in a single request — the throughput path behind the modeler's Import cockpit,
 // where thousands of test cases run at once.
+//
+// A plain run supplies Inputs (rows of leaf inputs). A PRODUCTIVE run supplies
+// Cases (which also carry an entity + expectations) and sets Record=true, so each
+// evaluated case is written to clio as a quality event on its entity. SubjectKey
+// names an input field to use as the entity when a case gives no explicit one.
 type evaluateGraphBatchRequest struct {
-	Inputs []map[string]any `json:"inputs"`
-	Strict bool             `json:"strict,omitempty"`
+	Inputs     []map[string]any `json:"inputs,omitempty"`
+	Cases      []batchCase      `json:"cases,omitempty"`
+	Strict     bool             `json:"strict,omitempty"`
+	Record     bool             `json:"record,omitempty"`
+	SubjectKey string           `json:"subjectKey,omitempty"`
+}
+
+// batchCase is one richer row: its inputs plus the entity the quality event is
+// filed on and the expected decision values (to compute the violation flag).
+type batchCase struct {
+	Name   string         `json:"name,omitempty"`
+	Entity string         `json:"entity,omitempty"`
+	Input  map[string]any `json:"input"`
+	Expect map[string]any `json:"expect,omitempty"`
 }
 
 // graphCaseResult is one row's outcome in a batch: the per-decision values and
@@ -488,10 +519,12 @@ type caseProblem struct {
 }
 
 // evaluateGraphBatchResponse aligns 1:1 with the request's inputs and echoes the
-// leaf-input schema once (shared by every row).
+// leaf-input schema once (shared by every row). Recorded is how many quality
+// events were queued to clio (productive run; 0 for a test run).
 type evaluateGraphBatchResponse struct {
 	Results     []graphCaseResult `json:"results"`
 	InputSchema []dmn.InputField  `json:"inputSchema"`
+	Recorded    int               `json:"recorded"`
 }
 
 type diagnosticDTO struct {
@@ -1072,23 +1105,39 @@ func (s *Server) handleEvaluateGraphBatch(w http.ResponseWriter, r *http.Request
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if len(req.Inputs) > maxGraphBatchInputs {
-		writeProblem(w, http.StatusBadRequest, "BATCH_TOO_LARGE", fmt.Sprintf("at most %d inputs per batch (got %d)", maxGraphBatchInputs, len(req.Inputs)))
+	// Normalise to rows: Cases (richer) win; otherwise wrap plain Inputs.
+	rows := req.Cases
+	if len(rows) == 0 {
+		rows = make([]batchCase, len(req.Inputs))
+		for i, in := range req.Inputs {
+			rows[i] = batchCase{Input: in}
+		}
+	}
+	if len(rows) > maxGraphBatchInputs {
+		writeProblem(w, http.StatusBadRequest, "BATCH_TOO_LARGE", fmt.Sprintf("at most %d rows per batch (got %d)", maxGraphBatchInputs, len(rows)))
 		return
 	}
+	// A productive run needs the quality queue; refuse clearly when clio is off so
+	// the cockpit can tell the user to configure it (or run as a test).
+	if req.Record && s.quality == nil {
+		writeProblem(w, http.StatusConflict, "CLIO_NOT_CONFIGURED", "productive run needs a clio quality sink; set TEMIS_CLIO_TOKEN (or run as a test)")
+		return
+	}
+
 	var opts []dmn.EvalOption
 	if req.Strict {
 		opts = append(opts, dmn.WithStrictInput())
 	}
 	ctx := r.Context()
-	results := make([]graphCaseResult, len(req.Inputs))
-	for i, in := range req.Inputs {
+	results := make([]graphCaseResult, len(rows))
+	recorded := 0
+	for i, row := range rows {
 		// A cancelled request (client navigated away) stops the loop promptly.
 		if err := ctx.Err(); err != nil {
 			writeProblem(w, http.StatusRequestTimeout, "REQUEST_CANCELLED", err.Error())
 			return
 		}
-		res, err := sm.defs.EvaluateGraph(ctx, dmn.Input(in), opts...)
+		res, err := sm.defs.EvaluateGraph(ctx, dmn.Input(row.Input), opts...)
 		if err != nil {
 			var ie *dmn.InputError
 			if errors.As(err, &ie) {
@@ -1099,11 +1148,87 @@ func (s *Server) handleEvaluateGraphBatch(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		results[i] = graphCaseResult{Values: res.Values, Errors: res.Errors}
+		// Productive run: queue a quality event on this case's entity. Only cases
+		// that actually evaluated are recorded; a rejected/failed row is surfaced
+		// in the response but not written as a quality observation.
+		if req.Record {
+			if s.quality.Enqueue(qualityRecordFor(sm, req.SubjectKey, row, res.Values)) {
+				recorded++
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, evaluateGraphBatchResponse{
 		Results:     results,
 		InputSchema: sm.defs.ModelInputSchema(),
+		Recorded:    recorded,
 	})
+}
+
+// qualityRecordFor builds the clio quality record for one evaluated case: the
+// entity resolves from the case's explicit entity, else the SubjectKey input
+// field, else the case name (writeQuality falls back to "unknown"). The violation
+// flag is set only when the case declared expectations.
+func qualityRecordFor(sm *storedModel, subjectKey string, row batchCase, values map[string]any) QualityRecord {
+	entity := strings.TrimSpace(row.Entity)
+	if entity == "" && subjectKey != "" {
+		if v, ok := row.Input[subjectKey]; ok {
+			entity = strings.TrimSpace(fmt.Sprint(v))
+		}
+	}
+	if entity == "" {
+		entity = strings.TrimSpace(row.Name)
+	}
+	var violation *bool
+	if len(row.Expect) > 0 {
+		v := false
+		for k, exp := range row.Expect {
+			if !valuesMatch(values[k], exp) {
+				v = true
+				break
+			}
+		}
+		violation = &v
+	}
+	return QualityRecord{
+		ModelID:   sm.id,
+		ModelName: sm.name,
+		Entity:    entity,
+		Case:      row.Name,
+		Input:     row.Input,
+		Decisions: values,
+		Expected:  row.Expect,
+		Violation: violation,
+	}
+}
+
+// valuesMatch compares a computed decision value to an expected one tolerantly:
+// numbers (which the engine returns as exact decimal strings) compare
+// numerically, everything else by canonical JSON — mirroring the cockpit's
+// looseEqual so server-side violation flags and client-side pass/fail agree.
+func valuesMatch(got, exp any) bool {
+	if gn, gok := asFloat(got); gok {
+		if en, eok := asFloat(exp); eok {
+			return gn == en
+		}
+	}
+	gb, _ := json.Marshal(got)
+	eb, _ := json.Marshal(exp)
+	return string(gb) == string(eb)
+}
+
+func asFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil && strings.TrimSpace(n) != ""
+	default:
+		return 0, false
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

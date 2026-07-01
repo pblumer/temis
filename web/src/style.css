@@ -1094,7 +1094,22 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .imp-btn.imp-primary { border-color: #9cd0da; color: var(--imp); font-weight: 600; }
 .imp-btn.imp-run { background: var(--imp); border-color: var(--imp); color: #fff; font-weight: 600; }
 .imp-btn.imp-run:disabled { background: #cfe6ea; border-color: #cfe6ea; color: #fff; }
+/* A productive run's button is amber — it writes to clio, so it reads different. */
+.imp-btn.imp-run.imp-prod { background: #b45309; border-color: #b45309; }
+.imp-btn.imp-run.imp-prod:disabled { background: #e6cfae; border-color: #e6cfae; }
 .imp-note { flex-basis: 100%; font-size: 12.5px; color: var(--imp); font-weight: 600; }
+
+/* Testlauf / Produktivlauf segmented control + the entity-field picker. */
+.imp-mode { display: inline-flex; align-items: center; gap: 8px; }
+.imp-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.imp-seg-btn { font: 12.5px/1 system-ui, sans-serif; padding: 7px 11px; border: 0; background: #fff; color: var(--muted); cursor: pointer; }
+.imp-seg-btn.is-on { background: var(--imp); color: #fff; font-weight: 600; }
+.imp-seg-btn.is-on.is-prod { background: #b45309; }
+.imp-seg-btn:not(.is-on):hover { background: #eef7f9; }
+.imp-seg-btn:disabled { cursor: default; opacity: 0.6; }
+.imp-subject { font: 12.5px/1 system-ui, sans-serif; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--fg); max-width: 200px; }
+/* "→ clio" marker on a card that was written to the audit log (productive run). */
+.imp-rec { font: 700 10px/1 ui-monospace, monospace; color: #b45309; background: #fdf3e7; border-radius: 999px; padding: 3px 6px; }
 
 /* The empty/hint state before any cases are imported. */
 .imp-empty-msg { color: var(--muted); font-size: 13px; max-width: 640px; line-height: 1.5; }
