@@ -128,7 +128,7 @@ func (s *Server) handleEvaluateFlow(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluateFlow(w, r.Context(), sf.flow, req.Input, req.Explain)
+	s.evaluateFlow(w, r.Context(), sf.flow, sf.desc, req.Input, req.Explain)
 }
 
 // handleEvaluateFlowStateless compiles and evaluates an inline flow descriptor in
@@ -148,13 +148,13 @@ func (s *Server) handleEvaluateFlowStateless(w http.ResponseWriter, r *http.Requ
 		writeProblem(w, http.StatusBadRequest, "FLOW_MALFORMED", err.Error())
 		return
 	}
-	s.evaluateFlow(w, r.Context(), f, req.Input, req.Explain)
+	s.evaluateFlow(w, r.Context(), f, req.Flow, req.Input, req.Explain)
 }
 
 // evaluateFlow runs a compiled flow against the server's models and writes the
 // result or an appropriate problem. A flow that is not sound (bad wiring,
 // unresolved model, unknown decision) is a 422 with the structured diagnostics.
-func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flow.Flow, input map[string]any, explain bool) {
+func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flow.Flow, desc []byte, input map[string]any, explain bool) {
 	var opts []flow.Option
 	if explain {
 		opts = append(opts, flow.WithTrace())
@@ -175,11 +175,40 @@ func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flo
 		writeProblem(w, http.StatusUnprocessableEntity, "FLOW_EVALUATION_FAILED", err.Error())
 		return
 	}
+	// Audit the flow before answering (WP-93). Fail-closed aborts the request; in
+	// best-effort mode RecordFlow logs and returns nil so the result still flows.
+	if s.sink != nil {
+		if err := s.sink.RecordFlow(ctx, flowRecordFrom(desc, input, res.Outputs)); err != nil {
+			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, evaluateResponse{
 		Outputs:   res.Outputs,
 		Decisions: res.Decisions,
 		Trace:     res.Trace,
 	})
+}
+
+// flowRecordFrom builds a clio FlowRecord from the descriptor bytes and the
+// evaluation's input/outputs. The descriptor is parsed for the flow name, version
+// and ordered step modelIds; it is also carried verbatim so a re-audit can replay.
+func flowRecordFrom(desc []byte, input, outputs map[string]any) FlowRecord {
+	var d flow.Descriptor
+	_ = json.Unmarshal(desc, &d)
+	models := make([]string, 0, len(d.Steps))
+	for _, st := range d.Steps {
+		models = append(models, st.Model)
+	}
+	return FlowRecord{
+		FlowID:     flowID(desc),
+		Name:       d.Flow,
+		Version:    d.Version,
+		Models:     models,
+		Descriptor: desc,
+		Input:      input,
+		Outputs:    outputs,
+	}
 }
 
 func toFlowDiagnosticDTOs(diags flow.Diagnostics) []flowDiagnosticDTO {

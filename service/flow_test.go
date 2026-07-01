@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -142,6 +143,51 @@ func TestFlowErrors(t *testing.T) {
 	p := decode[problem](t, rec)
 	if p.Code != "FLOW_INVALID" || !hasFlowCode(p.FlowProblems, "FLOW_MODEL_UNRESOLVED") {
 		t.Fatalf("unexpected problem: %+v", p)
+	}
+}
+
+func TestFlowClioAudit(t *testing.T) {
+	clio := &captureClio{}
+	h := auditServer(t, clio, nil)
+
+	riskID := uploadModel(t, h, "../flow/testdata/risk.dmn")
+	loanID := uploadModel(t, h, "../flow/testdata/loan.dmn")
+	inline := []byte(fmt.Sprintf(`{"flow": %s, "input": {"Credit Score":750,"Applicant Age":30}}`,
+		loanFlowDescriptor(riskID, loanID)))
+	rec := do(t, h, "POST", "/v1/flow/evaluate", "application/json", inline)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d: %s", rec.Code, rec.Body)
+	}
+
+	raws := clio.rawBodies()
+	if len(raws) != 1 {
+		t.Fatalf("clio writes = %d, want 1", len(raws))
+	}
+	var req clioFlowWriteRequest
+	if err := json.Unmarshal(raws[0], &req); err != nil {
+		t.Fatalf("decode flow write: %v", err)
+	}
+	if len(req.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(req.Events))
+	}
+	ev := req.Events[0]
+	if ev.Type != FlowEventType {
+		t.Errorf("type = %q, want %q", ev.Type, FlowEventType)
+	}
+	if ev.Data.Flow != "loan-decisioning" {
+		t.Errorf("flow = %q", ev.Data.Flow)
+	}
+	if ev.Data.Outputs["Decision"] != "approve" {
+		t.Errorf("outputs[Decision] = %v, want approve", ev.Data.Outputs["Decision"])
+	}
+	if len(ev.Data.Models) != 2 {
+		t.Errorf("models = %v, want 2", ev.Data.Models)
+	}
+	if len(ev.Data.Descriptor) == 0 {
+		t.Error("descriptor is empty; re-audit could not replay")
+	}
+	if ev.Data.InputHash == "" || ev.Data.FlowID == "" {
+		t.Error("inputHash/flowId missing")
 	}
 }
 

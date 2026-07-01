@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,4 +187,107 @@ func mustEval(t *testing.T, xml []byte, input map[string]any) map[string]any {
 		t.Fatalf("round-trip outputs: %v", err)
 	}
 	return out
+}
+
+// --- flow re-audit (WP-93) ---
+
+func readModel(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return b
+}
+
+func loanDescriptor(riskID, loanID string) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"flow":"loan-decisioning",`+
+		`"inputs":[{"name":"Credit Score","type":"number"},{"name":"Applicant Age","type":"number"}],`+
+		`"steps":[`+
+		`{"id":"risk","model":%q,"decision":"Risk Level","in":{"Credit Score":"Credit Score"}},`+
+		`{"id":"decide","model":%q,"decision":"Loan Decision","in":{"Risk":"risk.Risk Level","Applicant Age":"Applicant Age"}}`+
+		`],"output":{"Decision":"decide.Loan Decision"}}`, riskID, loanID))
+}
+
+func flowEventLine(t *testing.T, id string, descriptor json.RawMessage, input, outputs map[string]any) string {
+	t.Helper()
+	m := map[string]any{
+		"id":      id,
+		"type":    FlowEventType,
+		"subject": "/decisions/loan-decisioning",
+		"data": map[string]any{
+			"flowId":     "sha256:flow",
+			"flow":       "loan-decisioning",
+			"descriptor": descriptor,
+			"input":      input,
+			"outputs":    outputs,
+		},
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal flow event: %v", err)
+	}
+	return string(b)
+}
+
+func TestReAuditFlowEvents(t *testing.T) {
+	risk := readModel(t, "../flow/testdata/risk.dmn")
+	loan := readModel(t, "../flow/testdata/loan.dmn")
+	riskID, loanID := ModelID(risk), ModelID(loan)
+	models := MapModelSource{riskID: risk, loanID: loan}
+	desc := loanDescriptor(riskID, loanID)
+	in := map[string]any{"Credit Score": 750, "Applicant Age": 30}
+
+	lines := []string{
+		// reproduces exactly
+		flowEventLine(t, "f1", desc, in, map[string]any{"Decision": "approve"}),
+		// recorded output tampered -> discrepancy
+		flowEventLine(t, "f2", desc, in, map[string]any{"Decision": "decline"}),
+		// a step model missing from the source -> inconclusive
+		flowEventLine(t, "f3", loanDescriptor("sha256:missing", loanID), in, map[string]any{"Decision": "approve"}),
+	}
+	stream := strings.NewReader(strings.Join(lines, "\n"))
+
+	rep, err := ReAudit(context.Background(), dmn.New(), stream, models)
+	if err != nil {
+		t.Fatalf("ReAudit: %v", err)
+	}
+	if rep.Total != 3 {
+		t.Errorf("Total = %d, want 3", rep.Total)
+	}
+	if rep.OK != 1 {
+		t.Errorf("OK = %d, want 1", rep.OK)
+	}
+	if rep.Discrepancies != 1 {
+		t.Errorf("Discrepancies = %d, want 1", rep.Discrepancies)
+	}
+	if rep.Unavailable != 1 {
+		t.Errorf("Unavailable = %d, want 1", rep.Unavailable)
+	}
+	if rep.Reproduced() {
+		t.Error("Reproduced() should be false with a discrepancy present")
+	}
+}
+
+// TestReAuditMixedStream: decision and flow events re-audit from one stream.
+func TestReAuditMixedStream(t *testing.T) {
+	dish := dishXML(t)
+	risk := readModel(t, "../flow/testdata/risk.dmn")
+	loan := readModel(t, "../flow/testdata/loan.dmn")
+	dishID, riskID, loanID := ModelID(dish), ModelID(risk), ModelID(loan)
+	models := MapModelSource{dishID: dish, riskID: risk, loanID: loan}
+
+	lines := []string{
+		eventLine(t, DecisionEventType, "d1", dishID, "Dish", "/decisions/Dish",
+			map[string]any{"Season": "Winter", "Guest Count": 8}, map[string]any{"Dish": "Roastbeef"}),
+		flowEventLine(t, "f1", loanDescriptor(riskID, loanID),
+			map[string]any{"Credit Score": 550, "Applicant Age": 30}, map[string]any{"Decision": "decline"}),
+	}
+	rep, err := ReAudit(context.Background(), dmn.New(), strings.NewReader(strings.Join(lines, "\n")), models)
+	if err != nil {
+		t.Fatalf("ReAudit: %v", err)
+	}
+	if rep.Total != 2 || rep.OK != 2 {
+		t.Errorf("Total/OK = %d/%d, want 2/2 (outcomes: %+v)", rep.Total, rep.OK, rep.Outcomes)
+	}
 }

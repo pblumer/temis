@@ -207,6 +207,14 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) error {
 	if err != nil {
 		return fmt.Errorf("encode event: %w", err)
 	}
+	return c.send(ctx, buf)
+}
+
+// send POSTs a pre-marshaled write-events body to clio and maps the response. A
+// 409 (precondition failed) means the event is already logged and is treated as
+// success — that is what makes recording idempotent under retries. Shared by the
+// decision and flow write paths.
+func (c *ClioSink) send(ctx context.Context, buf []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/write-events", bytes.NewReader(buf))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
@@ -227,7 +235,6 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) error {
 
 	switch {
 	case resp.StatusCode == http.StatusConflict:
-		// Precondition failed: this exact decision is already logged (idempotent).
 		return nil
 	case resp.StatusCode/100 == 2:
 		return nil
@@ -251,6 +258,118 @@ func (c *ClioSink) subjectFor(decision string, input map[string]any) string {
 		}
 	}
 	return c.subjectPrefix + "/" + entity
+}
+
+// FlowEventType is the CloudEvents `type` of an audit event emitted for each
+// decision-flow evaluation (WP-93, ADR-0026). Like the decision event it is
+// versioned via the `.v1` suffix.
+const FlowEventType = "com.temis.flow.evaluated.v1"
+
+// FlowRecord is the data the sink needs to record one flow evaluation. Descriptor
+// is the raw flow descriptor, carried so a re-audit can recompile and replay the
+// whole flow deterministically (audit.ReAudit); Models is the ordered list of the
+// steps' modelIds, for provenance.
+type FlowRecord struct {
+	FlowID     string
+	Name       string
+	Version    string
+	Models     []string
+	Descriptor []byte
+	Input      map[string]any
+	Outputs    map[string]any
+}
+
+// RecordFlow emits a flow event to clio. Like Record, it returns a non-nil error
+// only when the sink is fail-closed (Strict) and the write failed.
+func (c *ClioSink) RecordFlow(ctx context.Context, rec FlowRecord) error {
+	if err := c.writeFlow(ctx, rec); err != nil {
+		if c.strict {
+			return err
+		}
+		c.logf("temisd: clio audit sink (flow): %v", err)
+	}
+	return nil
+}
+
+type clioFlowWriteRequest struct {
+	Events        []clioFlowEvent    `json:"events"`
+	Preconditions []clioPrecondition `json:"preconditions,omitempty"`
+}
+
+type clioFlowEvent struct {
+	Source  string        `json:"source"`
+	Subject string        `json:"subject"`
+	Type    string        `json:"type"`
+	Data    flowEventData `json:"data"`
+}
+
+// flowEventData is the versioned payload of a flow event (FlowEventType). The
+// descriptor makes the event self-contained for replay.
+type flowEventData struct {
+	FlowID     string          `json:"flowId"`
+	Flow       string          `json:"flow,omitempty"`
+	Version    string          `json:"version,omitempty"`
+	Models     []string        `json:"models"`
+	Descriptor json.RawMessage `json:"descriptor"`
+	Input      map[string]any  `json:"input"`
+	Outputs    map[string]any  `json:"outputs"`
+	Engine     string          `json:"engine,omitempty"`
+	InputHash  string          `json:"inputHash"`
+}
+
+// writeFlow builds the flow event and posts it to clio, idempotent on (subject,
+// inputHash) like the decision path.
+func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) error {
+	entity := rec.Name
+	if entity == "" {
+		entity = rec.FlowID
+	}
+	subject := c.subjectFor(entity, rec.Input)
+	hash := flowInputHash(rec.FlowID, rec.Input)
+
+	body := clioFlowWriteRequest{
+		Events: []clioFlowEvent{{
+			Source:  c.source,
+			Subject: subject,
+			Type:    FlowEventType,
+			Data: flowEventData{
+				FlowID:     rec.FlowID,
+				Flow:       rec.Name,
+				Version:    rec.Version,
+				Models:     rec.Models,
+				Descriptor: rec.Descriptor,
+				Input:      rec.Input,
+				Outputs:    rec.Outputs,
+				Engine:     c.engine,
+				InputHash:  hash,
+			},
+		}},
+		Preconditions: []clioPrecondition{{
+			Type: "isQueryResultEmpty",
+			Payload: map[string]any{
+				"subject": subject,
+				"where":   fmt.Sprintf("event.type == %q && event.data.inputHash == %q", FlowEventType, hash),
+			},
+		}},
+	}
+
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encode flow event: %w", err)
+	}
+	return c.send(ctx, buf)
+}
+
+// flowInputHash is the idempotency key for a flow evaluation: a stable digest over
+// the flowId and input.
+func flowInputHash(flowID string, input map[string]any) string {
+	payload := struct {
+		FlowID string         `json:"flowId"`
+		Input  map[string]any `json:"input"`
+	}{flowID, input}
+	buf, _ := json.Marshal(payload)
+	sum := sha256.Sum256(buf)
+	return hex.EncodeToString(sum[:])
 }
 
 // inputHash is a stable digest over the model, decision and input — the
