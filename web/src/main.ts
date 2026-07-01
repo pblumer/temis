@@ -6,6 +6,7 @@ import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import { mountOperate } from './operate'
 import { mountImport } from './testimport'
+import { mountFlows } from './flows'
 import type { GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
@@ -41,6 +42,7 @@ async function boot(root: HTMLElement): Promise<void> {
         </div>
         <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
         <div id="modelList" class="model-list"></div>
+        <div id="flowList" class="model-list flow-list"></div>
         <p class="sidebar-hint">
           Eigener DMN-Modeler · diagram-js (MIT) + eigene Renderer · offline.
           Jedes Speichern legt eine neue Revision an, sichtbar als Verlauf.
@@ -52,6 +54,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="modeDesign" class="mode-btn is-active" type="button" title="Bearbeiten">Design</button>
             <button id="modeOperate" class="mode-btn" type="button" title="Auswerten & beobachten">Operate</button>
             <button id="modeImport" class="mode-btn" type="button" title="Testfälle importieren & durchlaufen lassen">Import</button>
+            <button id="modeFlows" class="mode-btn" type="button" title="Decision-Flows ansehen & auswerten">Flows</button>
           </span>
           <span class="design-only toolbar-group">
             <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
@@ -82,6 +85,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <div id="eval"></div>
         </section>
         <section id="importCockpit" class="import-cockpit"></section>
+        <section id="flowStudio" class="flow-studio"></section>
       </main>
       <aside id="assist" class="assist-panel"></aside>
     </div>`
@@ -93,7 +97,10 @@ async function boot(root: HTMLElement): Promise<void> {
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
   const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
+  const modeFlowsBtn = root.querySelector<HTMLButtonElement>('#modeFlows')
   const importHost = root.querySelector<HTMLElement>('#importCockpit')
+  const flowListHost = root.querySelector<HTMLElement>('#flowList')
+  const flowStudioHost = root.querySelector<HTMLElement>('#flowStudio')
   const opHistoryHost = root.querySelector<HTMLElement>('#opHistory')
   const opOverlayHost = root.querySelector<HTMLElement>('#opOverlays')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
@@ -107,7 +114,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !modeFlowsBtn || !importHost || !flowListHost || !flowStudioHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -128,7 +135,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
-  let mode: 'design' | 'operate' | 'import' = 'design'
+  let mode: 'design' | 'operate' | 'import' | 'flows' = 'design'
   let runs: EvalRun[] = []
   let activeRun: EvalRun | null = null
   // The model detail currently loaded (schema + decisions), shared with the
@@ -827,6 +834,12 @@ async function boot(root: HTMLElement): Promise<void> {
     getModel: () => currentModel,
   })
 
+  // The Flows view (WP-97): a catalog of registered decision flows in the sidebar
+  // and a studio (graph + run panel) in the editor area. It is self-contained —
+  // it fetches flows over /v1/flows and evaluates them independently of the model
+  // the modeler has open.
+  const flowView = mountFlows({ catalogHost: flowListHost, studioHost: flowStudioHost })
+
   // recordRun is called after each evaluation: keep it in the session history
   // (newest first), highlight it, and refresh the Operate cockpit.
   const recordRun = (run: EvalRun): void => {
@@ -851,23 +864,27 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  const setMode = (m: 'design' | 'operate' | 'import'): void => {
+  const setMode = (m: 'design' | 'operate' | 'import' | 'flows'): void => {
     mode = m
     appShell.dataset.mode = m
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
+    modeFlowsBtn.classList.toggle('is-active', m === 'flows')
     if (m === 'operate') {
       operate.render()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
     } else if (m === 'import') {
       importView.render()
+    } else if (m === 'flows') {
+      flowView.render()
     }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
   modeOperateBtn.addEventListener('click', () => setMode('operate'))
   modeImportBtn.addEventListener('click', () => setMode('import'))
+  modeFlowsBtn.addEventListener('click', () => setMode('flows'))
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return

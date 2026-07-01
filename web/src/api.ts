@@ -265,6 +265,52 @@ export async function evaluate(modelId: string, decision: string, input: Record<
   return (await r.json()) as EvalResult
 }
 
+// --- Decision flows (ADR-0026, WP-91/96/97) ---
+
+// FlowSummary mirrors the service flowSummary: one catalog entry.
+export type FlowSummary = { flowId: string; name?: string; inputs: string[]; steps: number }
+// FlowInputDecl / FlowStep mirror flow.InputDecl / flow.Step.
+export type FlowInputDecl = { name: string; type?: string }
+export type FlowStep = { id: string; model: string; decision: string; in?: Record<string, string> }
+export type FlowDiagnostic = { code: string; message: string; step?: string }
+// FlowDetail mirrors the service flowDetail: the graph a UI draws.
+export type FlowDetail = {
+  flowId: string
+  name?: string
+  version?: string
+  inputs?: FlowInputDecl[]
+  steps: FlowStep[]
+  output?: Record<string, string>
+  diagnostics?: FlowDiagnostic[]
+}
+
+// listFlows returns the registered decision flows (GET /v1/flows).
+export async function listFlows(): Promise<FlowSummary[]> {
+  const r = await fetch('/v1/flows')
+  if (!r.ok) throw new Error('Flows laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return ((await r.json()) as { flows?: FlowSummary[] }).flows ?? []
+}
+
+// getFlow returns a flow's steps, inputs and output wiring (GET /v1/flows/{id}).
+export async function getFlow(id: string): Promise<FlowDetail> {
+  const r = await fetch('/v1/flows/' + encodeURIComponent(id))
+  if (!r.ok) throw new Error('Flow laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as FlowDetail
+}
+
+// evaluateFlow runs a registered flow against the given inputs
+// (POST /v1/flows/{id}/evaluate). With explain the result carries the aggregated
+// decision trace. The response reuses the EvalResult shape (outputs/decisions/trace).
+export async function evaluateFlow(id: string, input: Record<string, unknown>, explain = false): Promise<EvalResult> {
+  const r = await fetch('/v1/flows/' + encodeURIComponent(id) + '/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, explain }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Flow-Auswertung fehlgeschlagen'))
+  return (await r.json()) as EvalResult
+}
+
 // GraphEvalResult mirrors the service evaluateGraphResponse: every decision's
 // value (keyed by name), per-decision traces (with explain), per-decision
 // evaluation errors, and the leaf-input schema the whole graph consumes — so the
