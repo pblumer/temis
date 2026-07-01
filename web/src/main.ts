@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, createBoxedContext, listTypes, type ModelSummary } from './api'
+import { listModels, getGraph, getModel, createModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, listTypes, type ModelSummary } from './api'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
@@ -7,6 +7,7 @@ import type { GraphEvalResult } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
+import { openConditionalOverlay } from './conditional'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
@@ -196,6 +197,28 @@ async function boot(root: HTMLElement): Promise<void> {
       await reselect(created.modelId)
       status.textContent = 'Boxed Context angelegt ✓'
       openContext(created.modelId, decisionId)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // openConditional opens a decision's boxed-conditional (if/then/else) editor —
+  // editable in Design, read-only in Operate.
+  const openConditional = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openConditionalOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+  }
+
+  // createConditional gives a logic-less decision a fresh boxed conditional:
+  // persist pending edits first, create it, switch to the saved revision and open.
+  const createConditional = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Conditional an …'
+    try {
+      const created = await createBoxedConditional(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Conditional angelegt ✓'
+      openConditional(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -600,6 +623,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
       handle.onOpenContext((decisionId) => openContext(modelId, decisionId))
       handle.onCreateContext((decisionId) => void createContext(decisionId))
+      handle.onOpenConditional((decisionId) => openConditional(modelId, decisionId))
+      handle.onCreateConditional((decisionId) => void createConditional(decisionId))
       handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'

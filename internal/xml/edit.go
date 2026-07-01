@@ -186,6 +186,48 @@ func (d *Definitions) CreateBoxedContext(id string) bool {
 	return true
 }
 
+// litChild wraps a FEEL text as a boxed-expression child holding a literal
+// expression — the branch of a conditional (its if/then/else) as the simple
+// editor authors it.
+func litChild(text string) *ChildExpr {
+	return &ChildExpr{Expression: Expression{LiteralExpression: &LiteralExpression{Text: text}}}
+}
+
+// SetConditional sets (or replaces) the boxed-conditional logic of the decision
+// identified by id with literal if/then/else branches. It refuses (returns false)
+// when the decision is unknown or already carries a different boxed logic (a
+// table, a context, …), which would conflict.
+func (d *Definitions) SetConditional(id, ifText, thenText, elseText string) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		if dec.present() && dec.Conditional == nil {
+			return false // some other boxed logic is present
+		}
+		dec.Conditional = &Conditional{If: litChild(ifText), Then: litChild(thenText), Else: litChild(elseText)}
+		return true
+	}
+	return false
+}
+
+// CreateConditional gives an undecided decision a fresh boxed conditional with
+// placeholder branches, ready to edit in the modeler. It refuses (returns false)
+// when the decision is unknown or already has logic.
+func (d *Definitions) CreateConditional(id string) bool {
+	i := indexDecision(d.Decisions, id)
+	if i < 0 {
+		return false
+	}
+	dec := &d.Decisions[i]
+	if dec.present() {
+		return false
+	}
+	dec.Conditional = &Conditional{If: litChild("true"), Then: litChild("0"), Else: litChild("0")}
+	return true
+}
+
 // SetBKMFunction sets the encapsulated logic of the business knowledge model
 // identified by id to a function with the given formal parameters and a literal
 // FEEL body. It refuses (returns false) when the BKM is unknown or its current

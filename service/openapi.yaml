@@ -392,6 +392,49 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/conditional:
+    get:
+      summary: Get a decision's boxed-conditional view
+      description: 404 when the decision's logic is not a boxed conditional. simple=false when a branch is a nested boxed expression (the editor opens read-only).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The boxed conditional
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's boxed-conditional logic
+      description: Replaces the decision's if/then/else branches (each a literal FEEL expression). Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConditionalEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-conditional:
+    post:
+      summary: Give an undecided decision a fresh boxed conditional
+      description: Creates an if/then/else with placeholder branches. 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/bkm/{bkm}:
     get:
       summary: Get a business knowledge model's encapsulated-logic view
@@ -827,6 +870,8 @@ components:
         varName: { type: string, description: "A decision's output-variable name (how its result is referenced downstream)." }
         hasTable: { type: boolean, description: "Decision whose logic is a decision table." }
         hasLiteral: { type: boolean, description: "Decision whose logic is a literal FEEL expression." }
+        hasContext: { type: boolean, description: "Decision whose logic is a boxed context." }
+        hasConditional: { type: boolean, description: "Decision whose logic is a boxed conditional (if/then/else)." }
         hasLogic: { type: boolean, description: "Decision that has any executable logic (table, literal or other boxed expression)." }
         x: { type: number }
         y: { type: number }
@@ -976,6 +1021,22 @@ components:
           items: { $ref: "#/components/schemas/ContextEntryView" }
         result: { type: string, description: Optional result-cell expression. }
         resultTypeRef: { type: string, description: Optional result type. }
+    ConditionalView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        if: { type: string, description: The condition (FEEL). }
+        then: { type: string, description: The then branch (FEEL). }
+        else: { type: string, description: The else branch (FEEL). }
+        simple: { type: boolean, description: False when a branch is a nested boxed expression this text view cannot edit. }
+    ConditionalEdit:
+      type: object
+      required: [if, then, else]
+      properties:
+        if: { type: string, description: The condition (FEEL). }
+        then: { type: string, description: The then branch (FEEL). }
+        else: { type: string, description: The else branch (FEEL). }
     BKMView:
       type: object
       properties:
