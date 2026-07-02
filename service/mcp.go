@@ -40,7 +40,7 @@ func (s *Server) FlowStore() mcp.FlowStore { return mcpFlowStore{s} }
 type mcpFlowStore struct{ s *Server }
 
 func (a mcpFlowStore) Put(ctx context.Context, id string, f *flow.Flow, desc []byte) {
-	a.s.flows.put(&storedFlow{id: id, flow: f, desc: desc, diags: f.Validate(ctx, cacheResolver{a.s})})
+	a.s.flows.put(&storedFlow{id: id, flow: f, desc: desc, diags: f.Validate(ctx, cacheResolver(a))})
 }
 
 func (a mcpFlowStore) Get(id string) (*flow.Flow, []byte, bool) {
