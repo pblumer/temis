@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "com.temis.flow.evaluated.v1",
+  "description": "Data payload of a temis decision-flow result event (WP-93, ADR-0026). Written by temisd's sink after a flow evaluation and by temis-clio-worker in answer to a flow command (ADR-0033). The verbatim `descriptor` makes the event self-contained for replay (temis-reaudit). The additive `requestId` is optional so one schema validates both producers.",
+  "type": "object",
+  "required": ["flowId", "input", "outputs"],
+  "properties": {
+    "flowId": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content-addressed flow id."
+    },
+    "flow": {
+      "type": "string",
+      "description": "The flow's stable name."
+    },
+    "version": {
+      "type": "string",
+      "description": "The flow descriptor's own version."
+    },
+    "models": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered content-addressed modelIds of the flow's steps (provenance)."
+    },
+    "descriptor": {
+      "type": "object",
+      "description": "The raw flow descriptor, carried verbatim so a re-audit can recompile and replay the flow."
+    },
+    "input": {
+      "type": "object",
+      "description": "The flow input."
+    },
+    "outputs": {
+      "type": "object",
+      "description": "The assembled flow output (Result.Outputs)."
+    },
+    "engine": {
+      "type": "string",
+      "description": "Producing engine."
+    },
+    "inputHash": {
+      "type": "string",
+      "description": "Stable digest over (flowId, input) — the idempotency key."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Correlation id (ADR-0033): the clio event id of the command that triggered this flow evaluation. Absent on sink-written events."
+    }
+  },
+  "additionalProperties": true
+}
