@@ -75,6 +75,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   werden weiterhin präzise gemeldet. Neue additive `dmn`-API `ReachableInputSchema` /
   `ValidateReachableInput` (cone-gescopt, analog zu `ModelInputSchema`/`ValidateModelInput`);
   MCP `describe_decision` weist die Menge additiv als `reachableInputs` neben `inputs` aus.
+- **Modeler – Deluxe-JSON-Editor an jedem JSON-Eingabefeld (ADR-0016):** Überall, wo ein Feld
+  seinen Wert als FEEL/JSON entgegennimmt — die **Auswerten**-Eingaben (Operate), das
+  **Flow-auswerten**-Panel und das **Testen**-Formular des Flow-Designers — steht jetzt neben dem
+  einzeiligen Feld ein **`{ }`-Icon**, das einen **großzügigen JSON-Editor** als Modal öffnet.
+  Der Editor gibt eine Monospace-Textfläche mit viel Platz, **Live-Validierung** (gültiges JSON ✓
+  bzw. die Parser-Meldung), **Formatieren**/**Kompakt**/**Kopieren**-Werkzeuge, Tab-Einrückung und
+  Tastatur-Shortcuts (Strg/Cmd+Enter = Übernehmen, Esc = Abbrechen). Beim Öffnen wird vorhandenes
+  JSON eingerückt dargestellt, beim „Übernehmen" kompakt ins Feld zurückgeschrieben. Geschlossene
+  Aufzählungsfelder (`<select>`) bekommen kein Icon. Rein additiv, keine Backend-Änderung.
 - **Flow-Designer – Flows via UI erstellen & designen (WP-116, ADR-0026):** Decision-Flows lassen
   sich jetzt **im Modeler visuell erstellen, designen und testen**, nicht nur ansehen & ausführen.
   Ein neuer **Flow-Designer** (betretbar über das **+** in der FLOWS-Sidebar oder **„✎ Bearbeiten"**

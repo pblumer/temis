@@ -566,6 +566,78 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .dlg-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .dlg-btn-danger { border-color: #c0392b; background: #c0392b; color: #fff; }
 .dlg-btn-danger:hover { filter: brightness(0.95); background: #c0392b; }
+
+/* JSON editor (json-editor.ts): the { } opener beside JSON-capable fields and the
+   roomy modal it opens, on the shared .dt-overlay backdrop. */
+.je-row { display: flex; align-items: stretch; gap: 6px; }
+.je-row .eval-field { flex: 1 1 auto; min-width: 0; }
+.je-open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+.je-open:hover { background: #f1f5f9; color: var(--accent); border-color: var(--accent); }
+.je-open svg { display: block; width: 15px; height: 15px; }
+.je-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.3);
+  width: min(760px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.je-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.je-title { font-size: 16px; font-weight: 700; }
+.je-tools { display: flex; gap: 6px; }
+.je-tool {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--fg);
+}
+.je-tool:hover { background: #f1f4f9; }
+.je-tool:disabled { opacity: 0.5; cursor: not-allowed; }
+.je-body { display: flex; flex-direction: column; gap: 8px; padding: 12px 18px; min-height: 0; flex: 1; }
+.je-text {
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 280px;
+  resize: vertical;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: none;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  color: var(--fg);
+}
+.je-text:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.12); }
+.je-status { font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 18px; color: var(--muted); }
+.je-status.is-ok { color: var(--accent); }
+.je-status.is-err { color: #e5484d; }
+.je-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); }
 .dt-head {
   display: flex;
   align-items: center;
