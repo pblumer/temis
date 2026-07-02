@@ -5,7 +5,9 @@ bundles the following third-party packages. All are permissive (MIT / ISC /
 Apache-2.0) — none carries the bpmn.io license or a logo/attribution-in-UI
 requirement. This is the MIT core of the bpmn-io toolkit (diagram-js and its
 runtime dependencies); the bpmn.io-licensed **dmn-js** wrapper is deliberately
-**not** used (ADR-0016).
+**not** used (ADR-0016). Alongside it, **@dagrejs/dagre** (with its transitive
+**@dagrejs/graphlib**) supplies the layered auto-layout for the read-only flow
+views — ranks, crossing-minimization and edge waypoints in one pass.
 
 | Package | Version | License |
 |---|---|---|
@@ -22,6 +24,8 @@ runtime dependencies); the bpmn.io-licensed **dmn-js** wrapper is deliberately
 | preact | 10.29.3 | MIT |
 | htm | 3.1.1 | Apache-2.0 |
 | inherits-browser | 0.1.0 | ISC |
+| @dagrejs/dagre | 3.0.0 | MIT |
+| @dagrejs/graphlib | 4.0.1 | MIT |
 
 The full license texts ship with each package under `web/node_modules/<pkg>/LICENSE`.
 The MIT License text below applies to the MIT-licensed packages above (copyright

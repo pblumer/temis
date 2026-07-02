@@ -1,18 +1,18 @@
-import type { Graph } from './api'
+import type { Graph, GraphNode } from './api'
 import { orthoRoute } from './ortho'
+import dagre from '@dagrejs/dagre'
 
-// Positioning a DRG for the canvas (ADR-0016, WP-65). When the model carries
-// DMNDI, the engine hands us the authored bounds and we use them verbatim;
-// otherwise we compute a simple layered layout (row = longest requirement
-// chain). Requirement edges are routed border-to-border between the node boxes
-// by default, so they work for any positions.
-//
-// The modeler opts into a nicer picture (opts.ortho): the auto-layout then
-// aligns nodes into columns and routes edges as orthogonal (right-angle)
-// connectors instead of diagonals, and opts.orientation flips whether inputs
-// feed decisions from below (bottom-up, the default) or from above (top-down).
-// Callers that pass no opts (e.g. the decision-flow canvas) get the original
-// straight-line behaviour unchanged.
+// Positioning a DRG for the canvas (ADR-0016, WP-65). Three paths:
+//   - authored DMNDI → use the engine's bounds verbatim (hasLayout).
+//   - plain auto-layout (the flow views, no opts) → dagre layered layout: dagre
+//     assigns the ranks, minimizes crossings and routes the edges in one pass, so
+//     flows with shared inputs read as clean, well-separated layers with bent
+//     waypoints instead of a pile of overlapping straight lines (WP-97/98). See
+//     dagreLayout for the rankdir/direction convention.
+//   - ortho auto-layout (the DRD modeler, opts.ortho) → the hand-rolled layered
+//     layout below plus orthogonal (right-angle) edge routing; opts.orientation
+//     flips whether inputs feed decisions from below (bottom-up) or above. This
+//     path is unchanged — dagre is used only for the flow views' plain path.
 
 // LayoutOpts tunes the auto-layout for the DRD modeler; omitting it keeps the
 // legacy straight-diagonal, bottom-up, DMNDI-verbatim behaviour.
@@ -42,6 +42,18 @@ const sizeOf = (type: string) => SIZE[type] ?? SIZE.decision
 const COL_GAP = 44
 const ROW_GAP = 80
 const PAD = 24
+// Vertical gap dagre keeps between rank boundaries. The legacy layout stacked
+// rows ~150px centre-to-centre (ROW_GAP + node height); dagre's ranksep is the
+// clear gap between rows, so ~90 lands the same centre distance once the node
+// height is added back.
+const RANK_GAP = 90
+
+// toLaidNode copies a graph node's render-driving fields into a LaidNode, taking
+// its position/size from the layout. Every path (DMNDI, dagre, legacy) shares it
+// so the icon-steering flags (hasTable, dataType, …) are never dropped.
+function toLaidNode(n: GraphNode, x: number, y: number, w: number, h: number): LaidNode {
+  return { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic, x, y, w, h }
+}
 
 // borderPoint returns the point on a node's border on the line from its centre
 // toward (tx, ty) — used to dock an edge at the box edge rather than its centre.
@@ -55,7 +67,58 @@ function borderPoint(n: LaidNode, tx: number, ty: number): { x: number; y: numbe
   return { x: cx + dx * t, y: cy + dy * t }
 }
 
-function autoLayout(graph: Graph, pos: Map<string, LaidNode>, opts: LayoutOpts = {}): void {
+// dagreLayout positions the flow views' graph with dagre (the plain, no-opts
+// path). Requirement edges run "target requires source" (leaf inputs are the
+// sources); feeding dagre source→target with rankdir 'BT' puts the sources (rank
+// 0) at the bottom and the requiring decisions above them — the same picture the
+// legacy longest-chain model produced, but with dagre's crossing-minimization and
+// edge routing. y grows downward in both dagre's 'BT' output and diagram-js, so
+// positions map straight across (no inversion). Nodes/edges are fed in stable
+// input order, and dagre is deterministic on fixed input, so the same graph always
+// yields the same layout. Fills edgeWaypoints[edgeIndex] with dagre's routed
+// polyline for the edge builder in layout().
+function dagreLayout(graph: Graph, pos: Map<string, LaidNode>, edgeWaypoints: Map<number, { x: number; y: number }[]>): void {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const g = new dagre.graphlib.Graph({ multigraph: true })
+  g.setGraph({ rankdir: 'BT', nodesep: COL_GAP, ranksep: RANK_GAP, marginx: PAD, marginy: PAD })
+  g.setDefaultEdgeLabel(() => ({}))
+  for (const n of graph.nodes) {
+    const s = sizeOf(n.type)
+    g.setNode(n.id, { width: s.w, height: s.h })
+  }
+  // Edge name = index so each graph edge's routed points are retrievable by index,
+  // even if two edges ever shared endpoints (multigraph).
+  graph.edges.forEach((e, i) => {
+    if (byId.has(e.source) && byId.has(e.target)) g.setEdge(e.source, e.target, {}, String(i))
+  })
+  dagre.layout(g)
+  for (const n of graph.nodes) {
+    const nd = g.node(n.id)
+    const s = sizeOf(n.type)
+    // dagre reports node centres; Laid wants the top-left corner.
+    pos.set(n.id, toLaidNode(n, nd.x - s.w / 2, nd.y - s.h / 2, s.w, s.h))
+  }
+  graph.edges.forEach((e, i) => {
+    if (!byId.has(e.source) || !byId.has(e.target)) return
+    const ge = g.edge(e.source, e.target, String(i)) as { points?: { x: number; y: number }[] } | undefined
+    if (ge?.points?.length) edgeWaypoints.set(i, ge.points.map((p) => ({ x: p.x, y: p.y })))
+  })
+}
+
+// dockDagre re-anchors a dagre-routed edge's endpoints onto the node borders
+// (dagre already clips to the box, but borderPoint keeps docking consistent with
+// the other paths and with how flow-canvas anchors the value labels). The first
+// point aims at the second and the last at the second-to-last, so the bends dagre
+// found in between are preserved.
+function dockDagre(s: LaidNode, t: LaidNode, pts: { x: number; y: number }[]): { x: number; y: number }[] {
+  const first = borderPoint(s, pts[1].x, pts[1].y)
+  const last = borderPoint(t, pts[pts.length - 2].x, pts[pts.length - 2].y)
+  return dedupePoints([first, ...pts.slice(1, -1), last])
+}
+
+// legacyAutoLayout is the hand-rolled layered layout kept for the DRD modeler's
+// ortho arrange (opts.ortho). The flow views use dagreLayout instead.
+function legacyAutoLayout(graph: Graph, pos: Map<string, LaidNode>, opts: LayoutOpts = {}): void {
   const orientation = opts.orientation ?? 'bottomUp'
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const req = new Map<string, string[]>() // node -> nodes it requires (below it)
@@ -110,7 +173,7 @@ function autoLayout(graph: Graph, pos: Map<string, LaidNode>, opts: LayoutOpts =
       for (const id of ids) {
         const n = byId.get(id)!
         const s = sizeOf(n.type)
-        pos.set(id, { id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic, x, y, w: s.w, h: s.h })
+        pos.set(id, toLaidNode(n, x, y, s.w, s.h))
         x += s.w + COL_GAP
       }
     }
@@ -174,26 +237,31 @@ function autoLayout(graph: Graph, pos: Map<string, LaidNode>, opts: LayoutOpts =
 
 export function layout(graph: Graph, opts: LayoutOpts = {}): Laid {
   const pos = new Map<string, LaidNode>()
+  // Filled by dagreLayout only (edgeIndex → routed polyline); empty otherwise.
+  const dagreEdges = new Map<number, { x: number; y: number }[]>()
 
   // Use authored DMNDI bounds when every node has them (unless the caller forces
-  // a re-arrange), else auto-layout.
+  // a re-arrange), else auto-layout: dagre for the flow views, the legacy layered
+  // layout for the modeler's ortho arrange.
   const hasLayout =
     graph.nodes.length > 0 &&
     graph.nodes.every((n) => (n.width ?? 0) > 0 && (n.height ?? 0) > 0)
   const auto = !hasLayout || opts.forceAuto === true
   if (!auto) {
     for (const n of graph.nodes) {
-      pos.set(n.id, { id: n.id, type: n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic, x: n.x ?? 0, y: n.y ?? 0, w: n.width ?? 0, h: n.height ?? 0 })
+      pos.set(n.id, toLaidNode(n, n.x ?? 0, n.y ?? 0, n.width ?? 0, n.height ?? 0))
     }
+  } else if (opts.ortho) {
+    legacyAutoLayout(graph, pos, opts)
   } else {
-    autoLayout(graph, pos, opts)
+    dagreLayout(graph, pos, dagreEdges)
   }
 
   // Orthogonal routing (modeler only, and only for an auto-arranged graph):
   // fan each node's edges across its docking face so a hub's inputs merge into a
   // clean comb instead of piling onto one point, then route each as a right-angle
-  // connector. Authored (DMNDI) layouts and no-opts callers keep the diagonal
-  // border-to-border line, which works for any node placement.
+  // connector. The flow views use dagre's routed waypoints; authored (DMNDI)
+  // layouts fall back to the diagonal border-to-border line.
   const ortho = opts.ortho === true && auto
   const dockX = ortho ? fanDockX(graph, pos) : null
   const allNodes = [...pos.values()]
@@ -204,7 +272,10 @@ export function layout(graph: Graph, opts: LayoutOpts = {}): Laid {
     const t = pos.get(e.target)
     if (!s || !t) return
     let waypoints: { x: number; y: number }[]
-    if (dockX) {
+    const dpts = dagreEdges.get(i)
+    if (dpts && dpts.length >= 2) {
+      waypoints = dockDagre(s, t, dpts)
+    } else if (dockX) {
       waypoints = routeAuto(s, t, dockX.exit.get(i) ?? s.x + s.w / 2, dockX.entry.get(i) ?? t.x + t.w / 2, allNodes)
     } else {
       const sc = { x: s.x + s.w / 2, y: s.y + s.h / 2 }
