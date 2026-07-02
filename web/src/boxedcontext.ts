@@ -1,5 +1,6 @@
 import { getContext, saveContext, type ContextView, type ContextEntryView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
+import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
 
 // A working row in the editor: a named entry's name, declared type and FEEL text.
@@ -99,6 +100,8 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
         nameIn.disabled = typeSel.disabled = exprIn.disabled = del.disabled = true
       }
       grid.append(nameIn, typeSel, exprIn, del)
+      // The entry expression sees the base names plus the earlier entries.
+      attachFeelField(exprIn, () => scopeFor(i), { readOnly })
     })
     check()
   }
@@ -189,6 +192,8 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
   saveBtn.addEventListener('click', () => void save())
 
   const resultRow = el('div', { class: 'ctx-result' }, el('span', { class: 'ctx-result-label' }, 'Ergebnis'), resultTypeSel, resultIn)
+  // The result cell sees every entry name (all in-scope names).
+  attachFeelField(resultIn, allNames, { readOnly })
   const toolbar = el('div', { class: 'dt-toolbar' }, addBtn, saveBtn, status)
   const body = el('div', { class: 'ctx-body' }, grid, resultRow)
   const modal = el('div', { class: 'dt-modal ctx-modal' }, header, body, toolbar)
