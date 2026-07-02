@@ -10,7 +10,7 @@ Temis is a lightweight DMN 1.5 decision engine written in Go. It makes business 
 
 Business decisions should be explicit. Temis keeps decision logic close to the DMN model and provides a small runtime for evaluating rules from Go applications or service interfaces.
 
-The project is intentionally scoped as a decision engine. It executes DMN decisions and related decision flows; it is not a workflow or process orchestration engine.
+The project is intentionally scoped as a decision engine. It executes DMN decisions; it is not a workflow or process orchestration engine.
 
 ## Features
 
@@ -47,7 +47,7 @@ import (
 func main() {
     ctx := context.Background()
 
-    xmlBytes, err := os.ReadFile("credit-approval.dmn")
+    xmlBytes, err := os.ReadFile("dmn/testdata/models/dish_15.dmn")
     if err != nil {
         panic(err)
     }
@@ -61,14 +61,14 @@ func main() {
         panic(diags)
     }
 
-    decision, err := defs.Decision("Credit Approval")
+    decision, err := defs.Decision("Dish")
     if err != nil {
         panic(err)
     }
 
     result, err := decision.Evaluate(ctx, dmn.Input{
-        "amount":    12000,
-        "riskScore": 42,
+        "Season":      "Winter",
+        "Guest Count": 8,
     }, dmn.WithTrace())
     if err != nil {
         panic(err)
