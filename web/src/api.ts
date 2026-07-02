@@ -19,6 +19,7 @@ export type GraphNode = {
   hasRelation?: boolean
   hasFilter?: boolean
   hasIterator?: boolean
+  hasInvocation?: boolean
   hasLogic?: boolean
   x?: number
   y?: number
@@ -791,6 +792,48 @@ export async function saveIterator(modelId: string, decision: string, edit: Iter
 export async function createBoxedIterator(modelId: string, decision: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-iterator', { method: 'POST' })
   if (!r.ok) throw new Error(await problemMessage(r, 'Iteration anlegen fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// InvocationBindingView is one parameter binding: the formal parameter name and
+// the FEEL argument bound to it.
+export type InvocationBindingView = { parameter: string; value: string }
+// InvocationView mirrors dmn.InvocationView: a decision's boxed-invocation logic —
+// the called function/BKM and its parameter bindings. simple is false when the
+// call or a binding is a nested boxed expression, so the editor opens read-only.
+export type InvocationView = { decisionId: string; name: string; called: string; bindings: InvocationBindingView[]; simple: boolean }
+// InvocationEdit is the editable payload: the called function and its bindings.
+export type InvocationEdit = { called: string; bindings: InvocationBindingView[] }
+
+// getInvocation fetches a decision's boxed-invocation view, or null when the
+// decision has no invocation logic (HTTP 404).
+export async function getInvocation(modelId: string, decision: string): Promise<InvocationView | null> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error('Invocation laden fehlgeschlagen (HTTP ' + r.status + ')')
+  const iv = (await r.json()) as InvocationView
+  iv.bindings = iv.bindings ?? []
+  return iv
+}
+
+// saveInvocation replaces a decision's called function and bindings (POST),
+// recompiles the model and returns the saved detail with its new id and any
+// diagnostics.
+export async function saveInvocation(modelId: string, decision: string, edit: InvocationEdit): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Invocation speichern fehlgeschlagen'))
+  return (await r.json()) as ModelDetail
+}
+
+// createBoxedInvocation gives an undecided decision a fresh boxed invocation and
+// returns the saved model's detail with its new id.
+export async function createBoxedInvocation(modelId: string, decision: string): Promise<ModelDetail> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/create-invocation', { method: 'POST' })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Invocation anlegen fehlgeschlagen'))
   return (await r.json()) as ModelDetail
 }
 

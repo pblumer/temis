@@ -285,6 +285,53 @@ func (d *Definitions) CreateIterator(id string) bool {
 	return true
 }
 
+// litExpr wraps a FEEL text as an Expression holding a literal expression — an
+// invocation's called function or a binding argument as the simple editor authors
+// it.
+func litExpr(text string) Expression {
+	return Expression{LiteralExpression: &LiteralExpression{Text: text}}
+}
+
+// SetInvocation sets (or replaces) the boxed-invocation logic of the decision
+// identified by id: a called function/BKM (a literal naming it) and parameter
+// bindings, given as parallel params/values slices (each a literal argument). It
+// refuses (returns false) when the decision is unknown or already carries a
+// different (non-invocation) boxed logic.
+func (d *Definitions) SetInvocation(id, called string, params, values []string) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		if dec.present() && dec.Invocation == nil {
+			return false // some other boxed logic is present
+		}
+		inv := &Invocation{Expression: litExpr(called)}
+		for j := range params {
+			inv.Bindings = append(inv.Bindings, Binding{Parameter: &Parameter{Name: params[j]}, Expression: litExpr(values[j])})
+		}
+		dec.Invocation = inv
+		return true
+	}
+	return false
+}
+
+// CreateInvocation gives an undecided decision a fresh boxed invocation with a
+// placeholder called function and one binding, ready to edit in the modeler. It
+// refuses (returns false) when the decision is unknown or already has logic.
+func (d *Definitions) CreateInvocation(id string) bool {
+	i := indexDecision(d.Decisions, id)
+	if i < 0 {
+		return false
+	}
+	dec := &d.Decisions[i]
+	if dec.present() {
+		return false
+	}
+	dec.Invocation = &Invocation{Expression: litExpr("Funktion"), Bindings: []Binding{{Parameter: &Parameter{Name: "p"}, Expression: litExpr("0")}}}
+	return true
+}
+
 // SetFilter sets (or replaces) the boxed-filter logic of the decision identified
 // by id with literal `in` (collection) and `match` (predicate) branches. It
 // refuses (returns false) when the decision is unknown or already carries a
