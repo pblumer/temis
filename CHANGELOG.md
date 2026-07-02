@@ -18,6 +18,17 @@ gilt für die öffentliche Go-API (`package dmn`) und die HTTP-API (ADR-0019,
 Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Version
 `0.0.0-dev`. Bisher umgesetzt (Auszug, voller Stand in `docs/20-roadmap.md`):
 
+### Changed
+
+- **clio-Subject: Modellname als Gruppierungs-Segment.** Decision-Events werden jetzt unter
+  einem **hierarchischen** Pfad `<prefix>/<dmn-modell-name>/<decision-name>` abgelegt (z. B.
+  `/decisions/KfzPricing/FinalPremium`) statt bisher `<prefix>/<decision-name>`. Mit
+  `-clio-subject-key` ersetzt der Eingabefeld-Wert weiterhin das letzte Segment
+  (`<prefix>/<modell>/{Order ID}`). Flow-Events (`com.temis.flow.evaluated.v1`) behalten ihr
+  `<prefix>/<flow-name>`-Layout (kein Modell-Segment). Die Read-Side (`GET /v1/clio/events`,
+  rekursiver `run-query` ab `subjectPrefix`) findet die Events unverändert. Siehe
+  `docs/80-clio-decision-log.md §3`.
+
 ### Added
 
 - **Operate: clio-Events einlesen & nachspielen (ADR-0033, Read-Side):** Die Operate-Ansicht

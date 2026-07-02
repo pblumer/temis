@@ -234,12 +234,17 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 // DecisionRecord is the data the sink needs to record one evaluation. Trace is
 // included only when the evaluation produced one (explain).
 type DecisionRecord struct {
-	ModelID  string
-	Decision string
-	Input    map[string]any
-	Outputs  map[string]any
-	Trace    *dmn.Trace
-	Strict   bool
+	ModelID string
+	// ModelName is the DMN model's display name (its definitions `name`). It becomes
+	// a grouping segment of the clio subject — .../<model>/<decision> — so a
+	// decision's events are filed under a human-readable model path, not only under
+	// the content-addressed ModelID. Empty omits the segment.
+	ModelName string
+	Decision  string
+	Input     map[string]any
+	Outputs   map[string]any
+	Trace     *dmn.Trace
+	Strict    bool
 	// AuthKid is the kid of the API key that authorised the evaluation, stamped on
 	// the event as the clioauthkid CloudEvents extension for authorship (WP-105).
 	// Empty when the API is open or the caller used the legacy token.
@@ -303,7 +308,7 @@ type clioPrecondition struct {
 // idempotent no-op (still a success) — that is what makes recording idempotent
 // under retries.
 func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bool, err error) {
-	subject := c.subjectFor(rec.Decision, rec.Input)
+	subject := c.subjectFor(rec.ModelName, rec.Decision, rec.Input)
 	hash := inputHash(rec.ModelID, rec.Decision, rec.Input)
 
 	body := clioWriteRequest{
@@ -373,11 +378,15 @@ func (c *ClioSink) send(ctx context.Context, buf []byte) (idempotent bool, err e
 	}
 }
 
-// subjectFor maps a decision and its input to the clio subject the event is
-// filed under: the configured prefix plus an entity segment — the value of the
-// configured SubjectKey input field, or the decision name when no key is set or
-// the field is absent/blank.
-func (c *ClioSink) subjectFor(decision string, input map[string]any) string {
+// subjectFor maps a model, decision and input to the clio subject the event is
+// filed under: the configured prefix, the model (DMN) name as a grouping segment,
+// then an entity segment — the value of the configured SubjectKey input field, or
+// the decision name when no key is set or the field is absent/blank. So a decision
+// event lands at .../<model>/<decision> (e.g. /decisions/KfzPricing/FinalPremium),
+// or .../<model>/<entityId> when a SubjectKey groups events per business entity.
+// The model segment is omitted when model is empty, so the subject never carries an
+// empty path element (and flow events keep their .../<flow> layout).
+func (c *ClioSink) subjectFor(model, decision string, input map[string]any) string {
 	entity := decision
 	if c.subjectKey != "" {
 		if v, ok := input[c.subjectKey]; ok {
@@ -386,7 +395,11 @@ func (c *ClioSink) subjectFor(decision string, input map[string]any) string {
 			}
 		}
 	}
-	return c.subjectPrefix + "/" + entity
+	subject := c.subjectPrefix
+	if m := strings.TrimSpace(model); m != "" {
+		subject += "/" + m
+	}
+	return subject + "/" + entity
 }
 
 // FlowEventType is the CloudEvents `type` of an audit event emitted for each
@@ -459,7 +472,9 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 	if entity == "" {
 		entity = rec.FlowID
 	}
-	subject := c.subjectFor(entity, rec.Input)
+	// A flow has no DMN model name — its own name already is the entity segment, so
+	// its subject stays .../<flow> (no model grouping segment).
+	subject := c.subjectFor("", entity, rec.Input)
 	hash := flowInputHash(rec.FlowID, rec.Input)
 
 	body := clioFlowWriteRequest{

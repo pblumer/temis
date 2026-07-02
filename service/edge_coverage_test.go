@@ -123,8 +123,8 @@ func TestClioSinkSubjectPrefixGetsLeadingSlash(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("clio writes = %d, want 1", len(calls))
 	}
-	if got := calls[0].Events[0].Subject; got != "/audit/Dish" {
-		t.Errorf("subject = %q, want /audit/Dish (leading slash added)", got)
+	if got := calls[0].Events[0].Subject; got != "/audit/Dish/Dish" {
+		t.Errorf("subject = %q, want /audit/Dish/Dish (leading slash added, model/decision)", got)
 	}
 }
 

@@ -58,7 +58,7 @@ liefert nur `source`/`subject`/`type`/`data`.
 | Feld | Quelle in temis | Hinweis |
 |---|---|---|
 | `source` | Konfiguration (`-clio-source`, Default `temisd`) | identifiziert die schreibende Instanz |
-| `subject` | Mapping aus der Eingabe/Decision (Abschnitt 3) | die clio-Geschäftsentität, hierarchischer Pfad |
+| `subject` | Mapping aus Modell/Decision/Eingabe (Abschnitt 3) | hierarchischer Pfad `<prefix>/<modell>/<decision>` (bzw. `…/<entityId>` mit `-clio-subject-key`) |
 | `type` | konstant `com.temis.decision.evaluated.v1` | versioniert; Schema-Änderung ⇒ `.v2` |
 | `clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | CloudEvents-**Extension** für Authorship; **ausgelassen** bei offener API/Legacy-Token; clio bindet sie in die Hash-Kette |
 | `data.modelId` | content-addressed `modelId` (`load_model` / Modell-Cache) | **exakte** Modellversion ⇒ reproduzierbar |
@@ -100,7 +100,7 @@ temisd -addr :8080 \
 | `-clio-token` / `$TEMIS_CLIO_TOKEN` | — | clio-API-Key (`kid.secret`); eng gescopt, siehe Abschnitt 3. |
 | `-clio-source` / `$TEMIS_CLIO_SOURCE` | `temisd` | CloudEvents-`source`. |
 | `-clio-subject-prefix` | `/decisions` | Subject-Präfix (Abschnitt 3). |
-| `-clio-subject-key` | — | Eingabefeld als Entitäts-Segment; leer ⇒ Decision-Name. |
+| `-clio-subject-key` | — | Eingabefeld als Entitäts-Segment (nach dem Modell-Segment); leer ⇒ Decision-Name. |
 | `-clio-strict` | `false` | `true` = fail-closed (siehe unten). |
 
 Eigenschaften (verbindlich laut ADR-0023):
@@ -147,11 +147,24 @@ Das **`subject`** ist der Dreh- und Angelpunkt: Es bestimmt, unter welcher
 Geschäftsentität die Entscheidung in clio einsortiert wird, und damit auch, was clios
 `GET /state/<subject>` und Reduce-Specs später falten können.
 
-- **Empfohlen:** Mapping aus einem Eingabefeld, z. B. `/orders/{Order ID}` oder
-  `/customers/{Customer ID}/decisions`. So liegen alle Entscheidungen einer Entität auf
-  einem Stream und sind per `read-events`/`state` direkt abrufbar.
-- **Alternativ:** nach Modell/Decision gruppieren, z. B.
-  `/decisions/{decision}/{entityId}`.
+Der Pfad ist **hierarchisch** und stellt das **Modell** (DMN-Name) als Gruppierungs-Segment
+voran:
+
+```
+<clio-subject-prefix>/<dmn-modell-name>/<decision-name>
+# Beispiel: /decisions/KfzPricing/FinalPremium
+```
+
+- **Standard:** `<prefix>/<modell>/<decision>` — jede Decision eines Modells liegt auf
+  ihrem eigenen Stream, gruppiert unter dem Modell. Der `<prefix>` ist frei konfigurierbar
+  (z. B. `-clio-subject-prefix cloud/blumer/temis/decisions` ⇒
+  `cloud/blumer/temis/decisions/KfzPricing/FinalPremium`).
+- **Mit `-clio-subject-key`:** Das letzte Segment wird durch den Wert eines Eingabefelds
+  ersetzt, sodass alle Entscheidungen *einer Entität* eines Modells auf einem Stream liegen
+  (`<prefix>/<modell>/{Order ID}`, z. B. `/decisions/KfzPricing/42`) und per
+  `read-events`/`state` direkt abrufbar sind.
+- **Flow-Events** (`com.temis.flow.evaluated.v1`) haben keinen DMN-Modellnamen — ihr Subject
+  bleibt `<prefix>/<flow-name>` (das Modell-Segment entfällt).
 
 **clio-Scopes (ADR-025 in clio).** Der `-clio-token` sollte ein **eng gescopter
 Write-Key** sein, idealerweise auf den Subject-Teilbaum beschränkt

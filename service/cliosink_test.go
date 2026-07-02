@@ -120,8 +120,8 @@ func TestClioSinkRecordsDecisionEvent(t *testing.T) {
 	if ev.Source != "temisd" {
 		t.Errorf("source = %q, want temisd", ev.Source)
 	}
-	if ev.Subject != "/decisions/Dish" {
-		t.Errorf("subject = %q, want /decisions/Dish", ev.Subject)
+	if ev.Subject != "/decisions/Dish/Dish" {
+		t.Errorf("subject = %q, want /decisions/Dish/Dish (model/decision)", ev.Subject)
 	}
 	if ev.Data.Decision != "Dish" {
 		t.Errorf("data.decision = %q, want Dish", ev.Data.Decision)
@@ -148,8 +148,8 @@ func TestClioSinkRecordsDecisionEvent(t *testing.T) {
 	if pc.Type != "isQueryResultEmpty" {
 		t.Errorf("precondition type = %q, want isQueryResultEmpty", pc.Type)
 	}
-	if pc.Payload["subject"] != "/decisions/Dish" {
-		t.Errorf("precondition subject = %v, want /decisions/Dish", pc.Payload["subject"])
+	if pc.Payload["subject"] != "/decisions/Dish/Dish" {
+		t.Errorf("precondition subject = %v, want /decisions/Dish/Dish", pc.Payload["subject"])
 	}
 	where, _ := pc.Payload["where"].(string)
 	if where == "" {
@@ -177,8 +177,8 @@ func TestClioSinkSubjectFromInputKey(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("clio writes = %d, want 1", len(calls))
 	}
-	if got := calls[0].Events[0].Subject; got != "/orders/8" {
-		t.Errorf("subject = %q, want /orders/8 (from input key)", got)
+	if got := calls[0].Events[0].Subject; got != "/orders/Dish/8" {
+		t.Errorf("subject = %q, want /orders/Dish/8 (model + entity from input key)", got)
 	}
 }
 

@@ -1134,7 +1134,7 @@ func (s *Server) handleEvaluateModel(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.name, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateStateless compiles and evaluates in a single request, caching the
@@ -1154,7 +1154,7 @@ func (s *Server) handleEvaluateStateless(w http.ResponseWriter, r *http.Request)
 		writeProblem(w, http.StatusBadRequest, "MALFORMED_XML", err.Error())
 		return
 	}
-	s.evaluate(w, r.Context(), sm.id, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
+	s.evaluate(w, r.Context(), sm.id, sm.name, sm.defs, req.Decision, req.Input, req.Explain, req.Strict)
 }
 
 // handleEvaluateGraph evaluates the whole model: it fills the supplied leaf
@@ -1204,11 +1204,12 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 	if s.sink != nil {
 		for name, val := range res.Values {
 			rec := DecisionRecord{
-				ModelID:  sm.id,
-				Decision: name,
-				Input:    req.Input,
-				Outputs:  map[string]any{name: val},
-				Strict:   req.Strict,
+				ModelID:   sm.id,
+				ModelName: sm.name,
+				Decision:  name,
+				Input:     req.Input,
+				Outputs:   map[string]any{name: val},
+				Strict:    req.Strict,
 			}
 			if res.Traces != nil {
 				rec.Trace = res.Traces[name]
@@ -1385,7 +1386,7 @@ func redirectTo(target string) http.HandlerFunc {
 // evaluate runs a decision and writes the result or an appropriate problem. When
 // explain is set the response carries the decision trace (which rules matched and
 // why).
-func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID string, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
+func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID, modelName string, defs *dmn.Definitions, decision string, input map[string]any, explain, strict bool) {
 	if decision == "" {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "missing decision")
 		return
@@ -1425,13 +1426,14 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 	// best-effort mode Record logs and returns nil so the result still flows.
 	if s.sink != nil {
 		if err := s.sink.Record(ctx, DecisionRecord{
-			ModelID:  modelID,
-			Decision: decision,
-			Input:    input,
-			Outputs:  res.Outputs,
-			Trace:    res.Trace,
-			Strict:   strict,
-			AuthKid:  authKidFromContext(ctx),
+			ModelID:   modelID,
+			ModelName: modelName,
+			Decision:  decision,
+			Input:     input,
+			Outputs:   res.Outputs,
+			Trace:     res.Trace,
+			Strict:    strict,
+			AuthKid:   authKidFromContext(ctx),
 		}); err != nil {
 			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
 			return
