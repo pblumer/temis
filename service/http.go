@@ -432,6 +432,11 @@ func (s *Server) dataRoutes() []route {
 		// secret-free. Guarded by the audit scope — admin keys pass too (admin is
 		// a super-scope), so both admin and audit callers can read it.
 		{"GET", "/v1/status", ScopeAudit, s.handleStatus},
+		// Read decision/flow events back from clio for replay in the Operate view
+		// (ADR-0033 read side). Read-only and secret-free: the server queries clio
+		// over the sink's connection so the browser never holds the token. Audit
+		// scope, like /v1/status (admin passes too).
+		{"GET", "/v1/clio/events", ScopeAudit, s.handleClioEvents},
 		// Key lifecycle API (ADR-0028 Phase 2, WP-103): admin-scoped create/list/
 		// rotate/revoke of scoped API keys, backed by the persistent key store.
 		// Dormant (404) unless a -keys-dir is configured.

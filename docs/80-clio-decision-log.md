@@ -391,6 +391,43 @@ sowohl sink- als auch worker-geschriebene Events validiert. Details & Registrier
 
 ---
 
+## 7. Im Modeler: clio-Events einlesen & nachspielen (Operate, Read-Side)
+
+Die **Operate**-Ansicht des Modelers hat neben „Auswerten" (Eingaben von Hand) ein Panel
+**„Aus clio nachspielen"**. Es schließt die Lücke zwischen „temis hat protokolliert" und
+„ich will das im Modeler nachvollziehen": Der Modeler liest die in clio abgelegten
+Entscheidungen zurück und **spielt jede aufgezeichnete Eingabe erneut durch das offene
+Modell** — der Replay erscheint als normaler Lauf in der History und mit Ergebnis-Pills auf
+dem Diagramm, identisch zu einem Live-„Auswerten".
+
+**Das Mapping** definiert man direkt im Panel — es ist die Antwort auf „wo in clio liegen
+die Events":
+
+| Feld | Bedeutung |
+|---|---|
+| **Subject** | Der clio-Pfad-Teilbaum, der gelesen wird (rekursiv). Leer ⇒ der serverseitig konfigurierte `-clio-subject-prefix`. |
+| **Event-Typ** | Filter auf **einen** CloudEvents-`type` (`com.temis.decision.evaluated.v1`, `…flow.evaluated.v1`, `…decision.requested.v1`) oder „alle Typen". |
+| **Limit** | Höchstzahl eingelesener Events (Default 200, max. 1000). |
+
+Das Mapping wird **pro Modell** (nach Modellname, überlebt content-adressierte Re-Saves) im
+`localStorage` des Browsers gemerkt und beim ersten Laden aus `subjectPrefix`/`subjectKey`
+des Sinks vorbefüllt (siehe `GET /v1/status`).
+
+**Serverseitig** liest der Modeler über **`GET /v1/clio/events?subject=…&type=…&limit=…`**
+(Audit-Scope, wie `/v1/status`). Der Endpunkt ist **secret-frei**: `temisd` fragt clio über
+die **bestehende Sink-Verbindung** (`ClioSink.Query` → clio-`run-query`) ab, der **Browser
+sieht den clio-Token nie**. Ohne konfigurierten Sink antwortet er `enabled:false` (kein
+Fehler), ein clio-Lesefehler ist ein `502`. Es werden nur die replay-relevanten Felder
+zurückgegeben (`subject`, `type`, `time`, `modelId`/`flowId`, `decision`, `input`,
+`outputs`).
+
+Das ist **reines Lesen + lokal neu Auswerten** — kein Schreiben zurück nach clio, keine
+Prozess-Reaktivität (ADR-0025-Grenze bleibt gewahrt). Wer Entscheidungen **automatisch**
+per Event auslösen und das Ergebnis zurückschreiben will, nutzt den Command-Consumer aus
+§6 (`temis-clio-worker`); das Operate-Panel ist die **interaktive** Read-/Nachspiel-Seite.
+
+---
+
 ## Verwandte Dokumente
 
 - **ADR-0033** — Command-Consumer (diese Gegenrichtung): Vertrag, Zustandslosigkeit, ADR-0025-Grenze.
