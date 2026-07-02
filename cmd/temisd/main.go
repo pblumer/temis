@@ -95,6 +95,8 @@ func main() {
 		"PEM certificate file; with -tls-key serves HTTPS instead of cleartext h2c (default $TEMIS_TLS_CERT; empty = plaintext)")
 	tlsKey := flag.String("tls-key", os.Getenv("TEMIS_TLS_KEY"),
 		"PEM private-key file matching -tls-cert (default $TEMIS_TLS_KEY)")
+	rateLimit := flag.Int("rate-limit", envInt("TEMIS_RATE_LIMIT", 0),
+		"per-client-IP request/second cap on the /v1 surface (burst = 2× rate); 0 = unlimited (env TEMIS_RATE_LIMIT)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -121,6 +123,9 @@ func main() {
 	}
 	if *clioActiveProbe {
 		opts = append(opts, service.WithClioActiveProbe(true))
+	}
+	if *rateLimit > 0 {
+		opts = append(opts, service.WithRateLimit(float64(*rateLimit), float64(*rateLimit)*2))
 	}
 	if *cacheSize != 0 {
 		opts = append(opts, service.WithCacheSize(*cacheSize))
@@ -221,6 +226,14 @@ func main() {
 			keying = "BYOK only (send X-LLM-Token)"
 		}
 		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, %s, BYOK=%v)", provider, keying, *llmAllowBYOK)
+		// Guard against an open cost proxy (audit finding H6): with a server-side
+		// LLM key but no auth in front of /v1, any anonymous caller can spend the
+		// key's budget. Warn loudly, and suggest the mitigations (add keys, or add
+		// a rate limit) — mirroring the clio best-effort warning.
+		apiGated := *keysFile != "" || bootstrapAdminKey != "" || *token != ""
+		if *llmToken != "" && !apiGated {
+			log.Printf("temisd: WARNING: a server-side LLM key is set but /v1 is UNAUTHENTICATED — POST /v1/chat is an open, anonymous cost proxy. Protect it with -keys-file/-token, or at least -rate-limit.")
+		}
 	}
 	if clioOn {
 		mode := "best-effort"
