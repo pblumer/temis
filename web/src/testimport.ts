@@ -484,7 +484,16 @@ function placeholder(type?: string): unknown {
 // lines (starting with #) and blank lines are skipped.
 function parseCSVCases(text: string, model: ModelDetail): Omit<TestCase, 'id'>[] {
   const inputNames = new Set(leafInputs(model).map((f) => f.name))
-  const table = parseCSV(text).filter((row) => row.length && !(row.length === 1 && row[0].trim() === '') && !row[0].trimStart().startsWith('#'))
+  // Drop whole-line comments BEFORE the quote-aware CSV parse. The template's
+  // leading comment holds double-quotes (German „…", plus a "Business" example),
+  // an odd count — letting parseCSV see them turns quoting on and swallows the
+  // whole rest of the file into one field, so no cases are found. Comments are
+  // always whole lines, so strip them at the line level first.
+  const body = text
+    .split(/\r\n|\r|\n/)
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n')
+  const table = parseCSV(body).filter((row) => row.length && !(row.length === 1 && row[0].trim() === ''))
   if (table.length < 2) return []
   const header = table[0]
   const kinds = header.map((h) => classifyColumn(h.trim(), inputNames))
