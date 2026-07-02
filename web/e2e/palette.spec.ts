@@ -81,20 +81,14 @@ test('palette: created decisions get unique names', async ({ page }) => {
   await expect(page.locator('.djs-element:has-text("Neue Decision 2")')).toHaveCount(1)
 })
 
-// The guard must not break legitimate click-to-place: click the entry, then click
-// the canvas to drop.
-test('palette: click-to-place still works', async ({ page }) => {
+// A palette click creates immediately at the visible canvas center; it must not
+// leave a click-to-place preview stuck to the cursor.
+test('palette: clicking a create tool immediately creates a real element', async ({ page }) => {
   await openModeler(page)
   const before = await page.locator('.djs-element[data-element-id]').count()
 
   const entry = page.locator('.djs-palette [data-action="create-decision"]')
-  const cbox = await box(page.locator('.djs-container'))
-  const t = { x: cbox.x + cbox.width / 2, y: cbox.y + cbox.height / 2 }
-
   await entry.click()
-  await page.mouse.move(t.x, t.y, { steps: 6 })
-  await page.mouse.click(t.x, t.y)
-  await page.mouse.move(t.x + 80, t.y + 40, { steps: 3 })
 
   expect(await page.locator('.djs-element[data-element-id]').count()).toBe(before + 1)
   expect(await active(page)).toBe(false)
