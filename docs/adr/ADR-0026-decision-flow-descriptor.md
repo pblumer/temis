@@ -241,6 +241,10 @@ Flow-Replay: Event → Flow neu auswerten → kanonisch vergleichen (Folge-WP).
   FEEL-Mapping-Ausdrücke** (`"Credit Score - 50"`) sind mit **ADR-0029 / WP-95** umgesetzt
   (öffentliches `dmn.CompileExpression`-Primitive; Plain-Referenzen bleiben als Fast Path
   rückwärtskompatibel).
+- **Visueller Flow-Editor** (in §7 zunächst außer Scope gestellt): mit **WP-116** umgesetzt —
+  ein „Flow-Designer" im Modeler (strukturierter Inspector + Live-Graph-Preview + Inline-Test)
+  baut/registriert den Deskriptor über die bestehenden `/v1/flows`-Endpunkte und exportiert ihn
+  als `*.flow.json`; **Git bleibt die dauerhafte Quelle** (ADR-0032), kein neuer Schreibpfad.
 - Deskriptor-Schema formal (JSON-Schema) unter `docs/` festschreiben, sobald WP-90 steht.
 - `docs/90-decision-organization.md` um einen konkreten Flow-Beispielabschnitt ergänzen.
 - ADR-0025 bleibt gültig; diese ADR ist ihre konkrete L2a-Umsetzung und ersetzt sie nicht.

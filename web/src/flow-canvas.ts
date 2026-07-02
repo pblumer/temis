@@ -35,9 +35,12 @@ export type FlowCanvas = {
   clear: () => void
 }
 
-// current is the mounted flow diagram, destroyed when the next one is built so its
-// listeners do not linger. It is independent of the DMN modeler's own instance.
-let current: Diagram | null = null
+// mounted tracks the flow diagram per container, so re-rendering a container tears
+// down only its own previous diagram. Keying by container (not a single global)
+// lets the studio (#flowCanvas) and the designer's live preview (#feCanvas) hold
+// independent diagrams — a late preview refresh must never destroy the studio's
+// diagram, and vice versa. Independent of the DMN modeler's own instance.
+const mounted = new WeakMap<HTMLElement, Diagram>()
 
 // fit fits the whole diagram into the viewport.
 function fit(canvas: Canvas): void {
@@ -47,13 +50,14 @@ function fit(canvas: Canvas): void {
 // renderFlowGraph draws laid into container and returns a handle for illumination.
 // Step nodes are drawn as decisions, flow-input nodes as input data.
 export function renderFlowGraph(container: HTMLElement, laid: Laid): FlowCanvas {
-  if (current) current.destroy()
+  const prev = mounted.get(container)
+  if (prev) prev.destroy()
   container.innerHTML = ''
   const diagram = new Diagram({
     canvas: { container },
     modules: [dmnRendererModule, MoveCanvasModule, ZoomScrollModule, OverlaysModule],
   })
-  current = diagram
+  mounted.set(container, diagram)
   const canvas = diagram.get<Canvas>('canvas')
   const factory = diagram.get<ElementFactory>('elementFactory')
   const overlays = diagram.get<Overlays>('overlays')
@@ -83,7 +87,10 @@ export function renderFlowGraph(container: HTMLElement, laid: Laid): FlowCanvas 
     const mid = { x: (wp[0].x + wp[wp.length - 1].x) / 2, y: (wp[0].y + wp[wp.length - 1].y) / 2 }
     edgeAnchor[e.id] = { nodeId: e.source, left: mid.x - src.x, top: mid.y - src.y }
   }
-  fit(canvas)
+  // Only fit when the container is actually laid out: fitting a zero-size (hidden)
+  // container makes diagram-js divide by an empty viewport. Callers render into a
+  // visible host, but this keeps a stray hidden render from throwing.
+  if (container.clientWidth > 0 && container.clientHeight > 0) fit(canvas)
 
   const clear = (): void => {
     overlays.remove({ type: 'eval-result' })

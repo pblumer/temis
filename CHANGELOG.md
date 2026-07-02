@@ -61,6 +61,20 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   werden weiterhin präzise gemeldet. Neue additive `dmn`-API `ReachableInputSchema` /
   `ValidateReachableInput` (cone-gescopt, analog zu `ModelInputSchema`/`ValidateModelInput`);
   MCP `describe_decision` weist die Menge additiv als `reachableInputs` neben `inputs` aus.
+- **Flow-Designer – Flows via UI erstellen & designen (WP-116, ADR-0026):** Decision-Flows lassen
+  sich jetzt **im Modeler visuell erstellen, designen und testen**, nicht nur ansehen & ausführen.
+  Ein neuer **Flow-Designer** (betretbar über das **+** in der FLOWS-Sidebar oder **„✎ Bearbeiten"**
+  im Studio) bietet einen **strukturierten Inspector** — Flow-Name/Version, deklarierte Inputs
+  (Name + FEEL-Typ), Steps mit **Modell- + Decision-Picker** und **FEEL-Input-Verdrahtung**
+  (Vorschläge aus Flow-Inputs + Step-IDs; **Auto-Wiring** übernimmt die Inputs der gewählten
+  Decision und referenziert gleichnamige Flow-Inputs) sowie Output-Mapping — neben einer
+  **Live-Graph-Preview**, die den Cross-Model-DRG beim Tippen neu zeichnet. **„Testen"** wertet den
+  Entwurf inline aus (`POST /v1/flow/evaluate`, ohne Registrierung) und *illuminiert* die Preview;
+  **„Prüfen"** validiert gegen die geladenen Modelle; **„Registrieren & Öffnen"** legt den Flow im
+  Katalog ab und öffnet ihn im Studio; **„Export"** lädt den `*.flow.json`-Deskriptor herunter.
+  **Git bleibt die dauerhafte Quelle (ADR-0032):** die Registrierung ist der flüchtige Dev-Pfad,
+  der Export der Weg in den Repo (`flows/` + `git_propose`) — kein neuer server-seitiger
+  Schreibpfad. Rein additiv, keine Backend-Änderung.
 - **Modeler – Auto-Layout mit orthogonalem Routing & Orientierungs-Umschalter (ADR-0016):** Modelle ohne
   authorede `DMNDI`-Bounds werden nicht länger als diagonaler „Spaghetti" gezeichnet. Das Auto-Layout
   richtet die Knoten spaltenweise aus (jeder Knoten wird über/unter seine Nachbarn gezogen) und führt

@@ -313,6 +313,52 @@ export async function evaluateFlow(id: string, input: Record<string, unknown>, e
   return (await r.json()) as EvalResult
 }
 
+// FlowDescriptor mirrors flow.Descriptor (ADR-0026): the on-wire / on-disk form
+// of a decision flow. It is what the flow designer builds, registers and exports
+// as a *.flow.json artifact. `in` and `output` map a target/result key to a FEEL
+// reference (a flow-input name, "stepId.output", or any FEEL expression).
+export type FlowDescriptor = {
+  flow: string
+  version?: string
+  inputs?: FlowInputDecl[]
+  steps: FlowStep[]
+  output?: Record<string, string>
+}
+
+// FlowRegisterResult mirrors the service flowResponse: the content-addressed id of
+// the registered flow plus any validation diagnostics against the loaded models
+// (unresolved models are reported but do not block registration — ADR-0032).
+export type FlowRegisterResult = { flowId: string; name?: string; diagnostics?: FlowDiagnostic[] }
+
+// createFlow registers a flow descriptor (POST /v1/flows) and returns its
+// content-addressed flowId. This is the designer's "register/validate" path: the
+// store is ephemeral and content-addressed (editing a flow yields a new id); Git
+// stays the durable source of truth for flows (ADR-0032), which is why the
+// designer also offers a .flow.json export. Malformed JSON is a 400.
+export async function createFlow(descriptor: FlowDescriptor): Promise<FlowRegisterResult> {
+  const r = await fetch('/v1/flows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(descriptor),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Flow registrieren fehlgeschlagen'))
+  return (await r.json()) as FlowRegisterResult
+}
+
+// evaluateFlowInline compiles and evaluates an inline descriptor in one request
+// (POST /v1/flow/evaluate) without registering it — the designer's live "test this
+// draft" path. With explain the result carries the aggregated decision trace. An
+// unsound flow is a 422 whose FLOW_* diagnostics problemMessage surfaces.
+export async function evaluateFlowInline(descriptor: FlowDescriptor, input: Record<string, unknown>, explain = false): Promise<EvalResult> {
+  const r = await fetch('/v1/flow/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ flow: descriptor, input, explain }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Flow-Test fehlgeschlagen'))
+  return (await r.json()) as EvalResult
+}
+
 // GraphEvalResult mirrors the service evaluateGraphResponse: every decision's
 // value (keyed by name), per-decision traces (with explain), per-decision
 // evaluation errors, and the leaf-input schema the whole graph consumes — so the
@@ -842,9 +888,17 @@ export async function createBoxedInvocation(modelId: string, decision: string): 
 // HTTP status.
 async function problemMessage(r: Response, fallback: string): Promise<string> {
   try {
-    const p = (await r.json()) as { detail?: string; problems?: { message: string }[] }
+    const p = (await r.json()) as {
+      detail?: string
+      problems?: { message: string }[]
+      flowProblems?: { code: string; message: string; step?: string }[]
+    }
     let msg = p.detail || fallback
     if (p.problems?.length) msg += ': ' + p.problems.map((x) => x.message).join('; ')
+    // Flow validation faults (422 FLOW_INVALID) carry structured FLOW_* diagnostics.
+    if (p.flowProblems?.length) {
+      msg += ': ' + p.flowProblems.map((x) => (x.step ? x.step + ': ' : '') + x.message).join('; ')
+    }
     return msg
   } catch {
     return fallback + ' (HTTP ' + r.status + ')'

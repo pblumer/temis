@@ -7,7 +7,7 @@
 // fired, in order.
 
 import { listFlows, getFlow, evaluateFlow } from './api'
-import type { FlowDetail, Graph, GraphEdge, GraphNode, Trace } from './api'
+import type { EvalResult, FlowDetail, Graph, GraphEdge, GraphNode, Trace } from './api'
 import { layout } from './layout'
 import type { Laid } from './layout'
 import { renderFlowGraph } from './flow-canvas'
@@ -15,16 +15,24 @@ import type { FlowCanvas, NodeLight, EdgeLight } from './flow-canvas'
 
 // reveal cadence: each step of dependency depth lights up this many ms after the
 // previous, so the illumination visibly flows from inputs to output.
-const STEP_MS = 140
+export const STEP_MS = 140
 
 // FlowView is the mounted view: render refreshes the catalog (and reopens the
-// current flow).
-export type FlowView = { render: () => void }
+// current flow); open() opens a specific flow into the studio (used after the
+// designer registers a new flow).
+export type FlowView = { render: () => void; open: (id: string) => void }
 
 // FlowMounts are the two hosts the view fills: the catalog list (in the sidebar)
 // and the studio (canvas + run panel, in the editor area). onOpenFlow is called
-// when the user opens a flow, so the shell can switch the editor to the studio.
-export type FlowMounts = { catalogHost: HTMLElement; studioHost: HTMLElement; onOpenFlow?: () => void }
+// when the user opens a flow, so the shell can switch the editor to the studio;
+// onEditFlow is called when the user asks to edit the open flow, so the shell can
+// switch to the flow designer prefilled from it.
+export type FlowMounts = {
+  catalogHost: HTMLElement
+  studioHost: HTMLElement
+  onOpenFlow?: () => void
+  onEditFlow?: (detail: FlowDetail) => void
+}
 
 // escapeRe escapes a name for use as a literal in a RegExp.
 function escapeRe(s: string): string {
@@ -32,7 +40,7 @@ function escapeRe(s: string): string {
 }
 
 // esc escapes text for safe inclusion in innerHTML.
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
@@ -46,7 +54,7 @@ function references(expr: string, name: string): boolean {
 // buildGraph turns a flow's steps and inputs into a Graph the layouter positions:
 // step nodes (drawn as decisions), input nodes (drawn as input data), and edges
 // derived from which steps/inputs each step's mappings reference.
-function buildGraph(detail: FlowDetail): Graph {
+export function buildGraph(detail: FlowDetail): Graph {
   const stepIds = new Set(detail.steps.map((s) => s.id))
   const inputNames = (detail.inputs ?? []).map((i) => i.name)
 
@@ -74,7 +82,7 @@ function buildGraph(detail: FlowDetail): Graph {
 // depthMap returns each node's dependency depth: inputs (no incoming edge) are 0,
 // every other node is one deeper than the deepest node it requires. It drives the
 // staggered reveal so a step never lights up before its inputs.
-function depthMap(graph: Graph): Record<string, number> {
+export function depthMap(graph: Graph): Record<string, number> {
   const incoming = new Map<string, string[]>()
   for (const n of graph.nodes) incoming.set(n.id, [])
   for (const e of graph.edges) incoming.get(e.target)?.push(e.source)
@@ -97,7 +105,7 @@ function depthMap(graph: Graph): Record<string, number> {
 
 // coerce turns a form string into a value: JSON when it parses (numbers, booleans,
 // lists), otherwise the raw string; blank means "omitted".
-function coerce(raw: string): unknown {
+export function coerce(raw: string): unknown {
   const s = raw.trim()
   if (s === '') return undefined
   try {
@@ -108,7 +116,7 @@ function coerce(raw: string): unknown {
 }
 
 // fmt renders a value for a badge, wire label or the output table.
-function fmt(v: unknown): string {
+export function fmt(v: unknown): string {
   if (v === null || v === undefined) return 'null'
   if (typeof v === 'string') return v
   return JSON.stringify(v)
@@ -119,7 +127,7 @@ function fmt(v: unknown): string {
 // and the rule(s) that fired. When the table count matches the flow's steps the
 // blocks are labelled by step decision (the common one-table-per-step case);
 // otherwise they fall back to a plain ordinal, so the panel never over-claims.
-function renderTrace(trace: Trace | undefined, detail: FlowDetail): string {
+export function renderTrace(trace: Trace | undefined, detail: FlowDetail): string {
   const tables = trace?.tables ?? []
   if (!tables.length) return ''
   const aligned = tables.length === detail.steps.length
@@ -140,13 +148,53 @@ function renderTrace(trace: Trace | undefined, detail: FlowDetail): string {
   return `<h3 class="flow-trace-title">Entscheidungspfad</h3>${blocks.join('')}`
 }
 
+// applyIllumination lights the flow canvas after a run: a result badge on each
+// step node and the value that travelled each wire, staggered by dependency depth
+// so the evaluation visibly propagates from inputs to output. Shared by the flow
+// runner (studio) and the designer's live test (flow-editor).
+export function applyIllumination(
+  fc: FlowCanvas,
+  detail: FlowDetail,
+  laid: Laid,
+  depth: Record<string, number>,
+  input: Record<string, unknown>,
+  res: EvalResult,
+): void {
+  // Each step's result: res.decisions is keyed "stepId.output".
+  const nodes: Record<string, NodeLight> = {}
+  for (const s of detail.steps) {
+    let val: string | undefined
+    for (const [k, v] of Object.entries(res.decisions ?? {})) {
+      if (k === s.id + '.' + s.decision || k.startsWith(s.id + '.')) val = fmt(v)
+    }
+    if (val !== undefined) nodes[s.id] = { value: val, delay: (depth[s.id] ?? 0) * STEP_MS }
+  }
+  // Each wire's value: a flow input carries what the user entered; a step→step
+  // wire carries the source step's result.
+  const edges: Record<string, EdgeLight> = {}
+  for (const e of laid.edges) {
+    let val: string | undefined
+    if (e.source.startsWith('in:')) {
+      const name = e.source.slice(3)
+      if (name in input) val = fmt(input[name])
+    } else {
+      val = nodes[e.source]?.value
+    }
+    if (val !== undefined) edges[e.id] = { value: val, delay: (depth[e.target] ?? 0) * STEP_MS }
+  }
+  fc.illuminate({ nodes, edges })
+}
+
 export function mountFlows(opts: FlowMounts): FlowView {
-  const { catalogHost, studioHost, onOpenFlow } = opts
+  const { catalogHost, studioHost, onOpenFlow, onEditFlow } = opts
 
   studioHost.innerHTML = `
     <div class="flow-canvas" id="flowCanvas"></div>
     <aside class="flow-run">
-      <h2 class="eval-title">Flow auswerten</h2>
+      <div class="flow-run-head">
+        <h2 class="eval-title">Flow auswerten</h2>
+        <button id="flowEdit" class="tbtn flow-edit-btn" type="button" disabled title="Diesen Flow im Designer bearbeiten">✎ Bearbeiten</button>
+      </div>
       <div class="flow-meta" id="flowMeta"></div>
       <div class="flow-inputs eval-inputs" id="flowInputs"></div>
       <button id="flowRun" class="tbtn" type="button" disabled>Auswerten</button>
@@ -157,8 +205,12 @@ export function mountFlows(opts: FlowMounts): FlowView {
   const meta = studioHost.querySelector<HTMLElement>('#flowMeta')!
   const inputsHost = studioHost.querySelector<HTMLElement>('#flowInputs')!
   const runBtn = studioHost.querySelector<HTMLButtonElement>('#flowRun')!
+  const editBtn = studioHost.querySelector<HTMLButtonElement>('#flowEdit')!
   const outHost = studioHost.querySelector<HTMLElement>('#flowOut')!
   const traceHost = studioHost.querySelector<HTMLElement>('#flowTrace')!
+  editBtn.addEventListener('click', () => {
+    if (currentDetail) onEditFlow?.(currentDetail)
+  })
 
   let currentId = ''
   let currentDetail: FlowDetail | null = null
@@ -177,29 +229,7 @@ export function mountFlows(opts: FlowMounts): FlowView {
     traceHost.innerHTML = ''
     try {
       const res = await evaluateFlow(currentId, input, true)
-      // Each step's result: res.decisions is keyed "stepId.output".
-      const nodes: Record<string, NodeLight> = {}
-      for (const s of currentDetail.steps) {
-        let val: string | undefined
-        for (const [k, v] of Object.entries(res.decisions ?? {})) {
-          if (k === s.id + '.' + s.decision || k.startsWith(s.id + '.')) val = fmt(v)
-        }
-        if (val !== undefined) nodes[s.id] = { value: val, delay: (currentDepth[s.id] ?? 0) * STEP_MS }
-      }
-      // Each wire's value: a flow input carries what the user entered; a step→step
-      // wire carries the source step's result.
-      const edges: Record<string, EdgeLight> = {}
-      for (const e of currentLaid.edges) {
-        let val: string | undefined
-        if (e.source.startsWith('in:')) {
-          const name = e.source.slice(3)
-          if (name in input) val = fmt(input[name])
-        } else {
-          val = nodes[e.source]?.value
-        }
-        if (val !== undefined) edges[e.id] = { value: val, delay: (currentDepth[e.target] ?? 0) * STEP_MS }
-      }
-      fc?.illuminate({ nodes, edges })
+      if (fc) applyIllumination(fc, currentDetail, currentLaid, currentDepth, input, res)
 
       const rows = Object.entries(res.outputs ?? {})
         .map(([k, v]) => `<tr><td>${esc(k)}</td><td class="flow-out-val">${esc(fmt(v))}</td></tr>`)
@@ -255,6 +285,8 @@ export function mountFlows(opts: FlowMounts): FlowView {
       inputsHost.append(wrap)
     }
     runBtn.disabled = false
+    editBtn.disabled = !onEditFlow
+    editBtn.style.display = onEditFlow ? '' : 'none'
   }
 
   let lastFlows: { flowId: string; name?: string; steps: number }[] = []
@@ -298,5 +330,5 @@ export function mountFlows(opts: FlowMounts): FlowView {
     })()
   }
 
-  return { render }
+  return { render, open: (id: string) => void showFlow(id) }
 }
