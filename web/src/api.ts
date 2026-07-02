@@ -2,6 +2,8 @@
 // model authority (ADR-0016): the browser fetches the decision requirements
 // graph rather than parsing DMN XML itself.
 
+import { escapeHtml } from './dom'
+
 // dataType is the node's resolved FEEL type; varName a decision's output-variable
 // name. x/y/width/height are present only when the model carries DMNDI (absent →
 // the client auto-lays-out the graph).
@@ -211,7 +213,7 @@ export async function createModel(xml: string): Promise<ModelDetail> {
 export function blankModelXML(name: string): string {
   const raw = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'm' + Date.now().toString(36)
   const uid = raw.replace(/[^a-zA-Z0-9-]/g, '')
-  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const esc = escapeHtml
   return `<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
              xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"

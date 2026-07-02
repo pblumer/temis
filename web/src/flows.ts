@@ -6,6 +6,7 @@
 // "Entscheidungspfad" panel lists — from the real evaluation trace — which rules
 // fired, in order.
 
+import { escapeHtml } from './dom'
 import { listFlows, getFlow, evaluateFlow } from './api'
 import type { EvalResult, FlowDetail, Graph, GraphEdge, GraphNode, Trace } from './api'
 import { layout } from './layout'
@@ -40,10 +41,10 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// esc escapes text for safe inclusion in innerHTML.
-export function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+// esc escapes text for safe inclusion in innerHTML, including quoted attribute
+// contexts. It is the canonical escapeHtml (dom.ts), re-exported under the name
+// `esc` so existing call sites (this module + flow-editor.ts) keep working.
+export const esc = escapeHtml
 
 // references reports whether a mapping expression refers to name — as a whole
 // word, so "risk" matches "risk.Risk Level" and "get value(risk, …)" but not

@@ -170,7 +170,17 @@ async function boot(root: HTMLElement): Promise<void> {
   let typeOptions: string[] = FEEL_TYPES
   const renderTypeEditor = (selected?: string): void => {
     const opts = selected && !typeOptions.includes(selected) ? [...typeOptions, selected] : typeOptions
-    datatype.innerHTML = opts.map((t) => `<option value="${t}">${t || '— Typ —'}</option>`).join('')
+    // Build <option>s via the DOM rather than innerHTML: option text carries
+    // server-supplied custom item-definition names, which must not be able to
+    // inject markup (audit finding H2). textContent/value are escape-safe.
+    datatype.replaceChildren(
+      ...opts.map((t) => {
+        const o = document.createElement('option')
+        o.value = t
+        o.textContent = t || '— Typ —'
+        return o
+      }),
+    )
     if (selected !== undefined) datatype.value = selected
   }
   renderTypeEditor()
