@@ -35,7 +35,7 @@ jobs:
           ldflags="-s -w -X github.com/pblumer/temis/internal/version.Version=${VERSION}"
           mkdir -p dist
           targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
-          for cmd in temisd temis-mcp; do
+          for cmd in temisd temis-mcp temis-clio-worker; do
             for t in $targets; do
               os=${t%/*}; arch=${t#*/}
               out="${cmd}_${VERSION}_${os}_${arch}"

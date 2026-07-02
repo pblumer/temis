@@ -2,8 +2,9 @@
 
 > **Status:** Der **`temisd`-Sink (Abschnitt 2, WP-54)** und das
 > **Re-Audit-Tool (Abschnitt 4, WP-55)** sind umgesetzt. Das **Agent-Muster**
-> (Abschnitt 5) funktioniert ganz ohne neuen temis-Code. Vertrag & Begründung:
-> ADR-0023.
+> (Abschnitt 5) funktioniert ganz ohne neuen temis-Code. Die **Gegenrichtung**
+> (Abschnitt 6, `temis-clio-worker`) löst Entscheidungen per Command-Event aus.
+> Vertrag & Begründung: ADR-0023, ADR-0033.
 
 temis trifft **deterministische, begründete** Entscheidungen (ADR-0013); das
 Schwesterprojekt **[clio](https://github.com/pblumer/clio)** (`cliostore`) ist ein
@@ -273,7 +274,105 @@ sie denselben Vertrag erfüllen.
 
 ---
 
+## 6. Gegenrichtung: Entscheidungen per Command-Event auslösen (ADR-0033)
+
+Die Abschnitte 1–5 beschreiben **eine** Richtung: temis wertet aus, das Ergebnis fliesst
+als Event nach clio. ADR-0033 ergänzt die **Gegenrichtung**: ein in clio geschriebenes
+**Command-Event** löst eine Auswertung aus, und deren Ergebnis landet — korreliert — wieder
+im Logbuch. In CQRS-Sprache: **Commands** lösen einen DRG aus, **Events** protokollieren die
+Entscheidung. So wird clio zur **entkoppelnden Naht**: ein Umsystem (App, Agent, Dienst)
+schreibt nur „entscheide das für Entität X" und muss temis nicht kennen.
+
+> **Abgrenzung (ADR-0025).** Der Consumer ist **zustandslos** — ein reiner
+> `event → evaluate → event`-Transform: kein Warten, keine Timer, kein Fall-Zustand, keine
+> Kompensation. clio hält den gesamten Zustand (Command-Log, Result-Log, „schon
+> beantwortet?"-Query). Damit bleibt er **Decisioning** (deterministisch, re-auditierbar) und
+> wird **nicht** zur Prozess-Engine (das ist chrampfer/L2b).
+
+### Der Command-Event-Vertrag
+
+```json
+{
+  "source":  "orders-app",
+  "subject": "/orders/42",
+  "type":    "com.temis.decision.requested.v1",
+  "data": {
+    "modelId":  "sha256:1f3a…",
+    "decision": "Dish",
+    "input":    { "Season": "Winter", "Guest Count": 8 },
+    "explain":  true
+  }
+}
+```
+
+| `data`-Feld | Bedeutung |
+|---|---|
+| `modelId` | content-addressed Modell — für eine **Einzel-Decision** oder den **ganzen Graph** |
+| `flowId` | content-addressed Flow (**DRG**) — schliesst `modelId` aus |
+| `decision` | mit `modelId`: Name der Einzel-Decision; **weggelassen** ⇒ ganzer Modell-Graph (ein Ergebnis-Event je Decision) |
+| `input` | die FEEL-Eingabe |
+| `explain` | opt-in: Entscheidungsspur ins Ergebnis übernehmen |
+
+**Diskriminator:** `flowId` → Flow (`com.temis.flow.evaluated.v1`); `modelId`+`decision` →
+Einzel-Decision (`com.temis.decision.evaluated.v1`); `modelId` allein → ganzer Graph (je
+Decision ein `evaluated.v1`).
+
+Die **Ergebnis-Events** sind exakt der Vertrag aus Abschnitt 1 / WP-93, ergänzt um ein
+additives Korrelationsfeld **`data.requestId`** (= die clio-Event-ID des Commands) und
+**unter demselben `subject`** wie das Command abgelegt. Dadurch sind command-getriebene
+Ergebnisse byte-gleich zu den vom Sink geschriebenen und werden von `temis-reaudit`
+**identisch** nachgerechnet. Eine nicht auswertbare Anfrage wird mit
+**`com.temis.decision.failed.v1`** beantwortet — so bekommt **jedes** Command eine Antwort.
+
+### Der Consumer `temis-clio-worker`
+
+Ein eigenständiges Binary (`cmd/temis-clio-worker`, Kern im `package consume` — nur `dmn`/
+`flow`/`audit`, **kein** `internal/`, **kein** `service`), symmetrisch zu `temis-reaudit`:
+
+```sh
+temis-clio-worker \
+  -clio-url    http://127.0.0.1:3000 \
+  -clio-token  kid_worker.secret \
+  -models      ./models            # *.dmn/*.xml + *.flow.json, content-addressed
+# → beobachtet Command-Events (observe), wertet aus, schreibt evaluated.v1 zurück
+```
+
+| Flag / Env | Default | Bedeutung |
+|---|---|---|
+| `-clio-url` / `$TEMIS_CLIO_URL` | — | Basis-URL der clio-Instanz. |
+| `-clio-token` / `$TEMIS_CLIO_TOKEN` | — | clio-Key mit **read** (Command-Subtree) **+ write** (Result-Subtree). |
+| `-clio-source` / `$TEMIS_CLIO_SOURCE` | `temis-clio-worker` | CloudEvents-`source` der Ergebnis-Events. |
+| `-models` / `$TEMIS_MODELS_DIR` | — | Verzeichnis der Modelle/Flows, die `modelId`/`flowId` auflösen. |
+| `-subject` | `/` | clio-Subject-Scope, der beobachtet wird. |
+| `-observe-path` | `/api/v1/observe` | clio-Live-`observe`-Route. |
+| `-poll` / `-poll-interval` | aus / `2s` | statt `observe` per `run-query` pollen (reconnect-frei). |
+| `-once` | aus | nur den Rückstand verarbeiten und beenden (Cron/Test). |
+
+Verbindliche Eigenschaften (ADR-0033):
+
+- **Zustandslos.** Einziger Speicher ist ein In-Process-Dedupe-Set (Beschleuniger, geht bei
+  Neustart verloren); die Wahrheit über „schon beantwortet?" steht in clio.
+- **Live + robust.** Neue Commands kommen latenzarm über `observe`; ein `run-query`-Backfill
+  beim Start und bei jeder Reconnect fängt auf, was während einer Trennung geschrieben wurde.
+- **Idempotenz über Preconditions.** Jeder Result-Write trägt eine Precondition auf
+  `data.requestId` (bei Graph-Commands zusätzlich `data.decision`). Re-Delivery,
+  Backfill-Überlappung oder Neustart beantworten **nie** doppelt; `409` = erfolgreicher
+  No-op — dasselbe Muster wie der Sink.
+- **Kein Loop.** `observe`/`run-query` filtern hart auf `type == 'com.temis.decision.requested.v1'`;
+  die eigenen Ergebnis-Events (anderer Typ) triggern den Worker nicht erneut.
+- **Kein durable Retry.** Schlägt ein clio-Write fehl, bleibt das Command unbeantwortet (nicht
+  als verarbeitet markiert); der nächste Backfill holt es nach — die Wiederaufnahme ist die
+  read-Seite, kein Timer im Consumer.
+
+**Sicherheit/Scopes.** Der Worker-Key braucht **read** auf den Command-Subtree und **write**
+auf den Result-Subtree (clio-Scopes, ADR-025 in clio). Wie beim Sink können `input`/`trace`
+fachlich sensibel sein — Subject-Mapping und Feldumfang gehören in den Betriebsleitfaden.
+
+---
+
 ## Verwandte Dokumente
+
+- **ADR-0033** — Command-Consumer (diese Gegenrichtung): Vertrag, Zustandslosigkeit, ADR-0025-Grenze.
 
 - **ADR-0023** — Entscheidung & Begründung dieses Integrationsmusters.
 - **ADR-0013** — temis als Verifikationsorakel; Entscheidungsspur (`explain`).
