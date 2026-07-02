@@ -762,7 +762,21 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 // named group is done by the client calling this once per revision. It responds
 // 204 on success and 404 when no model has that id.
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
-	if !s.cache.delete(r.PathValue("id")) {
+	id := r.PathValue("id")
+	inCache := s.cache.delete(id)
+	// Also remove the durable copy, if any: without this a model persisted via
+	// -models-dir would resurrect on the next cache-miss fallback, making the
+	// admin-scoped delete a no-op (audit finding M3).
+	removedFromStore := false
+	if s.store != nil {
+		ok, err := s.store.delete(id)
+		if err != nil {
+			writeProblem(w, http.StatusInternalServerError, "DELETE_FAILED", err.Error())
+			return
+		}
+		removedFromStore = ok
+	}
+	if !inCache && !removedFromStore {
 		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
 		return
 	}
@@ -1241,6 +1255,9 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 				Input:    req.Input,
 				Outputs:  map[string]any{name: val},
 				Strict:   req.Strict,
+				// Stamp authorship so a whole-graph eval carries clioauthkid too,
+				// matching single-decision evaluate (audit finding N7, WP-105).
+				AuthKid: authKidFromContext(r.Context()),
 			}
 			if res.Traces != nil {
 				rec.Trace = res.Traces[name]

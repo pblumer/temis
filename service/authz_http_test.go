@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,7 +63,18 @@ func TestHTTPScopeAuthorization(t *testing.T) {
 		{"auditor", "au", []Scope{ScopeAudit}},
 		{"boss", "a", []Scope{ScopeAdmin}},
 	})
-	h := NewServer(nil, WithKeysFile(path), WithAssist(AssistConfig{Provider: "anthropic", AllowBYOK: true})).Handler()
+	// Point the /v1/git routes at a fake GitHub so this test is hermetic: the
+	// authorization gate is what we exercise, not real network access (a real
+	// call would 401 from GitHub and be mistaken for a gate rejection).
+	fakeGitHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"name":"main","commit":{"sha":"abc"}}]`))
+	}))
+	t.Cleanup(fakeGitHub.Close)
+	h := NewServer(nil,
+		WithKeysFile(path),
+		WithAssist(AssistConfig{Provider: "anthropic", AllowBYOK: true}),
+		WithGitHubBaseURL(fakeGitHub.URL),
+	).Handler()
 
 	// Seed a model with the admin key so id-bearing routes have a target.
 	xml := dishXML(t)

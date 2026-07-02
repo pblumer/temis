@@ -159,6 +159,9 @@ func (c *Client) ListCommits(ctx context.Context, repo vcs.RepoRef, ref string) 
 // API. The contents endpoint returns up to 1000 entries per directory; larger
 // trees would need the Git Trees API, which is out of scope for now.
 func (c *Client) ListFiles(ctx context.Context, repo vcs.RepoRef, ref, dir string) ([]vcs.File, error) {
+	if err := rejectTraversal(dir); err != nil {
+		return nil, err
+	}
 	u := c.contentsURL(repo, ref, dir)
 	body, _, err := c.do(ctx, u, "application/vnd.github+json")
 	if err != nil {
@@ -191,6 +194,9 @@ func (c *Client) ListFiles(ctx context.Context, repo vcs.RepoRef, ref, dir strin
 func (c *Client) ReadFile(ctx context.Context, repo vcs.RepoRef, ref, path string) ([]byte, error) {
 	if path == "" {
 		return nil, fmt.Errorf("github: %w: empty path", vcs.ErrNotFound)
+	}
+	if err := rejectTraversal(path); err != nil {
+		return nil, err
 	}
 	u := c.contentsURL(repo, ref, path)
 	body, _, err := c.do(ctx, u, "application/vnd.github.raw")
@@ -358,6 +364,19 @@ func nextLink(header string) string {
 
 // esc escapes a single path segment (owner or repo name).
 func esc(s string) string { return url.PathEscape(s) }
+
+// rejectTraversal errors when p contains a "." or ".." segment. url.PathEscape
+// does not encode dots, so such a segment would survive into the request path
+// and could redirect it within api.github.com; validating at the segment level
+// closes that off (audit finding N6).
+func rejectTraversal(p string) error {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return fmt.Errorf("github: %w: invalid path segment %q", vcs.ErrNotFound, seg)
+		}
+	}
+	return nil
+}
 
 // escPath escapes each segment of a slash-separated path while preserving the
 // separators, so "models/dish.dmn" stays a two-segment path.

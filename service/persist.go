@@ -4,9 +4,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// modelIDPattern matches a well-formed content-addressed model id
+// ("sha256:" + 64 lowercase hex). Filesystem operations validate against it as
+// defence-in-depth so a hand-crafted id can never escape the store directory,
+// even though Go's routing already prevents path traversal (audit finding N6).
+var modelIDPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// validModelID reports whether id is a syntactically valid model id.
+func validModelID(id string) bool { return modelIDPattern.MatchString(id) }
 
 // diskStore is an optional filesystem-backed store of raw DMN models, so the
 // server's working set survives a restart (ADR-0027). Files are content-addressed
@@ -77,6 +87,24 @@ func (d *diskStore) get(id string) ([]byte, bool) {
 		return nil, false
 	}
 	return xml, true
+}
+
+// delete removes the model stored under id, reporting whether a file was
+// actually removed. A malformed id or an absent file is not an error (nothing to
+// delete), so a caller can treat (false, nil) as "no such stored model". This
+// backs DELETE /v1/models/{id} so a delete is durable and a persisted model does
+// not resurrect from disk on the next cache miss (audit finding M3).
+func (d *diskStore) delete(id string) (bool, error) {
+	if !validModelID(id) {
+		return false, nil
+	}
+	if err := os.Remove(d.path(id)); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // load returns every stored model's raw XML, oldest first (by modification time,
