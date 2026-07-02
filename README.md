@@ -216,6 +216,21 @@ Zeile eine **Pass/Fail-Erwartung**. „Durchlaufen lassen" schickt jeden Datensa
 links (*Eingang*) durch die *Evaluation* (dieselbe Engine wie Operate) nach rechts in den *clio
 Store* — mit berechneten Ergebnissen und Pass/Fail-Badges. Reines Frontend, kein neuer Endpunkt.
 
+**Flow Studio & Designer (Decision-Flows via UI, ADR-0026/0032):** Über den Modellen (L1) liegt
+eine eigene **FLOWS**-Sektion (L2a) in der Sidebar. Ein registrierter Flow wird per Klick im
+**Flow Studio** geöffnet: seine Steps als auto-gelayouteter **Cross-Model-Graph**, ein Run-Panel
+aus den deklarierten Inputs, und nach dem Auswerten *illuminiert* der Canvas — jede Leitung zeigt
+den Wert, der über sie floss, und ein **Entscheidungspfad** listet die gefeuerten Regeln. Mit dem
+**Flow-Designer** (das **+** in der FLOWS-Sektion, oder **„✎ Bearbeiten"** an einem offenen Flow)
+lassen sich Flows auch **erstellen und designen**: ein strukturierter Inspector editiert Name,
+deklarierte Inputs, **Steps** (Modell- + Decision-Picker, FEEL-Input-Verdrahtung mit
+**Auto-Wiring** aus dem Decision-Schema) und das Output-Mapping, während eine **Live-Graph-Preview**
+den DRG beim Tippen neu zeichnet. **„Testen"** wertet den Entwurf inline aus (ohne Registrierung),
+**„Prüfen"** validiert gegen die geladenen Modelle, **„Registrieren & Öffnen"** legt ihn im Katalog
+ab, **„Export"** lädt den `*.flow.json`-Deskriptor herunter. Der Server-Flow-Store bleibt der
+flüchtige Dev-Pfad; **Git bleibt die dauerhafte Quelle** (`flows/`, ADR-0032) — der Export ist der
+Weg dorthin. Reines Frontend über die bestehenden `/v1/flows`-Endpunkte, kein neuer Endpunkt.
+
 **Interaktive API-Doku (Swagger UI):** Der Server liefert zusätzlich eine dynamische
 OpenAPI-Testseite unter `GET /docs` (lädt das eingebettete Spec von
 `GET /openapi.yaml`) — Endpunkte direkt im Browser ausprobieren.

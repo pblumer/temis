@@ -1327,6 +1327,76 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .flow-trace-matched { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
 .flow-trace-rule { font: 600 10px/1.3 ui-monospace, monospace; color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 7px; }
 
+/* Flow Designer (WP-116): create/design a flow visually. Entered from the FLOWS
+   sidebar section (+ button) or the studio's "Bearbeiten"; a structured inspector
+   edits the descriptor while a live graph preview redraws the cross-model DRG. */
+.flow-run-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.flow-edit-btn { border-color: #7c3aed; color: #7c3aed; flex: 0 0 auto; }
+.tbtn-accent { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.tbtn-accent:hover { background: #6d28d9; border-color: #6d28d9; }
+.link-btn { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font: inherit; font-size: 12px; color: #7c3aed; }
+.link-btn:hover { text-decoration: underline; }
+
+.flow-editor { display: none; }
+.app-shell[data-mode="flow-edit"] { --op: #7c3aed; }
+.app-shell[data-mode="flow-edit"] .editor { background: linear-gradient(180deg, #faf5ff, #f5eeff); }
+.app-shell[data-mode="flow-edit"] .design-only,
+.app-shell[data-mode="flow-edit"] .zoom-group,
+.app-shell[data-mode="flow-edit"] .canvas-wrap,
+.app-shell[data-mode="flow-edit"] .eval-panel,
+.app-shell[data-mode="flow-edit"] .op-history,
+.app-shell[data-mode="flow-edit"] .op-overlays,
+.app-shell[data-mode="flow-edit"] .import-cockpit,
+.app-shell[data-mode="flow-edit"] .flow-studio,
+.app-shell[data-mode="flow-edit"] #status,
+.app-shell[data-mode="flow-edit"] .djs-palette { display: none !important; }
+.app-shell[data-mode="flow-edit"] .flow-editor { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 10px; }
+
+.flow-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 0 0 auto; }
+.flow-editor-title { font-size: 15px; font-weight: 650; margin: 0; }
+.flow-editor-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.flow-editor-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
+.flow-editor-canvas { flex: 1 1 auto; min-width: 0; height: auto; }
+.flow-editor-inspector { flex: 0 0 380px; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+.flow-editor-foot { flex: 0 0 auto; max-height: 34vh; overflow: auto; }
+
+.fe-section { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fff; }
+.fe-h { font-size: 12px; font-weight: 700; margin: 0; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.fe-field { display: flex; flex-direction: column; gap: 3px; }
+.fe-label { font-size: 11.5px; color: var(--muted); }
+.fe-section input, .fe-section select { font: inherit; font-size: 13px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--fg); min-width: 0; }
+.fe-section input:focus, .fe-section select:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15); }
+.fe-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+
+.fe-row { display: flex; gap: 6px; align-items: center; }
+.fe-row .fe-name { flex: 1 1 auto; }
+.fe-row .fe-type { flex: 0 0 130px; }
+
+.fe-step { border: 1px solid var(--line); border-left: 3px solid #7c3aed; border-radius: 8px; padding: 8px; background: #faf5ff; display: flex; flex-direction: column; gap: 7px; }
+.fe-step-head { display: flex; gap: 6px; align-items: center; }
+.fe-step-id { flex: 1 1 auto; font-weight: 600; }
+.fe-wires-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fe-wire-actions { display: inline-flex; gap: 10px; }
+.fe-wires { display: flex; flex-direction: column; gap: 5px; }
+.fe-wire { display: flex; gap: 5px; align-items: center; }
+.fe-wire-key { flex: 0 0 38%; }
+.fe-wire-expr { flex: 1 1 auto; }
+.fe-wire-arrow { color: var(--muted); flex: 0 0 auto; font-size: 12px; }
+
+.icon-btn.fe-del-input, .icon-btn.fe-del-step, .icon-btn.fe-del-wire, .icon-btn.fe-del-output { flex: 0 0 auto; color: var(--muted); }
+.icon-btn.fe-del-input:hover, .icon-btn.fe-del-step:hover, .icon-btn.fe-del-wire:hover, .icon-btn.fe-del-output:hover { color: #b91c1c; }
+
+.fe-note { border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+.fe-note-ok { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.fe-note-warn { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; }
+.fe-note-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+.fe-diags { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.fe-diags code { font: 600 11px/1.3 ui-monospace, monospace; color: #7c3aed; }
+.fe-diag-step { font: 600 11px/1.3 ui-monospace, monospace; color: var(--muted); }
+.fe-test-form { display: flex; flex-direction: column; gap: 8px; }
+.fe-test-fields { display: flex; flex-wrap: wrap; gap: 8px; }
+.fe-test-out { margin-bottom: 8px; }
+
 /* Syntax highlighting overlay (src/highlight.ts): a coloured backdrop rendered
    behind the FEEL field, whose own text is made transparent so the colours show
    through. The field keeps its border, caret, focus/invalid states and events. */

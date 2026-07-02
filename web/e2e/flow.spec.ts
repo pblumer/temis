@@ -42,7 +42,7 @@ test('flows: browse a flow graph and evaluate it with per-step results', async (
 
   // The canvas draws the two step decisions (and their input nodes), with no
   // validation warning since both models are loaded.
-  const canvas = page.locator('.flow-canvas')
+  const canvas = page.locator('#flowCanvas')
   await expect(canvas).toContainText('Risk Level')
   await expect(canvas).toContainText('Loan Decision')
   await expect(page.locator('.flow-warn')).toHaveCount(0)
@@ -54,13 +54,13 @@ test('flows: browse a flow graph and evaluate it with per-step results', async (
 
   // The assembled output and a result badge on each of the two step nodes.
   await expect(page.locator('.flow-out')).toContainText('approve')
-  await expect(page.locator('.flow-canvas .node-result')).toHaveCount(2)
+  await expect(page.locator('#flowCanvas .node-result')).toHaveCount(2)
 
   // Trace illumination (WP-98): the wires light up with the values that travelled
   // them (the entered Credit Score of 750 flows into the risk step), the active
   // edges are marked, and the Entscheidungspfad lists the rules that fired.
-  await expect(page.locator('.flow-canvas .flow-edge-val').filter({ hasText: '750' })).toHaveCount(1)
-  await expect(page.locator('.flow-canvas .djs-connection.flow-active').first()).toBeVisible()
+  await expect(page.locator('#flowCanvas .flow-edge-val').filter({ hasText: '750' })).toHaveCount(1)
+  await expect(page.locator('#flowCanvas .djs-connection.flow-active').first()).toBeVisible()
   await expect(page.locator('.flow-trace')).toContainText('Entscheidungspfad')
 
   // A different input changes the outcome: 550 → high risk → decline. The wire
@@ -68,7 +68,7 @@ test('flows: browse a flow graph and evaluate it with per-step results', async (
   await page.locator('.flow-input[data-name="Credit Score"]').fill('550')
   await page.locator('#flowRun').click()
   await expect(page.locator('.flow-out')).toContainText('decline')
-  await expect(page.locator('.flow-canvas .flow-edge-val').filter({ hasText: '550' })).toHaveCount(1)
+  await expect(page.locator('#flowCanvas .flow-edge-val').filter({ hasText: '550' })).toHaveCount(1)
 
   // Leaving Flows hides the studio; the DMN modeler chrome returns.
   await page.locator('#modeDesign').click()

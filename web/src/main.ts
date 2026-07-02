@@ -7,7 +7,8 @@ import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import { mountOperate } from './operate'
 import { mountImport } from './testimport'
 import { mountFlows } from './flows'
-import type { GraphEvalResult, ModelDetail } from './api'
+import { mountFlowEditor } from './flow-editor'
+import type { FlowDetail, GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
 import { openBoxedContextOverlay } from './boxedcontext'
@@ -38,6 +39,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <div class="sidebar-section">
             <button class="section-title" id="flowsToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Flows <span class="section-layer" title="Schicht L2a — komponiert Modelle">L2a</span></button>
             <span class="sidebar-actions">
+              <button id="newFlow" class="icon-btn" type="button" title="Neuen Flow entwerfen"><svg width="14" height="14" viewBox="0 0 18 18"><circle cx="4.5" cy="4.5" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="4.5" cy="13.5" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="13.5" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 4.5h3.5a1.5 1.5 0 0 1 1.5 1.5v1M6.5 13.5h3.5a1.5 1.5 0 0 0 1.5-1.5v-1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
               <button id="flowRefresh" class="icon-btn" type="button" title="Flows neu laden">⟳</button>
             </span>
           </div>
@@ -97,6 +99,7 @@ async function boot(root: HTMLElement): Promise<void> {
         </section>
         <section id="importCockpit" class="import-cockpit"></section>
         <section id="flowStudio" class="flow-studio"></section>
+        <section id="flowEditor" class="flow-editor"></section>
       </main>
       <aside id="assist" class="assist-panel"></aside>
     </div>`
@@ -111,6 +114,8 @@ async function boot(root: HTMLElement): Promise<void> {
   const importHost = root.querySelector<HTMLElement>('#importCockpit')
   const flowListHost = root.querySelector<HTMLElement>('#flowList')
   const flowStudioHost = root.querySelector<HTMLElement>('#flowStudio')
+  const flowEditorHost = root.querySelector<HTMLElement>('#flowEditor')
+  const newFlowBtn = root.querySelector<HTMLButtonElement>('#newFlow')
   const opHistoryHost = root.querySelector<HTMLElement>('#opHistory')
   const opOverlayHost = root.querySelector<HTMLElement>('#opOverlays')
   const undoBtn = root.querySelector<HTMLButtonElement>('#undo')
@@ -124,7 +129,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -145,7 +150,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
-  let mode: 'design' | 'operate' | 'import' | 'flows' = 'design'
+  let mode: 'design' | 'operate' | 'import' | 'flows' | 'flow-edit' = 'design'
   let runs: EvalRun[] = []
   let activeRun: EvalRun | null = null
   // The model detail currently loaded (schema + decisions), shared with the
@@ -907,7 +912,33 @@ async function boot(root: HTMLElement): Promise<void> {
   // and a studio (graph + run panel) in the editor area. It is self-contained —
   // it fetches flows over /v1/flows and evaluates them independently of the model
   // the modeler has open.
-  const flowView = mountFlows({ catalogHost: flowListHost, studioHost: flowStudioHost, onOpenFlow: () => setMode('flows') })
+  const flowView = mountFlows({
+    catalogHost: flowListHost,
+    studioHost: flowStudioHost,
+    onOpenFlow: () => setMode('flows'),
+    onEditFlow: (detail: FlowDetail) => {
+      flowEditor.edit(detail)
+      setMode('flow-edit')
+    },
+  })
+
+  // The Flow Designer (WP-116): create/design a flow visually (structured inspector
+  // + live graph preview + inline test). Registering (POST /v1/flows) is ephemeral
+  // and content-addressed; Git stays the durable source of truth (ADR-0032), so the
+  // designer also exports the descriptor as a *.flow.json artifact. onRegistered
+  // refreshes the catalog and opens the new flow in the studio.
+  const flowEditor = mountFlowEditor({
+    host: flowEditorHost,
+    onClose: () => setMode(currentId ? 'design' : 'flows'),
+    onRegistered: (flowId: string) => {
+      flowView.render()
+      flowView.open(flowId)
+    },
+  })
+  newFlowBtn.addEventListener('click', () => {
+    flowEditor.create()
+    setMode('flow-edit')
+  })
 
   // recordRun is called after each evaluation: keep it in the session history
   // (newest first), highlight it, and refresh the Operate cockpit.
@@ -933,11 +964,12 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  const setMode = (m: 'design' | 'operate' | 'import' | 'flows'): void => {
+  const setMode = (m: 'design' | 'operate' | 'import' | 'flows' | 'flow-edit'): void => {
     mode = m
     appShell.dataset.mode = m
-    // Design/Operate/Import are activities on the open model (L1); Flows is entered
-    // by opening a flow (L2a) from the sidebar, so it has no tab of its own.
+    // Design/Operate/Import are activities on the open model (L1); Flows (view) and
+    // flow-edit (the designer) are entered from the FLOWS sidebar section, so they
+    // have no toolbar tab of their own.
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
@@ -970,8 +1002,8 @@ async function boot(root: HTMLElement): Promise<void> {
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
-    // Opening a model (L1) leaves the flow studio and returns to the modeler.
-    if (mode === 'flows') setMode('design')
+    // Opening a model (L1) leaves the flow studio/designer and returns to the modeler.
+    if (mode === 'flows' || mode === 'flow-edit') setMode('design')
     currentId = modelId
     renderModelList()
     status.textContent = 'lädt …'
