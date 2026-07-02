@@ -61,6 +61,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   werden weiterhin präzise gemeldet. Neue additive `dmn`-API `ReachableInputSchema` /
   `ValidateReachableInput` (cone-gescopt, analog zu `ModelInputSchema`/`ValidateModelInput`);
   MCP `describe_decision` weist die Menge additiv als `reachableInputs` neben `inputs` aus.
+- **Modeler – Auto-Layout mit orthogonalem Routing & Orientierungs-Umschalter (ADR-0016):** Modelle ohne
+  authorede `DMNDI`-Bounds werden nicht länger als diagonaler „Spaghetti" gezeichnet. Das Auto-Layout
+  richtet die Knoten spaltenweise aus (jeder Knoten wird über/unter seine Nachbarn gezogen) und führt
+  jede Requirement-Kante als **rechtwinkligen Konnektor**: die Eingänge eines Hubs laufen als sauberer
+  Kamm zusammen, und lange „Skip"-Kanten werden durch eine freie Bahn zwischen den Spalten gefädelt, statt
+  durch Knoten hindurchzulaufen. Ein Toolbar-Knopf **Bottom-up / Top-down** schaltet um, ob die Eingabe-
+  Pillen die Decisions von unten (Pfeile nach oben, Default) oder von oben (Pfeile nach unten) speisen, und
+  ordnet das ganze Diagramm entsprechend neu an. Authorede `DMNDI`-Layouts bleiben unangetastet (bis der
+  Umschalter ein Neu-Anordnen erzwingt); der Decision-Flow-Canvas ist unverändert.
 - **Modeler – Modelle verwalten (ADR-0016):** Im Modeler lässt sich ein Modell jetzt komplett neu
   (leer) anlegen statt nur eine `.dmn`-Datei hochzuladen, sowie **umbenennen** und **löschen**
   (inkl. des gesamten Revisions-Verlaufs). Zwei neue HTTP-Endpunkte: `POST /v1/models/{id}/rename`
