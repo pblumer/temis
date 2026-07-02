@@ -33,20 +33,30 @@ async function boot(root: HTMLElement): Promise<void> {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-title">${APP_NAME}</div>
-        <div class="sidebar-section">
-          <span>Modelle</span>
-          <span class="sidebar-actions">
-            <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
-            <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
-            <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
-          </span>
+        <div class="side-group side-group-flows" id="groupFlows">
+          <div class="sidebar-section">
+            <button class="section-title" id="flowsToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Flows <span class="section-layer" title="Schicht L2a — komponiert Modelle">L2a</span></button>
+            <span class="sidebar-actions">
+              <button id="flowRefresh" class="icon-btn" type="button" title="Flows neu laden">⟳</button>
+            </span>
+          </div>
+          <div id="flowList" class="model-list flow-list"></div>
         </div>
-        <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
-        <div id="modelList" class="model-list"></div>
-        <div id="flowList" class="model-list flow-list"></div>
+        <div class="side-group side-group-models" id="groupModels">
+          <div class="sidebar-section">
+            <button class="section-title" id="modelsToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Modelle <span class="section-layer" title="Schicht L1 — Domänen-Decisions">L1</span></button>
+            <span class="sidebar-actions">
+              <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+              <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+              <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
+            </span>
+          </div>
+          <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
+          <div id="modelList" class="model-list"></div>
+        </div>
         <p class="sidebar-hint">
-          Eigener DMN-Modeler · diagram-js (MIT) + eigene Renderer · offline.
-          Jedes Speichern legt eine neue Revision an, sichtbar als Verlauf.
+          Flows (L2a) komponieren Modelle (L1) — Modell öffnen zum Bearbeiten,
+          Flow öffnen zum Ansehen & Auswerten.
         </p>
       </aside>
       <main class="editor">
@@ -55,7 +65,6 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="modeDesign" class="mode-btn is-active" type="button" title="Bearbeiten">Design</button>
             <button id="modeOperate" class="mode-btn" type="button" title="Auswerten & beobachten">Operate</button>
             <button id="modeImport" class="mode-btn" type="button" title="Testfälle importieren & durchlaufen lassen">Import</button>
-            <button id="modeFlows" class="mode-btn" type="button" title="Decision-Flows ansehen & auswerten">Flows</button>
           </span>
           <span class="design-only toolbar-group">
             <button id="undo" class="tbtn" type="button" disabled title="Rückgängig (Strg/Cmd+Z)">↶</button>
@@ -98,7 +107,6 @@ async function boot(root: HTMLElement): Promise<void> {
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
   const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
-  const modeFlowsBtn = root.querySelector<HTMLButtonElement>('#modeFlows')
   const importHost = root.querySelector<HTMLElement>('#importCockpit')
   const flowListHost = root.querySelector<HTMLElement>('#flowList')
   const flowStudioHost = root.querySelector<HTMLElement>('#flowStudio')
@@ -115,7 +123,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !modeFlowsBtn || !importHost || !flowListHost || !flowStudioHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -861,7 +869,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // and a studio (graph + run panel) in the editor area. It is self-contained —
   // it fetches flows over /v1/flows and evaluates them independently of the model
   // the modeler has open.
-  const flowView = mountFlows({ catalogHost: flowListHost, studioHost: flowStudioHost })
+  const flowView = mountFlows({ catalogHost: flowListHost, studioHost: flowStudioHost, onOpenFlow: () => setMode('flows') })
 
   // recordRun is called after each evaluation: keep it in the session history
   // (newest first), highlight it, and refresh the Operate cockpit.
@@ -890,27 +898,42 @@ async function boot(root: HTMLElement): Promise<void> {
   const setMode = (m: 'design' | 'operate' | 'import' | 'flows'): void => {
     mode = m
     appShell.dataset.mode = m
+    // Design/Operate/Import are activities on the open model (L1); Flows is entered
+    // by opening a flow (L2a) from the sidebar, so it has no tab of its own.
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
-    modeFlowsBtn.classList.toggle('is-active', m === 'flows')
     if (m === 'operate') {
       operate.render()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
     } else if (m === 'import') {
       importView.render()
-    } else if (m === 'flows') {
-      flowView.render()
     }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
   modeOperateBtn.addEventListener('click', () => setMode('operate'))
   modeImportBtn.addEventListener('click', () => setMode('import'))
-  modeFlowsBtn.addEventListener('click', () => setMode('flows'))
+
+  // Sidebar section collapse (VS-Code-style accordion) and flow-catalog refresh.
+  const wireToggle = (btnId: string, groupId: string): void => {
+    const btn = root.querySelector<HTMLButtonElement>('#' + btnId)
+    const group = root.querySelector<HTMLElement>('#' + groupId)
+    if (!btn || !group) return
+    btn.addEventListener('click', () => {
+      const collapsed = group.dataset.collapsed === 'true'
+      group.dataset.collapsed = collapsed ? 'false' : 'true'
+      btn.setAttribute('aria-expanded', collapsed ? 'true' : 'false')
+    })
+  }
+  wireToggle('flowsToggle', 'groupFlows')
+  wireToggle('modelsToggle', 'groupModels')
+  root.querySelector<HTMLButtonElement>('#flowRefresh')?.addEventListener('click', () => flowView.render())
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
+    // Opening a model (L1) leaves the flow studio and returns to the modeler.
+    if (mode === 'flows') setMode('design')
     currentId = modelId
     renderModelList()
     status.textContent = 'lädt …'
@@ -1003,6 +1026,10 @@ async function boot(root: HTMLElement): Promise<void> {
   const groups = groupModels()
   const best = groups.find((g) => preferred.includes(g.name)) ?? groups[0]
   await showModel(best.revisions[0].modelId)
+
+  // Populate the Flows (L2a) catalog in the sidebar; it stays visible in every
+  // mode. Opening a flow from it switches the editor to the flow studio.
+  flowView.render()
 }
 
 const root = document.getElementById('app')

@@ -1202,10 +1202,13 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   .imp-lane-eval.is-busy .imp-engine-pulse::after { animation: none; }
 }
 
-/* --- Flows view (WP-97): browse and run decision flows (ADR-0026) --- */
+/* --- Flows view (WP-97/98): browse and run decision flows (ADR-0026) --- */
+/* The Flows catalog (L2a) is its own always-visible sidebar section above the
+   Modelle (L1) section — see the accordion rules below. `data-mode="flows"`
+   only swaps the *editor* (studio for modeler) and *inspector* (flow-run for
+   eval); the sidebar sections stay put in every mode. */
 .flow-studio { display: none; }
-.flow-list { display: none; }
-.app-shell[data-mode="flows"] { --flow: #7c3aed; }
+.app-shell { --flow: #7c3aed; }
 .app-shell[data-mode="flows"] .design-only,
 .app-shell[data-mode="flows"] .zoom-group,
 .app-shell[data-mode="flows"] .canvas-wrap,
@@ -1213,10 +1216,25 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .app-shell[data-mode="flows"] .op-history,
 .app-shell[data-mode="flows"] .op-overlays,
 .app-shell[data-mode="flows"] .import-cockpit,
-.app-shell[data-mode="flows"] #modelList,
+.app-shell[data-mode="flows"] #status,
 .app-shell[data-mode="flows"] .djs-palette { display: none !important; }
-.app-shell[data-mode="flows"] .flow-list { display: block; }
 .app-shell[data-mode="flows"] .flow-studio { display: flex; flex: 1 1 auto; min-height: 0; gap: 16px; }
+
+/* Sidebar layer sections (VS-Code-style accordion): Flows (L2a) over Modelle (L1). */
+.side-group { display: flex; flex-direction: column; min-height: 0; }
+.side-group-flows { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+.side-group-flows .flow-list { max-height: 30vh; }
+.side-group-models { flex: 1 1 auto; }
+.section-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+}
+.section-chev { display: inline-block; font-size: 10px; transition: transform 120ms ease; }
+.side-group[data-collapsed="true"] .section-chev { transform: rotate(-90deg); }
+.side-group[data-collapsed="true"] .model-list { display: none; }
+.section-layer { font-size: 9px; font-weight: 700; color: #7c3aed; background: #f3e8ff; border-radius: 4px; padding: 1px 4px; letter-spacing: 0.02em; }
+.side-group-models .section-layer { color: var(--muted); background: #e2e8f0; }
 
 .flow-item .model-rev { background: #f3e8ff; color: #7c3aed; }
 .flow-canvas { flex: 1 1 auto; min-width: 0; height: min(70vh, 760px); border: 1px solid var(--line); border-radius: 12px; background: #fff; position: relative; }
