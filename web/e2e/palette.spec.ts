@@ -44,7 +44,6 @@ test('palette: ghost click after a drag does not leave a stuck element', async (
 
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
-  await entry.dispatchEvent('dragstart', {})
   await page.mouse.move(target.x, target.y, { steps: 8 })
   await page.mouse.up()
   // Ghost click on the source, as a browser emits after the prevented DnD.
@@ -68,7 +67,6 @@ test('palette: created decisions get unique names', async ({ page }) => {
     const t = { x: cbox.x + cbox.width / 2 + dx, y: cbox.y + cbox.height / 2 + dy }
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await page.mouse.down()
-    await entry.dispatchEvent('dragstart', {})
     await page.mouse.move(t.x, t.y, { steps: 8 })
     await page.mouse.up()
     await page.mouse.move(t.x + 60, t.y + 40, { steps: 3 })

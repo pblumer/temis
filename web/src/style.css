@@ -376,6 +376,10 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   border-radius: 4px;
 }
 
+/* Palette icons are decorative; the entry owns pointer/drag handling. This keeps
+   browser-native image dragging from stealing create gestures. */
+.djs-palette .entry img { pointer-events: none; -webkit-user-drag: none; user-select: none; }
+
 /* On-canvas diagnostic badge: a compile/eval problem, marked on its node. */
 .node-diag {
   width: 18px;
