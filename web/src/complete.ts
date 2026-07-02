@@ -1,9 +1,10 @@
 // A lightweight code-completion dropdown for the FEEL fields throughout the
-// modeler (literal/BKM bodies and every decision-table cell). It makes the
-// in-scope variables and the engine's built-in functions immediately visible:
-// focus a field to see what's available, then type to filter. The function
-// catalog comes straight from the real engine (src/feel.ts → cmd/feel-wasm), so
-// it can never drift from what actually evaluates (ADR-0016).
+// modeler (literal/BKM bodies and every decision-table cell). It surfaces the
+// in-scope variables and the engine's built-in functions: the list pops up under
+// the caret as you type a word, or on demand with Ctrl/Cmd+Space — never just
+// from entering or clicking a field. The function catalog comes straight from the
+// real engine (src/feel.ts → cmd/feel-wasm), so it can never drift from what
+// actually evaluates (ADR-0016).
 
 import { builtins, ensureFeel } from './feel'
 
@@ -62,6 +63,46 @@ function tokenAt(field: HTMLInputElement | HTMLTextAreaElement): { token: string
 
 const ICON: Record<CompletionKind, string> = { variable: 'x', function: 'ƒ', keyword: 'K' }
 
+// The style properties a mirror element must copy so its text lays out exactly
+// like the field's — used to find the caret's pixel position.
+const MIRROR_PROPS = [
+  'boxSizing', 'width', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing',
+  'textAlign', 'textIndent', 'textTransform', 'wordSpacing', 'tabSize',
+] as const
+
+// caretCoords returns the caret's pixel offset within the field's border box
+// (plus the line height), so the dropdown can be anchored right under the caret
+// instead of far below the whole field. It mirrors the field into a hidden div
+// (the well-known textarea-caret-position technique) and measures a marker span.
+function caretCoords(field: HTMLInputElement | HTMLTextAreaElement, pos: number): { top: number; left: number; height: number } {
+  const isInput = field.tagName === 'INPUT'
+  const cs = getComputedStyle(field)
+  const div = document.createElement('div')
+  const s = div.style
+  s.position = 'absolute'
+  s.visibility = 'hidden'
+  s.whiteSpace = isInput ? 'pre' : 'pre-wrap'
+  s.wordWrap = 'break-word'
+  s.overflow = 'hidden'
+  for (const p of MIRROR_PROPS) s[p] = cs[p] as string
+  // A single-line input never wraps and can be wider than its box; let the mirror
+  // grow so the marker's offset reflects the (clipped) caret column.
+  if (isInput) s.width = 'auto'
+  const pre = field.value.slice(0, pos)
+  div.textContent = isInput ? pre.replace(/ /g, ' ') : pre
+  const marker = document.createElement('span')
+  marker.textContent = field.value.slice(pos) || '.'
+  div.appendChild(marker)
+  document.body.appendChild(div)
+  const top = marker.offsetTop
+  const left = Math.min(marker.offsetLeft, field.clientWidth)
+  const height = parseInt(cs.lineHeight) || parseInt(cs.fontSize) * 1.3
+  document.body.removeChild(div)
+  return { top, left, height }
+}
+
 // attachCompletion wires a completion dropdown onto a FEEL input/textarea. items
 // is read lazily on each open, so callers can return a fresh list (e.g. the
 // current decision-table input names) every time. The field's own value/events
@@ -109,10 +150,17 @@ export function attachCompletion(
     rows[sel]?.scrollIntoView({ block: 'nearest' })
   }
 
-  const open = (): void => {
+  // manual = the user asked for it (Ctrl+Space): show everything even with no
+  // token. On plain typing we only pop up once there is a word to complete, so
+  // the list never appears just from entering or clicking the field.
+  const open = (manual = false): void => {
     if (suppress) return
     const { token } = tokenAt(field)
     const t = token.toLowerCase()
+    if (!manual && t === '') {
+      close()
+      return
+    }
     active = items().filter((it) => t === '' || it.label.toLowerCase().startsWith(t))
     if (!active.length) {
       close()
@@ -155,32 +203,38 @@ export function attachCompletion(
     place()
   }
 
-  // Anchor the dropdown to the field's lower-left, flipping above when it would
-  // overflow the viewport bottom. Good enough for single-line inputs and the
-  // modal textareas without tracking the caret's pixel position.
+  // Anchor the dropdown just under the caret (not below the whole field), so it
+  // stays close to where the user is typing. Flips above the caret line when it
+  // would overflow the viewport bottom.
   const place = (): void => {
     if (!pop) return
+    const caret = field.selectionStart ?? field.value.length
+    const c = caretCoords(field, caret)
     const r = field.getBoundingClientRect()
-    pop.style.minWidth = Math.max(r.width, 180) + 'px'
-    pop.style.left = r.left + window.scrollX + 'px'
-    pop.style.top = r.bottom + window.scrollY + 2 + 'px'
+    const left = r.left + window.scrollX + c.left - field.scrollLeft
+    const lineTop = r.top + window.scrollY + c.top - field.scrollTop
+    pop.style.minWidth = '180px'
+    pop.style.top = lineTop + c.height + 2 + 'px'
+    // Clamp horizontally so the (sometimes wide) list never runs off-screen.
+    const pw = pop.offsetWidth
+    const maxLeft = window.scrollX + window.innerWidth - pw - 6
+    pop.style.left = Math.max(window.scrollX + 4, Math.min(left, maxLeft)) + 'px'
     const ph = pop.offsetHeight
-    if (r.bottom + ph + 6 > window.innerHeight && r.top - ph - 2 > 0) {
-      pop.style.top = r.top + window.scrollY - ph - 2 + 'px'
+    const caretViewportBottom = r.top + c.top - field.scrollTop + c.height
+    if (caretViewportBottom + ph + 6 > window.innerHeight && r.top + c.top - field.scrollTop - ph - 2 > 0) {
+      pop.style.top = lineTop - ph - 2 + 'px'
     }
   }
 
-  field.addEventListener('focus', open)
-  field.addEventListener('click', open)
-  field.addEventListener('input', open)
+  field.addEventListener('input', () => open(false))
   field.addEventListener('blur', close)
   field.addEventListener('keydown', (ev) => {
     const e = ev as KeyboardEvent
     if (!pop) {
-      // Ctrl/Cmd+Space forces the list open even on an empty field.
+      // Ctrl/Cmd+Space forces the list open (showing everything on an empty word).
       if ((e.ctrlKey || e.metaKey) && e.key === ' ') {
         e.preventDefault()
-        open()
+        open(true)
       }
       return
     }
