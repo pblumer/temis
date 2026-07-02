@@ -240,3 +240,49 @@ func TestNewClioSinkRequiresURL(t *testing.T) {
 		t.Fatal("NewClioSink with empty URL = nil error, want error")
 	}
 }
+
+// TestClioSinkStampsAuthorship covers WP-105: the authenticated key's kid is
+// stamped on the decision event as the clioauthkid extension.
+func TestClioSinkStampsAuthorship(t *testing.T) {
+	clio := &captureClio{}
+	stub := clio.start(t)
+	sink, err := NewClioSink(ClioConfig{URL: stub.URL, Token: "kid_t.secret", Engine: "temisd test"})
+	if err != nil {
+		t.Fatalf("NewClioSink: %v", err)
+	}
+	path := writeKeysFile(t, []scopedKey{{"agent7", "sec", []Scope{ScopeEvaluate}}})
+	h := NewServer(nil, WithKeysFile(path), WithClioSink(sink)).Handler()
+
+	body, _ := json.Marshal(evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+	})
+	if rec := doAuth(t, h, "POST", "/v1/evaluate", "application/json", body, "agent7.sec"); rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	calls := clio.calls()
+	if len(calls) != 1 {
+		t.Fatalf("clio writes = %d, want 1", len(calls))
+	}
+	if got := calls[0].Events[0].ClioAuthKid; got != "agent7" {
+		t.Errorf("clioauthkid = %q, want agent7", got)
+	}
+}
+
+// TestClioSinkAuthorshipEmptyWhenOpen asserts no authorship is stamped on an open
+// API (no key) — the extension is omitted rather than blank-filled.
+func TestClioSinkAuthorshipEmptyWhenOpen(t *testing.T) {
+	clio := &captureClio{}
+	h := auditServer(t, clio, nil) // open API, no keys
+	if rec := evalDish(t, h); rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d, want 200", rec.Code)
+	}
+	if got := clio.calls()[0].Events[0].ClioAuthKid; got != "" {
+		t.Errorf("clioauthkid = %q, want empty on open API", got)
+	}
+	// And the wire form omits the field entirely.
+	if strings.Contains(string(clio.rawBodies()[0]), "clioauthkid") {
+		t.Error("clioauthkid must be omitted from the wire when unknown")
+	}
+}

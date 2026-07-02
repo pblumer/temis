@@ -75,11 +75,37 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Formular, `leafInputs`), füllt sie mit Testdaten — von Hand, in der Tabellenkalkulation oder von
   einem **KI-Agenten** (dokumentiertes, agentenfreundliches Format) — und importiert sie (Datei-
   Auswahl oder Drag & Drop). Optionale `→Decision`-Spalten machen aus einer Zeile eine **Pass/Fail-
-  Erwartung**. „Durchlaufen lassen" schickt jeden Datensatz animiert von links (**Eingang**) durch
-  die **Evaluation** (die echte Engine, über denselben Whole-Graph-Endpunkt wie Operate) nach rechts
-  in den **clio Store** — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-
-  Chrome-Farbwelt (`--imp`), respektiert `prefers-reduced-motion`. Reines Frontend, kein neuer
-  Endpunkt, keine neue Dependency.
+  Erwartung**. „Durchlaufen lassen" wertet den **ganzen Stapel in EINEM Batch-Request** aus und lässt
+  die Datensätze von links (**Eingang**) durch die **Evaluation** nach rechts in den **clio Store**
+  fliegen — samt berechneter Ergebnisse und Pass/Fail-Badges. Eigene kühle Cyan-Chrome-Farbwelt
+  (`--imp`), respektiert `prefers-reduced-motion`.
+  **Durchsatz (Folge-Fix):** Neuer Endpunkt **`POST /v1/models/{id}/evaluate-graph-batch`** wertet
+  viele Eingabezeilen in einem Round-Trip aus (die Engine schleift in-memory, ohne Traces; jede Zeile
+  unabhängig — eine abgelehnte Zeile bricht den Batch nicht ab). Damit laufen **5000 Testfälle in
+  ~50 ms** statt tausender Einzel-Requests. Das Cockpit ruft den Batch statt einer Schleife auf,
+  verzichtet auf künstliche Pro-Datensatz-Pausen und **begrenzt die gezeichneten Karten pro Lane**
+  (Zähler + Overflow-Hinweis zeigen die echte Menge) — die Animation ist bewusst nur *angedeutet* als
+  gestaffelte CSS-Kaskade, statt tausende DOM-Knoten einfrieren zu lassen.
+  **Test- vs. Produktivlauf & clio-Quality-Events (ADR-0031):** Das Cockpit unterscheidet einen
+  **Testlauf** (Default, schreibt **nichts**) von einem **Produktivlauf**, der pro ausgewertetem Fall
+  ein **Quality-Event** `com.temis.quality.evaluated.v1` **auf der Entität** nach clio schreibt
+  (Subject `/quality/<entity>`, mit `violation`-Flag aus den erwarteten Werten) — so werden Reports
+  über Verletzungen je Entität möglich. Die Entität kommt aus einer **`entity`-Vorlagenspalte**, sonst
+  einem wählbaren Eingabefeld, sonst dem Fall-Label. Die Zustellung läuft **entkoppelt über eine
+  garantierte Queue mit Backpressure** (`QualityQueue`): der Batch-Response kehrt sofort zurück,
+  Hintergrund-Worker liefern mit Retry & Idempotenz (clio-Precondition), `temisd` drainiert die Queue
+  beim **Graceful-Shutdown**. Ohne konfiguriertes clio wird ein Produktivlauf klar mit
+  **`409 CLIO_NOT_CONFIGURED`** abgelehnt (opt-in, Default aus — kein Datenabfluss).
+  **Ergebnis-CSV:** Nach einem Lauf schreibt das Cockpit die **berechneten Decision-Ausgaben** je
+  Fall in eine CSV (Fall/Entität/Eingaben + eine Spalte je Decision, plus `status`-Spalte
+  OK/Abweichung/Fehler bei Erwartungen) und bietet sie als **„Ergebnisse · CSV ↓"** zum Download an —
+  das ausgefüllte Testblatt mit den Outputs.
+- **clio-Audit auch für Whole-Graph-Auswertung:** Der „Auswerten"-Pfad des Modelers
+  (`POST /v1/models/{id}/evaluate-graph`) wird jetzt ebenfalls protokolliert — **ein
+  `com.temis.decision.evaluated.v1`-Event je ausgewerteter Decision** (best-effort, bzw. `502` bei
+  `-clio-strict`; idempotent per `(modelId, decision, input)`). Zuvor auditierte der Sink nur
+  Einzel-Decision- und Flow-Auswertungen, sodass genau die interaktive Graph-Auswertung nicht im
+  Logbuch landete.
 - **clio-Entscheidungs-Logbuch (WP-54, ADR-0023):** `temisd` protokolliert optional jede
   Einzel-Decision-Auswertung als manipulationssicheres `com.temis.decision.evaluated.v1`-CloudEvent
   in einer [clio](https://github.com/pblumer/clio)-Instanz — Flags `-clio-url`/`-clio-token`/
@@ -117,6 +143,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   ein `TEMIS_CLIO_TOKEN` gesetzt ist** — kein Datenabfluss im Default, Anschalten ist ein
   einziger Schritt (Token setzen oder `-clio-url` auf die eigene clio zeigen); der Start-Banner
   weist auf die Verfügbarkeit hin.
+- **Betriebs-Observability (WP-110–112, ADR-0030):** `temisd` ist jetzt *observierbar*.
+  `/healthz` (Liveness) und `/readyz` (echte Readiness) sind **ehrlich getrennt** — `/readyz`
+  liefert `503`, wenn eine harte Startbedingung fehlt (z. B. ein fail-closed `-clio-strict`
+  clio unerreichbar ist); ein best-effort-clio-Ausfall lässt es bewusst bei `200`. Neu:
+  **`GET /v1/status`** zeigt den Zustand der Umsysteme (clio/LLM/Git) und die Last der Engine
+  — clio `writesOk`/`writesFailed`/`idempotentSkips`, `lastOk`/`lastError`, `reachable`, dazu
+  Version/Uptime/Cache-Zähler; **secret-frei** (kein Token/Key im Body) und hinter dem
+  `audit`-Scope (ADR-0028; `admin`-Keys lesen ebenfalls, offen ohne Auth-Konfig).
+  clio-Erreichbarkeit standardmäßig **passiv** aus echten Writes;
+  `-clio-active-probe`/`TEMIS_CLIO_ACTIVE_PROBE` schaltet einen aktiven Health-Ping zu. Reine
+  stdlib (`sync/atomic`), Zähler allokationsfrei im Hot Path, Engine-Kern unberührt (ADR-0011).
 - **API-Stabilisierung (WP-43):** `package dmn` als v1 zugesagt; SemVer-/Deprecation-Policy;
   Golden-Surface-Test gegen unbeabsichtigte Brüche.
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte

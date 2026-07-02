@@ -9,17 +9,25 @@ info:
     experimental until the v1 stabilisation (roadmap WP-43).
 
 
-    When the server is started with a token (`temisd -token …` or
-    `TEMIS_API_TOKEN`), the `/v1` endpoints require an
-    `Authorization: Bearer <token>` header — click **Authorize** and paste the
-    token to try them here. When no token is configured the API is open and the
-    header is ignored.
+    Authentication (ADR-0028): when the server is configured with scoped API keys
+    (`temisd -keys-file …` / `$TEMIS_KEYS_FILE`, or a bootstrap admin key), the
+    `/v1` endpoints require an `Authorization: Bearer <kid>.<secret>` header. Each
+    route needs a scope — `evaluate`, `models:read`, `models:write`, `git`,
+    `assist`, `flow` or `admin` (a super-scope). A missing/invalid/expired/revoked
+    key is `401`; a valid key lacking the route's scope is `403 FORBIDDEN`. The
+    deprecated single token (`temisd -token` / `TEMIS_API_TOKEN`) still works as a
+    legacy admin key that satisfies every scope. When neither keys nor a legacy
+    token are configured the API is open and the header is ignored. Click
+    **Authorize** and paste your `kid.secret` (or legacy token) to try the
+    endpoints here.
 servers:
   - url: /
-# Bearer auth is optional: when the server runs without a token the empty
-# requirement ({}) makes every endpoint callable; when a token is set, callers
-# present it via the bearerAuth scheme. Swagger UI's "Authorize" button binds to
-# bearerAuth.
+# Bearer auth is optional: when the server runs without keys or a legacy token the
+# empty requirement ({}) makes every endpoint callable; when auth is configured,
+# callers present a kid.secret key (or the legacy token) via the bearerAuth scheme.
+# Per-route scope requirements (ADR-0028 §2) are described in each operation's
+# summary and the info block; OpenAPI's http-bearer scheme carries no scope list,
+# so the scope→route mapping is documented in docs/40-api-contract.md.
 security:
   - bearerAuth: []
   - {}
@@ -241,6 +249,45 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "422":
           description: Input does not satisfy the model's schema, or evaluation failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/{id}/evaluate-graph-batch:
+    post:
+      summary: Evaluate many input rows against one model in a single request
+      description: >-
+        The throughput path behind the modeler's Import cockpit: evaluate a whole
+        batch of input rows against one model in one round-trip. Each row is
+        evaluated independently and the response aligns 1:1 with the request's
+        inputs — a strict-input rejection or a runtime failure is recorded as that
+        row's problem and never aborts the batch. Traces are omitted by design
+        (use evaluate-graph for a single explained run); this keeps the payload
+        small so thousands of rows return quickly.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateGraphBatchRequest" }
+      responses:
+        "200":
+          description: Per-row results, aligned 1:1 with the request's inputs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateGraphBatchResponse" }
+        "400":
+          description: Invalid request body, or too many inputs in the batch
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown model
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -757,6 +804,44 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List the registered decision flows (WP-96)
+      description: >-
+        Returns a summary (flowId, name, declared input names, step count) of
+        every flow currently registered in memory — the catalog a UI lists.
+      responses:
+        "200":
+          description: The registered flows
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/flows/{id}:
+    get:
+      summary: Get a registered flow's steps, inputs and output wiring (WP-96)
+      description: >-
+        Returns the flow's declared inputs, its steps (id, model, decision,
+        input wiring) and output mapping, plus fresh validation diagnostics
+        against the loaded models — the data a UI draws as a graph.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The flow's drawing data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowDetail" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown flow
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/flows/{id}/evaluate:
     post:
       summary: Evaluate a registered decision flow
@@ -857,6 +942,129 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/status:
+    get:
+      summary: Operational status of the connected Umsysteme (ADR-0030)
+      description: >
+        Read-only view of the engine's load and the state of the systems temis
+        talks to — the clio audit sink, the LLM assistant provider and git. Shows
+        counters, last-success/last-error and reachability, but never a secret
+        (no API key or token appears in the body). Gated by the same optional /v1
+        token as the other data routes.
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/keys:
+    post:
+      summary: Create a scoped API key (ADR-0028 Phase 2, WP-103)
+      description: >
+        Mint a new managed kid.secret key with the requested scopes. The plaintext
+        secret is returned exactly once in this response (as `secret` and the
+        ready-to-use `bearer` = `kid.secret`) and never again — only its SHA-256 is
+        stored. Requires the `admin` scope. Answers 404 when the persistent key
+        store is not enabled (`temisd -keys-dir`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateKeyRequest" }
+      responses:
+        "201":
+          description: The created key with its one-time secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Key management is disabled (no key store configured)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    get:
+      summary: List API keys without secrets (WP-103)
+      description: >
+        List every key — managed and operator-owned — with its scopes, owner,
+        expiry, revoked and managed flags, never any secret material. Requires the
+        `admin` scope.
+      responses:
+        "200":
+          description: The keys, sorted by kid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Key management is disabled (no key store configured)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/keys/{kid}/rotate:
+    post:
+      summary: Rotate a managed key's secret (WP-103)
+      description: >
+        Issue a fresh secret for a managed key, invalidating the old one. The new
+        secret is returned once (as with create). Requires the `admin` scope. A
+        static/operator key cannot be rotated (409); an unknown kid is 404.
+      parameters:
+        - { name: kid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The rotated key with its new one-time secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such key (or key management disabled)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: The key is not server-managed (created outside the lifecycle API)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/keys/{kid}/revoke:
+    post:
+      summary: Revoke a managed key (WP-103)
+      description: >
+        Mark a managed key revoked so it never authenticates again. Revocation
+        marks rather than deletes, so the kid stays a stable audit handle.
+        Requires the `admin` scope. A static/operator key cannot be revoked (409);
+        an unknown kid is 404.
+      parameters:
+        - { name: kid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The key was revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kid: { type: string }
+                  revoked: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: No such key (or key management disabled)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: The key is not server-managed (created outside the lifecycle API)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /docs:
     get:
       summary: Interactive Swagger UI
@@ -878,20 +1086,44 @@ paths:
   /readyz:
     get:
       summary: Readiness probe
+      description: >
+        Reports real readiness (ADR-0030): 200 when the server can serve, 503
+        with the failing checks when a hard start condition is unmet. A
+        best-effort clio hiccup does not fail readiness; a fail-closed (strict)
+        clio does.
       responses:
-        "200": { description: OK }
+        "200": { description: Ready }
+        "503":
+          description: Not ready — one or more hard start conditions are unmet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadyResponse" }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       description: >
-        Opaque token configured via `temisd -token` / `TEMIS_API_TOKEN`. Sent as
-        `Authorization: Bearer <token>`. Only enforced when the server is started
-        with a token.
+        A scoped `kid.secret` API key (ADR-0028), sent as
+        `Authorization: Bearer <kid>.<secret>`. The keystore holds only the
+        SHA-256 of each secret; each route requires a scope (evaluate ·
+        models:read · models:write · git · assist · flow · admin). The deprecated
+        single token (`temisd -token` / `TEMIS_API_TOKEN`) is also accepted as a
+        legacy admin key. Only enforced when the server is configured with keys or
+        a legacy token.
   responses:
     Unauthorized:
       description: Missing or invalid bearer token (only when the server requires one)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: The key is valid but lacks the scope this route requires (code FORBIDDEN)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadRequest:
+      description: Invalid request body
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -914,6 +1146,59 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ModelResponse" }
   schemas:
+    CreateKeyRequest:
+      type: object
+      required: [scopes]
+      properties:
+        scopes:
+          type: array
+          items: { type: string, enum: [evaluate, "models:read", "models:write", git, assist, flow, admin, audit] }
+          description: The scopes to grant the new key (ADR-0028 §2).
+        owner:
+          type: string
+          description: Free-form owner label, for identity/audit. Optional.
+        expiresAt:
+          type: string
+          format: date-time
+          description: RFC3339 expiry; omit for a key that never expires.
+    CreatedKey:
+      type: object
+      description: >
+        A newly created or rotated key. The secret is shown once here and never
+        again — only its SHA-256 is stored server-side.
+      required: [kid, secret, bearer]
+      properties:
+        kid: { type: string, description: The public key id. }
+        secret: { type: string, description: The one-time plaintext secret. }
+        bearer: { type: string, description: "Ready-to-use credential: <kid>.<secret>." }
+        scopes:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        expiresAt: { type: string, format: date-time }
+    KeyView:
+      type: object
+      description: A key without any secret material.
+      required: [kid, scopes, revoked, managed]
+      properties:
+        kid: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        expiresAt: { type: string, format: date-time }
+        revoked: { type: boolean }
+        managed:
+          type: boolean
+          description: True for keys created via this API (rotatable/revocable); false for static/operator keys.
+    KeyList:
+      type: object
+      required: [keys, count]
+      properties:
+        keys:
+          type: array
+          items: { $ref: "#/components/schemas/KeyView" }
+        count: { type: integer }
     ChatRequest:
       type: object
       required: [messages]
@@ -1088,6 +1373,54 @@ components:
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/FlowDiagnostic" }
+    FlowListResponse:
+      type: object
+      properties:
+        flows:
+          type: array
+          items: { $ref: "#/components/schemas/FlowSummary" }
+        count: { type: integer }
+    FlowSummary:
+      type: object
+      properties:
+        flowId: { type: string }
+        name: { type: string }
+        inputs:
+          type: array
+          items: { type: string }
+          description: The declared flow-input names.
+        steps: { type: integer, description: Number of steps. }
+    FlowDetail:
+      type: object
+      description: A flow's steps, inputs and output wiring — the graph a UI draws.
+      properties:
+        flowId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              model: { type: string }
+              decision: { type: string }
+              in:
+                type: object
+                additionalProperties: { type: string }
+        output:
+          type: object
+          additionalProperties: { type: string }
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/FlowDiagnostic" }
     FlowDiagnostic:
       type: object
       properties:
@@ -1148,6 +1481,84 @@ components:
         diagnostics:
           type: array
           items: { $ref: "#/components/schemas/Diagnostic" }
+    EvaluateGraphBatchRequest:
+      type: object
+      description: >-
+        A plain run supplies `inputs`. A PRODUCTIVE run supplies `cases` (which
+        also carry an entity + expectations) and sets `record: true`, so each
+        evaluated case is written to clio as a quality event on its entity.
+      properties:
+        inputs:
+          type: array
+          description: One input row per test case (at most 100000 per request). Ignored when `cases` is present.
+          items:
+            type: object
+            additionalProperties: true
+        cases:
+          type: array
+          description: Richer rows (entity + expectations); used for a productive run.
+          items: { $ref: "#/components/schemas/BatchCase" }
+        strict:
+          type: boolean
+          description: When true, validate each row against the model's whole-graph schema.
+        record:
+          type: boolean
+          description: When true, write one clio quality event per evaluated case (productive run); needs a configured clio quality queue, else 409 CLIO_NOT_CONFIGURED.
+        subjectKey:
+          type: string
+          description: Input field whose value is the entity when a case gives no explicit `entity`.
+    BatchCase:
+      type: object
+      properties:
+        name: { type: string, description: "Optional case label." }
+        entity: { type: string, description: "Entity the quality event is filed on (its clio subject)." }
+        input:
+          type: object
+          additionalProperties: true
+          description: The model's leaf inputs for this case.
+        expect:
+          type: object
+          additionalProperties: true
+          description: Expected decision values; sets the violation flag when they differ.
+    EvaluateGraphBatchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          description: Per-row results, aligned 1:1 with the request's inputs.
+          items: { $ref: "#/components/schemas/GraphCaseResult" }
+        inputSchema:
+          type: array
+          items: { $ref: "#/components/schemas/InputField" }
+          description: The leaf inputs the whole graph consumes (shared by every row).
+        recorded:
+          type: integer
+          description: How many quality events were queued to clio (0 for a test run).
+    GraphCaseResult:
+      type: object
+      description: >
+        One row's outcome: values+errors when it evaluated, or a problem when the
+        row was rejected (strict input) or failed at runtime. Traces are omitted.
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+          description: Each decision's evaluated value, keyed by decision name.
+        errors:
+          type: object
+          additionalProperties: { type: string }
+          description: Message for each decision that failed to evaluate, keyed by name.
+        problem:
+          $ref: "#/components/schemas/CaseProblem"
+    CaseProblem:
+      type: object
+      description: A per-row failure (INVALID_INPUT or EVALUATION_FAILED).
+      properties:
+        code: { type: string, enum: [INVALID_INPUT, EVALUATION_FAILED] }
+        message: { type: string }
+        problems:
+          type: array
+          items: { $ref: "#/components/schemas/InputProblem" }
     Trace:
       type: object
       description: >
@@ -1518,3 +1929,60 @@ components:
         dataType: { type: string }
         x: { type: number }
         y: { type: number }
+    StatusResponse:
+      type: object
+      description: >
+        Operational status (ADR-0030): the engine's load and the state of the
+        connected Umsysteme. Secret-free — no API key or token ever appears.
+      properties:
+        engine:
+          type: object
+          properties:
+            version: { type: string }
+            uptime: { type: string, description: Human-readable uptime, e.g. "3h12m". }
+            uptimeSeconds: { type: integer }
+            models: { type: integer, description: Models currently in the cache. }
+            cache:
+              type: object
+              properties:
+                size: { type: integer }
+                capacity: { type: integer, description: 0 means unbounded. }
+                hits: { type: integer }
+                misses: { type: integer }
+                evictions: { type: integer }
+        clio:
+          type: object
+          description: Audit sink state (ADR-0023). Never carries the clio token.
+          properties:
+            enabled: { type: boolean }
+            mode: { type: string, enum: [best-effort, strict] }
+            url: { type: string }
+            writesOk: { type: integer }
+            writesFailed: { type: integer }
+            idempotentSkips: { type: integer }
+            lastOk: { type: string, format: date-time }
+            lastError: { type: string }
+            lastErrorAt: { type: string, format: date-time }
+            reachable: { type: boolean }
+        llm:
+          type: object
+          description: Modeling-assistant provider state (ADR-0024). Never carries the provider key.
+          properties:
+            enabled: { type: boolean }
+            provider: { type: string }
+            byok: { type: boolean, description: Whether a caller may bring its own key (X-LLM-Token). }
+            callsOk: { type: integer }
+            callsFailed: { type: integer }
+            lastOk: { type: string, format: date-time }
+        git:
+          type: object
+          properties:
+            available: { type: boolean }
+    ReadyResponse:
+      type: object
+      description: Readiness result (ADR-0030). Checks lists the unmet hard start conditions.
+      properties:
+        status: { type: string, enum: [ready, "not ready"] }
+        checks:
+          type: array
+          items: { type: string }

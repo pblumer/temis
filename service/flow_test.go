@@ -33,6 +33,54 @@ func loanFlowDescriptor(riskID, loanID string) []byte {
     }`, riskID, loanID))
 }
 
+func TestFlowCatalogAndDetail(t *testing.T) {
+	h := newTestServer(t)
+	riskID := uploadModel(t, h, "../flow/testdata/risk.dmn")
+	loanID := uploadModel(t, h, "../flow/testdata/loan.dmn")
+	reg := do(t, h, "POST", "/v1/flows", "application/json", loanFlowDescriptor(riskID, loanID))
+	if reg.Code != http.StatusCreated {
+		t.Fatalf("register = %d: %s", reg.Code, reg.Body)
+	}
+	fr := decode[flowResponse](t, reg)
+
+	// Catalog.
+	rec := do(t, h, "GET", "/v1/flows", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d: %s", rec.Code, rec.Body)
+	}
+	list := decode[flowListResponse](t, rec)
+	if list.Count != 1 || len(list.Flows) != 1 {
+		t.Fatalf("catalog = %+v, want 1 flow", list)
+	}
+	if fs := list.Flows[0]; fs.FlowID != fr.FlowID || fs.Name != "loan-decisioning" || fs.Steps != 2 || len(fs.Inputs) != 2 {
+		t.Errorf("summary = %+v", fs)
+	}
+
+	// Detail (drawing data).
+	rec = do(t, h, "GET", "/v1/flows/"+fr.FlowID, "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail = %d: %s", rec.Code, rec.Body)
+	}
+	d := decode[flowDetail](t, rec)
+	if d.Name != "loan-decisioning" || len(d.Steps) != 2 || len(d.Inputs) != 2 {
+		t.Fatalf("detail = %+v", d)
+	}
+	if d.Steps[0].ID == "" || d.Steps[0].Decision == "" || d.Steps[0].Model == "" {
+		t.Errorf("step missing fields: %+v", d.Steps[0])
+	}
+	if d.Output["Decision"] != "decide.Loan Decision" {
+		t.Errorf("output = %v", d.Output)
+	}
+	if len(d.Diagnostics) != 0 {
+		t.Errorf("models loaded → expected no diagnostics, got %v", d.Diagnostics)
+	}
+
+	// Unknown flow.
+	if rec := do(t, h, "GET", "/v1/flows/sha256:nope", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown flow detail = %d, want 404", rec.Code)
+	}
+}
+
 func TestFlowRegisterAndEvaluate(t *testing.T) {
 	h := newTestServer(t)
 	riskID := uploadModel(t, h, "../flow/testdata/risk.dmn")

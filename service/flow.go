@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 
 	"github.com/pblumer/temis/dmn"
@@ -44,6 +45,17 @@ func (f *flowStore) get(id string) (*storedFlow, bool) {
 	return sf, ok
 }
 
+// snapshot returns every registered flow, for the catalog listing.
+func (f *flowStore) snapshot() []*storedFlow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*storedFlow, 0, len(f.m))
+	for _, sf := range f.m {
+		out = append(out, sf)
+	}
+	return out
+}
+
 // flowID is the content hash of a flow descriptor, mirroring the model cache's
 // scheme so registration is idempotent.
 func flowID(desc []byte) string {
@@ -75,6 +87,32 @@ type flowDiagnosticDTO struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Step    string `json:"step,omitempty"`
+}
+
+// flowSummary is one entry in the flow catalog (GET /v1/flows).
+type flowSummary struct {
+	FlowID string   `json:"flowId"`
+	Name   string   `json:"name,omitempty"`
+	Inputs []string `json:"inputs"`
+	Steps  int      `json:"steps"`
+}
+
+type flowListResponse struct {
+	Flows []flowSummary `json:"flows"`
+	Count int           `json:"count"`
+}
+
+// flowDetail is a registered flow's drawing data (GET /v1/flows/{id}): its
+// declared inputs, steps and output wiring, plus fresh validation diagnostics
+// against the currently loaded models. It is what a UI renders as a graph.
+type flowDetail struct {
+	FlowID      string              `json:"flowId"`
+	Name        string              `json:"name,omitempty"`
+	Version     string              `json:"version,omitempty"`
+	Inputs      []flow.InputDecl    `json:"inputs,omitempty"`
+	Steps       []flow.Step         `json:"steps"`
+	Output      map[string]string   `json:"output,omitempty"`
+	Diagnostics []flowDiagnosticDTO `json:"diagnostics,omitempty"`
 }
 
 type evaluateFlowRequest struct {
@@ -112,6 +150,47 @@ func (s *Server) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, flowResponse{
 		FlowID:      id,
 		Name:        f.Name(),
+		Diagnostics: toFlowDiagnosticDTOs(diags),
+	})
+}
+
+// handleListFlows returns the catalog of registered flows (WP-96): each flow's
+// id, name, declared input names and step count. It is the entry point a UI uses
+// to list what can be run.
+func (s *Server) handleListFlows(w http.ResponseWriter, _ *http.Request) {
+	sfs := s.flows.snapshot()
+	out := make([]flowSummary, 0, len(sfs))
+	for _, sf := range sfs {
+		var d flow.Descriptor
+		_ = json.Unmarshal(sf.desc, &d)
+		names := make([]string, 0, len(d.Inputs))
+		for _, in := range d.Inputs {
+			names = append(names, in.Name)
+		}
+		out = append(out, flowSummary{FlowID: sf.id, Name: sf.flow.Name(), Inputs: names, Steps: len(d.Steps)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FlowID < out[j].FlowID })
+	writeJSON(w, http.StatusOK, flowListResponse{Flows: out, Count: len(out)})
+}
+
+// handleGetFlow returns a registered flow's steps, inputs and output wiring (the
+// graph a UI draws), plus fresh validation diagnostics against the loaded models.
+func (s *Server) handleGetFlow(w http.ResponseWriter, r *http.Request) {
+	sf, ok := s.flows.get(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "FLOW_NOT_FOUND", "no flow with that id")
+		return
+	}
+	var d flow.Descriptor
+	_ = json.Unmarshal(sf.desc, &d)
+	diags := sf.flow.Validate(r.Context(), cacheResolver{s})
+	writeJSON(w, http.StatusOK, flowDetail{
+		FlowID:      sf.id,
+		Name:        d.Flow,
+		Version:     d.Version,
+		Inputs:      d.Inputs,
+		Steps:       d.Steps,
+		Output:      d.Output,
 		Diagnostics: toFlowDiagnosticDTOs(diags),
 	})
 }
@@ -178,7 +257,7 @@ func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flo
 	// Audit the flow before answering (WP-93). Fail-closed aborts the request; in
 	// best-effort mode RecordFlow logs and returns nil so the result still flows.
 	if s.sink != nil {
-		if err := s.sink.RecordFlow(ctx, flowRecordFrom(desc, input, res.Outputs)); err != nil {
+		if err := s.sink.RecordFlow(ctx, flowRecordFrom(desc, input, res.Outputs, authKidFromContext(ctx))); err != nil {
 			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
 			return
 		}
@@ -193,7 +272,7 @@ func (s *Server) evaluateFlow(w http.ResponseWriter, ctx context.Context, f *flo
 // flowRecordFrom builds a clio FlowRecord from the descriptor bytes and the
 // evaluation's input/outputs. The descriptor is parsed for the flow name, version
 // and ordered step modelIds; it is also carried verbatim so a re-audit can replay.
-func flowRecordFrom(desc []byte, input, outputs map[string]any) FlowRecord {
+func flowRecordFrom(desc []byte, input, outputs map[string]any, authKid string) FlowRecord {
 	var d flow.Descriptor
 	_ = json.Unmarshal(desc, &d)
 	models := make([]string, 0, len(d.Steps))
@@ -208,6 +287,7 @@ func flowRecordFrom(desc []byte, input, outputs map[string]any) FlowRecord {
 		Descriptor: desc,
 		Input:      input,
 		Outputs:    outputs,
+		AuthKid:    authKid,
 	}
 }
 

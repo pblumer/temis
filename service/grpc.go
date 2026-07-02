@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -18,36 +18,56 @@ import (
 
 // grpcHandler builds the Connect/gRPC handler for the DmnEngine service and
 // returns its path prefix and handler, ready to mount on the mux. The same
-// optional bearer token as the HTTP endpoints guards every RPC. The handler
-// speaks gRPC, gRPC-Web and Connect's own protocol over the one endpoint.
+// keystore as the HTTP endpoints guards every RPC, scope-aware per procedure
+// (ADR-0028): Compile → models:write, Evaluate/EvaluateBatch → evaluate. The
+// handler speaks gRPC, gRPC-Web and Connect's own protocol over the one endpoint.
 func (s *Server) grpcHandler() (string, http.Handler) {
 	var opts []connect.HandlerOption
-	if s.token != "" {
-		opts = append(opts, connect.WithInterceptors(tokenInterceptor(s.token)))
+	if s.auth.enabled() {
+		opts = append(opts, connect.WithInterceptors(&authInterceptor{auth: s.auth}))
 	}
 	return dmnv1connect.NewDmnEngineHandler(&grpcService{srv: s}, opts...)
 }
 
-// tokenInterceptor enforces the bearer token on every RPC (unary and streaming),
-// mirroring the HTTP requireToken guard. The comparison is constant-time.
-func tokenInterceptor(token string) connect.Interceptor {
-	authed := func(header http.Header) bool {
-		got := bearerToken(header.Get("Authorization"))
-		return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+// rpcScope maps a Connect procedure ("/dmn.v1.DmnEngine/Compile") to its required
+// scope. An unmapped procedure defaults to admin so a new RPC is closed until it
+// is deliberately assigned a scope.
+func rpcScope(procedure string) Scope {
+	switch {
+	case strings.HasSuffix(procedure, "/Compile"):
+		return ScopeModelsWrite
+	case strings.HasSuffix(procedure, "/Evaluate"), strings.HasSuffix(procedure, "/EvaluateBatch"):
+		return ScopeEvaluate
+	default:
+		return ScopeAdmin
 	}
-	unauthorized := connect.NewError(connect.CodeUnauthenticated, errors.New("missing or invalid bearer token"))
-	return &authInterceptor{authed: authed, unauthorized: unauthorized}
 }
 
+// authInterceptor enforces the keystore on every RPC (unary and streaming),
+// mirroring the HTTP requireScope guard: an unauthenticated caller gets
+// Unauthenticated, an authenticated caller lacking the procedure's scope gets
+// PermissionDenied. The secret comparison is constant-time (keystore).
 type authInterceptor struct {
-	authed       func(http.Header) bool
-	unauthorized error
+	auth Authenticator
+}
+
+// check verifies the header credential for procedure's scope, returning a Connect
+// error (Unauthenticated or PermissionDenied) or nil when allowed.
+func (a *authInterceptor) check(header http.Header, procedure string) error {
+	key, ok := a.auth.authenticate(bearerToken(header.Get("Authorization")))
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("missing or invalid bearer token"))
+	}
+	if !key.HasScope(rpcScope(procedure)) {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("the key lacks the required scope: "+string(rpcScope(procedure))))
+	}
+	return nil
 }
 
 func (a *authInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		if !a.authed(req.Header()) {
-			return nil, a.unauthorized
+		if err := a.check(req.Header(), req.Spec().Procedure); err != nil {
+			return nil, err
 		}
 		return next(ctx, req)
 	}
@@ -59,8 +79,8 @@ func (a *authInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) 
 
 func (a *authInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		if !a.authed(conn.RequestHeader()) {
-			return a.unauthorized
+		if err := a.check(conn.RequestHeader(), conn.Spec().Procedure); err != nil {
+			return err
 		}
 		return next(ctx, conn)
 	}

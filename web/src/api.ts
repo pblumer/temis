@@ -61,6 +61,47 @@ export async function listModels(): Promise<ModelSummary[]> {
   return body.models ?? []
 }
 
+// ClioStatus mirrors the clio block of the service statusResponse (ADR-0030): the
+// audit sink's configuration and observed health. It never carries a secret.
+export type ClioStatus = {
+  enabled: boolean
+  mode?: string
+  url?: string
+  writesOk?: number
+  writesFailed?: number
+  idempotentSkips?: number
+  lastOk?: string
+  lastError?: string
+  lastErrorAt?: string
+  reachable?: boolean
+}
+
+// Status mirrors the service statusResponse; only the fields the modeler surfaces
+// are typed. gated is a client-only flag set when /v1/status is present but
+// auth-gated (401/403) — the modeler then shows the indicator as unknown rather
+// than pretending clio is off.
+export type Status = {
+  engine?: { version?: string }
+  clio: ClioStatus
+  gated?: boolean
+}
+
+// getStatus fetches GET /v1/status. It resolves to null when the endpoint is
+// unavailable (older server, network error) and to a gated marker when it exists
+// but the caller lacks the audit scope — so the caller can distinguish "clio is
+// off" from "I'm not allowed to see it".
+export async function getStatus(): Promise<Status | null> {
+  let r: Response
+  try {
+    r = await fetch('/v1/status')
+  } catch {
+    return null
+  }
+  if (r.status === 401 || r.status === 403) return { clio: { enabled: false }, gated: true }
+  if (!r.ok) return null
+  return (await r.json()) as Status
+}
+
 export async function getModel(modelId: string): Promise<ModelDetail> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId))
   if (!r.ok) throw new Error('Modell laden fehlgeschlagen (HTTP ' + r.status + ')')
@@ -225,6 +266,52 @@ export async function evaluate(modelId: string, decision: string, input: Record<
   return (await r.json()) as EvalResult
 }
 
+// --- Decision flows (ADR-0026, WP-91/96/97) ---
+
+// FlowSummary mirrors the service flowSummary: one catalog entry.
+export type FlowSummary = { flowId: string; name?: string; inputs: string[]; steps: number }
+// FlowInputDecl / FlowStep mirror flow.InputDecl / flow.Step.
+export type FlowInputDecl = { name: string; type?: string }
+export type FlowStep = { id: string; model: string; decision: string; in?: Record<string, string> }
+export type FlowDiagnostic = { code: string; message: string; step?: string }
+// FlowDetail mirrors the service flowDetail: the graph a UI draws.
+export type FlowDetail = {
+  flowId: string
+  name?: string
+  version?: string
+  inputs?: FlowInputDecl[]
+  steps: FlowStep[]
+  output?: Record<string, string>
+  diagnostics?: FlowDiagnostic[]
+}
+
+// listFlows returns the registered decision flows (GET /v1/flows).
+export async function listFlows(): Promise<FlowSummary[]> {
+  const r = await fetch('/v1/flows')
+  if (!r.ok) throw new Error('Flows laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return ((await r.json()) as { flows?: FlowSummary[] }).flows ?? []
+}
+
+// getFlow returns a flow's steps, inputs and output wiring (GET /v1/flows/{id}).
+export async function getFlow(id: string): Promise<FlowDetail> {
+  const r = await fetch('/v1/flows/' + encodeURIComponent(id))
+  if (!r.ok) throw new Error('Flow laden fehlgeschlagen (HTTP ' + r.status + ')')
+  return (await r.json()) as FlowDetail
+}
+
+// evaluateFlow runs a registered flow against the given inputs
+// (POST /v1/flows/{id}/evaluate). With explain the result carries the aggregated
+// decision trace. The response reuses the EvalResult shape (outputs/decisions/trace).
+export async function evaluateFlow(id: string, input: Record<string, unknown>, explain = false): Promise<EvalResult> {
+  const r = await fetch('/v1/flows/' + encodeURIComponent(id) + '/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, explain }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Flow-Auswertung fehlgeschlagen'))
+  return (await r.json()) as EvalResult
+}
+
 // GraphEvalResult mirrors the service evaluateGraphResponse: every decision's
 // value (keyed by name), per-decision traces (with explain), per-decision
 // evaluation errors, and the leaf-input schema the whole graph consumes — so the
@@ -254,6 +341,54 @@ export async function evaluateGraph(modelId: string, input: Record<string, unkno
     throw new Error(problem.detail || 'Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
   }
   return (await r.json()) as GraphEvalResult
+}
+
+// CaseProblem mirrors the service caseProblem: a single batch row's failure —
+// either its strict input was rejected (INVALID_INPUT, with per-field problems)
+// or it failed at runtime (EVALUATION_FAILED).
+export type CaseProblem = { code: string; message: string; problems?: InputProblem[] }
+// GraphCaseResult mirrors the service graphCaseResult: one row's per-decision
+// values and errors, or a whole-row problem. Traces are omitted in batch mode.
+export type GraphCaseResult = { values?: Record<string, unknown>; errors?: Record<string, string>; problem?: CaseProblem }
+// BatchCase mirrors the service batchCase: one richer row with the entity a
+// quality event is filed on and the expected decision values (productive run).
+export type BatchCase = { name?: string; entity?: string; input: Record<string, unknown>; expect?: Record<string, unknown> }
+// GraphBatchResult mirrors evaluateGraphBatchResponse: per-row results aligned
+// 1:1 with the request's inputs, the shared leaf-input schema, and how many
+// quality events were queued to clio (0 for a test run).
+export type GraphBatchResult = { results: GraphCaseResult[]; inputSchema: InputField[]; recorded: number }
+// BatchRequest is the evaluate-graph-batch payload: plain `inputs` for a test
+// run, or richer `cases` + `record` for a productive run that writes quality
+// events (with `subjectKey` naming the entity input field as a fallback).
+export type BatchRequest = { inputs?: Record<string, unknown>[]; cases?: BatchCase[]; strict?: boolean; record?: boolean; subjectKey?: string }
+
+// ClioNotConfiguredError signals a productive run was refused because the server
+// has no clio quality queue (no TEMIS_CLIO_TOKEN) — the cockpit offers a test run.
+export class ClioNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ClioNotConfiguredError'
+  }
+}
+
+// evaluateGraphBatch evaluates many rows against one model in a single request
+// (POST /v1/models/{id}/evaluate-graph-batch) — the throughput path behind the
+// Import cockpit, so thousands of test cases run in one round-trip instead of one
+// HTTP call each. Each row is evaluated independently; a bad row comes back as
+// that row's `problem` rather than failing the whole request. With record=true
+// (productive run) each evaluated case is written to clio as a quality event.
+export async function evaluateGraphBatch(modelId: string, req: BatchRequest): Promise<GraphBatchResult> {
+  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/evaluate-graph-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; detail?: string }
+    if (problem.code === 'CLIO_NOT_CONFIGURED') throw new ClioNotConfiguredError(problem.detail || 'clio ist nicht konfiguriert')
+    throw new Error(problem.detail || 'Batch-Auswertung fehlgeschlagen (HTTP ' + r.status + ')')
+  }
+  return (await r.json()) as GraphBatchResult
 }
 
 // TableView mirrors dmn.TableView: a decision's static decision-table logic for

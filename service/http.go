@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/http2"
@@ -42,9 +43,29 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 type Server struct {
 	engine *dmn.Engine
 
-	// token, when non-empty, is the bearer token required on the /v1 data
-	// endpoints. Empty means the API is open.
+	// token, when non-empty, is the deprecated legacy bearer token (WithToken /
+	// -token / TEMIS_API_TOKEN). It is folded into auth as a synthetic admin key
+	// (ADR-0028) so existing clients keep working byte-identically.
 	token string
+
+	// keysFile / bootstrapAdminKey configure the static keystore (WP-102): a JSON
+	// file of scoped keys and a bootstrap admin secret. Empty leaves them unset.
+	keysFile          string
+	bootstrapAdminKey string
+
+	// keyStoreDir, when non-empty, is the persistent managed-key store directory
+	// (WP-103, ADR-0027): the lifecycle API (/v1/keys*) creates/rotates/revokes keys
+	// there so they survive a restart. Empty leaves key management disabled (404).
+	keyStoreDir string
+
+	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
+	// NewServer. It authenticates kid.secret bearers and drives requireScope.
+	// When it reports !enabled() the /v1 surface is open (the historical default).
+	auth Authenticator
+
+	// keyStore is the concrete keystore behind auth, retained (non-nil) only when a
+	// persistent key store is configured, so the lifecycle handlers can mutate it.
+	keyStore *keystore
 
 	// listModels enables the GET /v1/models listing endpoint. When false the
 	// handler responds 404, so callers cannot enumerate the cached models (and
@@ -87,21 +108,83 @@ type Server struct {
 	// logging, leaving behaviour byte-identical to a server without it.
 	sink *ClioSink
 
+	// quality, when set via WithQualityQueue, is the decoupled guaranteed-delivery
+	// queue that writes clio quality events for a PRODUCTIVE Import run (one event
+	// per evaluated case, on its entity). Nil means productive runs are refused
+	// (CLIO_NOT_CONFIGURED) — a test run never writes and needs no queue.
+	quality *QualityQueue
+
 	// gitBaseURL overrides the GitHub REST API root for the /v1/git endpoints
 	// (default https://api.github.com); set via WithGitHubBaseURL for GitHub
 	// Enterprise or tests. The git-provider token is supplied per request
 	// (X-Git-Token), never stored on the server (WP-72, auth model A).
 	gitBaseURL string
+
+	// version is the build version reported by GET /v1/status; set via
+	// WithVersion. Empty falls back to the development placeholder.
+	version string
+
+	// clioActiveProbe makes GET /v1/status issue a live GET to clio's health
+	// endpoint to determine reachability, instead of the passive last-write
+	// outcome; set via WithClioActiveProbe. Off by default (ADR-0030, WP-112).
+	clioActiveProbe bool
+
+	// metrics holds the process-level operational counters reported by the status
+	// endpoint (ADR-0030). Always set by NewServer.
+	metrics *metrics
 }
 
 // Option configures a Server at construction time.
 type Option func(*Server)
 
-// WithToken requires callers of the /v1 data endpoints to present
-// "Authorization: Bearer <token>". An empty token leaves the API open. The
+// WithToken configures the deprecated legacy admin token (ADR-0028). Callers
+// presenting "Authorization: Bearer <token>" are treated as a synthetic admin
+// key that satisfies every scope, so pre-scopes clients keep working unchanged.
+// An empty token contributes nothing. Prefer WithKeysFile for scoped keys. The
 // docs, OpenAPI spec and health endpoints are never gated.
 func WithToken(token string) Option {
 	return func(s *Server) { s.token = token }
+}
+
+// WithKeysFile loads scoped kid.secret API keys from a JSON file at construction
+// (WP-102). Each key holds only the SHA-256 of its secret, its scopes, owner and
+// optional expiry. A file that cannot be read or parsed makes NewServer panic, so
+// a misconfigured keystore fails loudly rather than leaving the API open. An
+// empty path loads no file.
+func WithKeysFile(path string) Option {
+	return func(s *Server) { s.keysFile = path }
+}
+
+// WithBootstrapAdminKey registers a bootstrap admin key from a secret (WP-102),
+// typically sourced from $TEMIS_BOOTSTRAP_ADMIN_KEY. The key's kid is derived
+// deterministically from the secret and logged by the caller; the secret is never
+// logged or stored in plaintext. An empty secret registers nothing.
+func WithBootstrapAdminKey(secret string) Option {
+	return func(s *Server) { s.bootstrapAdminKey = secret }
+}
+
+// WithKeyStore enables the persistent managed-key store and the key lifecycle API
+// (WP-103, ADR-0028 Phase 2). Keys created/rotated/revoked over POST /v1/keys are
+// persisted as a single atomically-written JSON file in dir (secret hashes only)
+// and reloaded on the next start, so they survive a restart. An empty dir leaves
+// key management disabled: the /v1/keys* endpoints answer 404. Pair this with a
+// bootstrap admin key so the API is not open to the first caller.
+func WithKeyStore(dir string) Option {
+	return func(s *Server) { s.keyStoreDir = dir }
+}
+
+// WithVersion sets the build version reported by GET /v1/status (ADR-0030). An
+// empty version falls back to the development placeholder.
+func WithVersion(v string) Option {
+	return func(s *Server) { s.version = v }
+}
+
+// WithClioActiveProbe makes GET /v1/status determine clio reachability with a
+// live GET to clio's health endpoint rather than the passive last-write outcome
+// (ADR-0030, WP-112). Off by default: reachability then comes from real writes
+// with no extra network call.
+func WithClioActiveProbe(enabled bool) Option {
+	return func(s *Server) { s.clioActiveProbe = enabled }
 }
 
 // WithModelListing toggles the GET /v1/models endpoint that enumerates every
@@ -112,12 +195,21 @@ func WithModelListing(enabled bool) Option {
 	return func(s *Server) { s.listModels = enabled }
 }
 
-// WithClioSink attaches a clio audit sink so each single-decision evaluation
-// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) is recorded as a
-// tamper-evident decision event in clio (ADR-0023). A nil sink is ignored,
-// leaving the server's behaviour unchanged.
+// WithClioSink attaches a clio audit sink so each evaluation is recorded as a
+// tamper-evident decision event in clio (ADR-0023): single-decision evals
+// (POST /v1/evaluate and POST /v1/models/{id}/evaluate) and whole-graph evals
+// (POST /v1/models/{id}/evaluate-graph, one event per evaluated decision — the
+// modeler's "Auswerten" path). A nil sink is ignored, leaving behaviour
+// unchanged.
 func WithClioSink(sink *ClioSink) Option {
 	return func(s *Server) { s.sink = sink }
+}
+
+// WithQualityQueue attaches the decoupled queue that writes clio quality events
+// for a productive Import run (evaluate-graph-batch with record=true). A nil queue
+// is ignored, leaving productive runs refused (CLIO_NOT_CONFIGURED).
+func WithQualityQueue(q *QualityQueue) Option {
+	return func(s *Server) { s.quality = q }
 }
 
 // WithCacheSize bounds how many compiled models the server keeps in memory.
@@ -157,9 +249,39 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	if engine == nil {
 		engine = dmn.New()
 	}
-	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize}
+	s := &Server{engine: engine, listModels: true, cacheSize: defaultCacheSize, metrics: newMetrics()}
 	for _, opt := range opts {
 		opt(s)
+	}
+	// Assemble the keystore from the static config (ADR-0028, WP-102): scoped keys
+	// from the JSON file, an optional bootstrap admin key and the deprecated legacy
+	// token (a synthetic admin key). A malformed keys file is fatal — better to fail
+	// startup loudly than to serve an open API by accident.
+	auth, bootKid, err := buildKeystore(s.keysFile, s.bootstrapAdminKey, s.token)
+	if err != nil {
+		panic("temis: keystore: " + err.Error())
+	}
+	s.auth = auth
+	if bootKid != "" {
+		log.Printf("temis: bootstrap admin key registered: kid=%s (use Authorization: Bearer %s.<secret>)", bootKid, bootKid)
+	}
+	// Persistent managed-key store + lifecycle API (WP-103): load previously
+	// created keys so they survive a restart, and let /v1/keys* mutate them. A store
+	// that cannot be opened is fatal, like a malformed keys file — key management
+	// must not silently degrade to unpersisted.
+	if s.keyStoreDir != "" {
+		loaded, skipped, err := auth.attachKeyStore(s.keyStoreDir)
+		if err != nil {
+			panic("temis: key store: " + err.Error())
+		}
+		s.keyStore = auth
+		log.Printf("temis: key store at %s (%d managed keys loaded, lifecycle API at /v1/keys)", s.keyStoreDir, loaded)
+		if skipped > 0 {
+			log.Printf("temis: key store: %d managed key(s) skipped (kid collides with a static/bootstrap key)", skipped)
+		}
+		if !auth.enabled() {
+			log.Printf("temis: WARNING key management is enabled but no admin credential is configured — /v1/keys is OPEN to the first caller; set TEMIS_BOOTSTRAP_ADMIN_KEY or -keys-file")
+		}
 	}
 	s.cache = newModelCache(s.cacheSize)
 	s.flows = newFlowStore()
@@ -200,73 +322,96 @@ func (s *Server) loadPersisted(ctx context.Context) {
 	}
 }
 
-// route is one token-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
-// pattern and the handler that serves it. dataRoutes() is the single list of
-// them, so registration (Handler) and the OpenAPI-sync test share one source.
+// route is one scope-gated /v1 data endpoint: an HTTP method, a Go 1.22 mux
+// pattern, the required Scope (ADR-0028 §2) and the handler that serves it.
+// dataRoutes() is the single list of them, so registration (Handler) and the
+// OpenAPI-sync test share one source.
 type route struct {
 	method  string
 	pattern string
+	scope   Scope
 	handler http.HandlerFunc
 }
 
-// dataRoutes is the canonical list of token-gated /v1 endpoints. Every entry
-// must have a matching path+method in service/openapi.yaml (enforced by
-// TestOpenAPICoversDataRoutes); adding a route here without documenting it — or
-// vice versa — breaks that test on purpose.
+// dataRoutes is the canonical list of scope-gated /v1 endpoints. Each entry
+// carries its required scope from the ADR-0028 §2 mapping (evaluate · models:read
+// · models:write · git · assist · flow · admin). Every entry must have a matching
+// path+method in service/openapi.yaml (enforced by TestOpenAPICoversDataRoutes);
+// adding a route here without documenting it — or vice versa — breaks that test
+// on purpose.
 func (s *Server) dataRoutes() []route {
 	return []route{
-		{"POST", "/v1/models", s.handleCreateModel},
-		{"GET", "/v1/models", s.handleListModels},
-		{"GET", "/v1/models/{id}", s.handleGetModel},
-		{"DELETE", "/v1/models/{id}", s.handleDeleteModel},
-		{"GET", "/v1/models/{id}/xml", s.handleGetModelXML},
-		{"POST", "/v1/models/{id}/rename", s.handleRenameModel},
+		{"POST", "/v1/models", ScopeModelsWrite, s.handleCreateModel},
+		{"GET", "/v1/models", ScopeModelsRead, s.handleListModels},
+		{"GET", "/v1/models/{id}", ScopeModelsRead, s.handleGetModel},
+		// Deleting a model is an operational/admin action (ADR-0028 §2: admin covers
+		// model DELETE), distinct from the modeler's per-element edits.
+		{"DELETE", "/v1/models/{id}", ScopeAdmin, s.handleDeleteModel},
+		{"GET", "/v1/models/{id}/xml", ScopeModelsRead, s.handleGetModelXML},
+		{"POST", "/v1/models/{id}/rename", ScopeModelsWrite, s.handleRenameModel},
 		// Modeler (ADR-0016): structure, types and per-decision logic editing that
-		// backs the built-in DMN modeler frontend; all on the same token-gated /v1
-		// surface. The mutating ones recompile and return the saved model (201).
-		{"GET", "/v1/models/{id}/graph", s.handleGetModelGraph},
-		{"POST", "/v1/models/{id}/graph", s.handleSaveGraph},
-		{"GET", "/v1/models/{id}/types", s.handleGetTypes},
-		{"POST", "/v1/models/{id}/types", s.handleSaveType},
-		{"DELETE", "/v1/models/{id}/types/{name}", s.handleDeleteType},
-		{"GET", "/v1/models/{id}/decisions/{decision}/table", s.handleGetDecisionTable},
-		{"POST", "/v1/models/{id}/decisions/{decision}/table", s.handleSaveDecisionTable},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", s.handleCreateDecisionTable},
-		{"GET", "/v1/models/{id}/decisions/{decision}/literal", s.handleGetLiteral},
-		{"POST", "/v1/models/{id}/decisions/{decision}/literal", s.handleSaveLiteral},
-		{"GET", "/v1/models/{id}/decisions/{decision}/context", s.handleGetContext},
-		{"POST", "/v1/models/{id}/decisions/{decision}/context", s.handleSaveContext},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", s.handleCreateContext},
-		{"GET", "/v1/models/{id}/decisions/{decision}/conditional", s.handleGetConditional},
-		{"POST", "/v1/models/{id}/decisions/{decision}/conditional", s.handleSaveConditional},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-conditional", s.handleCreateConditional},
-		{"GET", "/v1/models/{id}/decisions/{decision}/list", s.handleGetList},
-		{"POST", "/v1/models/{id}/decisions/{decision}/list", s.handleSaveList},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-list", s.handleCreateList},
-		{"GET", "/v1/models/{id}/decisions/{decision}/relation", s.handleGetRelation},
-		{"POST", "/v1/models/{id}/decisions/{decision}/relation", s.handleSaveRelation},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-relation", s.handleCreateRelation},
-		{"GET", "/v1/models/{id}/decisions/{decision}/filter", s.handleGetFilter},
-		{"POST", "/v1/models/{id}/decisions/{decision}/filter", s.handleSaveFilter},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-filter", s.handleCreateFilter},
-		{"GET", "/v1/models/{id}/decisions/{decision}/iterator", s.handleGetIterator},
-		{"POST", "/v1/models/{id}/decisions/{decision}/iterator", s.handleSaveIterator},
-		{"POST", "/v1/models/{id}/decisions/{decision}/create-iterator", s.handleCreateIterator},
-		{"GET", "/v1/models/{id}/bkm/{bkm}", s.handleGetBKM},
-		{"POST", "/v1/models/{id}/bkm/{bkm}", s.handleSaveBKM},
-		{"POST", "/v1/models/{id}/save", s.handleSaveModel},
+		// backs the built-in DMN modeler frontend. Reads need models:read, mutating
+		// edits need models:write. The mutating ones recompile and return the saved
+		// model (201).
+		{"GET", "/v1/models/{id}/graph", ScopeModelsRead, s.handleGetModelGraph},
+		{"POST", "/v1/models/{id}/graph", ScopeModelsWrite, s.handleSaveGraph},
+		{"GET", "/v1/models/{id}/types", ScopeModelsRead, s.handleGetTypes},
+		{"POST", "/v1/models/{id}/types", ScopeModelsWrite, s.handleSaveType},
+		{"DELETE", "/v1/models/{id}/types/{name}", ScopeModelsWrite, s.handleDeleteType},
+		{"GET", "/v1/models/{id}/decisions/{decision}/table", ScopeModelsRead, s.handleGetDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/table", ScopeModelsWrite, s.handleSaveDecisionTable},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-table", ScopeModelsWrite, s.handleCreateDecisionTable},
+		{"GET", "/v1/models/{id}/decisions/{decision}/literal", ScopeModelsRead, s.handleGetLiteral},
+		{"POST", "/v1/models/{id}/decisions/{decision}/literal", ScopeModelsWrite, s.handleSaveLiteral},
+		{"GET", "/v1/models/{id}/decisions/{decision}/context", ScopeModelsRead, s.handleGetContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/context", ScopeModelsWrite, s.handleSaveContext},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-context", ScopeModelsWrite, s.handleCreateContext},
+		{"GET", "/v1/models/{id}/decisions/{decision}/conditional", ScopeModelsRead, s.handleGetConditional},
+		{"POST", "/v1/models/{id}/decisions/{decision}/conditional", ScopeModelsWrite, s.handleSaveConditional},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-conditional", ScopeModelsWrite, s.handleCreateConditional},
+		{"GET", "/v1/models/{id}/decisions/{decision}/list", ScopeModelsRead, s.handleGetList},
+		{"POST", "/v1/models/{id}/decisions/{decision}/list", ScopeModelsWrite, s.handleSaveList},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-list", ScopeModelsWrite, s.handleCreateList},
+		{"GET", "/v1/models/{id}/decisions/{decision}/relation", ScopeModelsRead, s.handleGetRelation},
+		{"POST", "/v1/models/{id}/decisions/{decision}/relation", ScopeModelsWrite, s.handleSaveRelation},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-relation", ScopeModelsWrite, s.handleCreateRelation},
+		{"GET", "/v1/models/{id}/decisions/{decision}/filter", ScopeModelsRead, s.handleGetFilter},
+		{"POST", "/v1/models/{id}/decisions/{decision}/filter", ScopeModelsWrite, s.handleSaveFilter},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-filter", ScopeModelsWrite, s.handleCreateFilter},
+		{"GET", "/v1/models/{id}/decisions/{decision}/iterator", ScopeModelsRead, s.handleGetIterator},
+		{"POST", "/v1/models/{id}/decisions/{decision}/iterator", ScopeModelsWrite, s.handleSaveIterator},
+		{"POST", "/v1/models/{id}/decisions/{decision}/create-iterator", ScopeModelsWrite, s.handleCreateIterator},
+		{"GET", "/v1/models/{id}/bkm/{bkm}", ScopeModelsRead, s.handleGetBKM},
+		{"POST", "/v1/models/{id}/bkm/{bkm}", ScopeModelsWrite, s.handleSaveBKM},
+		{"POST", "/v1/models/{id}/save", ScopeModelsWrite, s.handleSaveModel},
 		// Evaluation.
-		{"POST", "/v1/models/{id}/evaluate", s.handleEvaluateModel},
-		{"POST", "/v1/models/{id}/evaluate-graph", s.handleEvaluateGraph},
-		{"POST", "/v1/evaluate", s.handleEvaluateStateless},
+		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
+		{"POST", "/v1/models/{id}/evaluate-graph", ScopeEvaluate, s.handleEvaluateGraph},
+		{"POST", "/v1/models/{id}/evaluate-graph-batch", ScopeEvaluate, s.handleEvaluateGraphBatch},
+		{"POST", "/v1/evaluate", ScopeEvaluate, s.handleEvaluateStateless},
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
-		{"POST", "/v1/flows", s.handleCreateFlow},
-		{"POST", "/v1/flows/{id}/evaluate", s.handleEvaluateFlow},
-		{"POST", "/v1/flow/evaluate", s.handleEvaluateFlowStateless},
+		{"POST", "/v1/flows", ScopeFlow, s.handleCreateFlow},
+		{"GET", "/v1/flows", ScopeFlow, s.handleListFlows},
+		{"GET", "/v1/flows/{id}", ScopeFlow, s.handleGetFlow},
+		{"POST", "/v1/flows/{id}/evaluate", ScopeFlow, s.handleEvaluateFlow},
+		{"POST", "/v1/flow/evaluate", ScopeFlow, s.handleEvaluateFlowStateless},
 		// Modeling assistant (ADR-0024): an LLM drives temis's tools to help build
-		// decisions. Dormant (503) until enabled with WithAssist.
-		{"POST", "/v1/chat", s.handleChat},
+		// decisions. Its own scope because it can incur LLM cost. Dormant (503)
+		// until enabled with WithAssist.
+		{"POST", "/v1/chat", ScopeAssist, s.handleChat},
+		// Operational status (ADR-0030, WP-112): the state of the connected
+		// Umsysteme (clio/LLM/git) and the engine's load. Read-only and
+		// secret-free. Guarded by the audit scope — admin keys pass too (admin is
+		// a super-scope), so both admin and audit callers can read it.
+		{"GET", "/v1/status", ScopeAudit, s.handleStatus},
+		// Key lifecycle API (ADR-0028 Phase 2, WP-103): admin-scoped create/list/
+		// rotate/revoke of scoped API keys, backed by the persistent key store.
+		// Dormant (404) unless a -keys-dir is configured.
+		{"POST", "/v1/keys", ScopeAdmin, s.handleCreateKey},
+		{"GET", "/v1/keys", ScopeAdmin, s.handleListKeys},
+		{"POST", "/v1/keys/{kid}/rotate", ScopeAdmin, s.handleRotateKey},
+		{"POST", "/v1/keys/{kid}/revoke", ScopeAdmin, s.handleRevokeKey},
 	}
 }
 
@@ -279,7 +424,7 @@ func (s *Server) Handler() http.Handler {
 	// single dataRoutes() table so the route set has one source of truth — the
 	// OpenAPI-sync test reads the same table (see http_test.go).
 	for _, rt := range s.dataRoutes() {
-		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireToken(rt.handler))
+		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireScope(rt.scope, rt.handler))
 	}
 	// Git-backed models: browse, load, save and propose against a repository
 	// (WP-72). Registered outside the dataRoutes() table (and thus the
@@ -300,8 +445,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", http.FileServerFS(webui.Assets()))
 	mux.HandleFunc("GET /ui", redirectTo("/"))
 	mux.HandleFunc("GET /app/", redirectTo("/"))
-	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /readyz", s.handleHealth)
+	// Liveness vs. readiness are honestly split (ADR-0030, WP-110): /healthz is
+	// pure liveness (process up); /readyz reflects real readiness and can answer
+	// 503 when a hard start condition is unmet.
+	mux.HandleFunc("GET /healthz", s.handleLive)
+	mux.HandleFunc("GET /readyz", s.handleReady)
 
 	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
 	// model cache (and its preloaded examples), so a model is visible whether it
@@ -406,6 +554,63 @@ type evaluateGraphResponse struct {
 	Errors      map[string]string     `json:"errors,omitempty"`
 	InputSchema []dmn.InputField      `json:"inputSchema"`
 	Diagnostics []diagnosticDTO       `json:"diagnostics,omitempty"`
+}
+
+// maxGraphBatchInputs caps how many input rows one batch evaluate accepts, so a
+// single request cannot pin the server on an unbounded loop.
+const maxGraphBatchInputs = 100000
+
+// evaluateGraphBatchRequest carries many input rows evaluated against one model
+// in a single request — the throughput path behind the modeler's Import cockpit,
+// where thousands of test cases run at once.
+//
+// A plain run supplies Inputs (rows of leaf inputs). A PRODUCTIVE run supplies
+// Cases (which also carry an entity + expectations) and sets Record=true, so each
+// evaluated case is written to clio as a quality event on its entity. SubjectKey
+// names an input field to use as the entity when a case gives no explicit one.
+type evaluateGraphBatchRequest struct {
+	Inputs     []map[string]any `json:"inputs,omitempty"`
+	Cases      []batchCase      `json:"cases,omitempty"`
+	Strict     bool             `json:"strict,omitempty"`
+	Record     bool             `json:"record,omitempty"`
+	SubjectKey string           `json:"subjectKey,omitempty"`
+}
+
+// batchCase is one richer row: its inputs plus the entity the quality event is
+// filed on and the expected decision values (to compute the violation flag).
+type batchCase struct {
+	Name   string         `json:"name,omitempty"`
+	Entity string         `json:"entity,omitempty"`
+	Input  map[string]any `json:"input"`
+	Expect map[string]any `json:"expect,omitempty"`
+}
+
+// graphCaseResult is one row's outcome in a batch: the per-decision values and
+// errors, or a whole-case problem (strict input rejected, or evaluation failed).
+// Traces are intentionally omitted — a batch is for throughput (thousands of
+// rows), where per-row traces would balloon the payload; use evaluate-graph for a
+// single explained run.
+type graphCaseResult struct {
+	Values  map[string]any    `json:"values,omitempty"`
+	Errors  map[string]string `json:"errors,omitempty"`
+	Problem *caseProblem      `json:"problem,omitempty"`
+}
+
+// caseProblem is a per-row failure in a batch, kept out of the RFC-7807 envelope
+// so one bad row never fails the whole request.
+type caseProblem struct {
+	Code     string             `json:"code"`
+	Message  string             `json:"message"`
+	Problems []dmn.InputProblem `json:"problems,omitempty"`
+}
+
+// evaluateGraphBatchResponse aligns 1:1 with the request's inputs and echoes the
+// leaf-input schema once (shared by every row). Recorded is how many quality
+// events were queued to clio (productive run; 0 for a test run).
+type evaluateGraphBatchResponse struct {
+	Results     []graphCaseResult `json:"results"`
+	InputSchema []dmn.InputField  `json:"inputSchema"`
+	Recorded    int               `json:"recorded"`
 }
 
 type diagnosticDTO struct {
@@ -944,6 +1149,7 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := sm.defs.EvaluateGraph(r.Context(), dmn.Input(req.Input), opts...)
 	if err != nil {
+		s.metrics.evalFailed.Add(1)
 		var ie *dmn.InputError
 		if errors.As(err, &ie) {
 			writeProblemDetail(w, problem{
@@ -958,6 +1164,30 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
 	}
+	// Audit the whole-graph evaluation: one decision event per successfully
+	// evaluated decision (the modeler's "Auswerten" runs this path, so a graph
+	// eval lands in clio just like a single-decision one). Best-effort by default;
+	// fail-closed (Strict sink) aborts with 502 on a write error. Idempotent per
+	// (modelId, decision, input), so re-running the same inputs does not duplicate.
+	if s.sink != nil {
+		for name, val := range res.Values {
+			rec := DecisionRecord{
+				ModelID:  sm.id,
+				Decision: name,
+				Input:    req.Input,
+				Outputs:  map[string]any{name: val},
+				Strict:   req.Strict,
+			}
+			if res.Traces != nil {
+				rec.Trace = res.Traces[name]
+			}
+			if err := s.sink.Record(r.Context(), rec); err != nil {
+				writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
+				return
+			}
+		}
+	}
+	s.metrics.evalOk.Add(1)
 	writeJSON(w, http.StatusOK, evaluateGraphResponse{
 		Values:      res.Values,
 		Traces:      res.Traces,
@@ -967,8 +1197,149 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+// handleEvaluateGraphBatch evaluates many input rows against one model in a
+// single request — the throughput path behind the modeler's Import cockpit, where
+// thousands of test cases run at once. Each row is evaluated independently: a
+// strict-input rejection or a runtime failure is recorded as that row's problem
+// and never aborts the batch, so the response aligns 1:1 with the request's
+// inputs. Traces are omitted by design (see graphCaseResult) — this keeps the
+// engine in-memory and the payload small, so 5000 rows come back in one fast
+// round-trip instead of 5000.
+func (s *Server) handleEvaluateGraphBatch(w http.ResponseWriter, r *http.Request) {
+	sm, ok := s.lookup(r.PathValue("id"))
+	if !ok {
+		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+		return
+	}
+	var req evaluateGraphBatchRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	// Normalise to rows: Cases (richer) win; otherwise wrap plain Inputs.
+	rows := req.Cases
+	if len(rows) == 0 {
+		rows = make([]batchCase, len(req.Inputs))
+		for i, in := range req.Inputs {
+			rows[i] = batchCase{Input: in}
+		}
+	}
+	if len(rows) > maxGraphBatchInputs {
+		writeProblem(w, http.StatusBadRequest, "BATCH_TOO_LARGE", fmt.Sprintf("at most %d rows per batch (got %d)", maxGraphBatchInputs, len(rows)))
+		return
+	}
+	// A productive run needs the quality queue; refuse clearly when clio is off so
+	// the cockpit can tell the user to configure it (or run as a test).
+	if req.Record && s.quality == nil {
+		writeProblem(w, http.StatusConflict, "CLIO_NOT_CONFIGURED", "productive run needs a clio quality sink; set TEMIS_CLIO_TOKEN (or run as a test)")
+		return
+	}
+
+	var opts []dmn.EvalOption
+	if req.Strict {
+		opts = append(opts, dmn.WithStrictInput())
+	}
+	ctx := r.Context()
+	results := make([]graphCaseResult, len(rows))
+	recorded := 0
+	for i, row := range rows {
+		// A cancelled request (client navigated away) stops the loop promptly.
+		if err := ctx.Err(); err != nil {
+			writeProblem(w, http.StatusRequestTimeout, "REQUEST_CANCELLED", err.Error())
+			return
+		}
+		res, err := sm.defs.EvaluateGraph(ctx, dmn.Input(row.Input), opts...)
+		if err != nil {
+			var ie *dmn.InputError
+			if errors.As(err, &ie) {
+				results[i] = graphCaseResult{Problem: &caseProblem{Code: "INVALID_INPUT", Message: "input does not satisfy the model's schema", Problems: ie.Problems}}
+			} else {
+				results[i] = graphCaseResult{Problem: &caseProblem{Code: "EVALUATION_FAILED", Message: err.Error()}}
+			}
+			continue
+		}
+		results[i] = graphCaseResult{Values: res.Values, Errors: res.Errors}
+		// Productive run: queue a quality event on this case's entity. Only cases
+		// that actually evaluated are recorded; a rejected/failed row is surfaced
+		// in the response but not written as a quality observation.
+		if req.Record {
+			if s.quality.Enqueue(qualityRecordFor(sm, req.SubjectKey, row, res.Values)) {
+				recorded++
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, evaluateGraphBatchResponse{
+		Results:     results,
+		InputSchema: sm.defs.ModelInputSchema(),
+		Recorded:    recorded,
+	})
+}
+
+// qualityRecordFor builds the clio quality record for one evaluated case: the
+// entity resolves from the case's explicit entity, else the SubjectKey input
+// field, else the case name (writeQuality falls back to "unknown"). The violation
+// flag is set only when the case declared expectations.
+func qualityRecordFor(sm *storedModel, subjectKey string, row batchCase, values map[string]any) QualityRecord {
+	entity := strings.TrimSpace(row.Entity)
+	if entity == "" && subjectKey != "" {
+		if v, ok := row.Input[subjectKey]; ok {
+			entity = strings.TrimSpace(fmt.Sprint(v))
+		}
+	}
+	if entity == "" {
+		entity = strings.TrimSpace(row.Name)
+	}
+	var violation *bool
+	if len(row.Expect) > 0 {
+		v := false
+		for k, exp := range row.Expect {
+			if !valuesMatch(values[k], exp) {
+				v = true
+				break
+			}
+		}
+		violation = &v
+	}
+	return QualityRecord{
+		ModelID:   sm.id,
+		ModelName: sm.name,
+		Entity:    entity,
+		Case:      row.Name,
+		Input:     row.Input,
+		Decisions: values,
+		Expected:  row.Expect,
+		Violation: violation,
+	}
+}
+
+// valuesMatch compares a computed decision value to an expected one tolerantly:
+// numbers (which the engine returns as exact decimal strings) compare
+// numerically, everything else by canonical JSON — mirroring the cockpit's
+// looseEqual so server-side violation flags and client-side pass/fail agree.
+func valuesMatch(got, exp any) bool {
+	if gn, gok := asFloat(got); gok {
+		if en, eok := asFloat(exp); eok {
+			return gn == en
+		}
+	}
+	gb, _ := json.Marshal(got)
+	eb, _ := json.Marshal(exp)
+	return string(gb) == string(eb)
+}
+
+func asFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil && strings.TrimSpace(n) != ""
+	default:
+		return 0, false
+	}
 }
 
 // redirectTo permanently redirects to target. It keeps the retired /ui and /app/
@@ -1001,6 +1372,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 	}
 	res, err := dec.Evaluate(ctx, dmn.Input(input), opts...)
 	if err != nil {
+		s.metrics.evalFailed.Add(1)
 		var ie *dmn.InputError
 		if errors.As(err, &ie) {
 			writeProblemDetail(w, problem{
@@ -1015,6 +1387,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 		writeProblem(w, http.StatusUnprocessableEntity, "EVALUATION_FAILED", err.Error())
 		return
 	}
+	s.metrics.evalOk.Add(1)
 	// Audit the decision before answering. In fail-closed mode a failed write
 	// aborts the request (the decision must be recorded to count as made); in
 	// best-effort mode Record logs and returns nil so the result still flows.
@@ -1026,6 +1399,7 @@ func (s *Server) evaluate(w http.ResponseWriter, ctx context.Context, modelID st
 			Outputs:  res.Outputs,
 			Trace:    res.Trace,
 			Strict:   strict,
+			AuthKid:  authKidFromContext(ctx),
 		}); err != nil {
 			writeProblem(w, http.StatusBadGateway, "AUDIT_WRITE_FAILED", err.Error())
 			return

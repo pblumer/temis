@@ -122,7 +122,10 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | Env-Variable | Default | Wirkung |
 |---|---|---|
 | `TEMIS_ADDR` | `:8080` | Listen-Adresse (`host:port`) |
-| `TEMIS_API_TOKEN` | *(leer)* | Bearer-Token für `/v1` erzwingen (leer = offen) |
+| `TEMIS_KEYS_FILE` | *(leer)* | JSON-Datei mit scoped `kid.secret`-API-Keys für `/v1`, `/mcp`, gRPC (leer = keine; ADR-0028) |
+| `TEMIS_KEYS_DIR` | *(leer)* | Verzeichnis für den persistenten Keystore + Lifecycle-API (`POST /v1/keys …`); Keys überleben Neustart (leer = Key-Verwaltung aus; WP-103) |
+| `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
+| `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
 | `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
@@ -133,6 +136,7 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_LLM_ALLOW_BYOK` | `true` | Aufrufer-Key per `X-LLM-Token` zulassen |
 | `TEMIS_CLIO_TOKEN` | *(leer)* | clio-Audit-Sink **anschalten** (`kid.secret`; leer = aus, kein Datenabfluss) |
 | `TEMIS_CLIO_URL` | `https://clio.blumer.cloud` | Ziel-clio (nur aktiv, wenn ein Token gesetzt ist) |
+| `TEMIS_CLIO_ACTIVE_PROBE` | `false` | `GET /v1/status` pingt clios Health-Endpunkt aktiv (statt passiver Last-Write-Health) |
 | `TEMIS_CACHE_SIZE` | `0` | LRU-Cache-Größe (0 = Default, negativ = unbegrenzt) |
 
 ```sh
@@ -158,7 +162,8 @@ curl -X POST localhost:8080/v1/evaluate -H 'Content-Type: application/json' -d "
 
 Kern-Endpunkte: `POST /v1/models`, `GET /v1/models`, `GET /v1/models/{id}`,
 `GET /v1/models/{id}/xml`, `POST /v1/models/{id}/evaluate`,
-`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /healthz`/`/readyz`.
+`POST /v1/models/{id}/evaluate-graph`, `POST /v1/evaluate`, `GET /v1/status`,
+`GET /healthz`/`/readyz`.
 Dazu die Modeler-Endpunkte (ADR-0016), die den eingebauten DMN-Modeler bedienen
 (Graph, Typen, Decision-Tables, Literal-Expressions, BKM, Save). Vollständig — Pfade
 und Schemas — in `service/openapi.yaml` und `docs/40-api-contract.md` §2; ein Test
@@ -220,16 +225,108 @@ go run ./cmd/temisd -addr :8080
 # Browser: http://localhost:8080/docs
 ```
 
-**Optionaler Token-Schutz:** Mit `-token <token>` (oder `TEMIS_API_TOKEN`) verlangen
-die `/v1`-Endpunkte `Authorization: Bearer <token>` (sonst `401`,
-`code: UNAUTHORIZED`); `/docs`, `/openapi.yaml` und die Health-Probes bleiben offen.
-In Swagger UI den Token über **Authorize** eintragen.
+**Scoped API-Keys (ADR-0028):** Mit `-keys-file <datei>` (oder `TEMIS_KEYS_FILE`)
+schützt `temisd` `/v1`, `/mcp` und gRPC über `kid.secret`-Keys im Modell von
+[clio](https://github.com/pblumer/clio). Der Bearer ist `Authorization: Bearer <kid>.<secret>`;
+die Keystore hält **nur** `sha256(secret)` (Klartext nie), verglichen in Konstantzeit.
+Jede Route braucht einen **Scope** — `evaluate`, `models:read`, `models:write`, `git`,
+`assist`, `flow`, `admin` (Super-Scope). Fehlender/ungültiger/abgelaufener/widerrufener
+Key → `401` (`code: UNAUTHORIZED`, `WWW-Authenticate: Bearer`); gültiger Key ohne den
+Scope → `403` (`code: FORBIDDEN`). `/docs`, `/openapi.yaml` und die Health-Probes bleiben
+offen. Ohne Keys **und** ohne Legacy-Token bleibt die API offen (heutiger Default).
+
+Der `keys-file` ist JSON; je Key wird bevorzugt der Hex-`secretHash` hinterlegt
+(so berührt kein Klartext die Platte); alternativ `secret` (wird beim Laden gehasht):
+
+```json
+{ "keys": [
+  { "kid": "ci01",  "secretHash": "<hex sha256(secret)>", "scopes": ["models:write"], "owner": "CI" },
+  { "kid": "agent", "secret": "s3cret",                    "scopes": ["evaluate"] }
+] }
+```
+
+Ein **Bootstrap-Admin-Key** entsteht aus `TEMIS_BOOTSTRAP_ADMIN_KEY` (das Secret); der
+daraus abgeleitete `kid` wird beim Start geloggt, das Secret nie. Der Bearer ist dann
+`<geloggter-kid>.<secret>`.
 
 ```sh
-go run ./cmd/temisd -addr :8080 -token gehenix
+printf '%s' "s3cret" | sha256sum   # Hash für secretHash erzeugen
+go run ./cmd/temisd -addr :8080 -keys-file keys.json
+curl -H 'Authorization: Bearer agent.s3cret' \
+     -d '{"decision":"Dish","input":{"Season":"Winter","Guest Count":8}}' \
+     -H 'Content-Type: application/json' localhost:8080/v1/models/<id>/evaluate
+```
+
+**Keys zur Laufzeit verwalten (WP-103, Scope `admin`):** Mit `-keys-dir <dir>`
+(`$TEMIS_KEYS_DIR`) hängt der Keystore am Dateisystem-Store (ADR-0027, atomarer
+JSON-Write, reine stdlib — kein bbolt) und eine Admin-API legt Keys an, listet,
+rotiert und widerruft sie. Das Secret erscheint **einmalig** beim Anlegen/Rotieren
+(als `secret`/`bearer`), danach wird nur der `sha256` gehalten. Nur so erzeugte
+(*managed*) Keys sind rotier-/widerrufbar; statische Keys → `409`. Die Keys
+überleben einen Neustart. Praktisch mit einem Bootstrap-Admin kombinieren:
+
+```sh
+TEMIS_BOOTSTRAP_ADMIN_KEY=adminsecret go run ./cmd/temisd -keys-dir ./keystore
+# → Log: bootstrap admin key registered: kid=boot-xxxxxxxxxxxx
+ADMIN='boot-xxxxxxxxxxxx.adminsecret'
+
+# Key anlegen (Secret nur hier sichtbar)
+curl -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+     -d '{"scopes":["evaluate"],"owner":"agent-1"}' localhost:8080/v1/keys
+# → {"kid":"k_…","secret":"…","bearer":"k_….…","scopes":["evaluate"]}
+
+curl -H "Authorization: Bearer $ADMIN" localhost:8080/v1/keys                 # listen (ohne Secrets)
+curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rotate  # rotieren
+curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
+```
+
+**Lockout-Recovery — Offline-CLI (WP-104):** Ist kein nutzbarer Admin-Key mehr da,
+verwaltet `temisd keys …` denselben Keystore **bei gestopptem Server** direkt am
+Verzeichnis. Ein so erzeugter Key wird beim nächsten Start akzeptiert:
+
+```sh
+temisd keys create -keys-dir ./keystore -scopes admin -owner recovery
+temisd keys list   -keys-dir ./keystore          # ohne Secrets
+temisd keys rotate -keys-dir ./keystore k_abc123 # entwertet das alte Secret
+temisd keys revoke -keys-dir ./keystore k_abc123
+```
+
+**Prefix-Scopes (WP-105):** Ein Scope lässt sich auf einen Ressourcen-Prefix
+einschränken — `evaluate:/orders/*` oder eine auf eine `modelId` gepinnte
+`models:read:sha256:…`. Der Grant greift nur, wenn die Request-Ressource (`{id}` =
+modelId/flowId) mit dem Prefix beginnt; ressourcenlose Routen (Listing, stateless
+`/v1/evaluate`, gRPC, MCP) erfüllt nur ein **unbeschränkter** Grant. **Authorship:**
+bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als CloudEvents-Extension
+`clioauthkid` auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
+(`expiresAt`) werden abgewiesen (`401`).
+
+**DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als
+**Legacy-Admin-Key** — der ganze Token als `Authorization: Bearer <token>` deckt alle
+Routen (Admin), byte-identisch zum bisherigen Verhalten. Für neue Deployments `-keys-file`
+verwenden.
+
+```sh
+go run ./cmd/temisd -addr :8080 -token gehenix   # DEPRECATED, deckt alles als admin
 curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
+```
+
+**Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
+ist *observierbar*, überwacht sich aber nicht selbst. `GET /v1/status` zeigt den Zustand
+der **Umsysteme** (clio/LLM/Git) und die Last der Engine — für clio `writesOk`/
+`writesFailed`/`idempotentSkips`, `lastOk`/`lastError` und `reachable`, dazu Version,
+Uptime und Cache-Zähler. Der Output ist **secret-frei** (kein Token/Key erscheint je) und
+liegt hinter dem `audit`-Scope (ADR-0028; `admin`-Keys lesen ebenfalls, offen ohne Auth-Konfig). clio-Erreichbarkeit kommt per Default
+**passiv** aus echten Writes; `-clio-active-probe` (oder `TEMIS_CLIO_ACTIVE_PROBE`) schaltet
+einen aktiven Health-Ping zu. `/healthz` ist reine Liveness (Prozess lebt); `/readyz` meldet
+jetzt **echte** Readiness — `503`, wenn eine harte Startbedingung fehlt (z. B. ein
+fail-closed `-clio-strict` clio unerreichbar ist); ein **best-effort**-clio-Ausfall lässt
+`/readyz` bewusst bei `200`. Dashboards/Alerting bleiben die externe Ops-Schicht.
+
+```sh
+curl localhost:8080/v1/status | jq .clio
+# → {"enabled":true,"mode":"best-effort","writesOk":128,"writesFailed":0,"reachable":true,…}
 ```
 
 **Revisionssicheres Entscheidungs-Logbuch (clio):** `temisd` protokolliert jede
@@ -351,8 +448,12 @@ go run ./cmd/temisd                 # /, /v1/... UND POST /mcp auf einem geteilt
 go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
 ```
 
-`/mcp` wird vom selben optionalen `-token` bewacht wie die `/v1`-Endpunkte. Das
-eigenständige `temis-mcp` bleibt für reines stdio/lokales Einbetten erhalten.
+In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
+(ADR-0028): jedes Tool verlangt seinen Scope (`evaluate`→`evaluate`,
+`list_models`/`load_model`/`describe_decision`→`models:read`, `git_*`→`git`,
+`*_flow`→`flow`), gültiger Key ohne Scope → `403`. Das eigenständige `temis-mcp`
+bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
+`-token` nur über HTTP).
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine

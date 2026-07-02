@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pblumer/temis/assist"
 	"github.com/pblumer/temis/assist/anthropic"
@@ -107,6 +108,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	res, err := ag.Reply(r.Context(), toAssistMessages(req.Messages))
 	if err != nil && !errors.Is(err, assist.ErrMaxSteps) {
+		s.metrics.llmFailed.Add(1)
 		var apiErr *assist.APIError
 		if errors.As(err, &apiErr) {
 			writeProblem(w, http.StatusBadGateway, "ASSIST_PROVIDER_ERROR", apiErr.Error())
@@ -115,6 +117,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "ASSIST_FAILED", err.Error())
 		return
 	}
+	// A reply came back (possibly after hitting the step limit): count it as a
+	// successful provider call for the status endpoint (WP-111).
+	s.metrics.llmOk.Add(1)
+	s.metrics.llmLastOk.Store(time.Now().Unix())
 
 	reply := res.Reply
 	if errors.Is(err, assist.ErrMaxSteps) && reply == "" {

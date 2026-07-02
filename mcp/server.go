@@ -49,10 +49,16 @@ type Server struct {
 	// (WP-92, ADR-0026), keyed by content hash. A flow resolves its model
 	// references through store, so a model loaded over any surface is reachable.
 	flows *flowStore
-	// token, when non-empty, is the bearer token required on the HTTP transport
-	// (HTTPHandler). It does not apply to the stdio transport, which is a trusted
-	// local subprocess.
+	// token, when non-empty, is the deprecated single bearer token required on the
+	// HTTP transport (HTTPHandler / WithHTTPToken). It grants every tool (admin).
+	// It does not apply to the stdio transport, which is a trusted local subprocess.
 	token string
+
+	// auth, when set via WithAuth, is the host's scoped keystore gate (ADR-0028).
+	// Each tool maps to a scope (toolScopes); the host verifies the caller's
+	// kid.secret key against it. It supersedes token when both are set. Nil (and no
+	// token) leaves the HTTP endpoint open.
+	auth Auth
 
 	// gitBaseURL overrides the GitHub REST API root for the git_* tools (default
 	// https://api.github.com); set via WithGitHubBaseURL for GitHub Enterprise or
@@ -100,9 +106,60 @@ func WithVersion(v string) Option {
 
 // WithHTTPToken requires callers of the HTTP transport to present
 // "Authorization: Bearer <token>". An empty token leaves the HTTP endpoint open.
-// It has no effect on the stdio transport.
+// It has no effect on the stdio transport. Deprecated in favour of WithAuth for
+// scoped keys; a matching token grants every tool (admin).
 func WithHTTPToken(token string) Option {
 	return func(s *Server) { s.token = token }
+}
+
+// WithAuth gates the HTTP transport with the host's scoped keystore (ADR-0028).
+// The mcp package maps each tool to a scope (toolScopes) and defers the verdict
+// to auth. A nil Auth is ignored, keeping the endpoint open (or token-gated). It
+// supersedes WithHTTPToken. It has no effect on the stdio transport.
+func WithAuth(auth Auth) Option {
+	return func(s *Server) {
+		if auth != nil {
+			s.auth = auth
+		}
+	}
+}
+
+// Auth authorizes MCP tool calls by scope. The host (temisd) implements it over
+// its keystore; the mcp package supplies the scope string for each tool and the
+// bearer credential from the request, and defers the verdict. Keeping the scope
+// vocabulary on the host side avoids the mcp package importing the service.
+type Auth interface {
+	// Authorize verifies bearer for the given scope. An empty scope means "any
+	// authenticated key" (discovery messages when enforcement is on).
+	Authorize(bearer, scope string) AuthResult
+}
+
+// AuthResult is the verdict of an Auth check.
+type AuthResult int
+
+// The possible Auth verdicts.
+const (
+	AuthAllowed         AuthResult = iota // proceed
+	AuthUnauthenticated                   // 401: missing/invalid/expired/revoked key
+	AuthForbidden                         // 403: valid key, missing scope
+)
+
+// toolScopes maps each tool to its required scope (ADR-0028 §2). Strings match
+// the service's Scope constants. A tool absent here (e.g. an unknown name) needs
+// only authentication, then dispatch reports the unknown tool.
+var toolScopes = map[string]string{
+	"list_models":       "models:read",
+	"load_model":        "models:read",
+	"describe_decision": "models:read",
+	"evaluate":          "evaluate",
+	"load_flow":         "flow",
+	"describe_flow":     "flow",
+	"evaluate_flow":     "flow",
+	"git_list_models":   "git",
+	"git_load_model":    "git",
+	"git_propose":       "git",
+	"git_list_flows":    "git",
+	"git_load_flow":     "git",
 }
 
 // WithStore backs the server with store instead of its default in-process cache,

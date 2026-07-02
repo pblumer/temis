@@ -189,7 +189,7 @@ func TestClioSinkWriteEncodeError(t *testing.T) {
 		Input:    map[string]any{"Season": "Fall"},
 		Outputs:  map[string]any{"bad": make(chan int)}, // channels are not JSON-encodable
 	}
-	if err := sink.write(context.Background(), rec); err == nil {
+	if _, err := sink.write(context.Background(), rec); err == nil {
 		t.Fatal("write with unencodable output: want error, got nil")
 	}
 }
@@ -203,7 +203,7 @@ func TestClioSinkWriteBuildRequestError(t *testing.T) {
 	}
 	sink.baseURL = "http://clio.invalid/\x7f" // DEL byte makes url parsing fail
 	rec := DecisionRecord{ModelID: "sha256:abc", Decision: "Dish", Input: map[string]any{"Season": "Fall"}}
-	if err := sink.write(context.Background(), rec); err == nil {
+	if _, err := sink.write(context.Background(), rec); err == nil {
 		t.Fatal("write with invalid base URL: want error, got nil")
 	}
 }

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"crypto/subtle"
 	_ "embed"
 	"net/http"
 	"strings"
@@ -60,21 +59,34 @@ func (s *Server) handleOpenAPISpec(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(openapiSpec)
 }
 
-// requireToken wraps a handler so it is only reachable with a valid bearer
-// token. When the server has no token configured the wrapper is transparent and
-// the API stays open. The comparison is constant-time to avoid leaking the
-// token through timing.
-func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
+// requireScope wraps a handler so it is only reachable with a valid kid.secret
+// API key that grants the given scope (ADR-0028 §1/§2). When no keys and no
+// legacy token are configured the wrapper is transparent and the API stays open
+// (the historical default). A missing/invalid/expired/revoked key → 401 with a
+// WWW-Authenticate challenge; a valid key lacking the scope → 403 FORBIDDEN. The
+// secret comparison is constant-time (see keystore.authenticate).
+func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.token != "" {
-			got := bearerToken(r.Header.Get("Authorization"))
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="temis"`)
-				writeProblem(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid bearer token")
-				return
-			}
+		if !s.auth.enabled() {
+			next(w, r)
+			return
 		}
-		next(w, r)
+		key, ok := s.auth.authenticate(bearerToken(r.Header.Get("Authorization")))
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="temis"`)
+			writeProblem(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid bearer token")
+			return
+		}
+		// The resource a prefix-scope (WP-105) constrains against is the request's
+		// model/flow id where present ("/v1/models/{id}/…"); resource-less routes
+		// pass "" and only an unconstrained grant satisfies them.
+		if !key.HasScopeFor(scope, r.PathValue("id")) {
+			writeProblem(w, http.StatusForbidden, "FORBIDDEN", "the key lacks the required scope: "+string(scope))
+			return
+		}
+		// Stash the authenticated kid so the audit sink can stamp authorship
+		// (clioauthkid) on the decision/flow event (ADR-0023, WP-105).
+		next(w, r.WithContext(withAuthKid(r.Context(), key.Kid)))
 	}
 }
 

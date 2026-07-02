@@ -115,3 +115,64 @@ func TestHTTPTokenAuth(t *testing.T) {
 		t.Errorf("correct token = %d, want 200 (body %s)", rec.Code, rec.Body)
 	}
 }
+
+// fakeAuth is a test Auth: it maps a bearer credential to its granted scopes and
+// applies the same admin-as-super-scope rule the real keystore uses.
+type fakeAuth struct{ keys map[string][]string }
+
+func (f fakeAuth) Authorize(bearer, scope string) AuthResult {
+	scopes, ok := f.keys[bearer]
+	if !ok {
+		return AuthUnauthenticated
+	}
+	if scope == "" {
+		return AuthAllowed
+	}
+	for _, s := range scopes {
+		if s == scope || s == "admin" {
+			return AuthAllowed
+		}
+	}
+	return AuthForbidden
+}
+
+// TestHTTPScopeAuthorization drives the MCP tool→scope gate (ADR-0028, WP-101):
+// a key with the tool's scope reaches it (200), a key lacking it is 403, an
+// unknown key is 401, and discovery messages need only a valid key.
+func TestHTTPScopeAuthorization(t *testing.T) {
+	auth := fakeAuth{keys: map[string][]string{
+		"reader.r": {"models:read"},
+		"runner.e": {"evaluate"},
+		"gitter.g": {"git"},
+		"boss.a":   {"admin"},
+	}}
+	h := NewServer(dmn.New(), WithAuth(auth)).HTTPHandler()
+	xml, _ := json.Marshal(dishXML(t))
+	evalBody := call(1, "evaluate", `{"xml":`+string(xml)+`,"decision":"Dish","input":{"Season":"Winter","Guest Count":8}}`)
+	listBody := call(2, "list_models", `{}`)
+
+	tests := []struct {
+		name   string
+		body   string
+		bearer string
+		want   int
+	}{
+		{"evaluate with evaluate key", evalBody, "runner.e", http.StatusOK},
+		{"evaluate with read key is forbidden", evalBody, "reader.r", http.StatusForbidden},
+		{"list with read key", listBody, "reader.r", http.StatusOK},
+		{"list with evaluate key is forbidden", listBody, "runner.e", http.StatusForbidden},
+		{"admin reaches evaluate", evalBody, "boss.a", http.StatusOK},
+		{"unknown key is unauthorized", evalBody, "ghost.x", http.StatusUnauthorized},
+		{"no key is unauthorized", evalBody, "", http.StatusUnauthorized},
+		{"initialize needs only a valid key", req(3, "initialize", `{}`), "reader.r", http.StatusOK},
+		{"initialize without a key is unauthorized", req(4, "initialize", `{}`), "", http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := postMCP(t, h, tt.body, tt.bearer)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d (body %s)", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+}
