@@ -114,6 +114,24 @@ veränderter Default, keine neue Pflichtabhängigkeit (ADR-0011/0014). Vertrag &
 
 ---
 
+## Etappe Command-Consumer — „Entscheidungen per clio-Event auslösen, Ergebnis zurück" (ADR-0033)
+
+**Ziel:** Die **Gegenrichtung** zum Logbuch: ein in clio geschriebenes **Command-Event**
+(`com.temis.decision.requested.v1`) löst eine Auswertung aus — Einzel-Decision, ganzer
+Modell-Graph oder Decision-Flow (DRG) —, und das Ergebnis fliesst **korreliert** (`requestId`,
+gleicher Subject) als bestehendes `evaluated.v1`/`flow.evaluated.v1` zurück. clio ist die
+**entkoppelnde Naht**; ein Umsystem schreibt nur ein Event und muss temis nicht kennen. Der
+Consumer bleibt **zustandslos** (Decisioning, nicht Prozess — ADR-0025): clio hält den
+gesamten Zustand. Kopplung nur über clios HTTP-Vertrag, Kern unberührt (ADR-0011/0014).
+Vertrag & Betrieb: `docs/80-clio-decision-log.md` §6, ADR-0033.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-120 ✅ | Command-Vertrag + `consume`-Kern | WP-54, WP-90, ADR-0033 | **done** — neues `package consume` (über `dmn`/`flow`/`audit`, **kein** `internal/`-, **kein** `service`-Import; symmetrisch zu `package audit`). Versionierter Command-Vertrag `com.temis.decision.requested.v1`: `ParseCommand` decodiert ein clio-Event (tolerant — Nicht-Commands → `ok=false`, kein Fehler, wie `ReAudit`), `Handle` dispatcht per Diskriminator — `flowId` → Flow (`flow.Compile`+`Evaluate` über `sourceResolver`), `modelId`+`decision` → Einzel-Decision, `modelId` allein → ganzer Graph (`EvaluateGraph`, ein Event je Decision) — und liefert `ResultEvent`s mit dem bestehenden `evaluated.v1`/`flow.evaluated.v1`-`data` **plus additivem `requestId`** (Korrelation = Command-Event-ID) unter dem **Subject des Commands**. Nicht auswertbar → `FailureEvent` (`com.temis.decision.failed.v1`), sodass **jedes** Command eine Antwort bekommt. `Source`-Interface (Model+Flow per content-addressed id) mit `DirSource` (`*.dmn`/`*.xml` + `*.flow.json`, `audit.ModelID`-Schema) und `MapSource`. Idempotenz-Dedupe-Key je Event = (`requestId`, ggf. `decision`). Tests (`consume/*_test.go`): Parse-Toleranz, Einzel-Decision (`explain`→Trace, Stamp/Hash), Graph (ein Event je Decision, per-Name-Dedupe), Flow (Name/Version/Models/Descriptor/Output), Fehler→Failure-Event für alle drei Nicht-Auflösbar-Fälle, `DirSource`-Indexierung; `go test`/`go vet` grün. |
+| WP-121 ✅ | Consumer-Binary `temis-clio-worker` | WP-120, WP-55 | **done** — `cmd/temis-clio-worker` (analog `cmd/temis-reaudit`): beobachtet Command-Events über clios **`observe`**-Stream mit Reconnect+Backoff, **`run-query`-Backfill** beim Start und je Reconnect (kein Gap), `-poll`-Modus (reconnect-frei) und `-once` (Rückstand verarbeiten & enden). Wertet je Command über `consume.Handle` aus und schreibt die Ergebnis-Events via `write-events` mit **Precondition auf `requestId`** (+`decision` bei Graph) — Re-Delivery/Overlap/Neustart beantworten **nie** doppelt, `409` = No-op. **Zustandslos:** nur ein In-Process-Dedupe-Set; ein fehlgeschlagener Write lässt das Command **unbeantwortet** (nächster Backfill holt es nach). Hard-Filter auf `type == 'com.temis.decision.requested.v1'` (kein Loop auf eigene Ergebnisse). Modelle/Flows aus `-models` (content-addressed, unabhängig von laufendem `temisd`). SIGINT/SIGTERM-sauber. In die Release-Matrix aufgenommen. Tests (`cmd/temis-clio-worker/main_test.go`) gegen `httptest`-clio: Backfill beantwortet ein Command (korrekter Typ/Subject/Source/`requestId`-Precondition/Outputs), Re-Backfill dedupet, Unauflösbar → Failure-Event, clio-500 → Fehler **ohne** „processed"-Markierung; `make verify` grün. (Opt-in-Modus in `temisd` bewusst später, ADR-0033 Option 4.) |
+
+---
+
 ## Etappe Modellierungs-Assistent — „ein LLM hilft beim Bauen von Decisions" (ADR-0024)
 
 **Ziel:** Ein eingebauter Chat-Assistent im Modeler unterstützt Anwender beim **Bauen**

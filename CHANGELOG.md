@@ -20,6 +20,20 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **clio-Command-Consumer – Entscheidungen per Event auslösen (WP-120/121, ADR-0033):** Die
+  **Gegenrichtung** zum Logbuch. Ein in clio geschriebenes **Command-Event**
+  `com.temis.decision.requested.v1` löst eine Auswertung aus — Einzel-Decision (`modelId`+
+  `decision`), ganzer Modell-Graph (`modelId`) oder Decision-Flow/DRG (`flowId`) —, und das
+  Ergebnis fliesst **korreliert** (`data.requestId`, gleicher `subject`) als bestehendes
+  `com.temis.decision.evaluated.v1`/`com.temis.flow.evaluated.v1` zurück; nicht auswertbar →
+  `com.temis.decision.failed.v1`, sodass **jedes** Command eine Antwort bekommt. Neues
+  `package consume` (über `dmn`/`flow`/`audit`, **kein** `internal/`-/`service`-Import,
+  symmetrisch zu `package audit`) + Binary **`temis-clio-worker`**: beobachtet Commands über
+  clios **`observe`**-Stream (mit `run-query`-Backfill je Reconnect; `-poll`/`-once`-Modi),
+  wertet über die öffentliche Engine-API aus und schreibt idempotent zurück (Precondition auf
+  `requestId`, `409` = No-op). **Zustandslos** — clio hält den gesamten Zustand; damit bleibt
+  der Consumer Decisioning und wird **nicht** zur Prozess-Engine (Grenze aus ADR-0025 gewahrt).
+  Kopplung nur über clios HTTP-Vertrag, Kern unberührt, reine stdlib (ADR-0011/0014).
 - **Engine-Kern (WP-01–11):** DMN-1.5-XML-Decoding (tolerant 1.3/1.4) mit `DMNDI`-Round-Trip;
   vollständige FEEL-Pipeline (Lexer → Parser → Compile-to-Closures); Decimal-Numbers (`apd`);
   Decision Tables mit Hit Policies; öffentliche Library-API `package dmn` (`Compile`/`Evaluate`).
@@ -61,6 +75,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   werden weiterhin präzise gemeldet. Neue additive `dmn`-API `ReachableInputSchema` /
   `ValidateReachableInput` (cone-gescopt, analog zu `ModelInputSchema`/`ValidateModelInput`);
   MCP `describe_decision` weist die Menge additiv als `reachableInputs` neben `inputs` aus.
+- **Modeler – Deluxe-JSON-Editor an jedem JSON-Eingabefeld (ADR-0016):** Überall, wo ein Feld
+  seinen Wert als FEEL/JSON entgegennimmt — die **Auswerten**-Eingaben (Operate), das
+  **Flow-auswerten**-Panel und das **Testen**-Formular des Flow-Designers — steht jetzt neben dem
+  einzeiligen Feld ein **`{ }`-Icon**, das einen **großzügigen JSON-Editor** als Modal öffnet.
+  Der Editor gibt eine Monospace-Textfläche mit viel Platz, **Live-Validierung** (gültiges JSON ✓
+  bzw. die Parser-Meldung), **Formatieren**/**Kompakt**/**Kopieren**-Werkzeuge, Tab-Einrückung und
+  Tastatur-Shortcuts (Strg/Cmd+Enter = Übernehmen, Esc = Abbrechen). Beim Öffnen wird vorhandenes
+  JSON eingerückt dargestellt, beim „Übernehmen" kompakt ins Feld zurückgeschrieben. Geschlossene
+  Aufzählungsfelder (`<select>`) bekommen kein Icon. Rein additiv, keine Backend-Änderung.
 - **Flow-Designer – Flows via UI erstellen & designen (WP-116, ADR-0026):** Decision-Flows lassen
   sich jetzt **im Modeler visuell erstellen, designen und testen**, nicht nur ansehen & ausführen.
   Ein neuer **Flow-Designer** (betretbar über das **+** in der FLOWS-Sidebar oder **„✎ Bearbeiten"**

@@ -17,6 +17,7 @@ import type { Laid } from './layout'
 import { renderFlowGraph } from './flow-canvas'
 import type { FlowCanvas } from './flow-canvas'
 import { applyIllumination, buildGraph, coerce, depthMap, esc, fmt, renderTrace } from './flows'
+import { attachJsonEditor } from './json-editor'
 
 // --- working draft (a mutable, editor-friendly form of flow.Descriptor) ---
 
@@ -548,7 +549,10 @@ export function mountFlowEditor(opts: FlowEditorMounts): FlowEditor {
       .map((i) => `<label class="eval-field-wrap"><span class="eval-field-label">${esc(i.type ? i.name + ' : ' + i.type : i.name)}</span><input class="eval-field fe-test-in" data-name="${esc(i.name)}" placeholder="${esc(i.type)}"></label>`)
       .join('')
     foot.innerHTML = `<div class="fe-test-form"><div class="fe-test-fields">${fields}</div><button id="feRunTest" class="tbtn tbtn-accent" type="button">Auswerten</button></div>`
-    for (const el of foot.querySelectorAll<HTMLInputElement>('.fe-test-in')) testInputs.set(el.dataset.name ?? '', el)
+    for (const el of foot.querySelectorAll<HTMLInputElement>('.fe-test-in')) {
+      testInputs.set(el.dataset.name ?? '', el)
+      attachJsonEditor(el, { title: 'JSON — ' + (el.dataset.name ?? 'Input') })
+    }
     foot.querySelector<HTMLButtonElement>('#feRunTest')?.addEventListener('click', () => void doTest())
   }
 

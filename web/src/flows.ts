@@ -12,6 +12,7 @@ import { layout } from './layout'
 import type { Laid } from './layout'
 import { renderFlowGraph } from './flow-canvas'
 import type { FlowCanvas, NodeLight, EdgeLight } from './flow-canvas'
+import { attachJsonEditor } from './json-editor'
 
 // reveal cadence: each step of dependency depth lights up this many ms after the
 // previous, so the illumination visibly flows from inputs to output.
@@ -283,6 +284,7 @@ export function mountFlows(opts: FlowMounts): FlowView {
       field.placeholder = inp.type ?? ''
       wrap.append(lbl, field)
       inputsHost.append(wrap)
+      attachJsonEditor(field, { title: 'JSON — ' + inp.name })
     }
     runBtn.disabled = false
     editBtn.disabled = !onEditFlow

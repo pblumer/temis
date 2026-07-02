@@ -1,4 +1,5 @@
 import { evaluateGraph, listTypes, InputValidationError, type ModelDetail, type InputField, type ItemType, type Trace, type TableTrace, type GraphEvalResult } from './api'
+import { attachJsonEditor } from './json-editor'
 
 // EvalRun is one whole-graph evaluation: the inputs the user supplied and the
 // result (per-decision values + traces). The Operate view keeps a session list
@@ -66,6 +67,10 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
     const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
     const wrap = el('div', { class: 'eval-field-wrap' }, label, input, ...extras)
     inputsHost.append(wrap)
+    // A free-text field coerces its value through JSON.parse, so offer the deluxe
+    // JSON editor beside it. Closed enumerations (a <select>) take only declared
+    // values and get no opener.
+    if (input instanceof HTMLInputElement) attachJsonEditor(input, { title: 'JSON — ' + field.name })
     return { field, input, wrap }
   })
   if (!rows.length) inputsHost.append(el('p', { class: 'eval-empty' }, 'Dieses Modell braucht keine Eingaben.'))
