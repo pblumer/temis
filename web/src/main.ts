@@ -941,8 +941,11 @@ async function boot(root: HTMLElement): Promise<void> {
     studioHost: flowStudioHost,
     onOpenFlow: () => setMode('flows'),
     onEditFlow: (detail: FlowDetail) => {
-      flowEditor.edit(detail)
+      // Show the designer first, so its canvas host is visible (non-zero size)
+      // when the live-preview diagram renders and fits — a hidden container cannot
+      // be fit (same ordering the studio uses when opening a flow).
       setMode('flow-edit')
+      flowEditor.edit(detail)
     },
   })
 
@@ -960,8 +963,9 @@ async function boot(root: HTMLElement): Promise<void> {
     },
   })
   newFlowBtn.addEventListener('click', () => {
-    flowEditor.create()
+    // Show the designer first (see onEditFlow) so the preview canvas can fit.
     setMode('flow-edit')
+    flowEditor.create()
   })
 
   // recordRun is called after each evaluation: keep it in the session history

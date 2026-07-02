@@ -87,7 +87,10 @@ export function renderFlowGraph(container: HTMLElement, laid: Laid): FlowCanvas 
     const mid = { x: (wp[0].x + wp[wp.length - 1].x) / 2, y: (wp[0].y + wp[wp.length - 1].y) / 2 }
     edgeAnchor[e.id] = { nodeId: e.source, left: mid.x - src.x, top: mid.y - src.y }
   }
-  fit(canvas)
+  // Only fit when the container is actually laid out: fitting a zero-size (hidden)
+  // container makes diagram-js divide by an empty viewport. Callers render into a
+  // visible host, but this keeps a stray hidden render from throwing.
+  if (container.clientWidth > 0 && container.clientHeight > 0) fit(canvas)
 
   const clear = (): void => {
     overlays.remove({ type: 'eval-result' })
