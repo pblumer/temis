@@ -20,6 +20,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein
+  Suchfeld („Modelle suchen…"). Je mehr Modelle auf dem Server liegen, desto wichtiger — die
+  Suche filtert live, ist diakritik-unempfindlich (`begru` findet `Begrüßung`) und
+  term-basiert (Leerzeichen trennt Begriffe, die in beliebiger Reihenfolge alle vorkommen
+  müssen, z. B. `demo alter` → „Alterskette (Demo)"). Sie greift auf Modell- **und**
+  Ordnernamen (ein Ordnername holt seinen Inhalt hervor), klappt passende Ordner automatisch
+  auf, hebt die Treffer im Namen hervor und zeigt einen Hinweis, wenn nichts passt. Rein
+  clientseitig, keine API-Änderung.
 - **Operate: clio-Events einlesen & nachspielen (ADR-0033, Read-Side):** Die Operate-Ansicht
   bekommt ein Panel „Aus clio nachspielen". Man **definiert das Mapping** — clio-**Subject**-
   Teilbaum + **Event-Typ** (`com.temis.decision.evaluated.v1` u. a.) + Limit — liest die dort
