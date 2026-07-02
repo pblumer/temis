@@ -46,6 +46,19 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Default an) auf **demselben Modell-Cache** wie Modeler und `/v1`-API — vorgeladene Beispiele und
   Modeler-Modelle sind über MCP sichtbar und umgekehrt, eine `modelId` über alle Oberflächen; das
   eigenständige `temis-mcp` (stdio/HTTP) bleibt unverändert.
+- **Decision-Flow – transitive Step-Inputs (ADR-0026, L2a):** Ein Flow-Step auf eine
+  **zusammengesetzte** Decision darf jetzt deren **transitiv benötigte** Blatt-Inputs
+  verdrahten — Inputs, die die Ziel-Decision nur über eine Sub-Decision desselben Modells
+  bezieht (z. B. `FinalPremium`, das `VehicleValue` allein über `BasePremium` braucht). Zuvor
+  waren solche Decisions in Flows faktisch unbenutzbar: der transitive Input wurde als
+  `FLOW_UNKNOWN_INPUT` abgelehnt bzw. lief bei Weglassen still auf `null`. Wiring-Validierung
+  und Auswertung eines Decision-Steps arbeiten nun gegen die **Requirements-Cone** der
+  Ziel-Decision statt nur gegen ihre direkt deklarierten Inputs; die transitiven Werte werden
+  bis in die Sub-Decisions durchgereicht (inkl. Typ-Koerzierung numerischer Inputs). Echte
+  unbekannte Inputs (`FLOW_UNKNOWN_INPUT`) und fehlende required-Inputs (`FLOW_INPUT_UNWIRED`)
+  werden weiterhin präzise gemeldet. Neue additive `dmn`-API `ReachableInputSchema` /
+  `ValidateReachableInput` (cone-gescopt, analog zu `ModelInputSchema`/`ValidateModelInput`);
+  MCP `describe_decision` weist die Menge additiv als `reachableInputs` neben `inputs` aus.
 - **Modeler – Modelle verwalten (ADR-0016):** Im Modeler lässt sich ein Modell jetzt komplett neu
   (leer) anlegen statt nur eine `.dmn`-Datei hochzuladen, sowie **umbenennen** und **löschen**
   (inkl. des gesamten Revisions-Verlaufs). Zwei neue HTTP-Endpunkte: `POST /v1/models/{id}/rename`
@@ -167,6 +180,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Golden-Surface-Test gegen unbeabsichtigte Brüche.
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte
   Release-Pipeline, Container-Image für `temisd`, dieses Changelog.
+
+### Fixed
+
+- **Modeler – Palette „klebendes" Element (ADR-0016):** Ein aus der Design-Palette gezogenes
+  Element blieb gelegentlich am Cursor „kleben" und ließ sich nur per Esc/Neuladen lösen.
+  Ursache war der Geister-Klick, den der Browser nach einem abgebrochenen nativen Drag noch
+  auf den Palette-Eintrag feuert — er startete eine zweite, verwaiste Erstell-Sitzung. Die
+  Klick-Aktion ignoriert diesen Nachzügler jetzt (und einen Klick, während schon eine Sitzung
+  läuft). Zusätzlich bekommen neu erstellte Elemente eindeutige Vorgabenamen
+  („Neue Decision", „Neue Decision 2", …), damit zwei gleichnamige Knoten nicht stumm
+  kollidieren.
 
 ### Docs
 
