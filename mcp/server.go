@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/flow"
 )
 
 const (
@@ -48,7 +49,10 @@ type Server struct {
 	// flows holds decision-flow descriptors registered over the load_flow tool
 	// (WP-92, ADR-0026), keyed by content hash. A flow resolves its model
 	// references through store, so a model loaded over any surface is reachable.
-	flows *flowStore
+	// It defaults to an in-process catalog, but WithFlowStore can replace it with
+	// one shared with another surface (the HTTP service), so a flow registered over
+	// MCP is visible in GET /v1/flows (and the modeler's flow list) and vice versa.
+	flows FlowStore
 	// token, when non-empty, is the deprecated single bearer token required on the
 	// HTTP transport (HTTPHandler / WithHTTPToken). It grants every tool (admin).
 	// It does not apply to the stdio transport, which is a trusted local subprocess.
@@ -89,6 +93,23 @@ type Store interface {
 	Lookup(id string) (defs *dmn.Definitions, index dmn.ModelIndex, ok bool)
 	// List summarises every cached model, in any order (the caller sorts).
 	List() []ModelInfo
+}
+
+// FlowStore is the decision-flow catalog the MCP flow tools operate on. Like
+// Store for models, splitting it out lets the MCP server share one catalog with
+// another surface (the HTTP service) so a flow registered over either — MCP
+// load_flow or the /v1 API — is visible to both, including the modeler's flow
+// list. Flow ids are the "sha256:"-prefixed hash of the descriptor bytes, so the
+// same descriptor always lands under the same id across surfaces. Implementations
+// must be safe for concurrent use.
+type FlowStore interface {
+	// Put registers a compiled flow under id together with the descriptor bytes it
+	// was compiled from. Re-registering the same id overwrites (idempotent for a
+	// content-addressed id).
+	Put(ctx context.Context, id string, f *flow.Flow, desc []byte)
+	// Get returns the compiled flow and the descriptor bytes for id, or ok=false
+	// when no flow is registered under it.
+	Get(id string) (f *flow.Flow, desc []byte, ok bool)
 }
 
 // Option configures a Server at construction time.
@@ -171,6 +192,19 @@ func WithStore(store Store) Option {
 	return func(s *Server) {
 		if store != nil {
 			s.store = store
+		}
+	}
+}
+
+// WithFlowStore backs the server's flow catalog with store instead of its default
+// in-process one, so MCP load_flow shares that catalog with another surface. Used
+// to co-locate the MCP endpoint in the HTTP service process on one shared catalog:
+// a flow registered over MCP then appears in GET /v1/flows (and the modeler's flow
+// list) and vice versa. A nil store is ignored, keeping the default.
+func WithFlowStore(store FlowStore) Option {
+	return func(s *Server) {
+		if store != nil {
+			s.flows = store
 		}
 	}
 }

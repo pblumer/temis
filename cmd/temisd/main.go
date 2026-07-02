@@ -177,14 +177,15 @@ func main() {
 	}
 	srv := service.NewServer(engine, opts...)
 	if *serveMCP {
-		// One address space: the MCP endpoint shares the service's model cache, so
-		// the preloaded examples (and any API-loaded model) are visible over MCP,
-		// and models loaded over MCP appear in the modeler. The same optional token
-		// guards /mcp as the /v1 endpoints.
+		// One address space: the MCP endpoint shares the service's model cache and
+		// flow catalog, so the preloaded examples (and any API-loaded model) are
+		// visible over MCP, and models and flows registered over MCP appear in the
+		// modeler. The same optional token guards /mcp as the /v1 endpoints.
 		mcpSrv := mcp.NewServer(engine,
 			mcp.WithVersion(ver),
 			mcp.WithAuth(srv.MCPAuth()),
 			mcp.WithStore(srv.ModelStore()),
+			mcp.WithFlowStore(srv.FlowStore()),
 		)
 		srv.AttachMCP(mcpSrv)
 	}

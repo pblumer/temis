@@ -53,16 +53,18 @@ var flowTools = []toolSpec{
 
 func init() { tools = append(tools, flowTools...) }
 
-// storedFlow is a registered flow together with the descriptor it was parsed
-// from (kept so describe_flow can report its steps and inputs).
+// storedFlow is a registered flow together with the descriptor bytes it was
+// compiled from (kept, like the HTTP service's, so describe_flow can report its
+// steps and inputs and the same bytes carry across surfaces).
 type storedFlow struct {
 	id   string
 	flow *flow.Flow
-	desc flow.Descriptor
+	desc []byte
 }
 
-// flowStore holds registered flows keyed by content hash. Flows are small and
-// few, so a plain guarded map suffices.
+// flowStore is the Server's default in-process flow catalog: content-addressed,
+// mutex-guarded. WithFlowStore replaces it when the catalog must be shared with
+// another surface. Flows are small and few, so a plain guarded map suffices.
 type flowStore struct {
 	mu sync.Mutex
 	m  map[string]*storedFlow
@@ -70,17 +72,20 @@ type flowStore struct {
 
 func newFlowStore() *flowStore { return &flowStore{m: map[string]*storedFlow{}} }
 
-func (f *flowStore) put(sf *storedFlow) {
+func (f *flowStore) Put(_ context.Context, id string, fl *flow.Flow, desc []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.m[sf.id] = sf
+	f.m[id] = &storedFlow{id: id, flow: fl, desc: desc}
 }
 
-func (f *flowStore) get(id string) (*storedFlow, bool) {
+func (f *flowStore) Get(id string) (*flow.Flow, []byte, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	sf, ok := f.m[id]
-	return sf, ok
+	if !ok {
+		return nil, nil, false
+	}
+	return sf.flow, sf.desc, true
 }
 
 func flowID(desc []byte) string {
@@ -114,10 +119,8 @@ func (s *Server) toolLoadFlow(ctx context.Context, raw json.RawMessage) (any, *r
 	if err != nil {
 		return toolError("could not compile flow: " + err.Error()), nil
 	}
-	var desc flow.Descriptor
-	_ = json.Unmarshal(a.Flow, &desc)
 	id := flowID(a.Flow)
-	s.flows.put(&storedFlow{id: id, flow: f, desc: desc})
+	s.flows.Put(ctx, id, f, a.Flow)
 	diags := f.Validate(ctx, storeResolver{s.store})
 	return toolText(flowResponse{FlowID: id, Name: f.Name(), Diagnostics: toFlowDiagnosticDTOs(diags)})
 }
@@ -132,15 +135,17 @@ func (s *Server) toolDescribeFlow(raw json.RawMessage) (any, *rpcError) {
 	if a.FlowID == "" {
 		return toolError("missing required argument: flowId"), nil
 	}
-	sf, ok := s.flows.get(a.FlowID)
+	_, desc, ok := s.flows.Get(a.FlowID)
 	if !ok {
 		return toolError("no flow with id " + a.FlowID + "; load it first with load_flow"), nil
 	}
+	var d flow.Descriptor
+	_ = json.Unmarshal(desc, &d)
 	return toolText(flowDescription{
-		FlowID: sf.id,
-		Name:   sf.desc.Flow,
-		Inputs: sf.desc.Inputs,
-		Steps:  sf.desc.Steps,
+		FlowID: a.FlowID,
+		Name:   d.Flow,
+		Inputs: d.Inputs,
+		Steps:  d.Steps,
 	})
 }
 
@@ -158,11 +163,11 @@ func (s *Server) toolEvaluateFlow(ctx context.Context, raw json.RawMessage) (any
 	var f *flow.Flow
 	switch {
 	case a.FlowID != "":
-		sf, ok := s.flows.get(a.FlowID)
+		gf, _, ok := s.flows.Get(a.FlowID)
 		if !ok {
 			return toolError("no flow with id " + a.FlowID + "; load it first with load_flow"), nil
 		}
-		f = sf.flow
+		f = gf
 	case len(a.Flow) > 0:
 		cf, _, err := flow.Compile(a.Flow)
 		if err != nil {

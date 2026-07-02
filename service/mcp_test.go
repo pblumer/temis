@@ -16,7 +16,7 @@ func sharedServer(t *testing.T, opts ...Option) (*Server, http.Handler) {
 	t.Helper()
 	engine := dmn.New()
 	srv := NewServer(engine, opts...)
-	srv.AttachMCP(mcp.NewServer(engine, mcp.WithStore(srv.ModelStore())))
+	srv.AttachMCP(mcp.NewServer(engine, mcp.WithStore(srv.ModelStore()), mcp.WithFlowStore(srv.FlowStore())))
 	return srv, srv.Handler()
 }
 
@@ -129,6 +129,53 @@ func TestSharedCacheCrossVisibility(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("MCP-loaded model %s not visible over GET /v1/models", mcpID)
+	}
+}
+
+// TestSharedFlowCatalogCrossVisibility proves the flow catalog is shared like the
+// model cache: a flow registered over MCP load_flow appears in GET /v1/flows (so
+// the modeler lists it), and a flow registered over POST /v1/flows is described by
+// MCP describe_flow — one catalog, both surfaces.
+func TestSharedFlowCatalogCrossVisibility(t *testing.T) {
+	_, h := sharedServer(t)
+	// Load the referenced models into the shared cache first, so the flow validates
+	// without diagnostics regardless of which surface registers it.
+	riskID := uploadModel(t, h, "../flow/testdata/risk.dmn")
+	loanID := uploadModel(t, h, "../flow/testdata/loan.dmn")
+	desc := loanFlowDescriptor(riskID, loanID)
+
+	// MCP → API: register over load_flow, then find it via GET /v1/flows.
+	var flowArg map[string]any
+	if err := json.Unmarshal(desc, &flowArg); err != nil {
+		t.Fatalf("unmarshal descriptor: %v", err)
+	}
+	loaded := callTool(t, h, "load_flow", map[string]any{"flow": flowArg})
+	flowID, _ := loaded["flowId"].(string)
+	if flowID == "" {
+		t.Fatal("load_flow returned no flowId")
+	}
+	list := decode[flowListResponse](t, do(t, h, "GET", "/v1/flows", "", nil))
+	found := false
+	for _, f := range list.Flows {
+		if f.FlowID == flowID {
+			found = true
+			if f.Name != "loan-decisioning" || f.Steps != 2 {
+				t.Errorf("catalog summary = %+v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("MCP-registered flow %s not visible over GET /v1/flows — catalog not shared", flowID)
+	}
+
+	// The same id resolves over both surfaces (content-addressed): GET /v1/flows/{id}
+	// and MCP describe_flow both describe it.
+	if d := decode[flowDetail](t, do(t, h, "GET", "/v1/flows/"+flowID, "", nil)); len(d.Steps) != 2 {
+		t.Errorf("GET /v1/flows/%s = %+v", flowID, d)
+	}
+	desc2 := callTool(t, h, "describe_flow", map[string]any{"flowId": flowID})
+	if desc2["name"] != "loan-decisioning" {
+		t.Errorf("describe_flow = %+v", desc2)
 	}
 }
 
