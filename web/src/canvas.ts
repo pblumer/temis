@@ -190,6 +190,33 @@ class UpdateTypeHandler {
   }
 }
 
+// Undoable connection-style change on a requirement edge (context pad): stores
+// the chosen style ('ortho' | 'curved' | 'direct') on the connection and
+// re-routes it through the layouter, which reads the style to pick straight vs.
+// orthogonal waypoints. Redraws the edge via the returned element.
+type Waypoint = { x: number; y: number }
+type StyledConnection = Connection & { connectionStyle?: string }
+type LayouterLike = { layoutConnection: (c: Connection) => Waypoint[] }
+class UpdateEdgeStyleHandler {
+  static $inject = ['layouter']
+  private layouter: LayouterLike
+  constructor(layouter: LayouterLike) {
+    this.layouter = layouter
+  }
+  execute(ctx: { connection: StyledConnection; style: string; oldStyle?: string; oldWaypoints?: Waypoint[] }): Connection[] {
+    ctx.oldStyle = ctx.connection.connectionStyle
+    ctx.oldWaypoints = ctx.connection.waypoints
+    ctx.connection.connectionStyle = ctx.style
+    ctx.connection.waypoints = this.layouter.layoutConnection(ctx.connection)
+    return [ctx.connection]
+  }
+  revert(ctx: { connection: StyledConnection; oldStyle?: string; oldWaypoints?: Waypoint[] }): Connection[] {
+    ctx.connection.connectionStyle = ctx.oldStyle
+    if (ctx.oldWaypoints) ctx.connection.waypoints = ctx.oldWaypoints
+    return [ctx.connection]
+  }
+}
+
 type SelectionService = { get: () => Shape[] }
 const isInputData = (el: Shape | undefined): boolean => !!el && el.type === 'dmn:inputData'
 
@@ -228,6 +255,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const selection = diagram.get<SelectionService>('selection')
   const overlays = diagram.get<Overlays>('overlays')
   commandStack.registerHandler('element.updateType', UpdateTypeHandler)
+  commandStack.registerHandler('connection.updateStyle', UpdateEdgeStyleHandler)
 
   const byId: Record<string, Shape> = {}
   for (const n of laid.nodes) {
@@ -352,6 +380,13 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let openBKMCb = (_bkmId: string): void => {}
   eventBus.on('dmn.openBKM', (e: { element?: Shape }) => {
     if (e.element) openBKMCb(e.element.id)
+  })
+
+  // The context pad's edge-style icons fire this to switch a requirement edge
+  // between eckig ('ortho'), gerundet ('curved') and direkt ('direct'). Runs
+  // through the command stack so it undoes/redoes like every other edit.
+  eventBus.on('dmn.setEdgeStyle', (e: { element?: Connection; style?: string }) => {
+    if (e.element && e.style) commandStack.execute('connection.updateStyle', { connection: e.element, style: e.style })
   })
 
   let selectCb = (_sel: Selected): void => {}

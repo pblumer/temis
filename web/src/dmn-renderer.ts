@@ -163,6 +163,30 @@ function decisionIcon(parent: SVGElement, kind: LogicKind): void {
   append(parent, glyph)
 }
 
+// roundedPath turns a polyline into an SVG path that keeps the same corners but
+// eases each interior bend with a short quadratic arc (radius r, capped to half
+// of each adjacent segment so tight corners can't overshoot). Used to render a
+// 'gerundete' (curved) requirement edge from the orthogonal waypoints.
+function roundedPath(pts: Point[], r: number): string {
+  let d = `M${pts[0].x},${pts[0].y}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const len1 = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1
+    const len2 = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1
+    const rr = Math.min(r, len1 / 2, len2 / 2)
+    const ax = p1.x - ((p1.x - p0.x) / len1) * rr
+    const ay = p1.y - ((p1.y - p0.y) / len1) * rr
+    const bx = p1.x + ((p2.x - p1.x) / len2) * rr
+    const by = p1.y + ((p2.y - p1.y) / len2) * rr
+    d += ` L${ax},${ay} Q${p1.x},${p1.y} ${bx},${by}`
+  }
+  const last = pts[pts.length - 1]
+  d += ` L${last.x},${last.y}`
+  return d
+}
+
 function arrowHead(from: Point, to: Point): SVGElement {
   const a = Math.atan2(to.y - from.y, to.x - from.x)
   const s = 9
@@ -213,13 +237,20 @@ export default class DmnRenderer extends BaseRenderer {
 
   drawConnection(parent: SVGElement, connection: Connection): SVGElement {
     const wps: Point[] = connection.waypoints ?? []
-    const line = create('polyline')
     const dashed = connection.type !== 'dmn:informationRequirement'
-    attr(line, {
-      points: wps.map((p) => `${p.x},${p.y}`).join(' '),
-      stroke: EDGE, 'stroke-width': 1.5, fill: 'none',
-      ...(dashed ? { 'stroke-dasharray': '6 4' } : {}),
-    })
+    const style = (connection as { connectionStyle?: string }).connectionStyle
+    const common = { class: 'dmn-edge', stroke: EDGE, 'stroke-width': 1.5, fill: 'none', ...(dashed ? { 'stroke-dasharray': '6 4' } : {}) }
+    // 'curved' (gerundet) draws the same waypoints with eased corners; 'eckig'
+    // (default) and 'direct' are straight polylines — the layouter already gives
+    // 'direct' just two border points.
+    let line: SVGElement
+    if (style === 'curved' && wps.length >= 3) {
+      line = create('path')
+      attr(line, { d: roundedPath(wps, 12), ...common })
+    } else {
+      line = create('polyline')
+      attr(line, { points: wps.map((p) => `${p.x},${p.y}`).join(' '), ...common })
+    }
     append(parent, line)
     if (wps.length >= 2) {
       append(parent, arrowHead(wps[wps.length - 2], wps[wps.length - 1]))
