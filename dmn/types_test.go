@@ -90,6 +90,59 @@ func TestItemDefinitionAssignable(t *testing.T) {
 	}
 }
 
+// structuredCollectionModel declares a structured element type (Driver) and a
+// collection type (DriverList) that reuses it — the shape a self-describing form
+// needs to unfold into „list of objects with these fields".
+const structuredCollectionModel = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" namespace="http://temis.example/drv" name="Drv" id="def_drv">
+  <itemDefinition id="t_driver" name="Driver">
+    <itemComponent id="c_age" name="age"><typeRef>number</typeRef></itemComponent>
+    <itemComponent id="c_name" name="dname"><typeRef>string</typeRef></itemComponent>
+  </itemDefinition>
+  <itemDefinition id="t_drivers" name="DriverList" isCollection="true">
+    <typeRef>Driver</typeRef>
+  </itemDefinition>
+  <inputData id="i_x" name="X"><variable name="X" typeRef="number"/></inputData>
+  <decision id="d_x" name="UseX">
+    <informationRequirement><requiredInput href="#i_x"/></informationRequirement>
+    <literalExpression><text>X + 1</text></literalExpression>
+  </decision>
+</definitions>`
+
+// TestItemDefinitionComponents checks a structured type reports its fields (name
+// + type), so a consumer can describe the shape a caller must supply — the whole
+// point of exposing Components on ItemType.
+func TestItemDefinitionComponents(t *testing.T) {
+	types := itemTypes(t, []byte(structuredCollectionModel))
+
+	driver := types["Driver"]
+	if !driver.Structured {
+		t.Fatalf("Driver should be structured, got %+v", driver)
+	}
+	if len(driver.Components) != 2 {
+		t.Fatalf("Driver components = %d, want 2 (%+v)", len(driver.Components), driver.Components)
+	}
+	byName := map[string]dmn.ItemType{}
+	for _, c := range driver.Components {
+		byName[c.Name] = c
+	}
+	if got := byName["age"]; got.TypeRef != "number" {
+		t.Errorf("age component typeRef = %q, want number", got.TypeRef)
+	}
+	if got := byName["dname"]; got.TypeRef != "string" {
+		t.Errorf("dname component typeRef = %q, want string", got.TypeRef)
+	}
+
+	// The collection type carries its element type and no components of its own.
+	list := types["DriverList"]
+	if !list.IsCollection || list.TypeRef != "Driver" {
+		t.Errorf("DriverList = %+v, want collection of Driver", list)
+	}
+	if len(list.Components) != 0 {
+		t.Errorf("DriverList should have no direct components, got %+v", list.Components)
+	}
+}
+
 // TestItemDefinitionErrors checks empty name and removing an unknown type error.
 func TestItemDefinitionErrors(t *testing.T) {
 	src := readModel(t, "dish_15.dmn")
