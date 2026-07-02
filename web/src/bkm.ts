@@ -19,8 +19,10 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   if (!view) return
   void ensureFeel()
 
-  // Mutable working copy of the parameters.
-  const params: BKMParam[] = view.params.map((p) => ({ ...p }))
+  // Mutable working copy of the parameters. A BKM with no encapsulated logic yet
+  // (e.g. one just dropped on the canvas) has no parameters — the server sends
+  // params as null there, so default to an empty list.
+  const params: BKMParam[] = (view.params ?? []).map((p) => ({ ...p }))
 
   const close = (): void => {
     overlay.remove()

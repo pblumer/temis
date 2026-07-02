@@ -9,13 +9,17 @@ import { ensureFeel, validateName } from './feel'
 // logic is a decision table or a literal expression — for those, double-click
 // opens the respective editor instead (see canvas.ts), so the gestures do not
 // collide.
-const isRenamable = (el: (Element & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean }) | undefined): el is Shape =>
+const isRenamable = (el: (Element & { hasLogic?: boolean }) | undefined): el is Shape =>
   !!el &&
   typeof el.type === 'string' &&
   el.type.indexOf('dmn:') === 0 &&
   el.type !== 'dmn:informationRequirement' &&
   el.type !== 'dmn:knowledgeRequirement' &&
-  !(el.type === 'dmn:decision' && (el.hasTable || el.hasLiteral || el.hasContext))
+  // A decision that carries ANY logic (table, literal, or any boxed expression)
+  // opens its editor on double-click, so it must NOT also inline-rename — else
+  // both gestures fire at once. hasLogic is the aggregate flag, so this stays
+  // correct as new boxed-expression kinds are added.
+  !(el.type === 'dmn:decision' && el.hasLogic)
 
 // Undoable rename: change the element's name and report it changed so the
 // renderer redraws. diagram-js core has no label command, so we add one.
