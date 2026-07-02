@@ -21,6 +21,12 @@ test('flow designer: build, test and register a flow visually', async ({ page, r
 
   await page.goto('/')
 
+  // Wait for the app to finish booting before clicking a sidebar action. The
+  // "+ Neuer Flow" button lives in the static shell markup, but its click handler
+  // is wired late in boot() (after the initial model load); the rendered model
+  // list is the signal that boot ran past that point, so the handler is attached.
+  await expect(page.locator('#modelList .model-item').first()).toBeVisible()
+
   // Enter the designer from the FLOWS sidebar section (+ button). The DMN modeling
   // palette hides — this is a flow activity, not a model one.
   await page.locator('#newFlow').click()

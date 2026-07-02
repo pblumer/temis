@@ -495,6 +495,10 @@ export function mountFlowEditor(opts: FlowEditorMounts): FlowEditor {
 
   const doRegister = async (): Promise<void> => {
     note('Registriere …')
+    // Cancel any pending preview refresh so it can't fire after we hand off to the
+    // studio (the preview and studio canvases are independent now, but a late
+    // refresh of the hidden preview would still be wasted work).
+    if (graphTimer !== undefined) clearTimeout(graphTimer)
     try {
       const res = await createFlow(toDescriptor(draft))
       onRegistered(res.flowId)
@@ -566,7 +570,10 @@ export function mountFlowEditor(opts: FlowEditorMounts): FlowEditor {
   host.querySelector<HTMLButtonElement>('#feCheck')?.addEventListener('click', () => void doCheck())
   host.querySelector<HTMLButtonElement>('#feExport')?.addEventListener('click', doExport)
   host.querySelector<HTMLButtonElement>('#feRegister')?.addEventListener('click', () => void doRegister())
-  host.querySelector<HTMLButtonElement>('#feClose')?.addEventListener('click', onClose)
+  host.querySelector<HTMLButtonElement>('#feClose')?.addEventListener('click', () => {
+    if (graphTimer !== undefined) clearTimeout(graphTimer)
+    onClose()
+  })
 
   // start loads the model catalog (for the pickers) then renders inspector + graph.
   const start = (d: Draft): void => {
