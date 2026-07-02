@@ -98,9 +98,35 @@ Models werden im Container nach `/data` geschrieben
 
 Upload über HTTP API (siehe `/docs`).
 
-## MCP Nutzung
+## Auth
 
-temis MCP ist JSON-RPC 2.0 (ohne Auth):
+| Layer | Mechanismus |
+|---|---|
+| HTTP API | Optional BasicAuth (htpasswd) + Bearer Token |
+| MCP | Kein separater Auth; API-Token auf `/v1` |
+| Clio Audit | `kid.secret`-Format via `vault_temis_clio_token` |
+
+## MCP Nutzung (bevorzugt via `mcp-bridge`)
+
+Das Tool `mcp-bridge` abstrahiert JSON-RPC 2.0 in einfache CLI-Befehle.
+Config liegt unter `~/.mcp-servers.json`.
+
+```bash
+# Tools listen
+mcp-bridge list temis
+
+# Tool ausführen
+mcp-bridge exec temis evaluate '{"model": "<sha256>", "variables": {"input": 42}}'
+mcp-bridge exec temis info '{}'
+
+# Raw JSON-RPC call
+mcp-bridge call temis tools/list
+mcp-bridge call temis tools/call '{"name": "evaluate", "arguments": {"model": "<sha256>"}}'
+```
+
+## MCP Nutzung (direkt / Fallback)
+
+Falls `mcp-bridge` nicht verfügbar ist, direkt via `curl`:
 
 ```bash
 # Tools listen
