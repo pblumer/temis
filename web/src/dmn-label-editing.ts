@@ -9,17 +9,23 @@ import { ensureFeel, validateName } from './feel'
 // logic is a decision table or a literal expression — for those, double-click
 // opens the respective editor instead (see canvas.ts), so the gestures do not
 // collide.
-const isRenamable = (el: (Element & { hasLogic?: boolean }) | undefined): el is Shape =>
+// A named DMN shape (decision, input data, BKM) — anything but the requirement
+// edges, which carry no name. This gates whether a name can be edited at all.
+const isNameable = (el: (Element & { hasLogic?: boolean }) | undefined): el is Shape =>
   !!el &&
   typeof el.type === 'string' &&
   el.type.indexOf('dmn:') === 0 &&
   el.type !== 'dmn:informationRequirement' &&
-  el.type !== 'dmn:knowledgeRequirement' &&
-  // A decision that carries ANY logic (table, literal, or any boxed expression)
-  // opens its editor on double-click, so it must NOT also inline-rename — else
-  // both gestures fire at once. hasLogic is the aggregate flag, so this stays
-  // correct as new boxed-expression kinds are added.
-  !(el.type === 'dmn:decision' && el.hasLogic)
+  el.type !== 'dmn:knowledgeRequirement'
+
+// Whether DOUBLE-CLICK should inline-rename. A decision that carries ANY logic
+// (table, literal, or any boxed expression) opens its editor on double-click, so
+// it must NOT also inline-rename — else both gestures fire at once. hasLogic is
+// the aggregate flag, so this stays correct as new boxed kinds are added. Such a
+// decision is still renamable on demand via the context pad's rename action,
+// which drives activate() directly (bypassing this double-click guard).
+const isRenamable = (el: (Element & { hasLogic?: boolean }) | undefined): el is Shape =>
+  isNameable(el) && !(el.type === 'dmn:decision' && el.hasLogic)
 
 // Undoable rename: change the element's name and report it changed so the
 // renderer redraws. diagram-js core has no label command, so we add one.
@@ -77,6 +83,16 @@ class DmnLabelEditing {
       this.wireLiveValidation()
     })
 
+    // The context pad's rename action: rename any nameable shape on demand — the
+    // deliberate gesture, so it works even for a decision with logic (whose
+    // double-click is reserved for opening its editor).
+    eventBus.on('dmn.renameElement', (event: { element?: Element }) => {
+      if (!isNameable(event.element)) return
+      void ensureFeel()
+      directEditing.activate(event.element)
+      this.wireLiveValidation()
+    })
+
     // Keep the edit box glued to its element when the canvas viewbox changes
     // (scroll/trackpad pan or zoom) while editing — otherwise the absolutely
     // positioned box detaches and drifts far from the element.
@@ -90,7 +106,10 @@ class DmnLabelEditing {
   // SCREEN space (the canvas may be zoomed/panned), so it sits exactly over the
   // element, with the font scaled to the zoom.
   activate(element: Element): { text: string; bounds: { x: number; y: number; width: number; height: number }; style: Record<string, string> } | undefined {
-    if (!isRenamable(element)) return undefined
+    // Gate on nameability, not the double-click rule: the context-pad rename
+    // action drives this directly for decisions with logic, whose double-click
+    // is otherwise reserved for opening the editor.
+    if (!isNameable(element)) return undefined
     const shape = element as Shape & { name?: string }
     this.active = shape
     return {

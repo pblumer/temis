@@ -22,6 +22,19 @@ test('double-clicking a boxed-list decision opens its editor without inline-rena
   await expect(page.locator('.djs-direct-editing-content')).toHaveCount(0)
 })
 
+test('a decision with logic is renamable via the context pad', async ({ page }) => {
+  // Double-click is reserved for opening a logic-decision's editor, so renaming
+  // one is a deliberate context-pad action. It must inline-rename WITHOUT opening
+  // the editor.
+  await page.goto('/')
+  await page.getByText('BoxedCollections', { exact: true }).first().click()
+  await page.locator('[data-element-id="id_numbers"]').first().click()
+  await page.locator('.djs-context-pad [title="Umbenennen"]').click()
+
+  await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
+  await expect(page.locator('.dt-overlay')).toHaveCount(0)
+})
+
 test('double-clicking an undecided decision still inline-renames', async ({ page }) => {
   // Guard the other side: a logic-less decision must remain double-click renamable.
   await page.goto('/')
