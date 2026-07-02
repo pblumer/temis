@@ -54,10 +54,19 @@ test('flows: browse a flow graph and evaluate it with per-step results', async (
   await expect(page.locator('.flow-out')).toContainText('approve')
   await expect(page.locator('.flow-canvas .node-result')).toHaveCount(2)
 
-  // A different input changes the outcome: 550 → high risk → decline.
+  // Trace illumination (WP-98): the wires light up with the values that travelled
+  // them (the entered Credit Score of 750 flows into the risk step), the active
+  // edges are marked, and the Entscheidungspfad lists the rules that fired.
+  await expect(page.locator('.flow-canvas .flow-edge-val').filter({ hasText: '750' })).toHaveCount(1)
+  await expect(page.locator('.flow-canvas .djs-connection.flow-active').first()).toBeVisible()
+  await expect(page.locator('.flow-trace')).toContainText('Entscheidungspfad')
+
+  // A different input changes the outcome: 550 → high risk → decline. The wire
+  // value updates in place to the newly entered score.
   await page.locator('.flow-input[data-name="Credit Score"]').fill('550')
   await page.locator('#flowRun').click()
   await expect(page.locator('.flow-out')).toContainText('decline')
+  await expect(page.locator('.flow-canvas .flow-edge-val').filter({ hasText: '550' })).toHaveCount(1)
 
   // Leaving Flows hides the studio; the DMN modeler chrome returns.
   await page.locator('#modeDesign').click()
