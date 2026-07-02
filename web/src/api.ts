@@ -505,7 +505,7 @@ export async function saveTable(modelId: string, decision: string, edit: TableEd
 // ItemType mirrors dmn.ItemType: a model's named type (a base FEEL type with an
 // optional collection flag and allowed-values constraint). structured types
 // (with components) are read-only in the simple editor.
-export type ItemType = { name: string; typeRef?: string; isCollection?: boolean; allowedValues?: string; structured?: boolean }
+export type ItemType = { name: string; typeRef?: string; isCollection?: boolean; allowedValues?: string; structured?: boolean; components?: ItemType[] }
 
 export async function listTypes(modelId: string): Promise<ItemType[]> {
   const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/types')

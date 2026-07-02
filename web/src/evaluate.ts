@@ -1,4 +1,4 @@
-import { evaluateGraph, InputValidationError, type ModelDetail, type InputField, type Trace, type TableTrace, type GraphEvalResult } from './api'
+import { evaluateGraph, listTypes, InputValidationError, type ModelDetail, type InputField, type ItemType, type Trace, type TableTrace, type GraphEvalResult } from './api'
 import { attachJsonEditor } from './json-editor'
 
 // EvalRun is one whole-graph evaluation: the inputs the user supplied and the
@@ -26,6 +26,7 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
 
   host.append(
     el('div', { class: 'eval-row' }, el('span', { class: 'eval-lead' }, 'Eingaben füllen und den ganzen Graphen auswerten'), runBtn),
+    el('p', { class: 'eval-note' }, 'Werte werden als JSON eingegeben: Zahlen wie 12000, Text wie Nord, Listen und Objekte in [ … ] bzw. { … }. Jedes Feld zeigt sein erwartetes Format — mit „Beispiel einfügen" bekommst du ein passendes Gerüst zum Anpassen.'),
     inputsHost,
     result,
   )
@@ -34,7 +35,7 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
   // declared inputs, so a transitively-reached input (one only a downstream
   // decision names) is still offered. Types/constraints come along for the ride.
   const fields = leafInputs(model)
-  const rows: { field: InputField; input: HTMLInputElement | HTMLSelectElement }[] = fields.map((field, idx) => {
+  const rows: { field: InputField; input: HTMLInputElement | HTMLSelectElement; wrap: HTMLElement }[] = fields.map((field, idx) => {
     const values = field.values ?? []
     let input: HTMLInputElement | HTMLSelectElement
     const extras: Node[] = []
@@ -64,14 +65,22 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
       input = box
     }
     const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
-    inputsHost.append(el('div', { class: 'eval-field-wrap' }, label, input, ...extras))
+    const wrap = el('div', { class: 'eval-field-wrap' }, label, input, ...extras)
+    inputsHost.append(wrap)
     // A free-text field coerces its value through JSON.parse, so offer the deluxe
     // JSON editor beside it. Closed enumerations (a <select>) take only declared
     // values and get no opener.
     if (input instanceof HTMLInputElement) attachJsonEditor(input, { title: 'JSON — ' + field.name })
-    return { field, input }
+    return { field, input, wrap }
   })
   if (!rows.length) inputsHost.append(el('p', { class: 'eval-empty' }, 'Dieses Modell braucht keine Eingaben.'))
+
+  // Enrich each field with a format hint (and, for structured/list inputs, a
+  // one-click example skeleton) once the model's named types are known — so a
+  // field typed „tDriverList" tells the user it wants a list of objects with
+  // named fields, instead of leaving them to guess. Best-effort: the form is
+  // fully usable even if the types can't be fetched.
+  void addFieldGuidance(model.modelId, rows)
 
   // mark flags a field by name with a message (or clears all when name is null).
   const mark = (name: string | null, message?: string): void => {
@@ -135,6 +144,209 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
       void run()
     }
   })
+}
+
+// A TypeShape is what a field ultimately expects, resolved through the model's
+// named types: a base FEEL kind (or '' when unknown/structured), whether it is a
+// list, and — for a structured type — its component fields. It's enough both to
+// describe the field in words and to synthesise a matching example value.
+type TypeShape = { base: string; collection: boolean; components?: { name: string; shape: TypeShape }[] }
+
+type Row = { field: InputField; input: HTMLInputElement | HTMLSelectElement; wrap: HTMLElement }
+
+// addFieldGuidance fetches the model's named types and, for each free-text field,
+// makes the expected value concrete: a friendlier placeholder for scalars, and
+// for a structured or list input a shape description plus a „Beispiel einfügen"
+// button that drops a ready-to-edit JSON skeleton into the box. Best-effort — the
+// form stays fully usable if the types can't be fetched. Closed-enum fields are
+// rendered as a <select> and need no guidance.
+async function addFieldGuidance(modelId: string, rows: Row[]): Promise<void> {
+  let types: ItemType[]
+  try {
+    types = await listTypes(modelId)
+  } catch {
+    return
+  }
+  const byName = new Map<string, ItemType>()
+  for (const t of types) byName.set(t.name, t)
+  for (const { field, input, wrap } of rows) {
+    if (!(input instanceof HTMLInputElement)) continue
+    const shape = resolveShape(field.type, byName, 0)
+    const structured = shape.collection || (shape.components?.length ?? 0) > 0
+    if (structured) {
+      const example = JSON.stringify(exampleValue(shape))
+      const hint = el('div', { class: 'eval-field-hint' }, describeShape(shape))
+      const btn = el('button', { class: 'eval-ex-btn', type: 'button', title: example }, 'Beispiel einfügen') as HTMLButtonElement
+      btn.addEventListener('click', () => {
+        input.value = example
+        input.focus()
+      })
+      hint.append(btn)
+      wrap.append(hint)
+      if (isTypePlaceholder(input, field)) input.placeholder = example.length <= 40 ? example : 'JSON …'
+    } else if (isTypePlaceholder(input, field)) {
+      input.placeholder = scalarPlaceholder(shape.base)
+    }
+  }
+}
+
+// isTypePlaceholder is true while the box still shows its bare type-name (or
+// FEEL) placeholder — i.e. we haven't replaced it with real guidance yet.
+function isTypePlaceholder(input: HTMLInputElement, field: InputField): boolean {
+  return input.placeholder === (field.type ?? '') || input.placeholder === 'FEEL' || input.placeholder === ''
+}
+
+// resolveShape resolves a type reference (a base FEEL type or a named model type)
+// to its shape, following named types and collection flags. depth guards against
+// a type that (directly or indirectly) refers to itself.
+function resolveShape(typeRef: string | undefined, byName: Map<string, ItemType>, depth: number): TypeShape {
+  const scalar = canonicalScalar(typeRef)
+  if (scalar) return { base: scalar, collection: false }
+  const t = typeRef ? byName.get(bareName(typeRef)) : undefined
+  if (!t || depth > 5) return { base: '', collection: false }
+  return resolveItem(t, byName, depth)
+}
+
+function resolveItem(t: ItemType, byName: Map<string, ItemType>, depth: number): TypeShape {
+  const collection = t.isCollection === true
+  if (t.components?.length) {
+    return { base: '', collection, components: t.components.map((c) => ({ name: c.name, shape: resolveItem(c, byName, depth + 1) })) }
+  }
+  // No inline components → an alias to another (possibly named) type: inherit its
+  // shape and OR in this level's collection flag (e.g. a list-of-numbers alias).
+  const inner = resolveShape(t.typeRef, byName, depth + 1)
+  return { base: inner.base, collection: collection || inner.collection, components: inner.components }
+}
+
+// exampleValue builds a minimal, correctly-shaped sample for a type: a list wraps
+// one element, a structured type becomes an object with every field, and a scalar
+// gets a neutral literal — a skeleton the user edits rather than invents.
+function exampleValue(shape: TypeShape): unknown {
+  if (shape.collection) return [exampleValue({ base: shape.base, collection: false, components: shape.components })]
+  if (shape.components?.length) {
+    const o: Record<string, unknown> = {}
+    for (const c of shape.components) o[c.name] = exampleValue(c.shape)
+    return o
+  }
+  switch (shape.base) {
+    case 'number':
+      return 0
+    case 'boolean':
+      return true
+    case 'date':
+      return '2026-01-01'
+    case 'time':
+      return '09:00:00'
+    case 'date and time':
+      return '2026-01-01T09:00:00'
+    case 'duration':
+      return 'P1D'
+    default:
+      return 'Text'
+  }
+}
+
+// describeShape puts a field's expected shape into a short German phrase, e.g.
+// „Liste von Objekten mit age (Zahl), points (Zahl)".
+function describeShape(shape: TypeShape): string {
+  if (shape.components?.length) {
+    const fields = shape.components.map((c) => c.name + ' (' + shortType(c.shape) + ')').join(', ')
+    return (shape.collection ? 'Liste von Objekten mit ' : 'Objekt mit ') + fields
+  }
+  if (shape.collection) return 'Liste von ' + pluralType(shape.base)
+  return shortType(shape)
+}
+
+function shortType(shape: TypeShape): string {
+  if (shape.components?.length) return 'Objekt'
+  if (shape.collection) return 'Liste'
+  switch (shape.base) {
+    case 'number':
+      return 'Zahl'
+    case 'boolean':
+      return 'true/false'
+    case 'string':
+      return 'Text'
+    case 'date':
+      return 'Datum'
+    case 'time':
+      return 'Uhrzeit'
+    case 'date and time':
+      return 'Zeitpunkt'
+    case 'duration':
+      return 'Dauer'
+    default:
+      return 'Text'
+  }
+}
+
+function pluralType(base: string): string {
+  switch (base) {
+    case 'number':
+      return 'Zahlen'
+    case 'boolean':
+      return 'true/false-Werten'
+    case 'string':
+      return 'Texten'
+    case 'date':
+      return 'Daten'
+    default:
+      return 'Werten'
+  }
+}
+
+function scalarPlaceholder(base: string): string {
+  switch (base) {
+    case 'number':
+      return 'Zahl, z. B. 12000'
+    case 'boolean':
+      return 'true / false'
+    case 'date':
+      return 'JJJJ-MM-TT'
+    case 'time':
+      return 'HH:MM:SS'
+    case 'date and time':
+      return 'JJJJ-MM-TTThh:mm:ss'
+    case 'duration':
+      return 'z. B. P1D'
+    default:
+      return 'Text'
+  }
+}
+
+// bareName strips a namespace prefix (feel:number → number) and trims.
+function bareName(ref: string): string {
+  const i = ref.lastIndexOf(':')
+  return (i >= 0 ? ref.slice(i + 1) : ref).trim()
+}
+
+// canonicalScalar maps a type reference to a canonical FEEL scalar name, or ''
+// when it is not a built-in scalar (mirrors the engine's canonicalType).
+function canonicalScalar(ref: string | undefined): string {
+  if (!ref) return ''
+  switch (bareName(ref).toLowerCase().replace(/\s+/g, '')) {
+    case 'number':
+      return 'number'
+    case 'string':
+      return 'string'
+    case 'boolean':
+      return 'boolean'
+    case 'date':
+      return 'date'
+    case 'time':
+      return 'time'
+    case 'datetime':
+    case 'dateandtime':
+      return 'date and time'
+    case 'duration':
+    case 'daytimeduration':
+    case 'yearmonthduration':
+    case 'daysandtimeduration':
+    case 'yearsandmonthsduration':
+      return 'duration'
+    default:
+      return ''
+  }
 }
 
 // leafInputs unions every decision's declared inputs into the model's leaf-input

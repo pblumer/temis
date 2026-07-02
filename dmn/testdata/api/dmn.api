@@ -395,11 +395,12 @@ type InvocationView struct {
 }
 
 type ItemType struct {
-	Name		string	`json:"name"`
-	TypeRef		string	`json:"typeRef,omitempty"`
-	IsCollection	bool	`json:"isCollection,omitempty"`
-	AllowedValues	string	`json:"allowedValues,omitempty"`
-	Structured	bool	`json:"structured,omitempty"`
+	Name		string		`json:"name"`
+	TypeRef		string		`json:"typeRef,omitempty"`
+	IsCollection	bool		`json:"isCollection,omitempty"`
+	AllowedValues	string		`json:"allowedValues,omitempty"`
+	Structured	bool		`json:"structured,omitempty"`
+	Components	[]ItemType	`json:"components,omitempty"`
 }
 
 type IteratorEdit struct {
