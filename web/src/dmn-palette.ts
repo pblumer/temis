@@ -24,9 +24,11 @@ const ICON_BKM = svg(`<path d="M6 5h9v6l-2 2H3V7z" ${stroke}/>`)
 
 // A DMN element kind that can be created from scratch via the palette.
 type Kind = { type: string; name: string; w: number; h: number; icon: string; title: string }
+type PendingDrag = { kind: Kind; x: number; y: number } | null
 const INPUT: Kind = { type: 'inputData', name: 'Neue Eingabe', w: 120, h: 50, icon: ICON_INPUT, title: 'Eingabedaten erstellen' }
 const DECISION: Kind = { type: 'decision', name: 'Neue Decision', w: 150, h: 70, icon: ICON_DECISION, title: 'Decision erstellen' }
 const BKM: Kind = { type: 'businessKnowledgeModel', name: 'Neues BKM', w: 150, h: 64, icon: ICON_BKM, title: 'Business Knowledge Model erstellen' }
+const PALETTE_KINDS: Record<string, Kind> = { 'create-input': INPUT, 'create-decision': DECISION, 'create-bkm': BKM }
 
 // The DMN palette (ADR-0016): the left-edge toolbar, modelled on bpmn.io. A
 // "tools" group holds the pointer (back to selecting) and the hand (pan the
@@ -55,6 +57,7 @@ class DmnPaletteProvider {
   // click trap and also covers delayed drag-cleanup/browser event ordering.
   private dragSession = false
   private suppressClickUntil = 0
+  private pendingDrag: PendingDrag = null
 
   constructor(
     palette: Palette,
@@ -76,7 +79,61 @@ class DmnPaletteProvider {
       if (this.dragSession) this.suppressClickUntil = Math.max(this.suppressClickUntil, Date.now() + 800)
       this.dragSession = false
     })
+    eventBus.on('palette.create', (e: { container?: HTMLElement }) => {
+      this.installPointerDrag(e.container)
+    })
+    eventBus.on('diagram.destroy', () => this.clearPendingDrag())
     palette.registerProvider(this)
+  }
+
+  private shape(kind: Kind) {
+    return this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never)
+  }
+
+  private startCreate(kind: Kind, event: Event): void {
+    this.create.start(event as MouseEvent, this.shape(kind))
+  }
+
+  private clearPendingDrag(): void {
+    this.pendingDrag = null
+    document.removeEventListener('mousemove', this.onPendingMove, true)
+    document.removeEventListener('mouseup', this.onPendingUp, true)
+  }
+
+  private onPendingMove = (event: MouseEvent): void => {
+    const pending = this.pendingDrag
+    if (!pending) return
+    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < 5) return
+
+    this.clearPendingDrag()
+    this.dragSession = true
+    this.suppressClickUntil = Date.now() + 800
+    event.preventDefault()
+    event.stopPropagation()
+    this.startCreate(pending.kind, event)
+  }
+
+  private onPendingUp = (): void => {
+    this.clearPendingDrag()
+  }
+
+  private installPointerDrag(container?: HTMLElement): void {
+    if (!container) return
+    container.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return
+      const entry = (event.target as Element | null)?.closest?.('[data-action]') as HTMLElement | null
+      const kind = entry ? PALETTE_KINDS[entry.dataset.action ?? ''] : undefined
+      if (!kind) return
+
+      // Palette entries are deliberately not HTML5-draggable. We wait for an
+      // actual pointer movement and then start diagram-js dragging from that
+      // mousemove event, so the normal document mouseup ends the create session.
+      // A plain mouseup without movement falls through to the palette click
+      // handler below and keeps click-to-place intact.
+      this.pendingDrag = { kind, x: event.clientX, y: event.clientY }
+      document.addEventListener('mousemove', this.onPendingMove, true)
+      document.addEventListener('mouseup', this.onPendingUp, true)
+    }, true)
   }
 
   // uniqueName returns base, or "base 2", "base 3", … so a freshly created element
@@ -96,10 +153,6 @@ class DmnPaletteProvider {
   }
 
   getPaletteEntries(): PaletteEntries {
-    const doCreate = (kind: Kind, event: Event): void => {
-      const shape = this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never)
-      this.create.start(event as MouseEvent, shape)
-    }
     // A real drag always starts a create. A click starts one only when none is
     // already in flight and no palette drag just ended — this drops the ghost
     // click that trails a palette drag, which used to leave a phantom element
@@ -107,7 +160,7 @@ class DmnPaletteProvider {
     const startOnDrag = (kind: Kind) => (event: Event): void => {
       this.dragSession = true
       this.suppressClickUntil = Date.now() + 800
-      doCreate(kind, event)
+      this.startCreate(kind, event)
     }
     const startOnClick = (kind: Kind) => (event: Event): void => {
       if (this.creating || this.dragSession || Date.now() < this.suppressClickUntil) {
@@ -115,7 +168,7 @@ class DmnPaletteProvider {
         event.stopPropagation()
         return
       }
-      doCreate(kind, event)
+      this.startCreate(kind, event)
     }
 
     // Entry keys carry the "-tool" suffix the palette strips to match the active
@@ -140,12 +193,13 @@ class DmnPaletteProvider {
       },
       'tool-separator': { group: 'tools', separator: true, action: {} },
     }
-    for (const [key, kind] of [['create-input', INPUT], ['create-decision', DECISION], ['create-bkm', BKM]] as [string, Kind][]) {
+    for (const [key, kind] of Object.entries(PALETTE_KINDS)) {
       entries[key] = {
         group: 'create',
         className: 'pal-icon',
         title: kind.title,
         imageUrl: kind.icon,
+        html: '<div class="entry" draggable="false"></div>',
         action: { dragstart: startOnDrag(kind), click: startOnClick(kind) },
       }
     }
