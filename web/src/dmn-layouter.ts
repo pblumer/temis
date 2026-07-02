@@ -12,11 +12,19 @@ type Point = { x: number; y: number }
 // clean after a drag. When the nodes end up side by side (horizontal move
 // dominates), an orthogonal top/bottom route would look wrong, so it falls back
 // to a straight line docked at both borders, which works for any placement.
+//
+// The modeler can override an edge's shape per edge (context pad): 'direct'
+// forces the straight border-to-border route whatever the placement, while
+// 'ortho' (eckig, the default) and 'curved' (gerundet) share the same
+// right-angle waypoints — only the renderer differs (sharp vs. rounded corners),
+// so both use the orthogonal route here.
 class DmnLayouter extends BaseLayouter {
   layoutConnection(connection: Connection, hints?: object): Point[] {
     const s = connection.source as Shape | null
     const t = connection.target as Shape | null
     if (!s || !t) return super.layoutConnection(connection, hints)
+    const style = (connection as { connectionStyle?: string }).connectionStyle
+    if (style === 'direct') return [borderPoint(s, t), borderPoint(t, s)]
     const sc = centre(s)
     const tc = centre(t)
     if (Math.abs(tc.y - sc.y) >= Math.abs(tc.x - sc.x)) return orthoRoute(box(s), box(t))

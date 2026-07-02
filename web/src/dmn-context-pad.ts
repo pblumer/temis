@@ -27,6 +27,11 @@ const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}
 const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
 const ICON_RENAME = svg(`<path d="M11.5 3.5l3 3L6 15H3v-3z" ${stroke}/><path d="M10 5l3 3" ${stroke}/>`)
 const ICON_INVOCATION = svg(`<rect x="2.5" y="4" width="13" height="10" rx="1.5" ${stroke}/><path d="M6.5 9h5M9 6.5v5" ${stroke}/>`)
+// Edge-shape icons: a right-angle L (eckig), a rounded bend (gerundet) and a
+// straight diagonal (direkt) — matching the routes the renderer draws.
+const ICON_EDGE_ORTHO = svg(`<path d="M4 3.5V13h10" ${stroke}/>`)
+const ICON_EDGE_CURVED = svg(`<path d="M4 3.5v5a5 5 0 0 0 5 5h5" ${stroke}/>`)
+const ICON_EDGE_DIRECT = svg(`<path d="M3.5 14.5 14.5 3.5" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -95,6 +100,26 @@ class DmnContextPadProvider {
     const connect = this.connect
     const modeling = this.modeling
     const entries: ContextPadEntries = {}
+
+    // A requirement edge: let the modeler pick its shape — eckig (right-angle),
+    // gerundet (rounded corners) or direkt (straight line). Each fires an event
+    // the app shell turns into an undoable style change (see canvas.ts).
+    if (element.type === 'dmn:informationRequirement' || element.type === 'dmn:knowledgeRequirement') {
+      const styles: [string, string, string, string][] = [
+        ['edge-ortho', 'ortho', ICON_EDGE_ORTHO, 'Eckige Verbindung'],
+        ['edge-curved', 'curved', ICON_EDGE_CURVED, 'Gerundete Verbindung'],
+        ['edge-direct', 'direct', ICON_EDGE_DIRECT, 'Direkte Verbindung'],
+      ]
+      for (const [key, style, icon, title] of styles) {
+        entries[key] = {
+          group: 'edge-style',
+          className: 'cp-icon',
+          title,
+          imageUrl: icon,
+          action: { click: () => this.eventBus.fire('dmn.setEdgeStyle', { element, style }) },
+        }
+      }
+    }
 
     // Append upstream requirements — only meaningful on a decision.
     if (element.type === 'dmn:decision') {

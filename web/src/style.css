@@ -422,6 +422,9 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="create-literal"],
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edit-bkm"],
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="connect"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edge-ortho"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edge-curved"],
+.app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="edge-direct"],
 .app-shell[data-mode="operate"] .djs-context-pad .entry[data-action="delete"] { display: none !important; }
 
 /* Baustein 1 — the run-history listbox above the diagram (Operate only). */
