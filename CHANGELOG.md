@@ -43,9 +43,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   sieben Werkzeugen (inspizieren/auswerten/bauen); Frontend: angedocktes Chat-Panel mit
   Tool-Schritt-Anzeige und automatischem Reload bei Modelländerungen.
 - **Ko-lokalisierter MCP-Endpoint (ADR-0021):** `temisd` bedient optional `POST /mcp` (Flag `-mcp`,
-  Default an) auf **demselben Modell-Cache** wie Modeler und `/v1`-API — vorgeladene Beispiele und
-  Modeler-Modelle sind über MCP sichtbar und umgekehrt, eine `modelId` über alle Oberflächen; das
-  eigenständige `temis-mcp` (stdio/HTTP) bleibt unverändert.
+  Default an) auf **demselben Modell-Cache und Flow-Katalog** wie Modeler und `/v1`-API — vorgeladene
+  Beispiele und Modeler-Modelle sind über MCP sichtbar und umgekehrt, eine `modelId` über alle
+  Oberflächen; ebenso erscheint ein über MCP `load_flow`/`git_load_flow` registrierter Flow im
+  Flow-Katalog des Modelers (`GET /v1/flows`) und umgekehrt (`mcp.WithFlowStore` /
+  `Server.FlowStore()`); das eigenständige `temis-mcp` (stdio/HTTP) bleibt unverändert.
 - **Decision-Flow – transitive Step-Inputs (ADR-0026, L2a):** Ein Flow-Step auf eine
   **zusammengesetzte** Decision darf jetzt deren **transitiv benötigte** Blatt-Inputs
   verdrahten — Inputs, die die Ziel-Decision nur über eine Sub-Decision desselben Modells
@@ -73,6 +75,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   **Git bleibt die dauerhafte Quelle (ADR-0032):** die Registrierung ist der flüchtige Dev-Pfad,
   der Export der Weg in den Repo (`flows/` + `git_propose`) — kein neuer server-seitiger
   Schreibpfad. Rein additiv, keine Backend-Änderung.
+- **Modeler – Auto-Layout mit orthogonalem Routing & Orientierungs-Umschalter (ADR-0016):** Modelle ohne
+  authorede `DMNDI`-Bounds werden nicht länger als diagonaler „Spaghetti" gezeichnet. Das Auto-Layout
+  richtet die Knoten spaltenweise aus (jeder Knoten wird über/unter seine Nachbarn gezogen) und führt
+  jede Requirement-Kante als **rechtwinkligen Konnektor**: die Eingänge eines Hubs laufen als sauberer
+  Kamm zusammen, und lange „Skip"-Kanten werden durch eine freie Bahn zwischen den Spalten gefädelt, statt
+  durch Knoten hindurchzulaufen. Ein Toolbar-Knopf **Bottom-up / Top-down** schaltet um, ob die Eingabe-
+  Pillen die Decisions von unten (Pfeile nach oben, Default) oder von oben (Pfeile nach unten) speisen, und
+  ordnet das ganze Diagramm entsprechend neu an. Authorede `DMNDI`-Layouts bleiben unangetastet (bis der
+  Umschalter ein Neu-Anordnen erzwingt); der Decision-Flow-Canvas ist unverändert.
 - **Modeler – Modelle verwalten (ADR-0016):** Im Modeler lässt sich ein Modell jetzt komplett neu
   (leer) anlegen statt nur eine `.dmn`-Datei hochzuladen, sowie **umbenennen** und **löschen**
   (inkl. des gesamten Revisions-Verlaufs). Zwei neue HTTP-Endpunkte: `POST /v1/models/{id}/rename`

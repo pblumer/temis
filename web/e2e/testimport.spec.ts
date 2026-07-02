@@ -146,3 +146,29 @@ test('import: the CSV template downloads shaped to the model', async ({ page }) 
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Vorlage · CSV' }).click()])
   expect(download.suggestedFilename()).toContain('testfaelle.csv')
 })
+
+test('import: the downloaded CSV template round-trips back into cases', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('Discount', { exact: true }).first().click()
+  await page.locator('#modeImport').click()
+
+  // Download the template, then feed the very same bytes back in. The template's
+  // leading comment line carries German „…" quotes (an odd count of "), which the
+  // quote-aware CSV reader would otherwise treat as an open quote and swallow the
+  // whole file into one field — leaving "Keine Testfälle in der Datei gefunden".
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Vorlage · CSV' }).click()])
+  const stream = await download.createReadStream()
+  const csv = await new Promise<string>((resolve, reject) => {
+    let acc = ''
+    stream.on('data', (c) => (acc += c))
+    stream.on('end', () => resolve(acc))
+    stream.on('error', reject)
+  })
+  expect(csv.split('\n')[0].startsWith('#')).toBe(true) // the template leads with a comment
+
+  await page.locator('input.imp-file').setInputFiles({ name: 'vorlage.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
+
+  // The two pre-filled example rows must land as staged cases, not vanish.
+  await expect(page.locator('.imp-lane-in .imp-card')).toHaveCount(2)
+  await expect(page.locator('.imp-note')).toContainText('importiert')
+})

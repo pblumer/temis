@@ -1,7 +1,7 @@
 import { APP_NAME } from './build-info'
 import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, type ModelSummary, type Status } from './api'
 import { promptDialog, confirmDialog } from './dialog'
-import { layout } from './layout'
+import { layout, type Orientation } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import { mountOperate } from './operate'
@@ -79,6 +79,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
+            <button id="orient" class="tbtn design-only" type="button" title="Anordnung umschalten: Eingaben unten (Pfeile nach oben) ↔ Eingaben oben (Pfeile nach unten)">↥ Bottom-up</button>
           </span>
           <span id="typeEditor" class="type-editor design-only" style="display:none">
             <label for="datatype">Typ</label>
@@ -145,6 +146,10 @@ async function boot(root: HTMLElement): Promise<void> {
 
   let handle: ModelerHandle | null = null
   let dirty = false
+  // Auto-layout orientation for the DRD: 'bottomUp' keeps leaf inputs at the
+  // bottom feeding decisions upward (the default), 'topDown' flips it. Toggled
+  // by the toolbar's orientation button and applied to every model shown.
+  let orientation: Orientation = 'bottomUp'
   // The model currently loaded in the editor (a specific revision's id).
   let currentId = ''
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
@@ -401,6 +406,25 @@ async function boot(root: HTMLElement): Promise<void> {
   root.querySelector('#zoomOut')?.addEventListener('click', () => handle?.zoom('out'))
   root.querySelector('#zoomFit')?.addEventListener('click', () => handle?.zoom('fit'))
   root.querySelector('#zoomIn')?.addEventListener('click', () => handle?.zoom('in'))
+
+  // Orientation toggle: flip whether inputs feed decisions from below (bottom-up)
+  // or from above (top-down), re-arrange the live diagram, and remember the
+  // choice for the next model shown. Re-arranging changes node positions, so it
+  // marks the model dirty (savable). The label shows the current orientation.
+  const orientBtn = root.querySelector<HTMLButtonElement>('#orient')
+  const syncOrientBtn = (): void => {
+    if (orientBtn) orientBtn.textContent = orientation === 'bottomUp' ? '↥ Bottom-up' : '↧ Top-down'
+  }
+  syncOrientBtn()
+  orientBtn?.addEventListener('click', () => {
+    orientation = orientation === 'bottomUp' ? 'topDown' : 'bottomUp'
+    syncOrientBtn()
+    if (handle) {
+      handle.arrange(orientation)
+      dirty = true
+      syncButtons()
+    }
+  })
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
   const createLiteral = async (decisionId: string): Promise<void> => {
@@ -1022,7 +1046,7 @@ async function boot(root: HTMLElement): Promise<void> {
         typeOptions = FEEL_TYPES
       }
       const graph = await getGraph(modelId)
-      handle = renderGraph(canvas, layout(graph))
+      handle = renderGraph(canvas, layout(graph, { orientation, ortho: true }))
       handle.onChange(() => {
         dirty = true
         syncButtons()

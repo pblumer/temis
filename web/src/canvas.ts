@@ -26,7 +26,8 @@ import { dmnLabelEditingModule } from './dmn-label-editing'
 import { dmnLayouterModule } from './dmn-layouter'
 import { dmnPaletteModule } from './dmn-palette'
 import { dmnSnappingModule } from './dmn-snapping'
-import type { Laid } from './layout'
+import { layout, type Laid, type Orientation } from './layout'
+import type { Graph, GraphNode, GraphEdge } from './api'
 
 // What the toolbar needs to know about the current selection to offer the type
 // editor: the selected InputData's id and current type, or null otherwise.
@@ -133,6 +134,12 @@ export type ModelerHandle = {
   onBoxed: (cb: (decisionId: string) => void) => void
   // zoom adjusts the canvas zoom: step in/out, or fit the whole diagram.
   zoom: (dir: 'in' | 'out' | 'fit') => void
+  // arrange re-runs the auto-layout on the live graph in the given orientation
+  // (leaf inputs at the bottom feeding up, or at the top feeding down) and
+  // re-routes every edge orthogonally, repositioning the existing shapes in
+  // place. Node/edge structure and per-node edits (names, types, logic) are
+  // preserved; it is not undoable (a view arrangement, like the initial layout).
+  arrange: (orientation: Orientation) => void
   // showDiagnostics marks each decision node that has compile/eval problems with a
   // severity badge (error/warning) carrying the messages as a tooltip, so issues
   // are visible on the diagram. Diagnostics without a decision id are model-level
@@ -451,6 +458,55 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     zoom: (dir) => {
       if (dir === 'fit') fitViewport(canvas)
       else canvas.zoom(canvas.zoom() * (dir === 'in' ? 1.18 : 0.85))
+    },
+    arrange: (orientation) => {
+      // Read the live structure off the canvas and re-lay it out from scratch
+      // (forceAuto) in the chosen orientation with orthogonal routing.
+      const nodes: GraphNode[] = []
+      const edges: GraphEdge[] = []
+      for (const el of elementRegistry.getAll()) {
+        const type = (el as { type?: string }).type ?? ''
+        if (NODE_TYPES.has(type)) {
+          const s = el as Shape & { name?: string }
+          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name ?? s.id })
+        } else if (EDGE_TYPES.has(type)) {
+          const c = el as Connection
+          if (c.source && c.target) edges.push({ type: type.replace(/^dmn:/, ''), source: c.source.id, target: c.target.id })
+        }
+      }
+      const graph: Graph = { nodes, edges }
+      const laid = layout(graph, { orientation, ortho: true, forceAuto: true })
+      const laidById = new Map(laid.nodes.map((n) => [n.id, n]))
+      const wpByPair = new Map<string, { x: number; y: number }[]>()
+      for (const e of laid.edges) wpByPair.set(e.source + ' ' + e.target, e.waypoints)
+
+      const changed: (Shape | Connection)[] = []
+      for (const el of elementRegistry.getAll()) {
+        const type = (el as { type?: string }).type ?? ''
+        if (NODE_TYPES.has(type)) {
+          const ln = laidById.get(el.id)
+          if (!ln) continue
+          const s = el as Shape
+          s.x = ln.x
+          s.y = ln.y
+          s.width = ln.w
+          s.height = ln.h
+          changed.push(s)
+        } else if (EDGE_TYPES.has(type)) {
+          const c = el as Connection
+          if (!c.source || !c.target) continue
+          const wp = wpByPair.get(c.source.id + ' ' + c.target.id)
+          if (wp) {
+            c.waypoints = wp
+            changed.push(c)
+          }
+        }
+      }
+      // Redraw the moved shapes/edges and reposition any overlays anchored to
+      // them (diagnostics, results), then refit the viewport to the new layout.
+      eventBus.fire('elements.changed', { elements: changed })
+      for (const el of changed) eventBus.fire('element.changed', { element: el })
+      fitViewport(canvas)
     },
     showDiagnostics: (diags) => {
       overlays.remove({ type: 'diagnostic' })

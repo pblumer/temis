@@ -150,10 +150,8 @@ func (s *Server) toolGitLoadFlow(ctx context.Context, raw json.RawMessage) (any,
 	if err != nil {
 		return toolError("could not compile flow: " + err.Error()), nil
 	}
-	var d flow.Descriptor
-	_ = json.Unmarshal(desc, &d)
 	id := flowID(desc)
-	s.flows.put(&storedFlow{id: id, flow: f, desc: d})
+	s.flows.Put(ctx, id, f, desc)
 	diags := f.Validate(ctx, storeResolver{s.store})
 	return toolText(map[string]any{
 		"flowId":      id,
