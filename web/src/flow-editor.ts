@@ -18,6 +18,7 @@ import { renderFlowGraph } from './flow-canvas'
 import type { FlowCanvas } from './flow-canvas'
 import { applyIllumination, buildGraph, coerce, depthMap, esc, fmt, renderTrace } from './flows'
 import { attachJsonEditor } from './json-editor'
+import { makeResizable } from './resizable'
 
 // --- working draft (a mutable, editor-friendly form of flow.Descriptor) ---
 
@@ -125,6 +126,7 @@ export function mountFlowEditor(opts: FlowEditorMounts): FlowEditor {
     </div>
     <div class="flow-editor-body">
       <div class="flow-editor-canvas flow-canvas" id="feCanvas"></div>
+      <div class="resizer resizer-col" id="feInspectorResizer" title="Inspektor-Breite ziehen (Doppelklick: zurücksetzen)"></div>
       <div class="flow-editor-inspector" id="feInspector"></div>
     </div>
     <div class="flow-editor-foot" id="feFoot"></div>`
@@ -132,6 +134,25 @@ export function mountFlowEditor(opts: FlowEditorMounts): FlowEditor {
   const canvasHost = host.querySelector<HTMLElement>('#feCanvas')!
   const inspector = host.querySelector<HTMLElement>('#feInspector')!
   const foot = host.querySelector<HTMLElement>('#feFoot')!
+
+  // The right-hand inspector sits at a fixed width by default; its divider lets
+  // the user drag it wider/narrower (persisted per browser). Resizing changes the
+  // preview canvas's width, so refit the diagram once the drag settles.
+  const inspectorResizer = host.querySelector<HTMLElement>('#feInspectorResizer')
+  if (inspectorResizer) {
+    makeResizable({
+      handle: inspectorResizer,
+      edge: 'right',
+      initial: 380,
+      min: 260,
+      max: 640,
+      storageKey: 'temis.modeler.flowInspectorWidth',
+      apply: (w) => {
+        inspector.style.flex = `0 0 ${w}px`
+      },
+      onDone: () => refreshGraph(),
+    })
+  }
 
   let draft: Draft = blankDraft()
   let models: ModelSummary[] = []

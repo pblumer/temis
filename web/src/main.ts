@@ -22,6 +22,7 @@ import { openInvocationOverlay } from './invocation'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
+import { makeResizable } from './resizable'
 import { FEEL_TYPES } from './feeltypes'
 import './style.css'
 
@@ -63,6 +64,7 @@ async function boot(root: HTMLElement): Promise<void> {
           Flow öffnen zum Ansehen & Auswerten.
         </p>
       </aside>
+      <div class="resizer resizer-col" id="sidebarResizer" title="Sidebar-Breite ziehen (Doppelklick: zurücksetzen)"></div>
       <main class="editor">
         <div class="toolbar">
           <span class="mode-toggle">
@@ -134,6 +136,26 @@ async function boot(root: HTMLElement): Promise<void> {
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
   if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
+
+  // The left sidebar sits at a fixed width by default; its divider lets the user
+  // drag it wider/narrower (persisted per browser), so long model/flow names get
+  // room without crowding the editor.
+  const sidebar = root.querySelector<HTMLElement>('.sidebar')
+  const sidebarResizer = root.querySelector<HTMLElement>('#sidebarResizer')
+  if (sidebar && sidebarResizer) {
+    makeResizable({
+      handle: sidebarResizer,
+      edge: 'left',
+      initial: 264,
+      min: 200,
+      max: 560,
+      storageKey: 'temis.modeler.sidebarWidth',
+      apply: (w) => {
+        sidebar.style.flex = `0 0 ${w}px`
+        sidebar.style.width = `${w}px`
+      },
+    })
+  }
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
