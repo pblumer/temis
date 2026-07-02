@@ -4,14 +4,17 @@ import (
 	"context"
 
 	"github.com/pblumer/temis/dmn"
+	"github.com/pblumer/temis/flow"
 	"github.com/pblumer/temis/mcp"
 )
 
 // AttachMCP co-locates an MCP server's endpoint in this HTTP server: Handler then
 // mounts POST/GET /mcp alongside the web UI and the /v1 API. To share this
 // server's model cache (so examples and API-loaded models appear over MCP and
-// vice versa), construct the MCP server with mcp.WithStore(s.ModelStore()). Call
-// before Handler; a nil argument leaves /mcp unmounted.
+// vice versa), construct the MCP server with mcp.WithStore(s.ModelStore()); to
+// likewise share the flow catalog (so a flow registered over MCP appears in the
+// modeler and vice versa), add mcp.WithFlowStore(s.FlowStore()). Call before
+// Handler; a nil argument leaves /mcp unmounted.
 func (s *Server) AttachMCP(m *mcp.Server) { s.mcpServer = m }
 
 // ModelStore exposes this server's model cache as an mcp.Store, so an MCP server
@@ -20,6 +23,33 @@ func (s *Server) AttachMCP(m *mcp.Server) { s.mcpServer = m }
 // identical across both surfaces, so a model loaded over either is found over
 // both.
 func (s *Server) ModelStore() mcp.Store { return mcpStore{s} }
+
+// FlowStore exposes this server's flow catalog as an mcp.FlowStore, so an MCP
+// server built with mcp.WithFlowStore(s.FlowStore()) registers flows into the very
+// same catalog the /v1 API and the modeler read — one process, one catalog. The
+// flowId (the descriptor's "sha256:" hash) is identical across both surfaces, so a
+// flow registered over either is found over both. Unlike the model store, the flow
+// catalog is not written to disk here (ADR-0032: the flows directory stays the
+// durable source of truth); MCP-registered flows live in memory like POST /v1/flows.
+func (s *Server) FlowStore() mcp.FlowStore { return mcpFlowStore{s} }
+
+// mcpFlowStore adapts the service's flow catalog to the mcp.FlowStore interface,
+// writing into the same flowStore the HTTP handlers use. Put mirrors
+// handleCreateFlow: it validates the flow against the currently loaded models and
+// stores it with those diagnostics, so the modeler lists it via GET /v1/flows.
+type mcpFlowStore struct{ s *Server }
+
+func (a mcpFlowStore) Put(ctx context.Context, id string, f *flow.Flow, desc []byte) {
+	a.s.flows.put(&storedFlow{id: id, flow: f, desc: desc, diags: f.Validate(ctx, cacheResolver(a))})
+}
+
+func (a mcpFlowStore) Get(id string) (*flow.Flow, []byte, bool) {
+	sf, ok := a.s.flows.get(id)
+	if !ok {
+		return nil, nil, false
+	}
+	return sf.flow, sf.desc, true
+}
 
 // MCPAuth exposes this server's keystore as an mcp.Auth gate, so a co-located MCP
 // endpoint enforces the same scoped keys (ADR-0028) as the /v1 surface — one
