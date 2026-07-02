@@ -57,3 +57,26 @@ test('decision-table cells are highlighted too', async ({ page }) => {
   await expect(page.locator('.dt-cell-out').first()).toHaveClass(/hl-field/)
   await expect(page.locator('.dt-out .hl-content .hl-num').first()).toBeVisible()
 })
+
+test('the conditional editor highlights its if/then/else branches', async ({ page }) => {
+  // id_grade is a boxed conditional: if Threshold > 5 then "high" else "low".
+  await openDecision(page, 'BoxedCollections', 'id_grade')
+  await expect(page.locator('.cond-text').first()).toBeVisible()
+  await waitForEngine(page)
+  // Threshold is an in-scope variable, 5 a number, "high"/"low" strings.
+  const bd = page.locator('.hl-wrap .hl-content')
+  await expect(bd.locator('.hl-var', { hasText: /^Threshold$/ })).toBeVisible()
+  await expect(bd.locator('.hl-num', { hasText: /^5$/ })).toBeVisible()
+  await expect(bd.locator('.hl-str', { hasText: 'high' })).toBeVisible()
+})
+
+test('the list editor highlights each item field (flex layout preserved)', async ({ page }) => {
+  // id_numbers is a boxed list [1, 2, 3]; each item field is a single-line input
+  // wrapped by the highlighter — the row must still lay out as before.
+  await openDecision(page, 'BoxedCollections', 'id_numbers')
+  const first = page.locator('.list-item').first()
+  await expect(first).toBeVisible()
+  await waitForEngine(page)
+  await expect(first).toHaveClass(/hl-field/)
+  await expect(page.locator('.list-row .hl-content .hl-num').first()).toBeVisible()
+})

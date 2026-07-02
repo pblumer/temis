@@ -1,7 +1,6 @@
 import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
-import { attachCompletion, feelItems } from './complete'
-import { attachHighlighter } from './highlight'
+import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
 
 // openBKMOverlay edits a business knowledge model's encapsulated function (ADR-
@@ -111,9 +110,6 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   renderParams()
 
   body.append(paramsHost, el('div', { class: 'bkm-body-title' }, 'Body (FEEL)'), textarea)
-  // Completion over the BKM's own parameters (read live so newly added/renamed
-  // parameters appear immediately) plus the engine's built-in functions.
-  attachCompletion(textarea, () => feelItems(paramNames()))
 
   const saveBtn = el('button', { class: 'tbtn dt-save', type: 'button' }, 'Speichern') as HTMLButtonElement
   const save = async (): Promise<void> => {
@@ -149,7 +145,9 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
 
   overlay.append(el('div', { class: 'dt-modal lit-modal' }, header, body, el('div', { class: 'dt-toolbar' }, saveBtn, status)))
   document.body.append(overlay)
-  hlRefresh = attachHighlighter(textarea, paramNames).refresh
+  // Highlighting + completion over the BKM's own parameters (read live so newly
+  // added/renamed parameters appear immediately) plus the engine's built-ins.
+  hlRefresh = attachFeelField(textarea, paramNames).refresh
   checkBody()
 }
 

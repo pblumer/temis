@@ -805,6 +805,9 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .list-body { padding: 14px 18px; max-height: 60vh; overflow: auto; }
 .list-rows { display: flex; flex-direction: column; gap: 7px; }
 .list-row { display: flex; align-items: center; gap: 9px; }
+/* The highlighter wraps each item field in a .hl-wrap; keep it filling the flex
+   row like the bare input did (flex:1) so the list layout is unchanged. */
+.list-row .hl-wrap { flex: 1; min-width: 0; }
 .list-idx { min-width: 20px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .list-item {
   flex: 1;

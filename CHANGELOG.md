@@ -63,6 +63,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   Ergebniszeile erscheint die Entscheidungstabelle als Matrix mit hervorgehobener getroffener Regel,
   numerische Werte als Mini-Bars. Reines Frontend, baut auf derselben Auswerte-Logik auf (kein neuer
   Endpunkt, keine neue Dependency).
+- **Modeler – FEEL-Editor-Assistenz überall (ADR-0016):** Syntax-Highlighting (Funktionen, Variablen,
+  Schlüsselwörter, Strings, Zahlen als farbige Token hinter dem transparenten Feld) und
+  Code-Completion (In-Scope-Variablen + Engine-Built-ins, aufklappend unter dem Cursor beim Tippen
+  oder per Ctrl/Cmd+Leertaste) stehen jetzt in **allen** FEEL-Eingabefeldern zur Verfügung — nicht
+  mehr nur im Literal-, Decision-Table- und BKM-Editor, sondern auch in den Boxed-Editoren
+  **Conditional** (Wenn/Dann/Sonst), **Filter**, **Iteration**, **Liste**, **Relation** und
+  **Boxed Context**. Alle Felder laufen über eine gemeinsame Primitive (`attachFeelField`), sodass
+  Highlighting und Completion nicht mehr auseinanderlaufen oder bei neuen Editoren vergessen werden
+  können. Der Funktionskatalog kommt weiterhin direkt aus der echten Engine (WASM), reines Frontend.
 - **Operate – Entscheidungs-Pfad in der Tabelle:** Ein Doppelklick auf eine Decision mit Tabelle zeigt
   im Operate-Modus jetzt den **genommenen Weg** grafisch: eine Chip-und-Pfeil-Leiste
   (Eingabewert → getroffene Regel → Ergebnis), der getestete Eingabewert je Spaltenkopf und eine

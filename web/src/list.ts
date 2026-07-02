@@ -1,5 +1,6 @@
 import { getList, saveList, type ListView } from './api'
 import { ensureFeel, validateExpr } from './feel'
+import { attachFeelField } from './feelfield'
 
 // openListOverlay edits a decision's boxed list (WP-66): an ordered list of FEEL
 // item expressions, each validated live against the real engine and saved back
@@ -79,6 +80,9 @@ export async function openListOverlay(modelId: string, decisionId: string, baseN
         render()
       })
       rows.append(el('div', { class: 'list-row' }, idx, input, readOnly ? document.createTextNode('') : del))
+      // Attach only once the input has a parent, so the highlighter can insert its
+      // backdrop wrapper around it in place.
+      attachFeelField(input, () => baseNames, { readOnly })
     })
     check()
   }

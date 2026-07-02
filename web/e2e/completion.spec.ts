@@ -102,3 +102,19 @@ test('literal expression editor completes in its textarea', async ({ page }) => 
   await ta.pressSequentially('count')
   await expect(page.locator('.cc-pop .cc-label', { hasText: /^count$/ })).toBeVisible()
 })
+
+test('the conditional editor completes in its branch fields', async ({ page }) => {
+  // The if/then/else fields of a boxed conditional get the same completion as
+  // every other FEEL field (routed through attachFeelField).
+  await openDecision(page, 'BoxedCollections', 'id_grade')
+  const ifField = page.locator('.cond-text').first()
+  await expect(ifField).toBeVisible()
+  await waitForEngine(page)
+  await ifField.fill('')
+  await ifField.press('Control+Space')
+  const pop = page.locator('.cc-pop')
+  await expect(pop).toBeVisible()
+  // The in-scope Threshold variable is offered alongside functions and keywords.
+  await expect(pop.locator('.cc-label', { hasText: /^Threshold$/ })).toBeVisible()
+  await expect(pop.locator('.cc-function').first()).toBeVisible()
+})

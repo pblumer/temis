@@ -1,5 +1,6 @@
 import { getIterator, saveIterator, type IteratorView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
+import { attachFeelField } from './feelfield'
 
 // openIteratorOverlay edits a decision's boxed iteration (WP-66): a `for` (which
 // yields a list via its return branch) or a `some`/`every` quantifier (which
@@ -84,6 +85,8 @@ export async function openIteratorOverlay(modelId: string, decisionId: string, b
 
   // The body sees the iterator variable in addition to the model's names.
   const bodyScope = (): string[] => (variable.trim() ? [...baseNames, variable.trim()] : baseNames)
+  attachFeelField(inTa, () => baseNames, { readOnly })
+  attachFeelField(bodyTa, bodyScope, { readOnly })
   const check = (): boolean => {
     let firstErr = ''
     const nameRes = variable.trim() === '' ? { ok: false, message: 'darf nicht leer sein' } : validateName(variable.trim())

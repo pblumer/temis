@@ -1,5 +1,6 @@
 import { getRelation, saveRelation, type RelationView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
+import { attachFeelField } from './feelfield'
 
 // openRelationOverlay edits a decision's boxed relation (WP-66): a grid of named
 // columns and rows of FEEL cells (reference/lookup data), each cell validated
@@ -136,6 +137,7 @@ export async function openRelationOverlay(modelId: string, decisionId: string, b
           check()
         })
         grid.append(el('div', { class: 'rel-cellwrap' }, input))
+        attachFeelField(input, () => baseNames, { readOnly })
       })
       const del = el('button', { class: 'rel-x', type: 'button', title: 'Zeile entfernen' }, '✕') as HTMLButtonElement
       del.disabled = readOnly || rows.length <= 1
