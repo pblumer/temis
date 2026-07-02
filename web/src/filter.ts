@@ -1,5 +1,6 @@
 import { getFilter, saveFilter, type FilterView } from './api'
 import { ensureFeel, validateExpr } from './feel'
+import { attachFeelField } from './feelfield'
 
 // openFilterOverlay edits a decision's boxed filter (WP-66): a collection (`in`)
 // and a predicate (`match`, evaluated for each element with `item` bound), each
@@ -62,6 +63,7 @@ export async function openFilterOverlay(modelId: string, decisionId: string, bas
     })
     inputs.set(b.key, ta)
     grid.append(el('label', { class: 'cond-label' }, b.label), el('div', { class: 'cond-cell' }, ta))
+    attachFeelField(ta, () => b.scope, { readOnly })
   }
 
   const check = (): boolean => {

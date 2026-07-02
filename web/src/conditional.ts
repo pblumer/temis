@@ -1,5 +1,6 @@
 import { getConditional, saveConditional, type ConditionalView } from './api'
 import { ensureFeel, validateExpr } from './feel'
+import { attachFeelField } from './feelfield'
 
 // A branch of the conditional: its label, placeholder and current FEEL text.
 type Branch = { key: 'if' | 'then' | 'else'; label: string; placeholder: string; text: string }
@@ -62,6 +63,7 @@ export async function openConditionalOverlay(modelId: string, decisionId: string
     })
     inputs.set(b.key, ta)
     grid.append(el('label', { class: 'cond-label' }, b.label), el('div', { class: 'cond-cell' }, ta))
+    attachFeelField(ta, () => baseNames, { readOnly })
   }
 
   // check validates every branch against the in-scope names, marks invalid fields
