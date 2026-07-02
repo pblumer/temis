@@ -1052,6 +1052,7 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   position: absolute;
   z-index: 1000;
   max-height: 240px;
+  max-width: min(420px, 90vw);
   overflow-y: auto;
   background: #fff;
   border: 1px solid #94a3b8;
@@ -1084,13 +1085,15 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .cc-icon.cc-variable { background: #15803d; }
 .cc-icon.cc-function { background: #2563eb; font-style: italic; }
 .cc-icon.cc-keyword { background: #94a3b8; }
-.cc-label { font-family: ui-monospace, monospace; color: var(--fg); }
+.cc-label { font-family: ui-monospace, monospace; color: var(--fg); flex: none; }
 .cc-detail {
   margin-left: auto;
   padding-left: 16px;
   color: var(--muted);
   font-size: 11.5px;
   font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Import cockpit (Testfall-Import): a conveyor-belt batch runner, a third mode
@@ -1289,3 +1292,38 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .flow-trace-v { font: 600 11px/1.3 ui-monospace, monospace; text-align: right; white-space: nowrap; }
 .flow-trace-matched { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
 .flow-trace-rule { font: 600 10px/1.3 ui-monospace, monospace; color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 7px; }
+
+/* Syntax highlighting overlay (src/highlight.ts): a coloured backdrop rendered
+   behind the FEEL field, whose own text is made transparent so the colours show
+   through. The field keeps its border, caret, focus/invalid states and events. */
+.hl-wrap { position: relative; display: block; }
+.hl-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hl-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  color: var(--fg);
+  background: transparent;
+}
+.hl-field {
+  position: relative;
+  background-color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--fg);
+}
+.hl-field::placeholder { -webkit-text-fill-color: #94a3b8; color: #94a3b8; }
+/* Keep the focused literal/BKM editor visibly white behind the colours. */
+.lit-body .hl-wrap:focus-within .hl-backdrop { background: #fff; }
+/* Token colours: keyword · function · variable · string · number · operator. */
+.hl-kw  { color: #7c3aed; font-weight: 600; }
+.hl-fn  { color: #2563eb; }
+.hl-var { color: #15803d; }
+.hl-str { color: #b45309; }
+.hl-num { color: #0e7490; }
+.hl-op  { color: #64748b; }

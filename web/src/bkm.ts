@@ -1,6 +1,7 @@
 import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachCompletion, feelItems } from './complete'
+import { attachHighlighter } from './highlight'
 import { FEEL_TYPES } from './feeltypes'
 
 // openBKMOverlay edits a business knowledge model's encapsulated function (ADR-
@@ -61,13 +62,17 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   const textarea = el('textarea', { class: 'lit-text', spellcheck: 'false', placeholder: 'FEEL-Ausdruck über die Parameter, z. B. if total > 1000 then 0.2 else 0.1' }) as HTMLTextAreaElement
   textarea.value = view.bodyText
 
+  // Set once the highlighter is attached; re-render highlighting when a parameter
+  // is renamed (which doesn't fire the textarea's own input event).
+  let hlRefresh: (() => void) | null = null
+  const paramNames = (): string[] => params.map((p) => p.name.trim()).filter((n) => n !== '')
   const checkBody = (): void => {
     const s = textarea.value.trim()
-    const names = params.map((p) => p.name.trim()).filter((n) => n !== '')
-    const res = s === '' ? { ok: false, message: 'Body darf nicht leer sein' } : validateExpr(s, names)
+    const res = s === '' ? { ok: false, message: 'Body darf nicht leer sein' } : validateExpr(s, paramNames())
     textarea.classList.toggle('lit-invalid', !res.ok)
     status.className = 'dt-status' + (res.ok ? '' : ' dt-error')
     status.textContent = res.ok ? '' : res.message ?? 'ungültig'
+    hlRefresh?.()
   }
   textarea.addEventListener('input', checkBody)
 
@@ -106,7 +111,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   body.append(paramsHost, el('div', { class: 'bkm-body-title' }, 'Body (FEEL)'), textarea)
   // Completion over the BKM's own parameters (read live so newly added/renamed
   // parameters appear immediately) plus the engine's built-in functions.
-  attachCompletion(textarea, () => feelItems(params.map((p) => p.name.trim()).filter((n) => n !== '')))
+  attachCompletion(textarea, () => feelItems(paramNames()))
 
   const saveBtn = el('button', { class: 'tbtn dt-save', type: 'button' }, 'Speichern') as HTMLButtonElement
   const save = async (): Promise<void> => {
@@ -142,6 +147,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
 
   overlay.append(el('div', { class: 'dt-modal lit-modal' }, header, body, el('div', { class: 'dt-toolbar' }, saveBtn, status)))
   document.body.append(overlay)
+  hlRefresh = attachHighlighter(textarea, paramNames).refresh
   checkBody()
 }
 

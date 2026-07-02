@@ -1,6 +1,7 @@
 import { getLiteral, saveLiteral, type LiteralView } from './api'
 import { ensureFeel, validateExpr } from './feel'
 import { attachCompletion, feelItems } from './complete'
+import { attachHighlighter } from './highlight'
 import { FEEL_TYPES } from './feeltypes'
 
 // openLiteralOverlay shows a decision's literal FEEL expression in an editable
@@ -103,6 +104,7 @@ export async function openLiteralOverlay(modelId: string, decisionId: string, ti
 
   document.body.append(overlay)
   check()
+  attachHighlighter(textarea, () => names)
   if (!opts?.readOnly) {
     attachCompletion(textarea, () => feelItems(names))
     textarea.focus()

@@ -1,6 +1,7 @@
 import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit, type TableTrace, type TraceInput, type TraceRule } from './api'
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
 import { attachCompletion, feelItems, type CompletionItem } from './complete'
+import { attachHighlighter } from './highlight'
 import { FEEL_TYPES } from './feeltypes'
 
 // Hit policies offered in the editor (single-letter DMN codes) and the Collect
@@ -86,11 +87,24 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   const matched = new Set(opts.matched ?? [])
   // The decision trace is only shown in read-only inspection (a past run).
   const trace = opts.readOnly ? opts.trace : undefined
+  // Syntax-highlight every FEEL cell/header. Cells are created detached during
+  // buildGrid, so this runs once the grid is in the DOM (after the modal is
+  // appended, and again after each structural rebuild). Each field is wrapped
+  // only once (guarded by data-hl); fresh cells from a rebuild are wrapped anew.
+  const highlightCells = (): void => {
+    if (!scroll.isConnected) return
+    for (const f of scroll.querySelectorAll<HTMLInputElement>('.dt-head-field, .dt-cell-in, .dt-cell-out')) {
+      if (f.dataset.hl) continue
+      f.dataset.hl = '1'
+      attachHighlighter(f, inputNames)
+    }
+  }
   const rebuild = (): void => {
     scroll.textContent = ''
     // inputNames is passed as a live provider so completion always reflects the
     // current input-column expressions, even while they are being edited.
     scroll.append(buildGrid(state, inputNames, rebuild, typeOptions, matched, trace))
+    highlightCells()
   }
   rebuild()
 
@@ -168,6 +182,9 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
   }
 
   document.body.append(overlay)
+  // The first grid was built before the modal was in the DOM; highlight it now
+  // that the fields have their computed styles.
+  highlightCells()
 }
 
 // buildGrid renders the editable table from the working state. rebuild is called
