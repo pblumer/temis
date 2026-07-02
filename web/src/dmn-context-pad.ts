@@ -3,6 +3,7 @@ import type { ContextPadEntries } from 'diagram-js/lib/features/context-pad/Cont
 import type Connect from 'diagram-js/lib/features/connect/Connect'
 import type Modeling from 'diagram-js/lib/features/modeling/Modeling'
 import type Canvas from 'diagram-js/lib/core/Canvas'
+import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type { Element, Shape } from 'diagram-js/lib/model/Types'
 
@@ -38,19 +39,35 @@ const BKM: Kind = { type: 'businessKnowledgeModel', name: 'Neues BKM', w: 150, h
 // requirements (input/decision/BKM); every element can connect or be deleted.
 // All edits run through the command stack, so they undo/redo.
 class DmnContextPadProvider {
-  static $inject = ['contextPad', 'connect', 'modeling', 'canvas', 'eventBus']
+  static $inject = ['contextPad', 'connect', 'modeling', 'canvas', 'eventBus', 'elementRegistry']
 
   private connect: Connect
   private modeling: Modeling
   private canvas: Canvas
   private eventBus: EventBus
+  private elementRegistry: ElementRegistry
 
-  constructor(contextPad: ContextPad, connect: Connect, modeling: Modeling, canvas: Canvas, eventBus: EventBus) {
+  constructor(contextPad: ContextPad, connect: Connect, modeling: Modeling, canvas: Canvas, eventBus: EventBus, elementRegistry: ElementRegistry) {
     this.connect = connect
     this.modeling = modeling
     this.canvas = canvas
     this.eventBus = eventBus
+    this.elementRegistry = elementRegistry
     contextPad.registerProvider(this)
+  }
+
+  // uniqueName returns base, or "base 2", "base 3", … so an appended element never
+  // silently collides with an existing element's name (see dmn-palette.ts).
+  private uniqueName(base: string): string {
+    const taken = new Set<string>()
+    for (const el of this.elementRegistry.getAll()) {
+      const name = (el as { name?: string }).name
+      if (name) taken.add(name)
+    }
+    if (!taken.has(base)) return base
+    let i = 2
+    while (taken.has(`${base} ${i}`)) i++
+    return `${base} ${i}`
   }
 
   // append creates a new upstream element of `kind` below `source` and wires its
@@ -64,7 +81,7 @@ class DmnContextPadProvider {
     const cx = (source.x ?? 0) + (source.width ?? 0) / 2 + (n - 1) * (kind.w + 30)
     const cy = (source.y ?? 0) + (source.height ?? 0) + 80 + kind.h / 2
     const shape = this.modeling.createShape(
-      { type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: kind.name } as never,
+      { type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never,
       { x: cx, y: cy },
       root as never,
     )
