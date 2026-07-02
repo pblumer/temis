@@ -220,6 +220,38 @@ func TestDescribeDecisionUnknownDecision(t *testing.T) {
 	}
 }
 
+// TestDescribeDecisionReachableInputs covers the additive reachableInputs field:
+// Routing needs "Applicant Age" only transitively (through Eligibility), so it is
+// absent from the direct "inputs" schema but present in "reachableInputs" — what
+// a flow step targeting Routing may wire (ADR-0026).
+func TestDescribeDecisionReachableInputs(t *testing.T) {
+	s := newServer()
+	xml, _ := json.Marshal(routingXML(t))
+	id, _ := run(t, s, call(1, "load_model", `{"xml":`+string(xml)+`}`))[0].payload(t)["modelId"].(string)
+
+	desc := run(t, s, call(2, "describe_decision", `{"modelId":"`+id+`","decision":"Routing"}`))[0].payload(t)
+
+	names := func(key string) map[string]bool {
+		out := map[string]bool{}
+		raw, _ := desc[key].([]any)
+		for _, r := range raw {
+			f, _ := r.(map[string]any)
+			if n, ok := f["name"].(string); ok {
+				out[n] = true
+			}
+		}
+		return out
+	}
+	// Direct inputs: Routing declares none (it names only Eligibility).
+	if got := names("inputs"); got["Applicant Age"] {
+		t.Errorf("direct inputs should not include the transitive Applicant Age: %v", got)
+	}
+	// Reachable inputs: the leaf input reached through Eligibility.
+	if got := names("reachableInputs"); !got["Applicant Age"] {
+		t.Errorf("reachableInputs should include Applicant Age, got %v", got)
+	}
+}
+
 // TestEvaluateUnknownDecision covers toolEvaluate's defs.Decision error branch
 // (model resolves, decision does not).
 func TestEvaluateUnknownDecision(t *testing.T) {

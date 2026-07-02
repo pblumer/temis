@@ -149,16 +149,50 @@ Einzel-Decision), damit Flows und Decisions über alle Oberflächen uniform beha
 Wie bei Modellen (`Save`/`Propose` kompilieren vor dem Schreiben, WP-71/72) wird ein Flow
 **vor** Persistierung/Ausführung validiert: alle `modelId`s resolvebar, jede referenzierte
 `decision`/Service existiert im Zielmodell, die `in`-Verdrahtung passt gegen das
-**`InputSchema`** (WP-52) des Ziel-Decisions (Typ-Check), der Step-Graph ist azyklisch, alle
+**erreichbare Input-Schema** des Ziel-Decisions (`ReachableInputSchema`, siehe §4a — direkte
+plus transitiv benötigte Blatt-Inputs), der Step-Graph ist azyklisch, alle
 Mapping-FEEL-Ausdrücke kompilieren. So landet ein kaputter Flow **nie** im Repo und schlägt
 **vor** der Auswertung mit präzisen Diagnostics fehl, nicht still mit `null`.
+
+### 4a. Step-Inputs: direkte vs. transitive Deklaration
+
+Ein Step verdrahtet die **erreichbaren Blatt-Inputs** der Ziel-Decision — die Inputs ihrer
+gesamten Requirements-Cone (direkt deklarierte **plus** die über `requiredDecision`
+transitiv erreichten) —, nicht nur die im per-Decision-`InputSchema()` direkt genannten.
+Grund: Ein Flow **komponiert bestehende Decisions** (die Kernprämisse dieser ADR). Eine
+zusammengesetzte Decision bezieht einen Blatt-Input oft **nur** über eine Sub-Decision
+desselben Modells (z. B. `FinalPremium`, das `VehicleValue` allein über `BasePremium`
+braucht, oder `TotalRiskScore`, das ausschließlich andere Decisions referenziert). Bei
+solchen Decisions sind „direkt deklarierte Inputs" und „tatsächlich benötigte Blatt-Inputs"
+disjunkt; würde ein Step nur gegen die direkten Inputs geprüft, wäre die Decision im Flow
+faktisch unbenutzbar (transitiver Input → `FLOW_UNKNOWN_INPUT`; weggelassen → stilles `null`).
+
+Deshalb prüft die Wiring-Validierung eines Decision-Steps gegen `ReachableInputSchema` und
+die Auswertung reicht die transitiven Inputs bis in die Sub-Decisions durch (lenient
+ausgewertet, cone-gescopt strikt validiert):
+
+- `dmn.ReachableInputSchema(idOrName)` — die Union der Blatt-Inputs über die Requirements-Cone
+  **einer** Decision (dedupliziert, Typ/Constraint vom erstdeklarierenden Decision,
+  `Required` als OR über die Cone). Analog zu `ModelInputSchema`, aber auf die Cone der
+  Ziel-Decision beschränkt statt über das ganze Modell (letzteres wäre zu weit — es erlaubte
+  Inputs unbeteiligter Decisions).
+- `dmn.ValidateReachableInput(idOrName, in)` — cone-gescopte Eingabe-Validierung; akzeptiert
+  transitive Inputs, meldet echte Unbekannte (`FLOW_UNKNOWN_INPUT`), fehlende required-Inputs
+  (`FLOW_INPUT_UNWIRED`) und Typfehler weiterhin präzise.
+
+`describe_decision` (MCP) weist die Menge additiv als `reachableInputs` neben dem
+unveränderten `inputs`-Feld aus, damit ein Agent ohne Trial-and-Error weiß, was ein Step
+verdrahten darf.
 
 ### 5. Ressourcenlimits (ADR-0008)
 
 Ein Flow wertet N Decisions aus. Das per-Evaluation-Budget (WP-34) wird **über alle Steps
 geteilt** (nicht pro Step zurückgesetzt), plus ein **`MaxSteps`-Guard** — ein Flow darf kein
 Amplifikations-Vektor werden. Die Step-Liste ist endlich und azyklisch; das begrenzt die
-Fan-out-Fläche strukturell.
+Fan-out-Fläche strukturell. Ein Decision-Step wertet die Ziel-Decision **einmal** rooted aus
+(wie zuvor über `dec.Evaluate`); der cone-tolerante Input-Contract ändert daran nichts —
+insbesondere wird **nicht** pro Step das ganze Modell (`EvaluateGraph`) neu ausgewertet, was
+eine Budget-Vervielfachung wäre.
 
 ### 6. Auditierbarkeit (ADR-0023)
 

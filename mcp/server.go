@@ -386,11 +386,17 @@ func (s *Server) toolDescribeDecision(raw json.RawMessage) (any, *rpcError) {
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
+	// reachableInputs is additive alongside inputs: the direct inputs plus those
+	// reached transitively through required decisions — the full set a flow step
+	// targeting this decision may wire (ADR-0026). inputs (direct declaration) is
+	// unchanged.
+	reachable, _ := defs.ReachableInputSchema(a.Decision)
 	return toolText(map[string]any{
-		"modelId":    a.ModelID,
-		"decision":   dec.Name(),
-		"decisionId": dec.ID(),
-		"inputs":     dec.InputSchema(),
+		"modelId":         a.ModelID,
+		"decision":        dec.Name(),
+		"decisionId":      dec.ID(),
+		"inputs":          dec.InputSchema(),
+		"reachableInputs": reachable,
 	})
 }
 
