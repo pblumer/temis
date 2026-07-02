@@ -120,6 +120,16 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
     }
   }
   runBtn.addEventListener('click', () => void run())
+
+  // Ctrl-Enter (Cmd-Enter on macOS) from any input field triggers the whole-graph
+  // evaluation — the keyboard equivalent of clicking „Auswerten", so the user can
+  // fill inputs and run without reaching for the mouse.
+  inputsHost.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !runBtn.disabled) {
+      e.preventDefault()
+      void run()
+    }
+  })
 }
 
 // leafInputs unions every decision's declared inputs into the model's leaf-input
