@@ -99,3 +99,42 @@ test('palette: click-to-place still works', async ({ page }) => {
   expect(await page.locator('.djs-element[data-element-id]').count()).toBe(before + 1)
   expect(await active(page)).toBe(false)
 })
+
+// If a listener reacting to the freshly created shape throws, that exception used
+// to escape diagram-js' create.end — its cleanup never ran, so the new element
+// stayed glued to the cursor and could only be dismissed with Esc/reload. The
+// palette's error boundary must catch it (logging it, so it stays debuggable),
+// let the create finish (element placed) and free the cursor.
+test('palette: a throwing create-time listener must not strand the cursor', async ({ page }) => {
+  await page.addInitScript(() => { (window as unknown as { __E2E__: boolean }).__E2E__ = true })
+  const uncaught: string[] = []
+  const consoleErrors: string[] = []
+  page.on('pageerror', (e) => uncaught.push(String(e.message)))
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()) })
+
+  await openModeler(page)
+
+  // Simulate the model-specific exception: a handler that throws on create.end.
+  await page.evaluate(() => {
+    const d = (window as unknown as { __diagram: { get: (n: string) => { on: (e: string, p: number, cb: () => void) => void } } }).__diagram
+    d.get('eventBus').on('create.end', 2000, () => { throw new Error('boom in create.end') })
+  })
+
+  const before = await page.locator('.djs-element[data-element-id]').count()
+  const entry = page.locator('.djs-palette [data-action="create-decision"]')
+  const cbox = await box(page.locator('.djs-container'))
+  const from = await box(entry)
+  const t = { x: cbox.x + cbox.width * 0.4, y: cbox.y + cbox.height * 0.7 }
+
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 18, from.y + 18, { steps: 4 })
+  await page.mouse.move(t.x, t.y, { steps: 12 })
+  await page.mouse.up()
+  await page.mouse.move(t.x + 60, t.y + 30, { steps: 4 })
+
+  expect(consoleErrors.some((e) => e.includes('suppressed exception during element creation')), 'exception should be caught and logged').toBe(true)
+  expect(uncaught, 'no uncaught page error').toHaveLength(0)
+  expect(await active(page), 'cursor must be freed, not stuck').toBe(false)
+  expect(await page.locator('.djs-element[data-element-id]').count(), 'element still placed').toBe(before + 1)
+})

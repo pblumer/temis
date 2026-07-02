@@ -76,9 +76,50 @@ body.resizing .resizer-col::before { background: #94a3b8; width: 2px; }
 /* While dragging, suppress text selection and force the resize cursor globally. */
 body.resizing { cursor: col-resize; user-select: none; }
 
+/* Model search (sidebar): a live text filter over the model list — the more
+   models on the server, the more it earns its place. */
+.model-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 8px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+.model-search:focus-within { border-color: #94a3b8; box-shadow: 0 0 0 2px #dbe7fb; }
+.model-search-icon { flex: 0 0 auto; color: var(--muted); }
+.model-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  padding: 6px 0;
+  font: 13px/1.2 system-ui, sans-serif;
+  color: var(--fg);
+}
+.model-search-input::placeholder { color: var(--muted); }
+/* Hide the native clear affordance of type=search — we render our own. */
+.model-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.model-search-clear {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 4px;
+}
+.model-search-clear:hover { color: var(--fg); background: #e7effd; }
+
 /* Model list (sidebar): groups by name, with older revisions as a history. */
 .model-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
 .model-empty { color: var(--muted); font-size: 13px; padding: 8px 8px; }
+.model-name-hit { background: #fde68a; color: inherit; border-radius: 2px; padding: 0 1px; }
 .model-item {
   display: flex;
   align-items: center;

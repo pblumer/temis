@@ -20,6 +20,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein
+  Suchfeld („Modelle suchen…"). Je mehr Modelle auf dem Server liegen, desto wichtiger — die
+  Suche filtert live, ist diakritik-unempfindlich (`begru` findet `Begrüßung`) und
+  term-basiert (Leerzeichen trennt Begriffe, die in beliebiger Reihenfolge alle vorkommen
+  müssen, z. B. `demo alter` → „Alterskette (Demo)"). Sie greift auf Modell- **und**
+  Ordnernamen (ein Ordnername holt seinen Inhalt hervor), klappt passende Ordner automatisch
+  auf, hebt die Treffer im Namen hervor und zeigt einen Hinweis, wenn nichts passt. Rein
+  clientseitig, keine API-Änderung.
 - **Operate: clio-Events einlesen & nachspielen (ADR-0033, Read-Side):** Die Operate-Ansicht
   bekommt ein Panel „Aus clio nachspielen". Man **definiert das Mapping** — clio-**Subject**-
   Teilbaum + **Event-Typ** (`com.temis.decision.evaluated.v1` u. a.) + Limit — liest die dort
@@ -268,11 +276,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   wie gewohnt entfernen. Read-only-/Trace-Ansichten (Operate) bleiben unverändert.
 
 - **Modeler – Palette „klebendes" Element (ADR-0016):** Ein aus der Design-Palette gezogenes
-  Element blieb gelegentlich am Cursor „kleben" und ließ sich nur per Esc/Neuladen lösen.
-  Ursache war der Geister-Klick, den der Browser nach einem abgebrochenen nativen Drag noch
-  auf den Palette-Eintrag feuert — er startete eine zweite, verwaiste Erstell-Sitzung. Die
-  Klick-Aktion ignoriert diesen Nachzügler jetzt (und einen Klick, während schon eine Sitzung
-  läuft). Zusätzlich bekommen neu erstellte Elemente eindeutige Vorgabenamen
+  Element blieb am Cursor „kleben" und ließ sich nur per Esc/Neuladen lösen. Zwei Ursachen:
+  (1) der Geister-Klick, den der Browser nach einem abgebrochenen nativen Drag noch auf den
+  Palette-Eintrag feuert — er startete eine zweite, verwaiste Erstell-Sitzung; die Klick-Aktion
+  ignoriert diesen Nachzügler jetzt (und einen Klick, während schon eine Sitzung läuft).
+  (2) Eine Ausnahme in einem Listener, der auf das frisch erstellte Element reagiert, entkam
+  `create.end`, sodass diagram-js' Aufräumen ausblieb und die Drag-Sitzung hängen blieb. Die
+  Palette fängt solche Ausnahmen jetzt während einer laufenden Erstellung ab (sie werden weiterhin
+  in der Konsole protokolliert), lässt die Erstellung zu Ende laufen — das Element wird platziert —
+  und gibt den Cursor frei. Zusätzlich bekommen neu erstellte Elemente eindeutige Vorgabenamen
   („Neue Decision", „Neue Decision 2", …), damit zwei gleichnamige Knoten nicht stumm
   kollidieren.
 

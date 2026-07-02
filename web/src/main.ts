@@ -57,6 +57,11 @@ async function boot(root: HTMLElement): Promise<void> {
             </span>
           </div>
           <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
+          <div class="model-search">
+            <svg class="model-search-icon" width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <input id="modelSearch" class="model-search-input" type="search" placeholder="Modelle suchen…" autocomplete="off" spellcheck="false" aria-label="Modelle suchen">
+            <button id="modelSearchClear" class="model-search-clear" type="button" title="Suche zurücksetzen" hidden>✕</button>
+          </div>
           <div id="modelList" class="model-list"></div>
         </div>
         <p class="sidebar-hint">
@@ -130,12 +135,14 @@ async function boot(root: HTMLElement): Promise<void> {
   const newModelBtn = root.querySelector<HTMLButtonElement>('#newModel')
   const newFolderBtn = root.querySelector<HTMLButtonElement>('#newFolder')
   const fileInput = root.querySelector<HTMLInputElement>('#file')
+  const modelSearch = root.querySelector<HTMLInputElement>('#modelSearch')
+  const modelSearchClear = root.querySelector<HTMLButtonElement>('#modelSearchClear')
   const evalHost = root.querySelector<HTMLElement>('#eval')
   const clioReplayHost = root.querySelector<HTMLElement>('#clioReplay')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
 
   // The left sidebar sits at a fixed width by default; its divider lets the user
   // drag it wider/narrower (persisted per browser), so long model/flow names get
@@ -626,6 +633,23 @@ async function boot(root: HTMLElement): Promise<void> {
   // re-renders so a save (which rebuilds the list) doesn't collapse the view.
   const expanded = new Set<string>()
 
+  // Live text filter over the model list. The more models on the server, the more
+  // the search earns its keep — so it is diacritic-insensitive and term-based:
+  // whitespace splits the query into terms that must ALL appear (in any order), so
+  // "alter demo" finds "Alterskette (Demo)". Matching runs over the model name and,
+  // for a filed model, its folder name, so a folder's name pulls up its contents.
+  let modelQuery = ''
+  const foldText = (s: string): string =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+  const queryTerms = (): string[] => foldText(modelQuery).split(/\s+/).filter(Boolean)
+  const matchesTerms = (haystack: string, terms: string[]): boolean => {
+    const h = foldText(haystack)
+    return terms.every((t) => h.includes(t))
+  }
+
   let models: ModelSummary[] = []
   try {
     models = await listModels()
@@ -718,6 +742,27 @@ async function boot(root: HTMLElement): Promise<void> {
     renderModelList()
   }
   newFolderBtn.addEventListener('click', createFolder)
+
+  // Wire the live filter: typing re-renders the list, and the clear button (and
+  // Escape) empties it. renderModelList reads modelQuery on every pass.
+  const applyQuery = (v: string): void => {
+    modelQuery = v
+    modelSearchClear.hidden = v.trim() === ''
+    renderModelList()
+  }
+  modelSearch.addEventListener('input', () => applyQuery(modelSearch.value))
+  modelSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modelSearch.value) {
+      e.stopPropagation()
+      modelSearch.value = ''
+      applyQuery('')
+    }
+  })
+  modelSearchClear.addEventListener('click', () => {
+    modelSearch.value = ''
+    applyQuery('')
+    modelSearch.focus()
+  })
   // Dropping a model on the list background (not on a folder) unfiles it.
   modelList.addEventListener('dragover', (e) => e.preventDefault())
   modelList.addEventListener('drop', (e) => {
@@ -793,17 +838,55 @@ async function boot(root: HTMLElement): Promise<void> {
   const ICON_DELETE =
     '<svg width="13" height="13" viewBox="0 0 18 18"><path d="M4 5h10M7 5V3.6h4V5M5.6 5l.6 9.4h5.6L12.4 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
+  // highlightName renders a model name into a .model-name span, wrapping the parts
+  // that match the active search terms in <mark> so the reason a row is shown is
+  // obvious. With no query it is a plain text span. Highlighting is case-insensitive
+  // over the raw text (matching itself, in matchesTerms, is also diacritic-folded).
+  const highlightName = (name: string, terms: string[]): HTMLElement => {
+    const span = el('span', 'model-name')
+    if (!terms.length) {
+      span.textContent = name
+      return span
+    }
+    const lower = name.toLowerCase()
+    const marks: Array<[number, number]> = []
+    for (const t of terms) {
+      let from = 0
+      for (;;) {
+        const i = lower.indexOf(t, from)
+        if (i < 0) break
+        marks.push([i, i + t.length])
+        from = i + t.length
+      }
+    }
+    if (!marks.length) {
+      span.textContent = name
+      return span
+    }
+    marks.sort((a, b) => a[0] - b[0])
+    let cursor = 0
+    for (const [start, end] of marks) {
+      if (end <= cursor) continue
+      const s = Math.max(start, cursor)
+      if (s > cursor) span.append(name.slice(cursor, s))
+      span.append(el('mark', 'model-name-hit', name.slice(s, end)))
+      cursor = end
+    }
+    if (cursor < name.length) span.append(name.slice(cursor))
+    return span
+  }
+
   // renderGroup draws one model (its current revision + a collapsible history of
   // older ones) into container. The current row is draggable so it can be dropped
   // onto a folder (drag by model name — the stable identity across revisions).
-  const renderGroup = (group: Group, container: HTMLElement): void => {
+  const renderGroup = (group: Group, container: HTMLElement, terms: string[] = []): void => {
     const current = group.revisions[0]
     const older = group.revisions.slice(1)
     const total = group.revisions.length
     if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
 
     const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
-    row.append(el('span', 'model-name', group.name))
+    row.append(highlightName(group.name, terms))
     if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
 
     // Per-model actions (rename / delete the whole named model incl. history),
@@ -874,6 +957,8 @@ async function boot(root: HTMLElement): Promise<void> {
 
   const renderModelList = (): void => {
     modelList.textContent = ''
+    const terms = queryTerms()
+    const searching = terms.length > 0
     const groups = groupModels()
     const known = new Set(folderState.folders)
     const byFolder = new Map<string, Group[]>()
@@ -889,11 +974,20 @@ async function boot(root: HTMLElement): Promise<void> {
       }
     }
 
+    // While searching, keep only matching groups. A model matches on its own name;
+    // a filed model also matches on its folder name (so a folder name surfaces its
+    // whole contents). Folders with no match are hidden and matches are force-open.
+    let shown = 0
+    const keep = (g: Group, folder?: string): boolean => (searching ? matchesTerms(folder ? g.name + ' ' + folder : g.name, terms) : true)
+
     for (const folder of folderState.folders) {
-      const open = !collapsedFolders.has(folder)
-      const members = byFolder.get(folder) ?? []
+      const allMembers = byFolder.get(folder) ?? []
+      const members = allMembers.filter((g) => keep(g, folder))
+      if (searching && !members.length) continue
+      const open = searching || !collapsedFolders.has(folder)
       const head = el('div', 'folder-head')
-      head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', folder), el('span', 'folder-count', String(members.length)))
+      const count = searching ? `${members.length}/${allMembers.length}` : String(allMembers.length)
+      head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', folder), el('span', 'folder-count', count))
       const del = el('button', 'folder-del', '✕')
       del.title = 'Ordner löschen (Modelle bleiben erhalten)'
       del.addEventListener('click', (e) => {
@@ -923,13 +1017,26 @@ async function boot(root: HTMLElement): Promise<void> {
 
       if (open) {
         const body = el('div', 'folder-body')
-        for (const g of members) renderGroup(g, body)
+        for (const g of members) {
+          renderGroup(g, body, terms)
+          shown++
+        }
         if (!members.length) body.append(el('p', 'folder-empty', 'leer — Modelle hierher ziehen'))
         modelList.append(body)
+      } else {
+        shown += members.length
       }
     }
 
-    for (const g of unassigned) renderGroup(g, modelList)
+    for (const g of unassigned) {
+      if (!keep(g)) continue
+      renderGroup(g, modelList, terms)
+      shown++
+    }
+
+    if (searching && shown === 0) {
+      modelList.append(el('p', 'model-empty', `Keine Modelle für „${modelQuery.trim()}".`))
+    }
   }
 
   // hitRulesOf maps each decision to the rule numbers (1-based) that fired, from
