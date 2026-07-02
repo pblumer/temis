@@ -1,108 +1,73 @@
 <svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Temis decision flow hero</title>
-  <desc id="desc">A colorful illustration of flying business events flowing through DMN decisions into audited outcomes.</desc>
+  <title id="title">Temis technical decision pipeline</title>
+  <desc id="desc">A restrained technical diagram showing input data flowing through FEEL evaluation and a DMN decision to a result and optional trace.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#08111F"/>
-      <stop offset="0.45" stop-color="#102A56"/>
-      <stop offset="1" stop-color="#4C1D95"/>
-    </linearGradient>
-    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(316 210) rotate(43) scale(390 260)">
-      <stop stop-color="#22D3EE" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1010 410) rotate(141) scale(430 290)">
-      <stop stop-color="#F472B6" stop-opacity="0.46"/>
-      <stop offset="1" stop-color="#F472B6" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="engine" x1="450" y1="145" x2="850" y2="485" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22D3EE"/>
-      <stop offset="0.52" stop-color="#8B5CF6"/>
-      <stop offset="1" stop-color="#F59E0B"/>
-    </linearGradient>
-    <linearGradient id="card" x1="390" y1="110" x2="925" y2="535" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.06"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#020617" flood-opacity="0.45"/>
-    </filter>
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="4"/>
-    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
     <style>
-      .label{font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill:#E5F7FF; font-weight:700; letter-spacing:.02em}
-      .small{font-size:22px}.tiny{font-size:16px}.micro{font-size:13px; fill:#BFE9FF; font-weight:600}.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; fill:#D9F99D; font-weight:700}
-      .line{stroke:#7DD3FC; stroke-width:4; stroke-linecap:round; stroke-dasharray:10 14; opacity:.88}
-      .spark{fill:#FDE68A}.event{filter:url(#shadow)}
+      .bg{fill:#f8fafc}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.core{fill:#0f172a;stroke:#334155;stroke-width:2}.line{stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)}
+      .title{font:700 54px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.claim{font:600 30px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.label{font:700 24px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:500 18px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.mono{font:500 18px "SFMono-Regular",Consolas,"Liberation Mono",monospace;fill:#334155}.coreText{font:700 30px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f8fafc}.coreSmall{font:500 18px "SFMono-Regular",Consolas,"Liberation Mono",monospace;fill:#cbd5e1}.badge{fill:#eef2ff;stroke:#c7d2fe;stroke-width:1}.badgeText{font:600 16px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#3730a3}
     </style>
   </defs>
+  <rect class="bg" width="1280" height="640" rx="28"/>
+  <rect x="48" y="44" width="1184" height="552" rx="22" fill="#ffffff" stroke="#e2e8f0"/>
 
-  <rect width="1280" height="640" rx="34" fill="url(#bg)"/>
-  <rect width="1280" height="640" rx="34" fill="url(#glowA)"/>
-  <rect width="1280" height="640" rx="34" fill="url(#glowB)"/>
+  <text x="86" y="118" class="title">Temis</text>
+  <text x="86" y="162" class="claim">DMN decisions. Native Go. No magic.</text>
 
-  <g opacity="0.22">
-    <path d="M62 118C214 58 318 118 470 70C620 22 781 55 938 90C1069 119 1167 84 1223 52" stroke="#93C5FD" stroke-width="2"/>
-    <path d="M68 548C210 489 348 584 503 514C650 449 743 517 907 480C1050 448 1129 505 1220 440" stroke="#F0ABFC" stroke-width="2"/>
-    <circle cx="94" cy="84" r="3" fill="#BAE6FD"/><circle cx="1166" cy="104" r="4" fill="#FDE68A"/><circle cx="112" cy="489" r="4" fill="#F0ABFC"/><circle cx="1002" cy="65" r="3" fill="#A7F3D0"/>
-  </g>
-
-  <path class="line" d="M158 214 C260 160 320 182 418 244"/>
-  <path class="line" d="M151 328 C265 318 315 336 415 319"/>
-  <path class="line" d="M158 442 C258 506 330 457 420 392"/>
-  <path class="line" d="M858 246 C955 186 1030 182 1131 218"/>
-  <path class="line" d="M862 330 C958 340 1033 322 1134 322"/>
-  <path class="line" d="M858 399 C956 470 1034 460 1134 417"/>
-
-  <g class="event" transform="translate(58 164)">
-    <rect width="180" height="78" rx="20" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
-    <circle cx="36" cy="39" r="17" fill="#06B6D4"/><path d="M31 39h10M36 34v10" stroke="white" stroke-width="3" stroke-linecap="round"/>
-    <text x="66" y="34" class="label tiny">Order Event</text><text x="66" y="55" class="micro">CloudEvent in</text>
-  </g>
-  <g class="event" transform="translate(52 292)">
-    <rect width="190" height="78" rx="20" fill="#0F172A" stroke="#A78BFA" stroke-width="2"/>
-    <circle cx="38" cy="39" r="17" fill="#8B5CF6"/><path d="M30 40l7 7 12-18" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="70" y="34" class="label tiny">Customer Data</text><text x="70" y="55" class="micro">typed input</text>
-  </g>
-  <g class="event" transform="translate(61 419)">
-    <rect width="178" height="78" rx="20" fill="#0F172A" stroke="#F472B6" stroke-width="2"/>
-    <circle cx="36" cy="39" r="17" fill="#EC4899"/><path d="M27 39h18M36 30v18" stroke="white" stroke-width="3" stroke-linecap="round"/>
-    <text x="66" y="34" class="label tiny">Risk Signal</text><text x="66" y="55" class="micro">streamed fact</text>
+  <g transform="translate(86 214)">
+    <rect class="panel" width="245" height="190" rx="14"/>
+    <text x="24" y="42" class="label">Input data</text>
+    <text x="24" y="78" class="mono">{</text>
+    <text x="44" y="108" class="mono">"amount": 12000,</text>
+    <text x="44" y="138" class="mono">"riskScore": 42</text>
+    <text x="24" y="168" class="mono">}</text>
   </g>
 
-  <g filter="url(#shadow)">
-    <rect x="370" y="100" width="540" height="430" rx="44" fill="url(#card)" stroke="white" stroke-opacity="0.24" stroke-width="2"/>
-    <rect x="414" y="142" width="452" height="344" rx="34" fill="#07111F" stroke="url(#engine)" stroke-width="4"/>
-    <circle cx="640" cy="314" r="120" fill="url(#engine)" opacity="0.18" filter="url(#soft)"/>
-    <path d="M520 314h240M640 194v240" stroke="#334155" stroke-width="2"/>
-    <path d="M486 314c0-85 69-154 154-154s154 69 154 154-69 154-154 154-154-69-154-154Z" stroke="#38BDF8" stroke-width="4" stroke-dasharray="14 16" opacity="0.95"/>
-    <path d="M545 314c0-52 43-95 95-95s95 43 95 95-43 95-95 95-95-43-95-95Z" stroke="#F0ABFC" stroke-width="4" opacity="0.9"/>
-    <path d="M640 230l45 84-45 84-45-84 45-84Z" fill="#111827" stroke="#FDE68A" stroke-width="4"/>
-    <circle cx="640" cy="314" r="31" fill="#F59E0B"/><text x="640" y="322" text-anchor="middle" class="label small" fill="#111827">DMN</text>
-    <text x="640" y="176" text-anchor="middle" class="label small">TEMIS ENGINE</text>
-    <text x="640" y="464" text-anchor="middle" class="mono" font-size="20">FEEL: 0.1 + 0.2 = 0.3</text>
+  <line class="line" x1="350" y1="309" x2="440" y2="309"/>
+
+  <g transform="translate(460 214)">
+    <rect class="panel" width="245" height="190" rx="14"/>
+    <text x="24" y="42" class="label">FEEL</text>
+    <text x="24" y="78" class="small">Expression evaluation</text>
+    <line x1="24" y1="102" x2="221" y2="102" stroke="#e2e8f0"/>
+    <text x="24" y="136" class="mono">riskScore &lt; 60</text>
+    <text x="24" y="166" class="mono">amount &lt;= 15000</text>
   </g>
 
-  <g filter="url(#shadow)" transform="translate(1038 163)">
-    <rect width="186" height="92" rx="22" fill="#052E2B" stroke="#34D399" stroke-width="2"/>
-    <text x="93" y="37" text-anchor="middle" class="label tiny">Decision</text><text x="93" y="63" text-anchor="middle" class="label small" fill="#A7F3D0">APPROVE</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1045 291)">
-    <rect width="174" height="78" rx="20" fill="#111827" stroke="#FBBF24" stroke-width="2"/>
-    <text x="87" y="34" text-anchor="middle" class="label tiny">Explain Trace</text><text x="87" y="56" text-anchor="middle" class="micro">why this rule fired</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1038 405)">
-    <rect width="186" height="82" rx="20" fill="#1E1B4B" stroke="#C084FC" stroke-width="2"/>
-    <text x="93" y="35" text-anchor="middle" class="label tiny">Audit Log</text><text x="93" y="59" text-anchor="middle" class="micro">hash-linked clio</text>
+  <line class="line" x1="724" y1="309" x2="814" y2="309"/>
+
+  <g transform="translate(834 194)">
+    <rect class="core" width="250" height="230" rx="16"/>
+    <text x="125" y="62" text-anchor="middle" class="coreText">DMN Decision</text>
+    <text x="125" y="102" text-anchor="middle" class="coreSmall">decision table</text>
+    <text x="125" y="132" text-anchor="middle" class="coreSmall">hit policy</text>
+    <text x="125" y="162" text-anchor="middle" class="coreSmall">typed outputs</text>
   </g>
 
-  <g opacity="0.95">
-    <path d="M305 105l10 22 24 3-18 16 5 24-21-12-21 12 5-24-18-16 24-3 10-22Z" class="spark"/>
-    <path d="M969 125l7 15 17 2-12 11 3 17-15-8-15 8 3-17-12-11 17-2 7-15Z" class="spark"/>
-    <path d="M972 506l9 18 20 3-15 13 4 20-18-10-18 10 4-20-15-13 20-3 9-18Z" class="spark"/>
+  <line class="line" x1="1085" y1="275" x2="1160" y2="245"/>
+  <line class="line" x1="1085" y1="343" x2="1160" y2="373"/>
+
+  <g transform="translate(1130 170)">
+    <rect class="panel" width="110" height="116" rx="14"/>
+    <text x="55" y="42" text-anchor="middle" class="label">Result</text>
+    <text x="55" y="78" text-anchor="middle" class="mono">APPROVE</text>
+  </g>
+  <g transform="translate(1130 342)">
+    <rect class="panel" width="110" height="116" rx="14"/>
+    <text x="55" y="42" text-anchor="middle" class="label">Trace</text>
+    <text x="55" y="76" text-anchor="middle" class="small">matched</text>
+    <text x="55" y="100" text-anchor="middle" class="small">rules</text>
   </g>
 
-  <text x="72" y="585" class="label" font-size="34">Events rein</text>
-  <text x="1090" y="585" text-anchor="middle" class="label" font-size="34">Entscheidungen raus</text>
+  <g transform="translate(86 475)">
+    <rect class="badge" width="88" height="34" rx="17"/><text x="44" y="23" text-anchor="middle" class="badgeText">DMN 1.5</text>
+    <rect class="badge" x="104" width="70" height="34" rx="17"/><text x="139" y="23" text-anchor="middle" class="badgeText">FEEL</text>
+    <rect class="badge" x="190" width="102" height="34" rx="17"/><text x="241" y="23" text-anchor="middle" class="badgeText">Go library</text>
+    <rect class="badge" x="308" width="112" height="34" rx="17"/><text x="364" y="23" text-anchor="middle" class="badgeText">HTTP/gRPC</text>
+    <rect class="badge" x="436" width="126" height="34" rx="17"/><text x="499" y="23" text-anchor="middle" class="badgeText">Decision traces</text>
+  </g>
+
+  <text x="86" y="550" class="small">Input data → FEEL evaluation → DMN decision → decision result → optional trace</text>
 </svg>
