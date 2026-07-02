@@ -33,7 +33,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   wertet über die öffentliche Engine-API aus und schreibt idempotent zurück (Precondition auf
   `requestId`, `409` = No-op). **Zustandslos** — clio hält den gesamten Zustand; damit bleibt
   der Consumer Decisioning und wird **nicht** zur Prozess-Engine (Grenze aus ADR-0025 gewahrt).
-  Kopplung nur über clios HTTP-Vertrag, Kern unberührt, reine stdlib (ADR-0011/0014).
+  Kopplung nur über clios HTTP-Vertrag, Kern unberührt, reine stdlib (ADR-0011/0014). Die
+  `data`-Verträge liegen maschinenlesbar als **JSON Schema** in `docs/schemas/` (Command +
+  Ergebnis-Events); das Command-Schema lässt sich in clio (`register-event-schema`)
+  hinterlegen, sodass fehlerhafte Commands **beim Schreiben** abgewiesen werden. Ein
+  `consume/schema_test.go` bindet die Schemas dependency-frei an die erzeugten Events.
 - **Engine-Kern (WP-01–11):** DMN-1.5-XML-Decoding (tolerant 1.3/1.4) mit `DMNDI`-Round-Trip;
   vollständige FEEL-Pipeline (Lexer → Parser → Compile-to-Closures); Decimal-Numbers (`apd`);
   Decision Tables mit Hit Policies; öffentliche Library-API `package dmn` (`Compile`/`Evaluate`).

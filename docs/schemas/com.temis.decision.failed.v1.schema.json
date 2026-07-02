@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "com.temis.decision.failed.v1",
+  "description": "Data payload of a temis command-failure event (ADR-0033), written by temis-clio-worker when a command cannot be evaluated (unresolved model/flow, compile or runtime error). It closes the loop — every command is answered, with a result or a failure — and carries no outputs.",
+  "type": "object",
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "string",
+      "description": "Human-readable reason the command could not be evaluated."
+    },
+    "modelId": {
+      "type": "string",
+      "description": "The requested model id, if any."
+    },
+    "flowId": {
+      "type": "string",
+      "description": "The requested flow id, if any."
+    },
+    "decision": {
+      "type": "string",
+      "description": "The requested decision name, if any."
+    },
+    "input": {
+      "type": "object",
+      "description": "The requested input, carried for diagnosis."
+    },
+    "engine": {
+      "type": "string",
+      "description": "Producing engine."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Correlation id (ADR-0033): the clio event id of the command this failure answers."
+    }
+  },
+  "additionalProperties": true
+}

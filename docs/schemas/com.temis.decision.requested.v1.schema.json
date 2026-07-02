@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "com.temis.decision.requested.v1",
+  "description": "Data payload of a temis command event (ADR-0033): a request to evaluate a single decision, a whole model graph, or a decision-flow (DRG). Register in clio (register-event-schema) so malformed commands are rejected at write time, before temis-clio-worker ever sees them.",
+  "type": "object",
+  "required": ["input"],
+  "properties": {
+    "modelId": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content-addressed model id. With `decision`, evaluate that one decision; without it, evaluate the whole model graph. Mutually exclusive with `flowId`."
+    },
+    "flowId": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content-addressed flow id (a decision-flow / DRG). Mutually exclusive with `modelId`."
+    },
+    "decision": {
+      "type": "string",
+      "description": "Name or id of the single decision to evaluate. Only valid together with `modelId`."
+    },
+    "input": {
+      "type": "object",
+      "description": "The FEEL input for the evaluation. Numbers may be given as JSON numbers or exact decimal strings (ADR-0007)."
+    },
+    "explain": {
+      "type": "boolean",
+      "description": "When true, the result event carries the decision trace (data.trace)."
+    }
+  },
+  "oneOf": [
+    {
+      "title": "model",
+      "required": ["modelId"],
+      "properties": { "flowId": false }
+    },
+    {
+      "title": "flow",
+      "required": ["flowId"],
+      "properties": { "modelId": false, "decision": false }
+    }
+  ],
+  "additionalProperties": false
+}

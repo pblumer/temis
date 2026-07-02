@@ -368,6 +368,27 @@ Verbindliche Eigenschaften (ADR-0033):
 auf den Result-Subtree (clio-Scopes, ADR-025 in clio). Wie beim Sink können `input`/`trace`
 fachlich sensibel sein — Subject-Mapping und Feldumfang gehören in den Betriebsleitfaden.
 
+### Schema-Validierung an der Grenze (optional, empfohlen)
+
+Die `data`-Verträge liegen maschinenlesbar als **JSON Schema** in
+[`docs/schemas/`](schemas/) (`com.temis.decision.requested.v1`, `…evaluated.v1`,
+`…flow.evaluated.v1`, `…failed.v1`). Registriert man das **Command**-Schema in clio
+(`register-event-schema`), lehnt clio ein fehlerhaftes Command **schon beim Schreiben** ab —
+statt es erst nachgelagert im Worker als `failed.v1` zu quittieren:
+
+```jsonc
+// clio-MCP-Tool: register_event_schema
+{ "type": "com.temis.decision.requested.v1",
+  "schema": { /* Inhalt von docs/schemas/com.temis.decision.requested.v1.schema.json */ } }
+```
+
+Das Command-Schema erzwingt den Diskriminator (genau eines von `modelId`/`flowId`,
+`decision` nur mit `modelId`) per `oneOf` und ist streng (`additionalProperties: false`),
+sodass Tippfehler wie `modelID` an der Quelle auffallen. Die **Ergebnis**-Schemas sind offen
+(`additionalProperties: true`) und tragen `requestId` optional, damit **ein** Schema
+sowohl sink- als auch worker-geschriebene Events validiert. Details & Registrierung:
+[`docs/schemas/README.md`](schemas/README.md).
+
 ---
 
 ## Verwandte Dokumente

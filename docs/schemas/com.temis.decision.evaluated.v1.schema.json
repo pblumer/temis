@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "com.temis.decision.evaluated.v1",
+  "description": "Data payload of a temis decision result event (ADR-0023, WP-54). Written by temisd's audit sink after an evaluation and by temis-clio-worker in answer to a command (ADR-0033). The additive `requestId` is present only on command-driven events, so it is optional here — one schema validates both producers. See docs/80-clio-decision-log.md.",
+  "type": "object",
+  "required": ["modelId", "decision", "input", "outputs"],
+  "properties": {
+    "modelId": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content-addressed model id — the exact, reproducible model version."
+    },
+    "decision": {
+      "type": "string",
+      "description": "Name or id of the evaluated decision."
+    },
+    "input": {
+      "type": "object",
+      "description": "The input the decision was evaluated against."
+    },
+    "outputs": {
+      "type": "object",
+      "description": "The decision result (Result.Outputs)."
+    },
+    "trace": {
+      "type": "object",
+      "description": "Optional decision trace (WP-51), present only when the evaluation requested `explain`."
+    },
+    "engine": {
+      "type": "string",
+      "description": "Producing engine, e.g. \"temisd v1.2.3\" or \"temis-clio-worker …\"."
+    },
+    "strict": {
+      "type": "boolean",
+      "description": "Whether strict input validation was active (WP-52). Set by the sink; absent on worker-written events."
+    },
+    "inputHash": {
+      "type": "string",
+      "description": "Stable digest over (modelId, decision, input) — the sink's idempotency key."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Correlation id (ADR-0033): the clio event id of the command that triggered this evaluation. Absent on sink-written events."
+    }
+  },
+  "additionalProperties": true
+}
