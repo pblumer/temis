@@ -20,6 +20,16 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Operate: clio-Events einlesen & nachspielen (ADR-0033, Read-Side):** Die Operate-Ansicht
+  bekommt ein Panel „Aus clio nachspielen". Man **definiert das Mapping** — clio-**Subject**-
+  Teilbaum + **Event-Typ** (`com.temis.decision.evaluated.v1` u. a.) + Limit — liest die dort
+  protokollierten Entscheidungen ein und **spielt jede aufgezeichnete Eingabe** erneut durch
+  das offene Modell; jeder Replay erscheint als normaler Lauf oben in der History und auf dem
+  Diagramm. Das Mapping wird pro Modell (nach Name) im `localStorage` gemerkt und aus der
+  Subject-Konfiguration des Sinks vorbefüllt. Serverseitig neu: **`GET /v1/clio/events`**
+  (Audit-Scope, secret-frei — der Server liest über die Sink-Verbindung, der Browser sieht
+  den clio-Token nie) und `ClioSink.Query` (clio-`run-query` lesen). `GET /v1/status` meldet
+  zusätzlich `subjectPrefix`/`subjectKey` zum Vorbefüllen.
 - **clio-Command-Consumer – Entscheidungen per Event auslösen (WP-120/121, ADR-0033):** Die
   **Gegenrichtung** zum Logbuch. Ein in clio geschriebenes **Command-Event**
   `com.temis.decision.requested.v1` löst eine Auswertung aus — Einzel-Decision (`modelId`+

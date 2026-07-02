@@ -68,6 +68,11 @@ export type ClioStatus = {
   enabled: boolean
   mode?: string
   url?: string
+  // subjectPrefix/subjectKey mirror the sink's subject mapping (ADR-0023): the
+  // subtree decisions are filed under and the input field that names the entity
+  // segment. The Operate replay panel pre-fills its mapping from these.
+  subjectPrefix?: string
+  subjectKey?: string
   writesOk?: number
   writesFailed?: number
   idempotentSkips?: number
@@ -101,6 +106,64 @@ export async function getStatus(): Promise<Status | null> {
   if (r.status === 401 || r.status === 403) return { clio: { enabled: false }, gated: true }
   if (!r.ok) return null
   return (await r.json()) as Status
+}
+
+// ClioEvent mirrors service.ClioEvent: one decision/flow event read back from
+// clio for Operate replay (ADR-0033). Only the replay-relevant fields are
+// carried — the recorded input (to re-evaluate) and outputs (to compare).
+export type ClioEvent = {
+  id?: string
+  subject: string
+  type: string
+  time?: string
+  modelId?: string
+  flowId?: string
+  decision?: string
+  input?: Record<string, unknown>
+  outputs?: Record<string, unknown>
+}
+
+// ClioEventsResult mirrors the service clioEventsResponse: whether the audit sink
+// is configured, the subtree that was queried, the sink's default subject
+// mapping (to pre-fill the UI), the event types a reader can filter on, and the
+// events themselves.
+export type ClioEventsResult = {
+  enabled: boolean
+  subject?: string
+  subjectPrefix?: string
+  subjectKey?: string
+  types: string[]
+  events: ClioEvent[]
+}
+
+// ClioReadForbiddenError signals the caller lacks the audit scope to read events
+// (401/403) — the modeler shows a hint to use an audit-scoped key rather than
+// pretending clio is empty.
+export class ClioReadForbiddenError extends Error {
+  constructor() {
+    super('Zum Einlesen der clio-Events braucht es einen Key mit dem Scope „audit".')
+    this.name = 'ClioReadForbiddenError'
+  }
+}
+
+// fetchClioEvents reads decision/flow events back from clio for Operate replay
+// (GET /v1/clio/events). The browser never holds the clio token — the server
+// queries clio on its behalf. subject/type/limit narrow the read; empty subject
+// defaults server-side to the sink's subject prefix. A 401/403 (no audit scope)
+// throws ClioReadForbiddenError so the caller can guide the user.
+export async function fetchClioEvents(opts: { subject?: string; type?: string; limit?: number } = {}): Promise<ClioEventsResult> {
+  const params = new URLSearchParams()
+  if (opts.subject) params.set('subject', opts.subject)
+  if (opts.type) params.set('type', opts.type)
+  if (opts.limit) params.set('limit', String(opts.limit))
+  const qs = params.toString()
+  const r = await fetch('/v1/clio/events' + (qs ? '?' + qs : ''))
+  if (r.status === 401 || r.status === 403) throw new ClioReadForbiddenError()
+  if (!r.ok) throw new Error(await problemMessage(r, 'clio-Events einlesen fehlgeschlagen'))
+  const body = (await r.json()) as ClioEventsResult
+  body.events = body.events ?? []
+  body.types = body.types ?? []
+  return body
 }
 
 export async function getModel(modelId: string): Promise<ModelDetail> {

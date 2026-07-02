@@ -50,9 +50,15 @@ type engineStatus struct {
 // clioStatus reports the audit sink's configuration and observed health. It
 // never carries the clio API token.
 type clioStatus struct {
-	Enabled         bool   `json:"enabled"`
-	Mode            string `json:"mode,omitempty"` // best-effort | strict
-	URL             string `json:"url,omitempty"`
+	Enabled bool   `json:"enabled"`
+	Mode    string `json:"mode,omitempty"` // best-effort | strict
+	URL     string `json:"url,omitempty"`
+	// SubjectPrefix and SubjectKey mirror the sink's subject mapping (ADR-0023):
+	// the clio subject decisions are filed under and the input field whose value
+	// becomes the entity segment. The Operate view uses them to pre-fill the
+	// clio-replay mapping so a reader queries the same subtree the sink writes.
+	SubjectPrefix   string `json:"subjectPrefix,omitempty"`
+	SubjectKey      string `json:"subjectKey,omitempty"`
 	WritesOk        uint64 `json:"writesOk"`
 	WritesFailed    uint64 `json:"writesFailed"`
 	IdempotentSkips uint64 `json:"idempotentSkips"`
@@ -118,6 +124,8 @@ func (s *Server) clioStatus(ctx context.Context) clioStatus {
 		Enabled:         true,
 		Mode:            "best-effort",
 		URL:             snap.url,
+		SubjectPrefix:   snap.subjectPrefix,
+		SubjectKey:      snap.subjectKey,
 		WritesOk:        snap.writesOk,
 		WritesFailed:    snap.writesFailed,
 		IdempotentSkips: snap.idempotentSkips,

@@ -448,6 +448,48 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .canvas-wrap { position: relative; flex: 0 0 auto; }
 .op-overlays { display: none; }
 .app-shell[data-mode="operate"] .op-overlays { display: block; }
+
+/* clio replay panel (ADR-0033 read side): an Operate-only section under the
+   diagram that reads decisions from clio (by a user-defined subject + event-type
+   mapping) and replays each recorded input through the open model. */
+.clio-replay { display: none; }
+.app-shell[data-mode="operate"] .clio-replay { display: block; margin-top: 18px; }
+.clio-title { font: 600 15px/1.2 system-ui, sans-serif; margin: 0 0 6px; color: var(--op); }
+.clio-note { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; max-width: 780px; }
+.clio-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.clio-field-wrap { display: flex; flex-direction: column; gap: 4px; }
+.clio-field-label { font: 600 11px/1 system-ui, sans-serif; color: #334155; text-transform: uppercase; letter-spacing: 0.03em; }
+.clio-field { font: 13px system-ui, sans-serif; padding: 6px 9px; border: 1px solid #c7d6f2; border-radius: 7px; background: #fff; }
+.clio-field:focus { outline: none; border-color: var(--op); box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15); }
+.clio-field-wrap:has(> .clio-field[type="text"]) { flex: 1 1 260px; min-width: 220px; }
+.clio-field[type="text"] { width: 100%; }
+.clio-type { min-width: 210px; }
+.clio-limit { width: 90px; }
+.clio-field-hint { font-size: 11px; color: var(--muted); max-width: 320px; }
+.clio-actions { display: flex; align-items: flex-end; align-self: stretch; padding-top: 18px; }
+.clio-load { white-space: nowrap; }
+.clio-status-line { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; }
+.clio-status-line.clio-ok { color: #15803d; }
+.clio-status-line.clio-error { color: #b91c1c; }
+.clio-status-line.clio-off { color: #92600a; }
+.clio-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.clio-list-count { font: 600 12px/1 system-ui, sans-serif; color: #334155; }
+.clio-ev {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid #dbe4f3; border-radius: 9px; padding: 9px 11px; margin-bottom: 7px;
+  background: linear-gradient(180deg, #fbfdff, #f4f8ff);
+}
+.clio-ev-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.clio-ev-type { font: 600 12px/1 system-ui, sans-serif; color: var(--op); }
+.clio-ev-subject { font: 12px ui-monospace, monospace; color: #475569; }
+.clio-ev-decision { font: 600 11px/1 system-ui, sans-serif; color: #1e293b; background: #e2ecff; border-radius: 999px; padding: 3px 8px; }
+.clio-ev-time { font-size: 11px; color: var(--muted); margin-left: auto; }
+.clio-ev-io { display: flex; flex-wrap: wrap; gap: 12px; font: 12px ui-monospace, monospace; color: #475569; }
+.clio-ev-out { color: #15803d; }
+.clio-ev-actions { display: flex; align-items: center; gap: 10px; }
+.clio-ev-status { font-size: 12px; }
+.clio-ev-status.clio-ok { color: #15803d; }
+.clio-ev-status.clio-error { color: #b91c1c; }
 .op-ov-toggle {
   position: absolute; top: 10px; right: 12px; z-index: 3;
   font: 600 12px/1 system-ui, sans-serif; padding: 5px 10px;

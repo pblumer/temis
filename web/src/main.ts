@@ -5,6 +5,7 @@ import { layout, type Orientation } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
 import { renderEvaluatePanel, type EvalRun } from './evaluate'
 import { mountOperate } from './operate'
+import { mountClioReplay } from './clio-replay'
 import { mountImport } from './testimport'
 import { mountFlows } from './flows'
 import { mountFlowEditor } from './flow-editor'
@@ -98,6 +99,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <h2 class="eval-title">Auswerten</h2>
           <div id="eval"></div>
         </section>
+        <section id="clioReplay" class="clio-replay"></section>
         <section id="importCockpit" class="import-cockpit"></section>
         <section id="flowStudio" class="flow-studio"></section>
         <section id="flowEditor" class="flow-editor"></section>
@@ -127,10 +129,11 @@ async function boot(root: HTMLElement): Promise<void> {
   const newFolderBtn = root.querySelector<HTMLButtonElement>('#newFolder')
   const fileInput = root.querySelector<HTMLInputElement>('#file')
   const evalHost = root.querySelector<HTMLElement>('#eval')
+  const clioReplayHost = root.querySelector<HTMLElement>('#clioReplay')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
 
   // The type options offered in the InputData/table/literal pickers: the built-in
   // FEEL types plus the current model's custom item definitions (refreshed per
@@ -923,6 +926,16 @@ async function boot(root: HTMLElement): Promise<void> {
     },
   })
 
+  // The clio replay panel (ADR-0033 read side): the Operate-view counterpart to
+  // the "Auswerten" form — it reads decisions temis already filed in clio (under
+  // a user-defined subject + event-type mapping) and replays each recorded input
+  // through the open model, recording the outcome as a normal Operate run.
+  const clioReplay = mountClioReplay({
+    host: clioReplayHost,
+    getModel: () => currentModel,
+    onReplay: (run) => recordRun(run),
+  })
+
   // The Import cockpit: a batch test-runner shaped like a conveyor belt. It reads
   // the loaded model via getModel to build a matching CSV/JSON template and runs
   // imported test cases against the same whole-graph evaluate endpoint, animating
@@ -1003,6 +1016,7 @@ async function boot(root: HTMLElement): Promise<void> {
     modeImportBtn.classList.toggle('is-active', m === 'import')
     if (m === 'operate') {
       operate.render()
+      clioReplay.render()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
     } else if (m === 'import') {
@@ -1112,6 +1126,7 @@ async function boot(root: HTMLElement): Promise<void> {
         // Share the loaded model with the Import cockpit (template + run source).
         currentModel = detail
         if (mode === 'import') importView.render()
+        if (mode === 'operate') clioReplay.render()
       } catch {
         evalHost.textContent = ''
       }

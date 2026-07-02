@@ -127,6 +127,8 @@ type clioSnapshot struct {
 	reachable       bool
 	url             string
 	strict          bool
+	subjectPrefix   string
+	subjectKey      string
 }
 
 // snapshot returns the sink's current health and configuration for GET
@@ -148,6 +150,8 @@ func (c *ClioSink) snapshot() clioSnapshot {
 		reachable:       errUnix == 0 || okUnix >= errUnix,
 		url:             c.baseURL,
 		strict:          c.strict,
+		subjectPrefix:   c.subjectPrefix,
+		subjectKey:      c.subjectKey,
 	}
 }
 
@@ -626,6 +630,127 @@ func qualityHash(modelID, entity string, input map[string]any) string {
 	buf, _ := json.Marshal(payload)
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:])
+}
+
+// --- read side: replay decision events back into the modeler (ADR-0033) ---
+
+// defaultQueryLimit caps how many events Query returns when the caller passes 0,
+// so a broad subtree query can't stream an unbounded number of events into the
+// modeler. maxQueryLimit is the hard ceiling regardless of what the caller asks.
+const (
+	defaultQueryLimit = 200
+	maxQueryLimit     = 1000
+)
+
+// ClioEvent is one decision/flow event read back from clio for replay in the
+// Operate view: the envelope fields the modeler shows plus the payload a run
+// needs to be replayed (the recorded input) and compared (the recorded outputs).
+// Only the replay-relevant fields are kept — the browser never sees the raw
+// event or the clio token (the server queries on its behalf).
+type ClioEvent struct {
+	ID       string         `json:"id,omitempty"`
+	Subject  string         `json:"subject"`
+	Type     string         `json:"type"`
+	Time     string         `json:"time,omitempty"`
+	ModelID  string         `json:"modelId,omitempty"`
+	FlowID   string         `json:"flowId,omitempty"`
+	Decision string         `json:"decision,omitempty"`
+	Input    map[string]any `json:"input,omitempty"`
+	Outputs  map[string]any `json:"outputs,omitempty"`
+}
+
+// clioReadEvent is the slice of a clio CloudEvent the read side parses: the
+// envelope (id/subject/type/time) plus the decision/flow data payload common to
+// the temis result events (ADR-0023/WP-93/ADR-0033).
+type clioReadEvent struct {
+	ID      string       `json:"id"`
+	Subject string       `json:"subject"`
+	Type    string       `json:"type"`
+	Time    string       `json:"time"`
+	Data    clioReadData `json:"data"`
+}
+
+type clioReadData struct {
+	ModelID  string         `json:"modelId"`
+	FlowID   string         `json:"flowId"`
+	Decision string         `json:"decision"`
+	Input    map[string]any `json:"input"`
+	Outputs  map[string]any `json:"outputs"`
+}
+
+// Query reads events from clio's run-query for a subject subtree, optionally
+// filtered to a single CloudEvents type, and returns the replay-relevant slice
+// of each — the read side of the sink (ADR-0033). subject defaults to the sink's
+// configured subject prefix when empty; recursive covers the whole subtree so an
+// entity segment (…/42) is included. eventType, when set, filters server-side to
+// that CloudEvents type. limit caps the result (0 → defaultQueryLimit, capped at
+// maxQueryLimit). Coupling stays over clio's HTTP contract only — no clio import.
+func (c *ClioSink) Query(ctx context.Context, subject, eventType string, limit int) ([]ClioEvent, error) {
+	if strings.TrimSpace(subject) == "" {
+		subject = c.subjectPrefix
+	}
+	if limit <= 0 {
+		limit = defaultQueryLimit
+	}
+	if limit > maxQueryLimit {
+		limit = maxQueryLimit
+	}
+
+	q := map[string]any{"subject": subject, "recursive": true}
+	if eventType != "" {
+		q["where"] = fmt.Sprintf("event.type == %q", eventType)
+	}
+	buf, err := json.Marshal(q)
+	if err != nil {
+		return nil, fmt.Errorf("encode query: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/run-query", bytes.NewReader(buf))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("POST run-query: %w", err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode/100 != 2 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("clio run-query: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	// clio streams the result as successive JSON events (one per line); decode
+	// them in a loop, exactly like the worker's read path (temis-clio-worker).
+	events := make([]ClioEvent, 0, limit)
+	dec := json.NewDecoder(resp.Body)
+	for len(events) < limit {
+		var ev clioReadEvent
+		if err := dec.Decode(&ev); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("decode event stream: %w", err)
+		}
+		events = append(events, ClioEvent{
+			ID:       ev.ID,
+			Subject:  ev.Subject,
+			Type:     ev.Type,
+			Time:     ev.Time,
+			ModelID:  ev.Data.ModelID,
+			FlowID:   ev.Data.FlowID,
+			Decision: ev.Data.Decision,
+			Input:    ev.Data.Input,
+			Outputs:  ev.Data.Outputs,
+		})
+	}
+	return events, nil
 }
 
 // inputHash is a stable digest over the model, decision and input — the

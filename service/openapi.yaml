@@ -1002,6 +1002,46 @@ paths:
               schema: { $ref: "#/components/schemas/StatusResponse" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/clio/events:
+    get:
+      summary: Read decision/flow events back from clio for replay (ADR-0033)
+      description: >
+        Read-only view of the events the audit sink filed in clio, for the
+        Operate view's replay. The server queries clio over the sink's own
+        connection, so the browser never holds the clio token; only the
+        replay-relevant fields (subject, type, recorded input and outputs) are
+        returned. Answers 200 with `enabled:false` when no sink is configured,
+        and 502 when the clio read fails. Gated by the audit scope, like
+        /v1/status.
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          description: clio subject subtree to read (defaults to the sink's subject prefix)
+          schema: { type: string }
+        - name: type
+          in: query
+          required: false
+          description: filter to a single CloudEvents type (e.g. com.temis.decision.evaluated.v1)
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          description: cap on the number of events returned (default 200, max 1000)
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The events read back from clio (or enabled:false)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClioEventsResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Reading from clio failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/keys:
     post:
       summary: Create a scoped API key (ADR-0028 Phase 2, WP-103)
@@ -2020,6 +2060,8 @@ components:
             enabled: { type: boolean }
             mode: { type: string, enum: [best-effort, strict] }
             url: { type: string }
+            subjectPrefix: { type: string, description: The clio subject decisions are filed under. }
+            subjectKey: { type: string, description: Input field whose value becomes the subject's entity segment. }
             writesOk: { type: integer }
             writesFailed: { type: integer }
             idempotentSkips: { type: integer }
@@ -2041,6 +2083,36 @@ components:
           type: object
           properties:
             available: { type: boolean }
+    ClioEvent:
+      type: object
+      description: >
+        One decision/flow event read back from clio for Operate replay (ADR-0033).
+        Only the replay-relevant fields are returned.
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        type: { type: string }
+        time: { type: string, format: date-time }
+        modelId: { type: string }
+        flowId: { type: string }
+        decision: { type: string }
+        input: { type: object, additionalProperties: true, description: The recorded evaluation input. }
+        outputs: { type: object, additionalProperties: true, description: The recorded evaluation outputs. }
+    ClioEventsResponse:
+      type: object
+      description: Events read back from clio for Operate replay (ADR-0033 read side).
+      properties:
+        enabled: { type: boolean, description: False when no audit sink is configured. }
+        subject: { type: string, description: The subject subtree that was queried. }
+        subjectPrefix: { type: string, description: The sink's default subject prefix, for pre-filling the mapping. }
+        subjectKey: { type: string, description: The sink's configured entity-segment input field, if any. }
+        types:
+          type: array
+          description: The temis CloudEvents types a reader can filter on.
+          items: { type: string }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ClioEvent" }
     ReadyResponse:
       type: object
       description: Readiness result (ADR-0030). Checks lists the unmet hard start conditions.
