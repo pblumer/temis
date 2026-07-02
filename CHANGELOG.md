@@ -267,11 +267,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 ### Fixed
 
 - **Modeler – Palette „klebendes" Element (ADR-0016):** Ein aus der Design-Palette gezogenes
-  Element blieb gelegentlich am Cursor „kleben" und ließ sich nur per Esc/Neuladen lösen.
-  Ursache war der Geister-Klick, den der Browser nach einem abgebrochenen nativen Drag noch
-  auf den Palette-Eintrag feuert — er startete eine zweite, verwaiste Erstell-Sitzung. Die
-  Klick-Aktion ignoriert diesen Nachzügler jetzt (und einen Klick, während schon eine Sitzung
-  läuft). Zusätzlich bekommen neu erstellte Elemente eindeutige Vorgabenamen
+  Element blieb am Cursor „kleben" und ließ sich nur per Esc/Neuladen lösen. Zwei Ursachen:
+  (1) der Geister-Klick, den der Browser nach einem abgebrochenen nativen Drag noch auf den
+  Palette-Eintrag feuert — er startete eine zweite, verwaiste Erstell-Sitzung; die Klick-Aktion
+  ignoriert diesen Nachzügler jetzt (und einen Klick, während schon eine Sitzung läuft).
+  (2) Eine Ausnahme in einem Listener, der auf das frisch erstellte Element reagiert, entkam
+  `create.end`, sodass diagram-js' Aufräumen ausblieb und die Drag-Sitzung hängen blieb. Die
+  Palette fängt solche Ausnahmen jetzt während einer laufenden Erstellung ab (sie werden weiterhin
+  in der Konsole protokolliert), lässt die Erstellung zu Ende laufen — das Element wird platziert —
+  und gibt den Cursor frei. Zusätzlich bekommen neu erstellte Elemente eindeutige Vorgabenamen
   („Neue Decision", „Neue Decision 2", …), damit zwei gleichnamige Knoten nicht stumm
   kollidieren.
 
