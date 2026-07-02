@@ -1,19 +1,63 @@
-# Temis — DMN-Engine (Go)
+<p align="center">
+  <img src="docs/readme-hero.svg" alt="Temis — DMN decision engine with FEEL, API service, modeler and agent integrations" width="900">
+</p>
 
-**Repository:** https://github.com/pblumer/temis
+<h1 align="center">Temis — Decisioning, das sich gut anfühlt</h1>
 
-> **GitHub-Beschreibung (About):**
-> Fast, embeddable DMN 1.5 decision engine in Go with full FEEL support — usable as a library or HTTP/gRPC service.
->
-> **Topics:** `dmn` · `dmn-engine` · `feel` · `decision-engine` · `business-rules` · `golang` · `dmn-js` · `decision-tables` · `rules-engine`
+<p align="center">
+  <strong>Schnelle DMN-1.5-Engine in Go</strong> · <strong>volles FEEL</strong> · <strong>Library</strong> · <strong>HTTP/gRPC</strong> · <strong>Modeler</strong> · <strong>MCP für Agenten</strong>
+</p>
 
-**Temis** ist eine schnelle, eingebettete **DMN-1.5**-Engine in Go mit vollem **FEEL**-Support,
-betreibbar als **Library** und **HTTP/gRPC-Service**. Modelle werden im **dmn-js**-Editor erstellt
-und als Standard-DMN-XML geladen.
+<p align="center">
+  <a href="https://github.com/pblumer/temis"><img alt="Repository" src="https://img.shields.io/badge/GitHub-pblumer%2Ftemis-24292f?logo=github"></a>
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
+  <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
+  <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
+  <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
+  <img alt="Agents" src="https://img.shields.io/badge/Agent--First-MCP-F59E0B">
+</p>
 
-> Der Name spielt auf *Themis* an, die griechische Göttin der Ordnung, Gerechtigkeit und
-> des Urteils — passend zu einer Engine, die Entscheidungen trifft. Schreibweise bewusst
-> ohne „h": eindeutige Aussprache, sauberer als Binary-/Modulname.
+---
+
+> **Kurz gesagt:** Temis nimmt standardisierte DMN-Modelle aus dem Modeler, kompiliert sie deterministisch
+> und wertet sie als embeddable Go-Library oder als sofort startbaren Service aus — inklusive Trace,
+> Audit, Git-Workflows und Agenten-Schnittstelle.
+
+<div align="center">
+
+| 🧠 Entscheidungen | ⚡ Engine | 🎛️ Betrieb | 🤖 Agenten |
+|---|---|---|---|
+| DMN 1.5, Decision Tables, DRG, BKM, Decision Services | Decimal-genaues FEEL, Compiler, Limits, Cache | `temisd` mit Web-UI, OpenAPI, Auth, clio-Audit | MCP stdio/HTTP, Explain-Traces, typisierte Schemas |
+
+</div>
+
+## Warum Temis?
+
+- **Produktiv einbettbar:** `package dmn` ist als v1 zugesagt; `internal/` bleibt frei beweglich.
+- **Zero-config Demo, harte Produktion:** `temisd` startet ohne Pflichtparameter mit Modeler, Swagger UI,
+  Beispielen und MCP — lässt sich aber per `TEMIS_*`-Env vollständig härten.
+- **FEEL ohne Float-Überraschungen:** Zahlen laufen decimal-genau; Temporaltypen, Listen, Contexts,
+  Ranges, Filter, Projektionen und Built-ins sind breit abgedeckt.
+- **Review-fähige Modelle:** DMN-XML bleibt Standardformat; Git-backed Lesen, Schreiben, Branches und PRs
+  machen Regeländerungen nachvollziehbar.
+- **Auditierbare Entscheidungen:** optionale clio-Anbindung, Replay/Re-Audit und Explain-Traces zeigen,
+  warum ein Ergebnis entstanden ist.
+
+## 30-Sekunden-Eindruck
+
+```sh
+temisd
+# Browser: http://localhost:8080/      # Modeler
+# Browser: http://localhost:8080/docs  # OpenAPI-Testkonsole
+```
+
+```go
+eng := dmn.New()
+defs, diags, _ := eng.Compile(ctx, xmlBytes)
+dec, _ := defs.Decision("Dish")
+res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
+fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
+```
 
 ## Status
 
