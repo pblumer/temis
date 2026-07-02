@@ -243,6 +243,19 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 - **Doku & Release (WP-45–46):** godoc-Beispiele, Integrations-/Quickstart-Leitfaden; versionierte
   Release-Pipeline, Container-Image für `temisd`, dieses Changelog.
 
+### Changed
+
+- **Flow-Studio-Autolayout auf dagre (WP-97/98):** Die read-only Flow-Ansicht
+  ordnet ihre Schritte jetzt mit **dagre** (`@dagrejs/dagre`) statt der
+  handgeschriebenen Barycentre-Sweeps an. Ränge, Kreuzungs-Minimierung und
+  gebogene Kanten-Waypoints kommen in einem Schritt — Flows mit geteilten Quellen
+  (mehrere Steps, die dieselben Flow-Inputs konsumieren, z. B. `kfz-antrag`)
+  rendern mit klar getrennten Ebenen (Inputs unten, finale Decision oben), ohne
+  überlappende Boxen und mit deutlich weniger überlagerten Kantenlinien.
+  Betroffen ist **nur** der Auto-Layout-Pfad der Flow-Ansicht; authored **DMNDI**
+  wird weiterhin verbatim genutzt und der DRD-Modeler-Pfad (ortho) bleibt
+  unverändert. `Laid`-Interface und Renderer bleiben stabil.
+
 ### Fixed
 
 - **Modeler – Palette „klebendes" Element (ADR-0016):** Ein aus der Design-Palette gezogenes
