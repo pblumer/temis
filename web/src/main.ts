@@ -348,6 +348,21 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
+  // openBKM edits a business knowledge model's encapsulated function. A freshly
+  // dropped BKM lives only in the live graph, so persist any pending structural
+  // edits first (mirroring the create-* handlers) and switch to the saved
+  // revision — otherwise GET .../bkm/{id} 404s and the overlay can't open.
+  const openBKM = async (bkmId: string): Promise<void> => {
+    if (!currentId) return
+    try {
+      const savedId = await persistGraph(currentId)
+      if (savedId !== currentId) await reselect(savedId)
+      void openBKMOverlay(savedId, bkmId, (newId) => void reselect(newId), typeOptions)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
   // Typen: open the custom-type manager; each save/delete switches to the saved
   // revision (which refreshes typeOptions via show()).
   typesBtn.addEventListener('click', () => {
@@ -973,7 +988,7 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateFilter((decisionId) => void createFilter(decisionId))
       handle.onOpenIterator((decisionId) => openIterator(modelId, decisionId))
       handle.onCreateIterator((decisionId) => void createIterator(decisionId))
-      handle.onOpenBKM((bkmId) => void openBKMOverlay(modelId, bkmId, (newId) => void reselect(newId), typeOptions))
+      handle.onOpenBKM((bkmId) => void openBKM(bkmId))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
       })

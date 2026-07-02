@@ -24,6 +24,7 @@ const ICON_LIST = svg(`<rect x="3" y="3.5" width="12" height="11" rx="1" ${strok
 const ICON_RELATION = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M2.5 7.5h13M7 3.5v11M11 3.5v11" ${stroke}/>`)
 const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}/>`)
 const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
+const ICON_RENAME = svg(`<path d="M11.5 3.5l3 3L6 15H3v-3z" ${stroke}/><path d="M10 5l3 3" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -238,6 +239,21 @@ class DmnContextPadProvider {
         title: 'Funktion bearbeiten',
         imageUrl: ICON_LITERAL,
         action: { click: () => this.eventBus.fire('dmn.openBKM', { element }) },
+      }
+    }
+
+    // Rename: an explicit, deliberate gesture to inline-edit the element's name.
+    // Double-click renames only decisions WITHOUT logic (a decision with logic
+    // opens its editor on double-click instead — see dmn-label-editing), so this
+    // is the way to rename every other nameable shape, including a decided
+    // decision. Requirement edges carry no name.
+    if (element.type !== 'dmn:informationRequirement' && element.type !== 'dmn:knowledgeRequirement') {
+      entries['rename'] = {
+        group: 'edit',
+        className: 'cp-icon',
+        title: 'Umbenennen',
+        imageUrl: ICON_RENAME,
+        action: { click: () => this.eventBus.fire('dmn.renameElement', { element }) },
       }
     }
 
