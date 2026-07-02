@@ -76,6 +76,19 @@ class DmnPaletteProvider {
       if (this.dragSession) this.lastDragEnd = Date.now()
       this.dragSession = false
     })
+    // Safety net for a palette element that "sticks" to the cursor: if a listener
+    // reacting to the freshly created shape throws, that exception would escape
+    // diagram-js' create.end, so its cleanup never runs — the drag session stays
+    // live and the ghost element follows the mouse until Esc/reload. diagram-js'
+    // EventBus routes every listener exception through an 'error' event and only
+    // rethrows when nothing handled it; so while a create is in flight we log the
+    // exception (it stays visible for debugging) but mark it handled, letting the
+    // rest of create.end run — the element is placed and the drag ends cleanly.
+    eventBus.on('error', (e: { error?: unknown }): boolean | void => {
+      if (!this.creating) return
+      console.error('temis: suppressed exception during element creation so the palette drag can complete', e?.error)
+      return false
+    })
     palette.registerProvider(this)
   }
 
