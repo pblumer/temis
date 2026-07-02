@@ -32,6 +32,10 @@ export async function openTypeManager(modelId: string, onChanged: (newModelId: s
   overlay.append(el('div', { class: 'dt-modal tm-modal' }, el('div', { class: 'dt-head' }, el('span', { class: 'dt-title' }, 'Typen'), closeBtn), body, el('div', { class: 'dt-toolbar' }, status)))
   document.body.append(overlay)
 
+  // The model's own named types are valid base types too (e.g. tClaimList is a
+  // collection of tClaim), so they're offered in the base-type picker alongside
+  // the built-in FEEL types — the modeler appends the custom names (feeltypes.ts).
+  let modelTypes: ItemType[] = []
   const reload = async (): Promise<void> => {
     let types: ItemType[] = []
     try {
@@ -40,6 +44,7 @@ export async function openTypeManager(modelId: string, onChanged: (newModelId: s
       status.className = 'dt-status dt-error'
       status.textContent = (e as Error).message
     }
+    modelTypes = types
     body.textContent = ''
     body.append(renderList(types), el('hr', { class: 'tm-sep' }), renderForm())
   }
@@ -85,7 +90,7 @@ export async function openTypeManager(modelId: string, onChanged: (newModelId: s
   function renderForm(): HTMLElement {
     nameInput = el('input', { class: 'tm-field', placeholder: 'Typname (FEEL-Name)' }) as HTMLInputElement
     baseSel = el('select', { class: 'tm-field' }) as HTMLSelectElement
-    for (const ft of FEEL_TYPES) baseSel.append(opt(ft, ft || '— Basis —'))
+    fillBaseOptions()
     collChk = el('input', { type: 'checkbox', id: 'tm-coll' }) as HTMLInputElement
     avInput = el('input', { class: 'tm-field', placeholder: 'Erlaubte Werte (FEEL), z. B. "rot","grün"' }) as HTMLInputElement
 
@@ -116,8 +121,20 @@ export async function openTypeManager(modelId: string, onChanged: (newModelId: s
     )
   }
 
+  // fillBaseOptions rebuilds the base-type dropdown from the built-in FEEL types
+  // plus the model's own type names. exclude drops one name (the type being
+  // edited) so a type can't be made its own base.
+  function fillBaseOptions(exclude?: string): void {
+    baseSel.textContent = ''
+    for (const ft of FEEL_TYPES) baseSel.append(opt(ft, ft || '— Basis —'))
+    for (const t of modelTypes) {
+      if (t.name !== exclude) baseSel.append(opt(t.name, t.name))
+    }
+  }
+
   function fillForm(t: ItemType): void {
     nameInput.value = t.name
+    fillBaseOptions(t.name)
     baseSel.value = t.typeRef ?? ''
     collChk.checked = !!t.isCollection
     avInput.value = t.allowedValues ?? ''
