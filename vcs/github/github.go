@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/pblumer/temis/vcs"
 )
@@ -62,6 +63,10 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
+// DefaultTimeout bounds a single GitHub request so a hung endpoint cannot block
+// the calling handler goroutine indefinitely (audit finding H4).
+const DefaultTimeout = 30 * time.Second
+
 // New returns a GitHub Client. An empty token accesses public repositories
 // anonymously; a token (personal access or installation token) is sent as a
 // bearer credential for private repositories and higher rate limits.
@@ -69,7 +74,9 @@ func New(token string, opts ...Option) *Client {
 	c := &Client{
 		baseURL: defaultBaseURL,
 		token:   token,
-		http:    http.DefaultClient,
+		// A dedicated client with a deadline, not http.DefaultClient (no timeout):
+		// a stalled GitHub must not hang the request forever (H4).
+		http: &http.Client{Timeout: DefaultTimeout},
 	}
 	for _, opt := range opts {
 		opt(c)
