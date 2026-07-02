@@ -438,6 +438,33 @@ export async function evaluateGraphBatch(modelId: string, req: BatchRequest): Pr
   return (await r.json()) as GraphBatchResult
 }
 
+// QualityReport mirrors the service quality.Report: the aggregated verdict over a
+// dataset run productively through a ruleset — how many entities were seen, how
+// many passed, and, for the failing ones, which rules each violated plus a
+// per-rule tally. Only failing entities are listed; passing ones are counted.
+export type QualityRuleStat = { rule: string; failures: number }
+export type QualityEntityResult = { entity: string; rules: string[] }
+export type QualityReport = { total: number; servers: number; passed: number; failed: number; entities?: QualityEntityResult[]; rules?: QualityRuleStat[] }
+
+// qualityReport fetches the per-entity / per-rule violation report over the
+// quality events productive Import runs wrote to clio (GET /v1/quality/report).
+// The server queries clio itself (it holds the token), so the browser never sees
+// it. Throws ClioNotConfiguredError when no clio sink is configured.
+export async function qualityReport(opts?: { subject?: string; ruleField?: string; limit?: number }): Promise<QualityReport> {
+  const q = new URLSearchParams()
+  if (opts?.subject) q.set('subject', opts.subject)
+  if (opts?.ruleField) q.set('ruleField', opts.ruleField)
+  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  const r = await fetch('/v1/quality/report' + (qs ? '?' + qs : ''))
+  if (!r.ok) {
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; detail?: string }
+    if (problem.code === 'CLIO_NOT_CONFIGURED') throw new ClioNotConfiguredError(problem.detail || 'clio ist nicht konfiguriert')
+    throw new Error(problem.detail || 'Bericht konnte nicht geladen werden (HTTP ' + r.status + ')')
+  }
+  return (await r.json()) as QualityReport
+}
+
 // TableView mirrors dmn.TableView: a decision's static decision-table logic for
 // display in the modeler.
 export type TableInput = { label?: string; expression: string; typeRef?: string }

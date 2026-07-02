@@ -20,6 +20,19 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Quality-Report – welcher Datensatz welche Regel verletzt (ADR-0034):** Die **Lese-Seite** der
+  Produktivläufe (ADR-0031) und die Antwort auf „ich lasse ein ganzes Regelset über 70 000 Server
+  laufen und will am Schluss die Auswertung". Neues, read-only **`package quality`** aggregiert die
+  `com.temis.quality.evaluated.v1`-Events (aus clios `run-query`-NDJSON) zu einem Report: distinct
+  Entitäten, wie viele bestanden, je **verletzender** Entität die sortierte Liste der Regel-IDs und
+  eine **Rangliste je Regel**. Drei Kanäle über denselben Kern: **CLI `temis-quality-report`**
+  (Text/JSON, `-fail-on-violation` als CI-Gate), **`GET /v1/quality/report`** (Scope `audit`; der
+  Server fragt clio selbst ab, kein Token im Browser; `409 CLIO_NOT_CONFIGURED` ohne Sink) und ein
+  **Report-Panel im Import-Cockpit** (Tabelle „Entität × verletzte Regeln"). Dazu das gebündelte
+  Beispiel-Regelset **`server_compliance`** (COLLECT-Tabelle mit unabhängigen Server-Checks, die die
+  verletzten Regel-IDs als Liste ausgibt). Ein End-to-End-Test streamt 70 000 synthetische Server
+  durch den Batch und prüft die aggregierten Tallies. Reine Standardbibliothek, kein neuer Dependency.
+
 - **clio-Command-Consumer – Entscheidungen per Event auslösen (WP-120/121, ADR-0033):** Die
   **Gegenrichtung** zum Logbuch. Ein in clio geschriebenes **Command-Event**
   `com.temis.decision.requested.v1` löst eine Auswertung aus — Einzel-Decision (`modelId`+

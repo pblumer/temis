@@ -35,3 +35,7 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0028 | Scoped API-Key-Authentifizierung (`kid.secret`, Keystore, Scopes) — angeglichen an clio | proposed |
 | 0029 | Öffentliches FEEL-Ausdruck-Primitive (`dmn.CompileExpression`) für volle Flow-Mappings | proposed |
 | 0030 | Betriebs-Observability (Status-Endpoint, `expvar`-Metriken, `slog`) — Grenze zur externen Control Plane | proposed |
+| 0031 | Import-Cockpit: Batch-Auswertung + Quality-Events auf Entitäten (entkoppelte Queue) | accepted |
+| 0032 | Flow-Registry-Quelle: Git als dauerhafte Quelle, Server-Store als Dev-Pfad | proposed |
+| 0033 | clio-Command-Consumer: Entscheidungen per Event auslösen (Gegenrichtung zum Logbuch) | accepted |
+| 0034 | Quality-Report: welcher Datensatz welche Regel verletzt (geteiltes `package quality`, CLI/HTTP/Web) | accepted |
