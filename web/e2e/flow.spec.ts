@@ -32,11 +32,13 @@ test('flows: browse a flow graph and evaluate it with per-step results', async (
   expect(reg.ok(), 'register flow').toBeTruthy()
 
   await page.goto('/')
-  await page.locator('#modeFlows').click()
 
-  // The design palette is gone (read-only view); the flow catalog shows the flow.
-  await expect(page.locator('.djs-palette')).toBeHidden()
+  // Flows (L2a) have their own always-visible sidebar section above Modelle (L1) —
+  // no mode tab. The catalog lists the registered flow; opening it switches the
+  // editor to the studio and hides the DMN modeling palette (read-only view).
+  await expect(page.locator('#groupFlows .section-title')).toContainText('Flows')
   await page.locator('.flow-item', { hasText: 'loan-decisioning' }).click()
+  await expect(page.locator('.djs-palette')).toBeHidden()
 
   // The canvas draws the two step decisions (and their input nodes), with no
   // validation warning since both models are loaded.

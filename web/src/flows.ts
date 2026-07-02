@@ -22,8 +22,9 @@ const STEP_MS = 140
 export type FlowView = { render: () => void }
 
 // FlowMounts are the two hosts the view fills: the catalog list (in the sidebar)
-// and the studio (canvas + run panel, in the editor area).
-export type FlowMounts = { catalogHost: HTMLElement; studioHost: HTMLElement }
+// and the studio (canvas + run panel, in the editor area). onOpenFlow is called
+// when the user opens a flow, so the shell can switch the editor to the studio.
+export type FlowMounts = { catalogHost: HTMLElement; studioHost: HTMLElement; onOpenFlow?: () => void }
 
 // escapeRe escapes a name for use as a literal in a RegExp.
 function escapeRe(s: string): string {
@@ -140,7 +141,7 @@ function renderTrace(trace: Trace | undefined, detail: FlowDetail): string {
 }
 
 export function mountFlows(opts: FlowMounts): FlowView {
-  const { catalogHost, studioHost } = opts
+  const { catalogHost, studioHost, onOpenFlow } = opts
 
   studioHost.innerHTML = `
     <div class="flow-canvas" id="flowCanvas"></div>
@@ -214,6 +215,9 @@ export function mountFlows(opts: FlowMounts): FlowView {
 
   const showFlow = async (id: string): Promise<void> => {
     currentId = id
+    // Switch the editor to the flow studio *first*, so its host is visible when
+    // the diagram renders (a hidden container has zero size and cannot fit).
+    onOpenFlow?.()
     renderCatalog(lastFlows)
     let detail: FlowDetail
     try {
@@ -288,9 +292,9 @@ export function mountFlows(opts: FlowMounts): FlowView {
       }
       lastFlows = flows
       renderCatalog(flows)
-      // Reopen the current flow, or open the first one.
-      if (currentId && flows.some((f) => f.flowId === currentId)) void showFlow(currentId)
-      else if (flows.length) void showFlow(flows[0].flowId)
+      // The catalog lives permanently in the sidebar; render() only lists (and
+      // highlights the open flow via currentId). Opening a flow into the studio
+      // is an explicit user click, so a refresh never hijacks the editor.
     })()
   }
 
