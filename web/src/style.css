@@ -1317,6 +1317,37 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   text-overflow: ellipsis;
 }
 
+/* Signature / construct hint (src/signature.ts): a translucent beginner aid that
+   floats above a FEEL field while the caret is inside a function call or a
+   control-flow construct, spelling out the expected shape (count(list),
+   if Bedingung then Wert else …) with the active part picked out. It is chrome
+   only — never focusable — and sits above the completion dropdown's layer. */
+.sig-hint {
+  position: fixed;
+  z-index: 1001;
+  pointer-events: none;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12);
+  backdrop-filter: blur(2px);
+  font: 12.5px/1.4 ui-monospace, SFMono-Regular, monospace;
+  opacity: 0.9;
+}
+.sig-seg { white-space: pre; }
+/* The template reads muted so the field's own text stays the focus... */
+.sig-kw { color: #9333ea; opacity: 0.7; font-weight: 600; }
+.sig-fn { color: #2563eb; opacity: 0.75; font-weight: 600; }
+.sig-punct { color: var(--muted); opacity: 0.7; }
+.sig-ph { color: var(--muted); font-style: italic; opacity: 0.65; }
+/* ...except the placeholder the caret is currently on, which lights up. */
+.sig-ph.sig-active { color: var(--accent); opacity: 1; font-style: normal; font-weight: 600; }
+
 /* Import cockpit (Testfall-Import): a conveyor-belt batch runner, a third mode
    next to Design/Operate. Records flow left (Eingang) → middle (Evaluation,
    the live engine) → right (clio Store), carrying their computed results. Its
