@@ -4,8 +4,6 @@ import type Create from 'diagram-js/lib/features/create/Create'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
 import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
 import type EventBus from 'diagram-js/lib/core/EventBus'
-import type Canvas from 'diagram-js/lib/core/Canvas'
-import type Modeling from 'diagram-js/lib/features/modeling/Modeling'
 import type HandTool from 'diagram-js/lib/features/hand-tool/HandTool'
 
 // Inline SVG icons as data URIs — same crisp, font-free style as the context pad.
@@ -39,26 +37,24 @@ const BKM: Kind = { type: 'businessKnowledgeModel', name: 'Neues BKM', w: 150, h
 // A created node goes through the command stack (undo/redo) and is persisted by
 // the structural save.
 class DmnPaletteProvider {
-  static $inject = ['palette', 'create', 'elementFactory', 'handTool', 'elementRegistry', 'eventBus', 'canvas', 'modeling']
+  static $inject = ['palette', 'create', 'elementFactory', 'handTool', 'elementRegistry', 'eventBus']
 
   private create: Create
   private elementFactory: ElementFactory
   private handTool: HandTool
   private elementRegistry: ElementRegistry
-  private canvas: Canvas
-  private modeling: Modeling
-  // True while a drag-create session is in flight, so a click on the palette while
-  // one is already running is ignored rather than starting a second, overlapping
-  // session.
+  // True while a create session (drag or click-to-place) is in flight, so a click
+  // on the palette while one is already running is ignored rather than starting a
+  // second, overlapping session.
   private creating = false
-  // Whether the in-flight session was started by a drag, and when the last such
-  // drag session ended. Both guard the click action against the "ghost" click a
-  // browser fires right after a canceled native drag from the palette: without the
-  // guard that trailing click used to start a second, phantom create session that
-  // followed the cursor and could only be dismissed with Esc/reload. A short time
-  // window is the same technique diagram-js uses for its own post-drag click trap.
+  // Whether the in-flight session was started by a drag, and until when the next
+  // palette click must be suppressed. Browsers may fire a trailing click after a
+  // native drag from the palette; without the guard that click starts a second,
+  // phantom create session that follows the cursor and can only be dismissed with
+  // Esc/reload. The explicit suppression deadline complements diagram-js' own
+  // click trap and also covers delayed drag-cleanup/browser event ordering.
   private dragSession = false
-  private lastDragEnd = 0
+  private suppressClickUntil = 0
 
   constructor(
     palette: Palette,
@@ -67,21 +63,17 @@ class DmnPaletteProvider {
     handTool: HandTool,
     elementRegistry: ElementRegistry,
     eventBus: EventBus,
-    canvas: Canvas,
-    modeling: Modeling,
   ) {
     this.create = create
     this.elementFactory = elementFactory
     this.handTool = handTool
     this.elementRegistry = elementRegistry
-    this.canvas = canvas
-    this.modeling = modeling
     eventBus.on('create.init', () => {
       this.creating = true
     })
     eventBus.on('create.cleanup', () => {
       this.creating = false
-      if (this.dragSession) this.lastDragEnd = Date.now()
+      if (this.dragSession) this.suppressClickUntil = Math.max(this.suppressClickUntil, Date.now() + 800)
       this.dragSession = false
     })
     palette.registerProvider(this)
@@ -104,28 +96,26 @@ class DmnPaletteProvider {
   }
 
   getPaletteEntries(): PaletteEntries {
-    const newShape = (kind: Kind) => this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never)
-    const startDragCreate = (kind: Kind, event: Event): void => {
-      this.create.start(event as MouseEvent, newShape(kind))
+    const doCreate = (kind: Kind, event: Event): void => {
+      const shape = this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never)
+      this.create.start(event as MouseEvent, shape)
     }
-    const createAtViewportCenter = (kind: Kind): void => {
-      const viewbox = (this.canvas as unknown as { viewbox: () => { x: number; y: number; width: number; height: number } }).viewbox()
-      const position = { x: viewbox.x + viewbox.width / 2, y: viewbox.y + viewbox.height / 2 }
-      this.modeling.createShape(newShape(kind) as never, position, this.canvas.getRootElement() as never)
-    }
-    // Dragging keeps diagram-js' normal drag/drop behavior. A click, however,
-    // creates the element immediately in the visible canvas center instead of
-    // entering click-to-place mode. That mode looked like a "sticky" decision
-    // following the cursor, was easy to trigger accidentally, and canceling it
-    // with Esc correctly left no persisted element. A single palette click now
-    // performs a real undoable create, so there is no dangling create session.
+    // A real drag always starts a create. A click starts one only when none is
+    // already in flight and no palette drag just ended — this drops the ghost
+    // click that trails a palette drag, which used to leave a phantom element
+    // stuck to the cursor (see `dragSession`/`suppressClickUntil`).
     const startOnDrag = (kind: Kind) => (event: Event): void => {
       this.dragSession = true
-      startDragCreate(kind, event)
+      this.suppressClickUntil = Date.now() + 800
+      doCreate(kind, event)
     }
-    const startOnClick = (kind: Kind) => (_event: Event): void => {
-      if (this.creating || Date.now() - this.lastDragEnd < 300) return
-      createAtViewportCenter(kind)
+    const startOnClick = (kind: Kind) => (event: Event): void => {
+      if (this.creating || this.dragSession || Date.now() < this.suppressClickUntil) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+      doCreate(kind, event)
     }
 
     // Entry keys carry the "-tool" suffix the palette strips to match the active
