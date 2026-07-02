@@ -45,6 +45,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 | WP-53 | Agent-First: Remote-MCP über HTTP (`temis-mcp -http`) | ✅ |
 | WP-54 | Entscheidungs-Logbuch: opt-in clio-Audit-Sink in `temisd` (ADR-0023) | ✅ |
 | WP-55 | Entscheidungs-Logbuch: Re-Audit-/Replay-Tool `temis-reaudit` (ADR-0023) | ✅ |
+| WP-121 | Command-Consumer: Entscheidungen per clio-Event auslösen (`temis-clio-worker`, ADR-0033) | ✅ |
 | WP-70 | Git-gestützte Modelle: Lesen/Browsen (`vcs` + GitHub-Provider) | ✅ |
 | WP-71 | Git-gestützte Modelle: Schreiben (`vcs.Writer`, Commit/Branch/PR) | ✅ |
 | WP-72 | Git-Modelle über HTTP (`/v1/git/*`, Token pro Request) | ✅ |
@@ -375,6 +376,20 @@ Exit-Code 0/1 macht es skriptbar.
 go run ./cmd/temis-reaudit \
   -clio-url http://127.0.0.1:3000 -clio-token kid_ro.secret -models ./models
 # → re-audited 127 decision event(s) against 9 model(s): 127 reproduced — OK ✓
+```
+
+**Auslösen per Event (`temis-clio-worker`, ADR-0033):** Die **Gegenrichtung** — ein in clio
+geschriebenes **Command-Event** `com.temis.decision.requested.v1` löst eine Auswertung aus
+(Einzel-Decision, ganzer Graph oder Decision-Flow/DRG), und das Ergebnis fliesst korreliert
+(`requestId`, gleicher Subject) als bestehendes `evaluated.v1` zurück ins Logbuch. So wird clio
+zur **entkoppelnden Naht**: ein Umsystem schreibt nur ein Event und muss temis nicht kennen. Der
+Consumer ist **zustandslos** (clio hält den Zustand) und bleibt damit Decisioning, nicht Prozess
+(Grenze aus ADR-0025). Vertrag & Betrieb: `docs/80-clio-decision-log.md` §6.
+
+```sh
+go run ./cmd/temis-clio-worker \
+  -clio-url http://127.0.0.1:3000 -clio-token kid_worker.secret -models ./models
+# beobachtet Command-Events (observe), wertet aus, schreibt evaluated.v1 idempotent zurück
 ```
 
 **gRPC (`dmn.v1.DmnEngine`):** Derselbe Server bietet die Engine zusätzlich als

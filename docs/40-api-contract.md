@@ -289,6 +289,15 @@ OpenAPI in `service/openapi.yaml`. Endpunkte:
   best-effort-Default verändert der Sink die Antwort nie; mit `-clio-strict` (fail-closed)
   kann eine fehlgeschlagene Audit-Schreibung den Request mit `502` und
   `code: AUDIT_WRITE_FAILED` beenden. Vertrag & Betrieb: `docs/80-clio-decision-log.md`.
+- **Command-Consumer (clio, ADR-0033, WP-120/121):** Das **Command-Event**
+  `com.temis.decision.requested.v1` (Felder `data.modelId`/`data.flowId`/`data.decision`/
+  `data.input`/`data.explain`) ist Teil der stabilen Oberfläche (SemVer, `.v1`): ein damit
+  in clio geschriebenes Command löst über das Binary **`temis-clio-worker`** eine Auswertung
+  aus, deren Ergebnis als bestehendes `com.temis.decision.evaluated.v1`/
+  `com.temis.flow.evaluated.v1` — ergänzt um das additive Korrelationsfeld **`data.requestId`**
+  — unter demselben `subject` zurückgeschrieben wird (nicht auswertbar →
+  `com.temis.decision.failed.v1`). Der Consumer ist zustandslos und opt-in; er verändert das
+  `temisd`-Verhalten nicht. Vertrag & Betrieb: `docs/80-clio-decision-log.md` §6.
 
 ### 2.2 Scope-Vertrag (ADR-0028)
 

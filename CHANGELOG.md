@@ -20,6 +20,20 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **clio-Command-Consumer – Entscheidungen per Event auslösen (WP-120/121, ADR-0033):** Die
+  **Gegenrichtung** zum Logbuch. Ein in clio geschriebenes **Command-Event**
+  `com.temis.decision.requested.v1` löst eine Auswertung aus — Einzel-Decision (`modelId`+
+  `decision`), ganzer Modell-Graph (`modelId`) oder Decision-Flow/DRG (`flowId`) —, und das
+  Ergebnis fliesst **korreliert** (`data.requestId`, gleicher `subject`) als bestehendes
+  `com.temis.decision.evaluated.v1`/`com.temis.flow.evaluated.v1` zurück; nicht auswertbar →
+  `com.temis.decision.failed.v1`, sodass **jedes** Command eine Antwort bekommt. Neues
+  `package consume` (über `dmn`/`flow`/`audit`, **kein** `internal/`-/`service`-Import,
+  symmetrisch zu `package audit`) + Binary **`temis-clio-worker`**: beobachtet Commands über
+  clios **`observe`**-Stream (mit `run-query`-Backfill je Reconnect; `-poll`/`-once`-Modi),
+  wertet über die öffentliche Engine-API aus und schreibt idempotent zurück (Precondition auf
+  `requestId`, `409` = No-op). **Zustandslos** — clio hält den gesamten Zustand; damit bleibt
+  der Consumer Decisioning und wird **nicht** zur Prozess-Engine (Grenze aus ADR-0025 gewahrt).
+  Kopplung nur über clios HTTP-Vertrag, Kern unberührt, reine stdlib (ADR-0011/0014).
 - **Engine-Kern (WP-01–11):** DMN-1.5-XML-Decoding (tolerant 1.3/1.4) mit `DMNDI`-Round-Trip;
   vollständige FEEL-Pipeline (Lexer → Parser → Compile-to-Closures); Decimal-Numbers (`apd`);
   Decision Tables mit Hit Policies; öffentliche Library-API `package dmn` (`Compile`/`Evaluate`).
