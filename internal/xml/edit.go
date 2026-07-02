@@ -228,6 +228,63 @@ func (d *Definitions) CreateConditional(id string) bool {
 	return true
 }
 
+// SetIterator sets (or replaces) the boxed-iteration logic of the decision
+// identified by id. kind is "for" (which carries a return branch, yielding a
+// list), or "some"/"every" (which carry a satisfies branch, yielding a boolean).
+// variable is the iterator variable, inText the collection and bodyText the
+// return/satisfies expression, all as literals. It refuses (returns false) for an
+// unknown kind, an unknown decision, or a decision that already carries a
+// different (non-iterator) boxed logic.
+func (d *Definitions) SetIterator(id, kind, variable, inText, bodyText string) bool {
+	for i := range d.Decisions {
+		if d.Decisions[i].ID != id {
+			continue
+		}
+		dec := &d.Decisions[i]
+		hasIter := dec.For != nil || dec.Every != nil || dec.Some != nil
+		if dec.present() && !hasIter {
+			return false // some other boxed logic is present
+		}
+		it := &Iterator{IteratorVariable: variable, In: litChild(inText)}
+		switch kind {
+		case "for":
+			it.Return = litChild(bodyText)
+		case "some", "every":
+			it.Satisfies = litChild(bodyText)
+		default:
+			return false
+		}
+		// Replace whichever iterator kind was there before with the chosen one.
+		dec.For, dec.Every, dec.Some = nil, nil, nil
+		switch kind {
+		case "for":
+			dec.For = it
+		case "every":
+			dec.Every = it
+		case "some":
+			dec.Some = it
+		}
+		return true
+	}
+	return false
+}
+
+// CreateIterator gives an undecided decision a fresh boxed iteration (a `for`
+// with placeholder branches), ready to edit in the modeler. It refuses (returns
+// false) when the decision is unknown or already has logic.
+func (d *Definitions) CreateIterator(id string) bool {
+	i := indexDecision(d.Decisions, id)
+	if i < 0 {
+		return false
+	}
+	dec := &d.Decisions[i]
+	if dec.present() {
+		return false
+	}
+	dec.For = &Iterator{IteratorVariable: "x", In: litChild("[1, 2, 3]"), Return: litChild("x * 2")}
+	return true
+}
+
 // SetFilter sets (or replaces) the boxed-filter logic of the decision identified
 // by id with literal `in` (collection) and `match` (predicate) branches. It
 // refuses (returns false) when the decision is unknown or already carries a

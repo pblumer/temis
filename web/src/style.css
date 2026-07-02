@@ -788,6 +788,17 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 }
 .cond-text:focus { outline: none; border-color: var(--accent); background: #fff; }
 .cond-invalid { border-color: #e5484d; background: #fff4f4; }
+.iter-var {
+  width: 100%;
+  box-sizing: border-box;
+  font: 13.5px/1.4 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fcfdff;
+  color: var(--fg);
+}
+.iter-var:focus { outline: none; border-color: var(--accent); background: #fff; }
 
 /* Boxed-list editor: an ordered list of FEEL item rows. */
 .list-modal { width: min(560px, 94vw); }

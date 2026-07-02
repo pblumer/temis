@@ -54,6 +54,8 @@ func (d *Definitions) BoxedContext(idOrName string) (ContextView, bool)
 
 func (d *Definitions) BoxedFilter(idOrName string) (FilterView, bool)
 
+func (d *Definitions) BoxedIterator(idOrName string) (IteratorView, bool)
+
 func (d *Definitions) BoxedList(idOrName string) (ListView, bool)
 
 func (d *Definitions) BoxedRelation(idOrName string) (RelationView, bool)
@@ -114,6 +116,8 @@ func CreateBoxedContext(src []byte, decisionID string) ([]byte, error)
 
 func CreateBoxedFilter(src []byte, decisionID string) ([]byte, error)
 
+func CreateBoxedIterator(src []byte, decisionID string) ([]byte, error)
+
 func CreateBoxedList(src []byte, decisionID string) ([]byte, error)
 
 func CreateBoxedRelation(src []byte, decisionID string) ([]byte, error)
@@ -131,6 +135,8 @@ func SetBoxedConditional(src []byte, decisionID string, edit ConditionalEdit) ([
 func SetBoxedContext(src []byte, decisionID string, edit ContextEdit) ([]byte, error)
 
 func SetBoxedFilter(src []byte, decisionID string, edit FilterEdit) ([]byte, error)
+
+func SetBoxedIterator(src []byte, decisionID string, edit IteratorEdit) ([]byte, error)
 
 func SetBoxedList(src []byte, decisionID string, edit ListEdit) ([]byte, error)
 
@@ -302,6 +308,8 @@ type GraphNode struct {
 
 	HasFilter	bool	`json:"hasFilter,omitempty"`
 
+	HasIterator	bool	`json:"hasIterator,omitempty"`
+
 	HasLogic	bool	`json:"hasLogic,omitempty"`
 	X		float64	`json:"x,omitempty"`
 	Y		float64	`json:"y,omitempty"`
@@ -362,6 +370,23 @@ type ItemType struct {
 	IsCollection	bool	`json:"isCollection,omitempty"`
 	AllowedValues	string	`json:"allowedValues,omitempty"`
 	Structured	bool	`json:"structured,omitempty"`
+}
+
+type IteratorEdit struct {
+	Kind		string	`json:"kind"`
+	Variable	string	`json:"variable"`
+	In		string	`json:"in"`
+	Body		string	`json:"body"`
+}
+
+type IteratorView struct {
+	DecisionID	string	`json:"decisionId"`
+	Name		string	`json:"name"`
+	Kind		string	`json:"kind"`
+	Variable	string	`json:"variable"`
+	In		string	`json:"in"`
+	Body		string	`json:"body"`
+	Simple		bool	`json:"simple"`
 }
 
 type Limits struct {

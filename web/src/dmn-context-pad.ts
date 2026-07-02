@@ -23,6 +23,7 @@ const ICON_CONDITIONAL = svg(`<path d="M9 2.5v13M9 6l4-3M9 10l-4-3" ${stroke}/>`
 const ICON_LIST = svg(`<rect x="3" y="3.5" width="12" height="11" rx="1" ${stroke}/><path d="M6 7h6M6 9.5h6M6 12h4" ${stroke}/>`)
 const ICON_RELATION = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" ${stroke}/><path d="M2.5 7.5h13M7 3.5v11M11 3.5v11" ${stroke}/>`)
 const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}/>`)
+const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -90,7 +91,7 @@ class DmnContextPadProvider {
       // A decided decision: open its logic with a single click on the icon —
       // the table view or the FEEL-expression editor (also reachable by
       // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasLogic?: boolean })
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasLogic?: boolean })
       if (decided.hasTable) {
         entries['open-table'] = {
           group: 'edit',
@@ -147,11 +148,18 @@ class DmnContextPadProvider {
           imageUrl: ICON_RELATION,
           action: { click: () => this.eventBus.fire('dmn.openRelation', { element }) },
         }
+      } else if (decided.hasIterator) {
+        entries['open-iterator'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Iteration (for/some/every) bearbeiten',
+          imageUrl: ICON_ITERATOR,
+          action: { click: () => this.eventBus.fire('dmn.openIterator', { element }) },
+        }
       } else if (decided.hasLogic) {
-        // A decided decision whose logic is another boxed expression (invocation,
-        // for/every/some) the modeler cannot edit yet (WP-66). Offer an honest
-        // hint rather than a "create" that the server rejects because the decision
-        // already has logic.
+        // A decided decision whose logic is another boxed expression (invocation)
+        // the modeler cannot edit yet (WP-66). Offer an honest hint rather than a
+        // "create" that the server rejects because the decision already has logic.
         entries['boxed-info'] = {
           group: 'edit',
           className: 'cp-icon',
@@ -210,6 +218,13 @@ class DmnContextPadProvider {
           title: 'Filter anlegen',
           imageUrl: ICON_FILTER,
           action: { click: () => this.eventBus.fire('dmn.createFilter', { element }) },
+        }
+        entries['create-iterator'] = {
+          group: 'add',
+          className: 'cp-icon',
+          title: 'Iteration (for/some/every) anlegen',
+          imageUrl: ICON_ITERATOR,
+          action: { click: () => this.eventBus.fire('dmn.createIterator', { element }) },
         }
       }
     }
