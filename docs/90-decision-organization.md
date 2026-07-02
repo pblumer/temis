@@ -125,6 +125,17 @@ die Komposition ist ein eigenes reviewbares Artefakt mit eigenem Owner (`flows/`
 CODEOWNERS), und weil jeder Step ein `modelId` pinnt, ist der ganze Flow **re-auditierbar**
 (ADR-0023). Umsetzung: Etappe „Decision-Flow" (WP-90–94) in `docs/20-roadmap.md`.
 
+**Wie ein Flow in Betrieb kommt (Source of Truth, ADR-0032).** Ein Flow lebt als
+`flows/<name>/*.flow.json` **im Git-Repo** — das ist die durable, reviewbare, versionierte
+Fassung (CODEOWNERS). Der Server lädt sie beim Start read-only über **`-flows-dir`**
+(`WithFlowStore`, spiegelt `-models-dir` für Modelle): alle `*.flow.json` werden kompiliert
+und in den Katalog registriert, **nachdem** die Modelle geladen sind, sodass die Validierung
+greift. Ein Flow mit (noch) nicht geladenen Modellen registriert trotzdem und trägt
+Diagnostics. Der Server schreibt Flows **nie zurück** — Änderungen laufen über Git +
+`git_propose` (compile-before-write), nicht über einen Server-Schreibpfad; so entsteht **keine
+zweite Quelle der Wahrheit**. `POST /v1/flows` bleibt der **flüchtige Dev-/Interaktiv-Pfad**
+(Flow Studio, Experimente), nicht persistiert.
+
 ## 6. Die temis↔chrampfer-Naht (Kurzform)
 
 Vollständig in ADR-0025. Merksätze:
