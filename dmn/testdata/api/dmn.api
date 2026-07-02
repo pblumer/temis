@@ -82,9 +82,13 @@ func (d *Definitions) ModelInputSchema() []InputField
 
 func (d *Definitions) ModelName() string
 
+func (d *Definitions) ReachableInputSchema(idOrName string) ([]InputField, error)
+
 func (d *Definitions) Service(idOrName string) (*CompiledService, error)
 
 func (d *Definitions) ValidateModelInput(in Input) []InputProblem
+
+func (d *Definitions) ValidateReachableInput(idOrName string, in Input) ([]InputProblem, error)
 
 func (d Diagnostics) HasErrors() bool
 

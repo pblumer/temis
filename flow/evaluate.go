@@ -41,9 +41,11 @@ func WithTrace() Option {
 
 // Validate runs model-aware validation: every step's model resolves, its target
 // decision/service exists, and — for a decision — its required inputs are wired
-// and no wiring targets an input the decision does not declare (typed against
-// InputSchema, WP-52). Structural diagnostics from Compile are included first.
-// A non-empty result means the flow must not be evaluated.
+// and no wiring targets an input the decision cannot reach (typed against the
+// target's reachable input schema — its direct plus transitively-required leaf
+// inputs, ADR-0026 L2a — so a composed decision is wireable in a flow). Structural
+// diagnostics from Compile are included first. A non-empty result means the flow
+// must not be evaluated.
 func (f *Flow) Validate(ctx context.Context, r Resolver) Diagnostics {
 	diags := append(Diagnostics{}, f.diags...)
 	for _, id := range f.sortedIDs() {
@@ -56,14 +58,23 @@ func (f *Flow) Validate(ctx context.Context, r Resolver) Diagnostics {
 			diags = append(diags, Diagnostic{Code: CodeModelUnresolved, Step: id, Message: fmt.Sprintf("cannot resolve model %q: %v", s.Model, err)})
 			continue
 		}
-		dec, decErr := defs.Decision(s.Decision)
-		if decErr != nil {
+		if _, decErr := defs.Decision(s.Decision); decErr != nil {
 			if _, svcErr := defs.Service(s.Decision); svcErr != nil {
 				diags = append(diags, Diagnostic{Code: CodeTargetNotFound, Step: id, Message: fmt.Sprintf("model has no decision or service %q", s.Decision)})
 			}
 			continue // a service: no public input schema to type-check against
 		}
-		diags = append(diags, checkWiring(id, s, dec.InputSchema())...)
+		// Type the wiring against the target's REACHABLE inputs — its direct inputs
+		// plus those reached transitively through required decisions (ADR-0026) — not
+		// just dec.InputSchema()'s directly declared ones. A composed decision needs
+		// a leaf input only via a sub-decision; wiring it must be legal, not
+		// FLOW_UNKNOWN_INPUT.
+		schema, serr := defs.ReachableInputSchema(s.Decision)
+		if serr != nil {
+			diags = append(diags, Diagnostic{Code: CodeTargetNotFound, Step: id, Message: serr.Error()})
+			continue
+		}
+		diags = append(diags, checkWiring(id, s, schema)...)
 	}
 	return diags
 }
@@ -123,11 +134,31 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 
 		var res dmn.Result
 		if dec, decErr := defs.Decision(s.Decision); decErr == nil {
-			stepIn, berr := f.buildInput(ctx, idx, dec.InputSchema(), in, stepOut)
+			// Build and validate against the target's REACHABLE input schema (direct +
+			// transitively-required leaf inputs), so coerce() also fires for transitive
+			// numeric inputs and a transitively-reached input is accepted rather than
+			// rejected as unknown. We deliberately do NOT use dec.Evaluate(
+			// WithStrictInput): that validates only the narrow per-decision schema and
+			// would reject the transitive inputs. Nor EvaluateGraph, whose whole-model
+			// schema is too wide (it would demand inputs unrelated decisions need) and
+			// which re-evaluates every decision in the model per step (a budget
+			// multiplication, ADR-0008). Instead we validate once against the cone here,
+			// then evaluate leniently so the evaluator itself feeds the transitive
+			// inputs down into the required sub-decisions (dmn/eval.go).
+			schema, serr := defs.ReachableInputSchema(s.Decision)
+			if serr != nil {
+				return dmn.Result{}, &Error{Diagnostics: Diagnostics{{Code: CodeTargetNotFound, Step: s.ID, Message: serr.Error()}}}
+			}
+			stepIn, berr := f.buildInput(ctx, idx, schema, in, stepOut)
 			if berr != nil {
 				return dmn.Result{}, berr
 			}
-			evalOpts := []dmn.EvalOption{dmn.WithStrictInput()}
+			if probs, verr := defs.ValidateReachableInput(s.Decision, stepIn); verr != nil {
+				return dmn.Result{}, &Error{Diagnostics: Diagnostics{{Code: CodeTargetNotFound, Step: s.ID, Message: verr.Error()}}}
+			} else if len(probs) > 0 {
+				return dmn.Result{}, fmt.Errorf("flow: step %q: %w", s.ID, &dmn.InputError{Problems: probs})
+			}
+			var evalOpts []dmn.EvalOption
 			if cfg.trace {
 				evalOpts = append(evalOpts, dmn.WithTrace())
 			}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="cone_defs" name="Cone"
+             namespace="http://temis.test/cone">
+  <inputData id="id_a" name="A"><variable name="A" typeRef="number"/></inputData>
+  <inputData id="id_b" name="B"><variable name="B" typeRef="number"/></inputData>
+  <inputData id="id_c" name="C"><variable name="C" typeRef="number"/></inputData>
+  <inputData id="id_d" name="D"><variable name="D" typeRef="number"/></inputData>
+
+  <!-- Sub1 needs leaf inputs A and B. -->
+  <decision id="id_sub1" name="Sub1">
+    <variable name="Sub1" typeRef="number"/>
+    <informationRequirement><requiredInput href="#id_a"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_b"/></informationRequirement>
+    <literalExpression typeRef="number"><text>A + B</text></literalExpression>
+  </decision>
+
+  <!-- Sub2 needs leaf inputs B (shared with Sub1) and C. -->
+  <decision id="id_sub2" name="Sub2">
+    <variable name="Sub2" typeRef="number"/>
+    <informationRequirement><requiredInput href="#id_b"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_c"/></informationRequirement>
+    <literalExpression typeRef="number"><text>B + C</text></literalExpression>
+  </decision>
+
+  <!-- Top requires Sub1 and Sub2 (decisions) plus the direct input A; its cone
+       reaches A, B, C — but not D. -->
+  <decision id="id_top" name="Top">
+    <variable name="Top" typeRef="number"/>
+    <informationRequirement><requiredDecision href="#id_sub1"/></informationRequirement>
+    <informationRequirement><requiredDecision href="#id_sub2"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_a"/></informationRequirement>
+    <literalExpression typeRef="number"><text>Sub1 + Sub2 + A</text></literalExpression>
+  </decision>
+
+  <!-- Isolated is outside Top's cone; its leaf input D must not appear in Top's
+       reachable schema even though it is in the model-wide schema. -->
+  <decision id="id_isolated" name="Isolated">
+    <variable name="Isolated" typeRef="number"/>
+    <informationRequirement><requiredInput href="#id_d"/></informationRequirement>
+    <literalExpression typeRef="number"><text>D * 2</text></literalExpression>
+  </decision>
+</definitions>

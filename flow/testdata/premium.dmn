@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="flow_premium_defs" name="Premium Model"
+             namespace="http://temis.test/flow/premium">
+  <inputData id="id_vehicle" name="VehicleValue">
+    <variable name="VehicleValue" typeRef="number"/>
+  </inputData>
+  <inputData id="id_risk" name="RiskScore">
+    <variable name="RiskScore" typeRef="number"/>
+  </inputData>
+  <inputData id="id_region" name="RegionLoad">
+    <variable name="RegionLoad" typeRef="number"/>
+  </inputData>
+
+  <!-- BasePremium needs only the leaf input VehicleValue. -->
+  <decision id="id_base" name="BasePremium">
+    <variable name="BasePremium" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_vehicle"/>
+    </informationRequirement>
+    <literalExpression typeRef="number">
+      <text>VehicleValue * 5</text>
+    </literalExpression>
+  </decision>
+
+  <!-- FinalPremium declares RiskScore and RegionLoad directly, but needs
+       VehicleValue only transitively through BasePremium. -->
+  <decision id="id_final" name="FinalPremium">
+    <variable name="FinalPremium" typeRef="number"/>
+    <informationRequirement>
+      <requiredDecision href="#id_base"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#id_risk"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredInput href="#id_region"/>
+    </informationRequirement>
+    <literalExpression typeRef="number">
+      <text>BasePremium + RiskScore * 10 + RegionLoad</text>
+    </literalExpression>
+  </decision>
+
+  <!-- RiskCategory needs only the leaf input RiskScore. -->
+  <decision id="id_cat" name="RiskCategory">
+    <variable name="RiskCategory" typeRef="number"/>
+    <informationRequirement>
+      <requiredInput href="#id_risk"/>
+    </informationRequirement>
+    <literalExpression typeRef="number">
+      <text>if RiskScore &gt; 50 then 2 else 1</text>
+    </literalExpression>
+  </decision>
+
+  <!-- TotalRiskScore references ONLY other decisions and declares no direct
+       input; it reaches VehicleValue and RiskScore purely transitively. -->
+  <decision id="id_total" name="TotalRiskScore">
+    <variable name="TotalRiskScore" typeRef="number"/>
+    <informationRequirement>
+      <requiredDecision href="#id_base"/>
+    </informationRequirement>
+    <informationRequirement>
+      <requiredDecision href="#id_cat"/>
+    </informationRequirement>
+    <literalExpression typeRef="number">
+      <text>BasePremium + RiskCategory</text>
+    </literalExpression>
+  </decision>
+</definitions>

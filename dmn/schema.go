@@ -141,35 +141,25 @@ func validateInputAgainst(in Input, fields []InputField, constraints map[string]
 // type/constraint is taken from the first decision that declares it with one, and
 // it is required when any decision requires it.
 func (d *Definitions) ModelInputSchema() []InputField {
-	var fields []InputField
-	idx := map[string]int{}
-	for _, cd := range d.order {
-		for _, f := range cd.inputs {
-			if i, ok := idx[f.Name]; ok {
-				ex := &fields[i]
-				if ex.Type == "" {
-					ex.Type = f.Type
-				}
-				if ex.Constraint == "" {
-					ex.Constraint = f.Constraint
-				}
-				ex.Required = ex.Required || f.Required
-				// Values: a closed declared enumeration wins; otherwise union the
-				// suggestions from every decision that consumes this input.
-				if !ex.ValuesClosed {
-					if f.ValuesClosed {
-						ex.Values, ex.ValuesClosed = f.Values, true
-					} else {
-						ex.Values = mergeDistinct(ex.Values, f.Values)
-					}
-				}
-				continue
-			}
-			idx[f.Name] = len(fields)
-			fields = append(fields, f)
-		}
+	return unionInputs(d.order)
+}
+
+// ReachableInputSchema returns the leaf inputs needed to evaluate the decision
+// idOrName: its directly declared inputs plus those reached transitively through
+// required decisions — the union over its requirements cone, deduped by name
+// exactly as ModelInputSchema but scoped to that one decision (ADR-0026, L2a).
+// ModelInputSchema is the union over the whole model and would allow inputs of
+// other, unrelated decisions; ReachableInputSchema is the minimal correct
+// superset for driving one composed decision — e.g. in a flow, precisely the
+// leaf inputs a step targeting the decision may wire. A field's type/constraint
+// comes from the first declaring decision in the cone, and it is required when
+// any decision in the cone requires it. It errs if no such decision exists.
+func (d *Definitions) ReachableInputSchema(idOrName string) ([]InputField, error) {
+	cone, err := d.requirementsCone(idOrName)
+	if err != nil {
+		return nil, err
 	}
-	return fields
+	return unionInputs(cone), nil
 }
 
 // ValidateModelInput checks in against the model's whole-graph input schema
@@ -181,11 +171,109 @@ func (d *Definitions) ValidateModelInput(in Input) []InputProblem {
 	return validateInputAgainst(in, d.ModelInputSchema(), d.mergedConstraints(), "this model")
 }
 
+// ValidateReachableInput checks in against the decision's reachable input schema
+// (ReachableInputSchema) and returns every problem found — the cone-scoped
+// counterpart of ValidateModelInput. It lets a caller (notably a flow step)
+// validate an input that includes transitively-reached leaf inputs while still
+// catching genuine unknowns, type mismatches and missing required inputs. It errs
+// if no such decision exists.
+func (d *Definitions) ValidateReachableInput(idOrName string, in Input) ([]InputProblem, error) {
+	cone, err := d.requirementsCone(idOrName)
+	if err != nil {
+		return nil, err
+	}
+	subject := fmt.Sprintf("decision %q's reachable inputs", idOrName)
+	return validateInputAgainst(in, unionInputs(cone), coneConstraints(cone), subject), nil
+}
+
+// requirementsCone returns the decisions in the requirements cone of idOrName —
+// the decision itself plus every decision reachable through its requiredDecision
+// edges — in the model's declaration order (d.order), so any union built over it
+// is deterministic (no map-iteration order, ADR-0007/0023).
+func (d *Definitions) requirementsCone(idOrName string) ([]*CompiledDecision, error) {
+	root, ok := d.byID[idOrName]
+	if !ok {
+		root, ok = d.byName[idOrName]
+	}
+	if !ok {
+		return nil, fmt.Errorf("dmn: no decision %q", idOrName)
+	}
+	inCone := map[*CompiledDecision]bool{}
+	var visit func(cd *CompiledDecision)
+	visit = func(cd *CompiledDecision) {
+		if inCone[cd] {
+			return
+		}
+		inCone[cd] = true
+		for _, req := range cd.requires {
+			visit(req)
+		}
+	}
+	visit(root)
+	var cone []*CompiledDecision
+	for _, cd := range d.order {
+		if inCone[cd] {
+			cone = append(cone, cd)
+		}
+	}
+	return cone, nil
+}
+
+// unionInputs merges the declared input fields of decs into one schema, deduped
+// by name: a field's type/constraint comes from the first decision that declares
+// it with one, and it is required when any decision requires it. It backs both
+// ModelInputSchema (the whole model) and ReachableInputSchema (one decision's
+// cone). Order follows decs, then first-seen input order — deterministic.
+func unionInputs(decs []*CompiledDecision) []InputField {
+	var fields []InputField
+	idx := map[string]int{}
+	for _, cd := range decs {
+		for _, f := range cd.inputs {
+			if i, ok := idx[f.Name]; ok {
+				mergeInputField(&fields[i], f)
+				continue
+			}
+			idx[f.Name] = len(fields)
+			fields = append(fields, f)
+		}
+	}
+	return fields
+}
+
+// mergeInputField folds f into an already-recorded field of the same name: the
+// first declared type/constraint wins, required is OR'd, and Values union unless
+// a closed declared enumeration already fixed them.
+func mergeInputField(ex *InputField, f InputField) {
+	if ex.Type == "" {
+		ex.Type = f.Type
+	}
+	if ex.Constraint == "" {
+		ex.Constraint = f.Constraint
+	}
+	ex.Required = ex.Required || f.Required
+	// Values: a closed declared enumeration wins; otherwise union the
+	// suggestions from every decision that consumes this input.
+	if !ex.ValuesClosed {
+		if f.ValuesClosed {
+			ex.Values, ex.ValuesClosed = f.Values, true
+		} else {
+			ex.Values = mergeDistinct(ex.Values, f.Values)
+		}
+	}
+}
+
 // mergedConstraints unions every decision's resolved input constraints, keyed by
 // input name (first decision to declare a constraint wins).
 func (d *Definitions) mergedConstraints() map[string]*inputConstraint {
+	return coneConstraints(d.order)
+}
+
+// coneConstraints unions the resolved input constraints of decs, keyed by input
+// name (first decision to declare a constraint wins). It backs both the
+// whole-model (mergedConstraints) and cone-scoped (ValidateReachableInput) paths.
+func coneConstraints(decs []*CompiledDecision) map[string]*inputConstraint {
 	out := map[string]*inputConstraint{}
-	for _, cd := range d.order {
+	for _, cd := range decs {
 		for name, c := range cd.constraints {
 			if _, ok := out[name]; !ok {
 				out[name] = c
