@@ -21,7 +21,7 @@ const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
 // given (read-only), draws the decision PATH: the tested input value per column,
 // a per-cell pass/fail heatmap over every rule and the winning rule glowing, plus
 // a chip-and-arrow summary bar (input value → matched rule → output).
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace } = {}): Promise<void> {
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace; wiredInputs?: { expression: string; typeRef?: string }[] } = {}): Promise<void> {
   let fetched: TableView | null
   try {
     fetched = await getTable(modelId, decisionId)
@@ -41,6 +41,23 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
     inputs: fetched.inputs.map((c) => ({ ...c })),
     outputs: fetched.outputs.length ? fetched.outputs.map((c) => ({ ...c })) : [{ name: fetched.name }],
     rules: fetched.rules.map((r) => ({ inputEntries: [...r.inputEntries], outputEntries: [...r.outputEntries], annotations: [...(r.annotations ?? [])] })),
+  }
+
+  // Reconcile with the decision's wired inputs (its information requirements). A
+  // table's input columns are derived from requirements only when the table is
+  // created, so an input wired in afterwards has no column and is missing from the
+  // editor. Surface each such input as a column (matching by expression), extending
+  // any existing rules to keep them aligned. Skipped in read-only/trace inspection,
+  // where the grid must mirror the run exactly. The user can still remove a column.
+  if (!opts.readOnly) {
+    const have = new Set(state.inputs.map((c) => c.expression.trim()))
+    for (const w of opts.wiredInputs ?? []) {
+      const expr = w.expression.trim()
+      if (!expr || have.has(expr)) continue
+      have.add(expr)
+      state.inputs.push({ expression: w.expression, typeRef: w.typeRef ?? '' })
+      state.rules.forEach((r) => r.inputEntries.push(''))
+    }
   }
 
   const close = (): void => {

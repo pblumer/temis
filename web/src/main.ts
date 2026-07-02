@@ -253,6 +253,24 @@ async function boot(root: HTMLElement): Promise<void> {
     const names = nodes.filter((n) => n.id !== decisionId).map((n) => n.name ?? '').filter((s) => s !== '')
     return { names, title: self?.name ?? '' }
   }
+  // wiredInputsFor lists the inputs the decision is wired to in the live graph (its
+  // incoming information requirements), as {expression, typeRef} column candidates.
+  // The table editor uses them to surface a requirement added after the table was
+  // created — otherwise that input never becomes a column and is missing from the
+  // table (a table's columns are only derived from requirements at creation time).
+  const wiredInputsFor = (decisionId: string): { expression: string; typeRef?: string }[] => {
+    const graph = handle?.graph()
+    if (!graph) return []
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+    const out: { expression: string; typeRef?: string }[] = []
+    for (const e of graph.edges) {
+      if (e.type !== 'informationRequirement' || e.target !== decisionId) continue
+      const src = byId.get(e.source)
+      const name = src?.name?.trim()
+      if (name) out.push({ expression: name, typeRef: src?.dataType })
+    }
+    return out
+  }
   const openLiteral = (modelId: string, decisionId: string, fresh = false): void => {
     const { names, title } = namesFor(decisionId)
     void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
@@ -1130,7 +1148,7 @@ async function boot(root: HTMLElement): Promise<void> {
       // decision has exactly one table; matched still spans all, for safety).
       void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched, trace: tr?.tables?.[0] })
     } else {
-      void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions)
+      void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId) })
     }
   }
 
