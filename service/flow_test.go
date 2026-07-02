@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -78,6 +79,48 @@ func TestFlowCatalogAndDetail(t *testing.T) {
 	// Unknown flow.
 	if rec := do(t, h, "GET", "/v1/flows/sha256:nope", "", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown flow detail = %d, want 404", rec.Code)
+	}
+}
+
+// TestFlowStoreLoadsFromDir verifies WithFlowStore loads *.flow.json descriptors
+// into the catalog at startup (ADR-0032): valid flows are registered, a malformed
+// descriptor is skipped rather than blocking startup, and non-flow files are
+// ignored. It also confirms the load validates against models that are present.
+func TestFlowStoreLoadsFromDir(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, b []byte) {
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	// A structurally valid flow (unknown model ids → registers with diagnostics),
+	// a malformed descriptor (skipped), and a non-flow file (ignored).
+	write("loan.flow.json", loanFlowDescriptor("sha256:aaa", "sha256:bbb"))
+	write("broken.flow.json", []byte("{ not json"))
+	write("notes.txt", []byte("ignore me"))
+
+	h := NewServer(nil, WithFlowStore(dir)).Handler()
+
+	rec := do(t, h, "GET", "/v1/flows", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d: %s", rec.Code, rec.Body)
+	}
+	list := decode[flowListResponse](t, rec)
+	if list.Count != 1 || len(list.Flows) != 1 {
+		t.Fatalf("catalog = %+v, want exactly 1 loaded flow", list)
+	}
+	if fs := list.Flows[0]; fs.Name != "loan-decisioning" || fs.Steps != 2 {
+		t.Errorf("summary = %+v", fs)
+	}
+	// The loaded flow is retrievable by its content id.
+	if rec := do(t, h, "GET", "/v1/flows/"+list.Flows[0].FlowID, "", nil); rec.Code != http.StatusOK {
+		t.Errorf("detail = %d: %s", rec.Code, rec.Body)
+	}
+
+	// A missing directory disables the store without blocking startup.
+	h2 := NewServer(nil, WithFlowStore(filepath.Join(dir, "does-not-exist"))).Handler()
+	if rec := do(t, h2, "GET", "/v1/flows", "", nil); rec.Code != http.StatusOK || decode[flowListResponse](t, rec).Count != 0 {
+		t.Errorf("missing dir should yield empty catalog, got %d: %s", rec.Code, rec.Body)
 	}
 }
 

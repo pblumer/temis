@@ -61,6 +61,8 @@ func main() {
 		"preload the bundled example DMN models so they appear in the modeler on start (env TEMIS_EXAMPLES)")
 	modelsDir := flag.String("models-dir", os.Getenv("TEMIS_MODELS_DIR"),
 		"persist uploaded/edited models to this directory and reload them on start, so they survive a restart; empty = in-memory only (default $TEMIS_MODELS_DIR)")
+	flowsDir := flag.String("flows-dir", os.Getenv("TEMIS_FLOWS_DIR"),
+		"load decision-flow descriptors (*.flow.json) from this directory into the catalog on start (read-only source of truth); empty = catalog starts empty (default $TEMIS_FLOWS_DIR)")
 	serveMCP := flag.Bool("mcp", envBool("TEMIS_MCP", true),
 		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples) (env TEMIS_MCP)")
 	assist := flag.Bool("assist", envBool("TEMIS_ASSIST", true),
@@ -124,6 +126,9 @@ func main() {
 	}
 	if *modelsDir != "" {
 		opts = append(opts, service.WithModelStore(*modelsDir))
+	}
+	if *flowsDir != "" {
+		opts = append(opts, service.WithFlowStore(*flowsDir))
 	}
 	// Modeling assistant (ADR-0024): on by default so the binary is fully featured
 	// out of the box. With no server-side key it runs BYOK-only — the endpoint is

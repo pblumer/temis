@@ -87,6 +87,13 @@ type Server struct {
 	// this server's model cache.
 	flows *flowStore
 
+	// flowsDir, when non-empty, is a filesystem directory of *.flow.json
+	// descriptors loaded into the flow store at construction (ADR-0032); set via
+	// WithFlowStore. It is read-only — git/dir stays the source of truth, so the
+	// server never writes flows back (unlike the model store). Empty leaves the
+	// flow catalog empty until something registers over POST /v1/flows.
+	flowsDir string
+
 	// storeDir, when non-empty, is a filesystem directory that persists uploaded
 	// and edited models so they survive a restart (ADR-0027); set via
 	// WithModelStore. NewServer opens store from it after options run. Empty
@@ -229,6 +236,17 @@ func WithModelStore(dir string) Option {
 	return func(s *Server) { s.storeDir = dir }
 }
 
+// WithFlowStore loads decision-flow descriptors (*.flow.json) from dir into the
+// flow catalog at startup, so a server's flows are present after a restart and
+// the Flow Studio lists them out of the box (ADR-0032, ADR-0026). The directory
+// is the source of truth and is treated read-only — flows are authored in git
+// and loaded here; the server never writes them back (contrast WithModelStore).
+// A flow whose models are not (yet) loaded still registers, carrying validation
+// diagnostics. An empty dir keeps the catalog empty (the default).
+func WithFlowStore(dir string) Option {
+	return func(s *Server) { s.flowsDir = dir }
+}
+
 // storedModel is a compiled model held in the cache together with the index and
 // any diagnostics produced while compiling it.
 type storedModel struct {
@@ -301,6 +319,12 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			s.store = store
 			s.loadPersisted(context.Background())
 		}
+	}
+	// Finally load declared flows from disk (ADR-0032), after the models they
+	// reference are in the cache so validation is meaningful. Read-only: the
+	// directory is the source of truth, never written back.
+	if s.flowsDir != "" {
+		s.loadFlows(context.Background())
 	}
 	return s
 }

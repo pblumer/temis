@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pblumer/temis/dmn"
@@ -61,6 +65,45 @@ func (f *flowStore) snapshot() []*storedFlow {
 func flowID(desc []byte) string {
 	sum := sha256.Sum256(desc)
 	return fmt.Sprintf("sha256:%x", sum)
+}
+
+// loadFlows reads *.flow.json descriptors from s.flowsDir and registers each in
+// the catalog (ADR-0032). It runs at construction, before the server serves, so
+// it needs no locking beyond the store's own. A descriptor that does not compile
+// is logged and skipped — never blocking startup — and left on disk so a later
+// fix recovers it. Flows validate against the already-loaded models; a flow that
+// references an unloaded model still registers, carrying diagnostics.
+func (s *Server) loadFlows(ctx context.Context) {
+	entries, err := os.ReadDir(s.flowsDir)
+	if err != nil {
+		log.Printf("temis: flow store disabled: %v", err)
+		return
+	}
+	var loaded, skipped int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".flow.json") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(s.flowsDir, e.Name()))
+		if err != nil {
+			log.Printf("temis: flow %q: %v", e.Name(), err)
+			skipped++
+			continue
+		}
+		f, _, err := flow.Compile(body)
+		if err != nil {
+			log.Printf("temis: flow %q: %v", e.Name(), err)
+			skipped++
+			continue
+		}
+		s.flows.put(&storedFlow{id: flowID(body), flow: f, desc: body, diags: f.Validate(ctx, cacheResolver{s})})
+		loaded++
+	}
+	msg := fmt.Sprintf("temis: flow store at %s (%d flows loaded", s.flowsDir, loaded)
+	if skipped > 0 {
+		msg += fmt.Sprintf(", %d skipped", skipped)
+	}
+	log.Print(msg + ")")
 }
 
 // cacheResolver resolves a flow's model references through the server's model
