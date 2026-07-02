@@ -32,10 +32,17 @@ func Parse(src string) (Expr, error) {
 	return ParseWithNames(src, nil)
 }
 
+// DefaultMaxParseDepth bounds the syntactic nesting the parser will descend
+// into, turning pathologically deep input (e.g. millions of prefix `-` or
+// nested `(`/`[`) into a *ParseError instead of a fatal stack overflow that
+// would crash the whole process (audit finding K1, ADR-0008). It sits far above
+// any realistic DMN model, whose FEEL nesting is in the low tens.
+const DefaultMaxParseDepth = 10_000
+
 // ParseWithNames parses src using names as the oracle for multi-word name
 // assembly (may be nil).
 func ParseWithNames(src string, names NameSet) (expr Expr, err error) {
-	p := &parser{toks: Tokenize(src), names: names}
+	p := &parser{toks: Tokenize(src), names: names, maxDepth: DefaultMaxParseDepth}
 	defer func() {
 		if r := recover(); r != nil {
 			pe, ok := r.(*ParseError)
@@ -53,9 +60,11 @@ func ParseWithNames(src string, names NameSet) (expr Expr, err error) {
 }
 
 type parser struct {
-	toks  []Token
-	pos   int
-	names NameSet
+	toks     []Token
+	pos      int
+	names    NameSet
+	depth    int // current syntactic recursion depth (K1 guard)
+	maxDepth int // hard ceiling on depth; 0 means unbounded
 	// noFilter suppresses the postfix [ ] filter while parsing an interval
 	// endpoint, so that the interval's closing bracket in forms like ]1..10[
 	// is not mistaken for a filter. It is cleared again inside any balanced
@@ -87,6 +96,20 @@ func (p *parser) expect(k Kind) Token {
 	}
 	return p.advance()
 }
+
+// enter increments the recursion depth and aborts with a *ParseError once the
+// configured ceiling is crossed. Paired with a deferred leave, it is placed on
+// the two functions every descent passes through — parseUnary (prefix chains)
+// and parsePrimary (parenthesised/bracketed/braced nesting) — so no recursive
+// path can grow the native stack without bound (K1).
+func (p *parser) enter() {
+	p.depth++
+	if p.maxDepth > 0 && p.depth > p.maxDepth {
+		p.fail("expression nesting too deep (limit %d)", p.maxDepth)
+	}
+}
+
+func (p *parser) leave() { p.depth-- }
 
 func (p *parser) fail(format string, args ...any) {
 	t := p.cur()
@@ -236,6 +259,8 @@ func (p *parser) parseMul() Expr {
 // parseUnary handles prefix minus. Exponentiation binds tighter than unary minus
 // (docs/30-feel-spec.md §3), so a unary operand is a power expression.
 func (p *parser) parseUnary() Expr {
+	p.enter()
+	defer p.leave()
 	if t := p.cur(); t.Kind == Minus {
 		p.advance()
 		return &UnaryExpr{baseNode: base(t), Op: "-", X: p.parseUnary()}
@@ -298,6 +323,8 @@ func (p *parser) parseCall(fn Expr) Expr {
 }
 
 func (p *parser) parsePrimary() Expr {
+	p.enter()
+	defer p.leave()
 	t := p.cur()
 	switch t.Kind {
 	case Number:

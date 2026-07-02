@@ -1,6 +1,9 @@
 package feel
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // FuzzParser encodes the WP-04 invariant from docs/50-testing-strategy.md §3 and
 // docs/30-feel-spec.md §10: no input makes the parser panic. Any input either
@@ -23,6 +26,10 @@ func FuzzParser(f *testing.F) {
 		"]1..10[",
 		`date and time("2024-01-01")`,
 		"Applicant Age + Guest Count",
+		// Deep-nesting seeds pin the K1 guard: the parser must reject these with
+		// a *ParseError, never a fatal stack overflow (ADR-0008).
+		strings.Repeat("-", DefaultMaxParseDepth+50) + "1",
+		strings.Repeat("(", DefaultMaxParseDepth+50) + "1",
 	}
 	for _, s := range seeds {
 		f.Add(s)

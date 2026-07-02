@@ -33,7 +33,7 @@ func Matches(test CompiledExpr, s *Scope) (bool, error) {
 // parseUnaryTest parses a unary-test cell into a boolean expression that
 // references InputVar. It reuses the expression parser for operands.
 func parseUnaryTest(src string) (expr Expr, err error) {
-	p := &parser{toks: Tokenize(src)}
+	p := &parser{toks: Tokenize(src), maxDepth: DefaultMaxParseDepth}
 	defer func() {
 		if r := recover(); r != nil {
 			pe, ok := r.(*ParseError)
