@@ -2,6 +2,8 @@ import type Palette from 'diagram-js/lib/features/palette/Palette'
 import type { PaletteEntries } from 'diagram-js/lib/features/palette/PaletteProvider'
 import type Create from 'diagram-js/lib/features/create/Create'
 import type ElementFactory from 'diagram-js/lib/core/ElementFactory'
+import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
+import type EventBus from 'diagram-js/lib/core/EventBus'
 import type HandTool from 'diagram-js/lib/features/hand-tool/HandTool'
 
 // Inline SVG icons as data URIs — same crisp, font-free style as the context pad.
@@ -35,23 +37,80 @@ const BKM: Kind = { type: 'businessKnowledgeModel', name: 'Neues BKM', w: 150, h
 // A created node goes through the command stack (undo/redo) and is persisted by
 // the structural save.
 class DmnPaletteProvider {
-  static $inject = ['palette', 'create', 'elementFactory', 'handTool']
+  static $inject = ['palette', 'create', 'elementFactory', 'handTool', 'elementRegistry', 'eventBus']
 
   private create: Create
   private elementFactory: ElementFactory
   private handTool: HandTool
+  private elementRegistry: ElementRegistry
+  // True while a create session (drag or click-to-place) is in flight, so a click
+  // on the palette while one is already running is ignored rather than starting a
+  // second, overlapping session.
+  private creating = false
+  // Whether the in-flight session was started by a drag, and when the last such
+  // drag session ended. Both guard the click action against the "ghost" click a
+  // browser fires right after a canceled native drag from the palette: without the
+  // guard that trailing click starts a second, phantom create session that follows
+  // the cursor and can only be dismissed with Esc/reload. A short time window is
+  // the same technique diagram-js uses for its own post-drag click trap.
+  private dragSession = false
+  private lastDragEnd = 0
 
-  constructor(palette: Palette, create: Create, elementFactory: ElementFactory, handTool: HandTool) {
+  constructor(
+    palette: Palette,
+    create: Create,
+    elementFactory: ElementFactory,
+    handTool: HandTool,
+    elementRegistry: ElementRegistry,
+    eventBus: EventBus,
+  ) {
     this.create = create
     this.elementFactory = elementFactory
     this.handTool = handTool
+    this.elementRegistry = elementRegistry
+    eventBus.on('create.init', () => {
+      this.creating = true
+    })
+    eventBus.on('create.cleanup', () => {
+      this.creating = false
+      if (this.dragSession) this.lastDragEnd = Date.now()
+      this.dragSession = false
+    })
     palette.registerProvider(this)
   }
 
+  // uniqueName returns base, or "base 2", "base 3", … so a freshly created element
+  // never silently collides with an existing element's name — two decisions named
+  // "Neue Decision" are a conflict the user would otherwise have to untangle by
+  // hand (and cannot rename until placed).
+  private uniqueName(base: string): string {
+    const taken = new Set<string>()
+    for (const el of this.elementRegistry.getAll()) {
+      const name = (el as { name?: string }).name
+      if (name) taken.add(name)
+    }
+    if (!taken.has(base)) return base
+    let i = 2
+    while (taken.has(`${base} ${i}`)) i++
+    return `${base} ${i}`
+  }
+
   getPaletteEntries(): PaletteEntries {
-    const startCreate = (kind: Kind) => (event: Event): void => {
-      const shape = this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: kind.name } as never)
+    const doCreate = (kind: Kind, event: Event): void => {
+      const shape = this.elementFactory.createShape({ type: 'dmn:' + kind.type, width: kind.w, height: kind.h, name: this.uniqueName(kind.name) } as never)
       this.create.start(event as MouseEvent, shape)
+    }
+    // A real drag always starts a create. A click starts one only when none is
+    // already in flight and no palette drag just ended — this drops the ghost
+    // click that trails a palette drag, which used to leave a phantom element
+    // stuck to the cursor (see `dragSession`/`lastDragEnd`).
+    const startOnDrag = (kind: Kind) => (event: Event): void => {
+      this.dragSession = true
+      doCreate(kind, event)
+    }
+    const startOnClick = (kind: Kind) => (event: Event): void => {
+      if (this.creating || Date.now() - this.lastDragEnd < 300) return
+      doCreate(kind, event)
     }
 
     // Entry keys carry the "-tool" suffix the palette strips to match the active
@@ -82,7 +141,7 @@ class DmnPaletteProvider {
         className: 'pal-icon',
         title: kind.title,
         imageUrl: kind.icon,
-        action: { dragstart: startCreate(kind), click: startCreate(kind) },
+        action: { dragstart: startOnDrag(kind), click: startOnClick(kind) },
       }
     }
     return entries
