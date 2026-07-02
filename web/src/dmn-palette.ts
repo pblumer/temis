@@ -124,6 +124,10 @@ class DmnPaletteProvider {
       const entry = (event.target as Element | null)?.closest?.('[data-action]') as HTMLElement | null
       const kind = entry ? PALETTE_KINDS[entry.dataset.action ?? ''] : undefined
       if (!kind) return
+      // Prevent the browser's native image/text drag before it can steal the
+      // pointer stream from diagram-js. The later click event still reaches the
+      // palette when the pointer did not move far enough to become a drag.
+      event.preventDefault()
 
       // Palette entries are deliberately not HTML5-draggable. We wait for an
       // actual pointer movement and then start diagram-js dragging from that
