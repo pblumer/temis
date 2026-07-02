@@ -708,6 +708,49 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/invocation:
+    get:
+      summary: Get a decision's boxed-invocation view
+      description: 404 when the decision's logic is not a boxed invocation. simple=false when the called expression or a binding argument is a nested boxed expression (the editor opens read-only).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The boxed invocation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvocationView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Set a decision's boxed-invocation logic
+      description: Replaces the decision's called function/BKM and its parameter bindings (each a literal FEEL expression). Recompiles and returns the saved model with any compile diagnostics.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvocationEdit" }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/decisions/{decision}/create-invocation:
+    post:
+      summary: Give an undecided decision a fresh boxed invocation
+      description: Creates a placeholder invocation (a named call and one binding). 400 when the decision already has logic.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: decision, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/bkm/{bkm}:
     get:
       summary: Get a business knowledge model's encapsulated-logic view
@@ -1659,6 +1702,7 @@ components:
         hasRelation: { type: boolean, description: "Decision whose logic is a boxed relation." }
         hasFilter: { type: boolean, description: "Decision whose logic is a boxed filter." }
         hasIterator: { type: boolean, description: "Decision whose logic is a boxed iteration (for/some/every)." }
+        hasInvocation: { type: boolean, description: "Decision whose logic is a boxed invocation (a function/BKM call)." }
         hasLogic: { type: boolean, description: "Decision that has any executable logic (table, literal or other boxed expression)." }
         x: { type: number }
         y: { type: number }
@@ -1882,6 +1926,25 @@ components:
         variable: { type: string, description: The iterator variable. }
         in: { type: string, description: The collection (FEEL). }
         body: { type: string, description: The return/satisfies branch (FEEL). }
+    InvocationBinding:
+      type: object
+      properties:
+        parameter: { type: string, description: The formal parameter name. }
+        value: { type: string, description: The FEEL argument bound to it. }
+    InvocationView:
+      type: object
+      properties:
+        decisionId: { type: string }
+        name: { type: string }
+        called: { type: string, description: The called function/BKM (a name). }
+        bindings: { type: array, items: { $ref: "#/components/schemas/InvocationBinding" } }
+        simple: { type: boolean, description: False when the call or a binding is a nested boxed expression this text view cannot edit. }
+    InvocationEdit:
+      type: object
+      required: [called]
+      properties:
+        called: { type: string, description: The function/BKM to call (a name). }
+        bindings: { type: array, items: { $ref: "#/components/schemas/InvocationBinding" }, description: The parameter bindings (blank rows are dropped; each needs a unique parameter and an argument). }
     BKMView:
       type: object
       properties:

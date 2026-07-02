@@ -25,6 +25,7 @@ const ICON_RELATION = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" $
 const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}/>`)
 const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
 const ICON_RENAME = svg(`<path d="M11.5 3.5l3 3L6 15H3v-3z" ${stroke}/><path d="M10 5l3 3" ${stroke}/>`)
+const ICON_INVOCATION = svg(`<rect x="2.5" y="4" width="13" height="10" rx="1.5" ${stroke}/><path d="M6.5 9h5M9 6.5v5" ${stroke}/>`)
 
 // A DMN element kind that can be appended as an upstream requirement.
 type Kind = { type: string; name: string; w: number; h: number; req: string; icon: string; title: string }
@@ -92,7 +93,7 @@ class DmnContextPadProvider {
       // A decided decision: open its logic with a single click on the icon —
       // the table view or the FEEL-expression editor (also reachable by
       // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasLogic?: boolean })
+      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasInvocation?: boolean; hasLogic?: boolean })
       if (decided.hasTable) {
         entries['open-table'] = {
           group: 'edit',
@@ -157,9 +158,17 @@ class DmnContextPadProvider {
           imageUrl: ICON_ITERATOR,
           action: { click: () => this.eventBus.fire('dmn.openIterator', { element }) },
         }
+      } else if (decided.hasInvocation) {
+        entries['open-invocation'] = {
+          group: 'edit',
+          className: 'cp-icon',
+          title: 'Invocation (Funktions-/BKM-Aufruf) bearbeiten',
+          imageUrl: ICON_INVOCATION,
+          action: { click: () => this.eventBus.fire('dmn.openInvocation', { element }) },
+        }
       } else if (decided.hasLogic) {
-        // A decided decision whose logic is another boxed expression (invocation)
-        // the modeler cannot edit yet (WP-66). Offer an honest hint rather than a
+        // A decided decision whose logic is a boxed form the modeler doesn't edit
+        // (e.g. a bare function definition). Offer an honest hint rather than a
         // "create" that the server rejects because the decision already has logic.
         entries['boxed-info'] = {
           group: 'edit',
@@ -226,6 +235,13 @@ class DmnContextPadProvider {
           title: 'Iteration (for/some/every) anlegen',
           imageUrl: ICON_ITERATOR,
           action: { click: () => this.eventBus.fire('dmn.createIterator', { element }) },
+        }
+        entries['create-invocation'] = {
+          group: 'add',
+          className: 'cp-icon',
+          title: 'Invocation (Funktions-/BKM-Aufruf) anlegen',
+          imageUrl: ICON_INVOCATION,
+          action: { click: () => this.eventBus.fire('dmn.createInvocation', { element }) },
         }
       }
     }

@@ -852,6 +852,37 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .rel-add-col { border: 1px dashed var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 4px; border-radius: 6px; width: 100%; }
 .rel-add-col:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 
+/* Boxed-invocation editor: a called function/BKM plus parameter bindings. */
+.inv-modal { width: min(640px, 94vw); }
+.inv-body { padding: 14px 18px; max-height: 62vh; overflow: auto; }
+.inv-called-label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.inv-called {
+  width: 100%; box-sizing: border-box;
+  font: 13.5px/1.4 ui-monospace, SFMono-Regular, monospace;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fcfdff; color: var(--fg);
+}
+.inv-called:focus { outline: none; border-color: var(--accent); background: #fff; }
+.inv-bindings-title { font-size: 13px; font-weight: 600; color: var(--muted); margin: 16px 0 8px; }
+.inv-rows { display: flex; flex-direction: column; gap: 7px; }
+.inv-row { display: flex; align-items: center; gap: 8px; }
+.inv-param {
+  flex: 1; min-width: 0; box-sizing: border-box;
+  font: 12.5px/1.35 system-ui, sans-serif; font-weight: 600;
+  padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: #f3f6fb; color: var(--fg);
+}
+.inv-param:focus { outline: none; border-color: var(--accent); background: #fff; }
+.inv-arrow { color: var(--muted); font-size: 14px; flex: none; }
+.inv-value {
+  flex: 2; min-width: 0; box-sizing: border-box;
+  font: 13px/1.35 ui-monospace, SFMono-Regular, monospace;
+  padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fcfdff; color: var(--fg);
+}
+.inv-value:focus { outline: none; border-color: var(--accent); background: #fff; }
+.inv-invalid { border-color: #e5484d; background: #fff4f4; }
+.inv-del { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 5px; border-radius: 5px; flex: none; }
+.inv-del:hover:not(:disabled) { color: #c0392b; background: #fbecec; }
+.inv-del:disabled { color: #d6dbe3; cursor: default; }
+
 .ctx-modal { width: min(760px, 95vw); }
 .ctx-body { padding: 14px 18px; }
 .ctx-grid {

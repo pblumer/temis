@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, listTypes, getStatus, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, type ModelSummary, type Status } from './api'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -16,6 +16,7 @@ import { openListOverlay } from './list'
 import { openRelationOverlay } from './relation'
 import { openFilterOverlay } from './filter'
 import { openIteratorOverlay } from './iterator'
+import { openInvocationOverlay } from './invocation'
 import { openBKMOverlay } from './bkm'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
@@ -358,6 +359,28 @@ async function boot(root: HTMLElement): Promise<void> {
       const savedId = await persistGraph(currentId)
       if (savedId !== currentId) await reselect(savedId)
       void openBKMOverlay(savedId, bkmId, (newId) => void reselect(newId), typeOptions)
+    } catch (e) {
+      status.textContent = (e as Error).message
+    }
+  }
+
+  // openInvocation opens a decision's boxed-invocation editor — editable in
+  // Design, read-only in Operate.
+  const openInvocation = (modelId: string, decisionId: string): void => {
+    const { names } = namesFor(decisionId)
+    void openInvocationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+  }
+
+  // createInvocation gives a logic-less decision a fresh boxed invocation: persist
+  // pending edits first, create it, switch to the saved revision and open.
+  const createInvocation = async (decisionId: string): Promise<void> => {
+    if (!currentId) return
+    status.textContent = 'legt Invocation an …'
+    try {
+      const created = await createBoxedInvocation(await persistGraph(currentId), decisionId)
+      await reselect(created.modelId)
+      status.textContent = 'Invocation angelegt ✓'
+      openInvocation(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -988,6 +1011,8 @@ async function boot(root: HTMLElement): Promise<void> {
       handle.onCreateFilter((decisionId) => void createFilter(decisionId))
       handle.onOpenIterator((decisionId) => openIterator(modelId, decisionId))
       handle.onCreateIterator((decisionId) => void createIterator(decisionId))
+      handle.onOpenInvocation((decisionId) => openInvocation(modelId, decisionId))
+      handle.onCreateInvocation((decisionId) => void createInvocation(decisionId))
       handle.onOpenBKM((bkmId) => void openBKM(bkmId))
       handle.onBoxed(() => {
         status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
