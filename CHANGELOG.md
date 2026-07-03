@@ -20,6 +20,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Security
 
+- **Härtungs-Etappe H2 (WP-137–139, aus dem Code-Qualitäts-Audit).** CI-Härtung: neuer
+  `govulncheck`-Job, Docker-Image-Smoke-Build je PR, durchgesetztes Coverage-Gate
+  (`make cover`, ≥ 90 % auf den korrektheitskritischen Paketen), `go-version-file: go.mod`
+  statt hart codierter Version, Dependabot (gomod/npm/actions) und ein Nightly-Fuzz-Sweep.
+  Neue Governance-Dateien `SECURITY.md` (Meldeweg + dokumentierte Default-Posture),
+  `CONTRIBUTING.md` und `CODEOWNERS`.
 - **Härtungs-Etappe H1 (WP-130–135, aus dem Code-Qualitäts-Audit `docs/audits/`).** Behebt die
   im Audit verifizierten kritischen/hohen Befunde:
   - **Kein Prozess-Crash mehr durch Eingaben (K1):** FEEL-Parser und DMN-XML-Decoder hatten kein
@@ -48,6 +54,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Betriebs-Observability abgeschlossen (WP-113/114, ADR-0030):** opt-in Metriken-Export —
+  `GET /debug/vars` (expvar) und `GET /metrics` (Prometheus-Textformat, stdlib-Encoder, kein
+  Client) hinter dem `audit`-Scope, standardmäßig aus (`temisd -metrics`/`$TEMIS_METRICS`);
+  Zähler für Evaluations, LLM, clio, Cache, Modelle, Uptime. Strukturierte Logs über `log/slog`
+  (`-log-format text|json`, `-log-level`); der clio-Best-Effort-Fehler erscheint als
+  strukturierter Record (`system=clio`).
 - **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein
   Suchfeld („Modelle suchen…"). Je mehr Modelle auf dem Server liegen, desto wichtiger — die
   Suche filtert live, ist diakritik-unempfindlich (`begru` findet `Begrüßung`) und
