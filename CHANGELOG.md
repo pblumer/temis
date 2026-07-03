@@ -60,6 +60,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Modeler: Der Graph pulsiert beim Auswerten (Stage 3 — „Juice").** Eine frische
+  Auswertung spielt die Illumination jetzt als tiefen-gestaffelte Welle: Die Leitungen
+  streamen (fließende Striche), jede Decision pulsiert mit einem Partikel-Burst, sobald ihre
+  Eingaben ankommen — die finale Decision am kräftigsten, in Magenta —, und aufeinanderfolgende
+  schnelle Läufe bauen einen **Combo**-Streak auf, den der Endknoten feiert. Eine transiente
+  Partikelschicht liegt über dem Diagramm (Screen-Space-Bursts an der Live-Position des Knotens,
+  ohne Pan/Zoom-Tracking); Stream und Puls sind reines SVG/CSS und bleiben unter Pan und Zoom
+  ausgerichtet. Alles ist per **⚡-Toolbar-Toggle** abschaltbar und unter `prefers-reduced-motion`
+  von vornherein aus — die statische Illumination (History-Navigation, ruhig) bleibt davon
+  unberührt. Reines Frontend, kein neuer Endpunkt. Dritter Schritt, den „Auswerten"-Bereich ins
+  Diagramm aufzulösen.
 - **Modeler: Eingaben direkt am Knoten (Operate) — der „Auswerten"-Bereich wandert ins
   Diagramm.** In Operate trägt jeder Blatt-Eingabeknoten jetzt eine editierbare Pille direkt am
   inputData-Knoten: eine Auswahl-Liste bei geschlossener Enumeration, sonst ein JSON-coercedes

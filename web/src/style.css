@@ -1554,6 +1554,31 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 select.pill-field { cursor: pointer; }
 .pill-field-invalid { border-color: #e5484d; box-shadow: 0 0 0 2px rgba(229, 72, 77, 0.25); }
 
+/* Juice (Stage 3): a fresh evaluation plays the illumination as a depth-staggered
+   wave — the wires stream, each decision pulses with a particle burst as its inputs
+   arrive, the deepest one hardest. The particle layer sits over the diagram and
+   ignores pointer events; the streaming/pulse are pure SVG/CSS so they stay aligned
+   under pan and zoom. All of it is opt-out via the ⚡ toolbar toggle and off under
+   reduced motion. */
+.fx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.canvas .djs-connection.flow-stream .djs-visual > :first-child {
+  stroke-dasharray: 5 7;
+  animation: flow-stream-move 0.6s linear infinite;
+}
+@keyframes flow-stream-move { to { stroke-dashoffset: -12; } }
+.canvas .djs-element.node-fire .djs-visual { animation: node-fire-pulse 0.48s ease-out; }
+@keyframes node-fire-pulse {
+  0% { filter: drop-shadow(0 0 0 rgba(29, 78, 216, 0)); }
+  30% { filter: drop-shadow(0 0 9px rgba(29, 78, 216, 0.75)); }
+  100% { filter: drop-shadow(0 0 0 rgba(29, 78, 216, 0)); }
+}
+/* The ⚡ toggle dims when effects are off. */
+.tbtn.juice-off { opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) {
+  .canvas .djs-connection.flow-stream .djs-visual > :first-child { animation: none; stroke-dasharray: none; }
+  .canvas .djs-element.node-fire .djs-visual { animation: none; }
+}
+
 .flow-trace { display: flex; flex-direction: column; gap: 6px; }
 .flow-trace-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 0 0; }
 .flow-trace-step { border: 1px solid var(--line); border-left: 3px solid #7c3aed; border-radius: 8px; padding: 6px 8px; background: #faf5ff; }

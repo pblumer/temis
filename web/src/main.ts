@@ -89,6 +89,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
             <button id="orient" class="tbtn design-only" type="button" title="Anordnung umschalten: Eingaben unten (Pfeile nach oben) ↔ Eingaben oben (Pfeile nach unten)">↥ Bottom-up</button>
+            <button id="juice" class="tbtn" type="button" title="Effekte beim Auswerten: Datenfluss-Animation, Partikel & Combo ein-/ausschalten">⚡ Effekte</button>
           </span>
           <span id="typeEditor" class="type-editor design-only" style="display:none">
             <label for="datatype">Typ</label>
@@ -208,6 +209,12 @@ async function boot(root: HTMLElement): Promise<void> {
   // into a whole-graph evaluation. Rebuilt whenever Operate opens for a model.
   let inputPills: InputPills | null = null
   let pillEvalTimer: number | undefined
+  // Juice (Stage 3): the evaluation-animation switch (off under reduced motion) and
+  // the combo streak — consecutive quick evaluations build a multiplier that the
+  // final decision celebrates. lastRunAt gates the streak window.
+  let juice = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  let runCombo = 0
+  let lastRunAt = 0
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -490,6 +497,19 @@ async function boot(root: HTMLElement): Promise<void> {
       dirty = true
       syncButtons()
     }
+  })
+
+  // The juice toggle turns the evaluation animation (dataflow, particles, combo) on
+  // or off. It starts off under reduced-motion, so the button reflects that.
+  const juiceBtn = root.querySelector<HTMLButtonElement>('#juice')
+  const syncJuiceBtn = (): void => {
+    juiceBtn?.classList.toggle('juice-off', !juice)
+    if (juiceBtn) juiceBtn.textContent = juice ? '⚡ Effekte' : '⚡ Effekte aus'
+  }
+  syncJuiceBtn()
+  juiceBtn?.addEventListener('click', () => {
+    juice = !juice
+    syncJuiceBtn()
   })
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
@@ -1074,12 +1094,13 @@ async function boot(root: HTMLElement): Promise<void> {
 
   // applyRun makes a run the active one and overlays its values + hit rules on
   // the diagram nodes (the green result pills).
-  const applyRun = (run: EvalRun): void => {
+  const applyRun = (run: EvalRun, opts?: { animate?: boolean; combo?: number }): void => {
     activeRun = run
     handle?.showResults(run.result.values, hitRulesOf(run.result))
     // Light up the requirement edges with the values that travelled them, so the
     // dependency dataflow is visible on the diagram itself — not just in the panel.
-    handle?.illuminate(run.inputs, run.result.values)
+    // A fresh evaluation animates the wave (opts); history navigation shows it calm.
+    handle?.illuminate(run.inputs, run.result.values, opts)
   }
 
   // The Operate cockpit: a keyboard-navigable run history above the diagram and
@@ -1159,7 +1180,11 @@ async function boot(root: HTMLElement): Promise<void> {
   // (newest first), highlight it, and refresh the Operate cockpit.
   const recordRun = (run: EvalRun): void => {
     runs.unshift(run)
-    applyRun(run)
+    // A run within the streak window bumps the combo; a longer pause resets it.
+    const now = performance.now()
+    runCombo = now - lastRunAt < 2600 ? runCombo + 1 : 1
+    lastRunAt = now
+    applyRun(run, { animate: juice, combo: runCombo })
     if (mode === 'operate') operate.render()
   }
 

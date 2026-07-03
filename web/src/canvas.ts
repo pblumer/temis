@@ -157,8 +157,12 @@ export type ModelerHandle = {
   // the diagram itself. Edges are revealed as a wave by graph depth (inputs →
   // output). inputs are the run's leaf inputs, values each decision's result
   // (both keyed by name). Re-applying replaces the previous illumination; edges
-  // whose source has no value (e.g. a knowledge requirement) stay unlit.
-  illuminate: (inputs: Record<string, unknown>, values: Record<string, unknown>) => void
+  // whose source has no value (e.g. a knowledge requirement) stay unlit. With
+  // opts.animate the illumination plays as a depth-staggered wave: the wires stream,
+  // each decision fires with a particle burst as its inputs arrive, and — when
+  // opts.combo extends a streak — the final decision shows the combo. Without it the
+  // illumination is static (history navigation, reduced motion).
+  illuminate: (inputs: Record<string, unknown>, values: Record<string, unknown>, opts?: { animate?: boolean; combo?: number }) => void
   // clearFlow removes any edge illumination and floating value labels.
   clearFlow: () => void
   // showInputPills places an editable input control on each given inputData node
@@ -321,6 +325,110 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     }
   }
   const marker = canvas as unknown as { addMarker: (id: string, m: string) => void; removeMarker: (id: string, m: string) => void }
+
+  // maxDepth is the deepest node's distance from the inputs — the final decision(s),
+  // fired last and celebrated hardest in the illumination wave.
+  let maxDepth = 0
+  for (const id of Object.keys(byId)) maxDepth = Math.max(maxDepth, depthOf(id))
+
+  // Juice layer (WP: Stage 3): a transient particle canvas over the diagram. Bursts
+  // are drawn in screen space at a node's live position (getAbsoluteBBox), so they
+  // need no pan/zoom tracking — each is a ~0.6s fire-and-forget at the moment a node
+  // fires. The layer sits over the diagram but ignores pointer events, and only ever
+  // runs its rAF loop while something is alive on it (idle-free when calm).
+  const fx = document.createElement('canvas')
+  fx.className = 'fx-layer'
+  container.appendChild(fx)
+  const fxc = fx.getContext('2d')
+  const absBBox = (el: Shape): { x: number; y: number; width: number; height: number } =>
+    (canvas as unknown as { getAbsoluteBBox: (e: unknown) => { x: number; y: number; width: number; height: number } }).getAbsoluteBBox(el)
+  type Particle = { x: number; y: number; vx: number; vy: number; life: number; r: number; color: string }
+  type Ring = { x: number; y: number; r: number; life: number; color: string }
+  type FloatText = { x: number; y: number; text: string; color: string; life: number }
+  let particles: Particle[] = []
+  let rings: Ring[] = []
+  let texts: FloatText[] = []
+  let fxRaf = 0
+  const juiceTimers: number[] = []
+  const clearJuiceTimers = (): void => {
+    for (const t of juiceTimers) clearTimeout(t)
+    juiceTimers.length = 0
+  }
+  const sizeFx = (): void => {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    fx.width = Math.max(1, container.clientWidth * dpr)
+    fx.height = Math.max(1, container.clientHeight * dpr)
+    fx.style.width = container.clientWidth + 'px'
+    fx.style.height = container.clientHeight + 'px'
+    if (fxc) fxc.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+  sizeFx()
+  const ro = new ResizeObserver(() => sizeFx())
+  ro.observe(container)
+  const frame = (): void => {
+    if (!fxc) return
+    fxc.clearRect(0, 0, fx.width, fx.height)
+    particles = particles.filter((p) => p.life > 0)
+    for (const p of particles) {
+      p.x += p.vx
+      p.y += p.vy
+      p.vy += 0.12
+      p.vx *= 0.98
+      p.life -= 0.02
+      fxc.globalAlpha = Math.max(0, p.life)
+      fxc.fillStyle = p.color
+      fxc.beginPath()
+      fxc.arc(p.x, p.y, p.r, 0, 7)
+      fxc.fill()
+    }
+    rings = rings.filter((r) => r.life > 0)
+    for (const r of rings) {
+      r.r += 2.2
+      r.life -= 0.035
+      fxc.globalAlpha = Math.max(0, r.life) * 0.6
+      fxc.strokeStyle = r.color
+      fxc.lineWidth = 2
+      fxc.beginPath()
+      fxc.arc(r.x, r.y, r.r, 0, 7)
+      fxc.stroke()
+    }
+    texts = texts.filter((t) => t.life > 0)
+    fxc.font = '700 15px ui-monospace, monospace'
+    fxc.textAlign = 'center'
+    for (const t of texts) {
+      t.y -= 0.7
+      t.life -= 0.018
+      fxc.globalAlpha = Math.max(0, t.life)
+      fxc.fillStyle = t.color
+      fxc.fillText(t.text, t.x, t.y)
+    }
+    fxc.globalAlpha = 1
+    fxRaf = particles.length || rings.length || texts.length ? requestAnimationFrame(frame) : 0
+  }
+  const startFx = (): void => {
+    if (!fxRaf) fxRaf = requestAnimationFrame(frame)
+  }
+  const burst = (x: number, y: number, color: string, n: number): void => {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2
+      const sp = 1.3 + Math.random() * 4.2
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1, life: 1, r: 1.3 + Math.random() * 2.3, color })
+    }
+    rings.push({ x, y, r: 5, life: 1, color })
+    startFx()
+  }
+  const floatText = (x: number, y: number, text: string, color: string): void => {
+    texts.push({ x, y, text, color, life: 1 })
+    startFx()
+  }
+  // Tear the juice layer down with the diagram, so a model switch doesn't leak a
+  // ResizeObserver, a running rAF loop or pending fire timers.
+  eventBus.on('diagram.destroy', () => {
+    ro.disconnect()
+    if (fxRaf) cancelAnimationFrame(fxRaf)
+    clearJuiceTimers()
+    fx.remove()
+  })
 
   // flowValueOf is the value that travels an edge: its source's own value — a leaf
   // input's entered value, or an upstream decision's computed result. Undefined for
@@ -663,20 +771,49 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       }
     },
     clearInputPills: () => overlays.remove({ type: 'input-pill' }),
-    illuminate: (inputs, values) => {
+    illuminate: (inputs, values, opts) => {
+      const animate = !!opts?.animate
       overlays.remove({ type: 'flow-edge' })
-      for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
+      clearJuiceTimers()
+      for (const ea of edgeAnchors) {
+        marker.removeMarker(ea.id, 'flow-active')
+        marker.removeMarker(ea.id, 'flow-stream')
+      }
+      for (const el of elementRegistry.getAll()) marker.removeMarker(el.id, 'node-fire')
       for (const ea of edgeAnchors) {
         const val = flowValueOf(ea.sourceId, inputs, values)
         if (val === undefined) continue
         marker.addMarker(ea.id, 'flow-active')
+        if (animate) marker.addMarker(ea.id, 'flow-stream')
         const text = fmtResult(val)
         const lbl = document.createElement('div')
         lbl.className = 'flow-edge-val flow-edge-op'
-        lbl.style.animationDelay = ea.delay + 'ms'
+        lbl.style.animationDelay = (animate ? ea.delay : 0) + 'ms'
         lbl.textContent = text
         lbl.title = text
         overlays.add(ea.sourceId, 'flow-edge', { position: { left: ea.left, top: ea.top }, html: lbl })
+      }
+      if (!animate) return
+      // Fire each decision as its inputs arrive: a depth-staggered wave, each node
+      // pulsing with a particle burst. The deepest (final) decision fires hardest,
+      // in magenta, and shows the combo when the run extends a streak.
+      const combo = opts?.combo ?? 1
+      for (const el of elementRegistry.getAll()) {
+        const s = el as Shape & { name?: string; type?: string }
+        if (s.type !== 'dmn:decision' || !s.name || !(s.name in values)) continue
+        const depth = depthOf(s.id)
+        const isFinal = depth >= maxDepth
+        const color = isFinal ? '#d6249f' : '#1d4ed8'
+        const t = window.setTimeout(() => {
+          marker.addMarker(s.id, 'node-fire')
+          window.setTimeout(() => marker.removeMarker(s.id, 'node-fire'), 480)
+          const bb = absBBox(s)
+          const cx = bb.x + bb.width / 2
+          const cy = bb.y + bb.height / 2
+          burst(cx, cy, color, isFinal ? 30 : 20)
+          if (isFinal && combo >= 2) floatText(cx, cy - bb.height / 2 - 6, 'COMBO ×' + combo, '#d6249f')
+        }, depth * STAGGER_MS + 120)
+        juiceTimers.push(t)
       }
     },
   }
