@@ -1042,6 +1042,58 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/quality/report:
+    get:
+      summary: Per-entity / per-rule violation report over productive Import runs (ADR-0031)
+      description: >
+        Aggregate the quality events written by productive Import runs (record=true)
+        into a compliance report: run a whole ruleset over a dataset — e.g. 70 000
+        servers — then ask which entity failed which rule. The server queries clio
+        itself (it holds the token), so a browser never needs it. Read-only; gated
+        by the `audit` scope. Answers 409 when no clio sink is configured.
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          schema: { type: string }
+          description: clio subject to report on (default the sink's quality prefix, /quality).
+        - name: ruleField
+          in: query
+          required: false
+          schema: { type: string }
+          description: >
+            Decision output holding the violated-rule list. Empty auto-detects every
+            list-of-strings output as rule ids (a COLLECT ruleset's value).
+        - name: recursive
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+          description: Report on the whole subject subtree (default true).
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Max events to read from clio (0 = clio default; defaults to the batch cap).
+      responses:
+        "200":
+          description: The aggregated violation report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QualityReport" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: No clio sink configured (nothing recorded to report on)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "502":
+          description: The clio query failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/keys:
     post:
       summary: Create a scoped API key (ADR-0028 Phase 2, WP-103)
@@ -2032,6 +2084,37 @@ components:
         dataType: { type: string }
         x: { type: number }
         y: { type: number }
+    QualityReport:
+      type: object
+      description: >
+        Aggregated compliance verdict over a dataset (ADR-0031): how many distinct
+        entities were seen, how many passed clean, and — for the failing ones —
+        which rules each violated, plus a per-rule tally across the fleet. Only
+        failing entities are listed; passing ones are counted.
+      properties:
+        total: { type: integer, description: Quality events read. }
+        servers: { type: integer, description: Distinct entities observed. }
+        passed: { type: integer, description: Entities with no violated rule. }
+        failed: { type: integer, description: Entities with at least one violated rule. }
+        entities:
+          type: array
+          description: Failing entities only, sorted by id.
+          items:
+            type: object
+            properties:
+              entity: { type: string }
+              rules:
+                type: array
+                items: { type: string }
+                description: De-duplicated, sorted violated rule ids (empty for a bare expectation mismatch).
+        rules:
+          type: array
+          description: Per-rule tally, most-violated first.
+          items:
+            type: object
+            properties:
+              rule: { type: string }
+              failures: { type: integer, description: Distinct entities that violated this rule. }
     StatusResponse:
       type: object
       description: >

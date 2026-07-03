@@ -1371,6 +1371,19 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 /* The empty/hint state before any cases are imported. */
 .imp-empty-msg { color: var(--muted); font-size: 13px; max-width: 640px; line-height: 1.5; }
 
+/* Quality report panel: which entity failed which rule, aggregated server-side. */
+.imp-report { border: 1px solid var(--line); border-radius: 10px; background: #fbfdfe; padding: 14px 16px; margin: 0 0 16px; }
+.imp-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.imp-report-title { font-size: 14px; color: var(--fg); }
+.imp-report-sum { font-size: 13px; font-weight: 600; color: var(--imp); margin-bottom: 12px; }
+.imp-report-ok { font-size: 13px; font-weight: 600; color: #15803d; }
+.imp-report-cap { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 6px; }
+.imp-report-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.imp-report-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 10px; border-bottom: 1px solid var(--line); }
+.imp-report-table td { padding: 5px 10px; border-bottom: 1px solid #eef2f4; color: var(--fg); }
+.imp-report-num { text-align: right; font-variant-numeric: tabular-nums; }
+.imp-report-entity { font-family: ui-monospace, monospace; font-size: 12px; }
+
 /* Drag-over affordance when dropping a file on the cockpit. */
 .import-cockpit.imp-drop { outline: 2px dashed #9cd0da; outline-offset: -6px; border-radius: 12px; }
 
