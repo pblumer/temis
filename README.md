@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/pblumer/temis"><img alt="Repository" src="https://img.shields.io/badge/GitHub-pblumer%2Ftemis-24292f?logo=github"></a>
-  <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white">
   <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
   <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
   <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
@@ -104,8 +104,8 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> Offen u. a.: **WP-33** (gRPC) und **WP-41** (offizielles TCK-Korpus). Voller Live-Status:
-> `docs/20-roadmap.md`.
+> Offen u. a.: **WP-41** (offizielles TCK-Korpus) und das erste getaggte Release. Voller
+> Live-Status: `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 

@@ -1,6 +1,6 @@
 # ADR-0029: Öffentliches FEEL-Ausdruck-Primitive (`dmn.CompileExpression`) für volle Flow-Mappings
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-07-01
 - **Kontext-WP:** WP-95 (volle FEEL-Mappings); löst die in ADR-0026 vermerkte Folgeaufgabe, additive v1-Surface (ADR-0019)
 

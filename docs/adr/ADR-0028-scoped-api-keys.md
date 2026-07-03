@@ -1,6 +1,6 @@
 # ADR-0028: Scoped API-Key-Authentifizierung (`kid.secret`, Keystore) — angeglichen an clio
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-07-01
 - **Kontext-WP:** WP-100 – WP-105 (neue Etappe „Zugriffskontrolle / API-Keys")
 

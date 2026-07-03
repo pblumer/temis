@@ -1,6 +1,6 @@
 # ADR-0026: Decision-Flow-Deskriptor (L2a) — externe JSON-Komposition statt DMN-`import`
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-07-01
 - **Kontext-WP:** WP-90–94 (neue Etappe „Decision-Flow"); baut auf WP-28/29/52/70, verfeinert ADR-0025
 

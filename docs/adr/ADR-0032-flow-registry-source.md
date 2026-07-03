@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Datum:** 2026-07-02
-- **Kontext-WP:** WP-100 (Flow-Store beim Start laden); verfeinert ADR-0026 (Decision-Flow-Deskriptor), spiegelt ADR-0027 (Filesystem-Model-Store)
+- **Kontext-WP:** WP-117 (Flow-Store beim Start laden; vormals WP-100); verfeinert ADR-0026 (Decision-Flow-Deskriptor), spiegelt ADR-0027 (Filesystem-Model-Store)
 
 ## Kontext
 
@@ -77,7 +77,7 @@ Flow-Validierung gegen die vorhandenen Modelle greift.
   sonst tragen Flows beim Start Diagnostics (bewusst nicht fatal).
 
 **Folgeaufgaben**
-- WP-100 in `docs/20-roadmap.md`: `WithFlowStore` + `-flows-dir`, Test, Doku (mit dieser ADR).
+- WP-117 in `docs/20-roadmap.md`: `WithFlowStore` + `-flows-dir`, Test, Doku (mit dieser ADR).
 - `docs/90-decision-organization.md` §5 um den Lade-/Deploy-Weg ergänzt.
 - Später (separat): ob das Flow Studio ein „aus Git laden" direkt anbietet (`git_load_flow`
   über die UI) — außerhalb dieser ADR.

@@ -13,7 +13,7 @@ DMN-XML  ──parse──▶  DMN-Modell  ──compile──▶  CompiledDecis
 ```
 
 - **Compile** darf gründlich sein: Parsen, Typinferenz, Validierung, FEEL-Ausdrücke in
-  Go-Closures übersetzen, Decision-Graph topologisch sortieren.
+  Go-Closures übersetzen, Decision-Graph verdrahten und auf Zyklen prüfen.
 - **Evaluate** darf (idealerweise) **keine** Parserarbeit und **minimale** Allokation tun.
   Ergebnis von Compile ist unveränderlich und beliebig oft parallel nutzbar.
 
@@ -52,7 +52,8 @@ temis/
 │   │   ├── context.go invocation.go list.go relation.go
 │   │   ├── function.go         //   Boxed Function / BKM
 │   │   ├── conditional.go iterator.go filter.go   // DMN 1.4+/1.5
-│   ├── drg/                    // Decision-Graph: Topo-Sort, Dependency-Resolution, Eval-Plan
+│   ├── drg/                    // Scaffold (leer). Die Decision-Graph-Logik (DAG, Zyklencheck,
+│   │                           //   memoisierte Auswertung) liegt real in dmn/graph.go+eval.go.
 │   └── tck/                    // TCK-Runner (liest offizielle .dmn + Testcases)
 ├── service/                    // HTTP- & gRPC-Handler (von cmd/temisd genutzt)
 │   ├── http.go openapi.go openapi.yaml   // Routen, Bearer-Token, Swagger-UI/Spec
@@ -77,16 +78,19 @@ darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf d
 - dmn-js schreibt Standard-DMN-XML inkl. `DMNDI` (Diagramm-Layout). Layout wird
   **bewahrt** (round-trip-fähig), aber für die Ausführung ignoriert.
 
-### 3.2 Compile (`internal/feel` + `internal/boxed` + `internal/drg`)
+### 3.2 Compile (`internal/feel` + `internal/boxed` + `dmn/graph.go`)
 - Jede Decision besitzt eine Logik-Form (Literal Expression, Decision Table, oder andere
   Boxed Expression). Diese wird in eine `CompiledExpr` übersetzt.
-- `drg/` baut aus den Information Requirements einen DAG, prüft auf Zyklen, erzeugt eine
-  topologische Auswertungsreihenfolge (Eval-Plan).
+- `dmn/graph.go` verdrahtet aus den Information Requirements einen DAG und prüft ihn zur
+  **Compile-Zeit** per DFS (3-Färbung) auf Zyklen (`DECISION_CYCLE`-Diagnostic). Es wird
+  **kein** vorab materialisierter topologischer Plan erzeugt — die Reihenfolge ergibt sich zur
+  Laufzeit aus der memoisierten Tiefensuche (§3.3). (`internal/drg` ist ein leeres Scaffold.)
 - Typecheck wo möglich statisch (FEEL ist teils dynamisch typisiert → Rest zur Laufzeit).
 
-### 3.3 Evaluate (`dmn` + `internal/drg`)
-- Eingabe-Context (Input Data) → Scope. Decisions werden in Eval-Plan-Reihenfolge
-  ausgeführt, Zwischenergebnisse fließen als Variablen weiter.
+### 3.3 Evaluate (`dmn/eval.go`)
+- Eingabe-Context (Input Data) → Scope. Benötigte Decisions werden **rekursiv und memoisiert**
+  ausgewertet (Diamond → einmal), Zwischenergebnisse fließen als Variablen weiter; ein
+  Laufzeit-Guard fängt Zyklen zusätzlich ab.
 - **Decision Services** (DMN-Konzept): definierter Satz Output-Decisions + Input-Decisions
   → erlauben gezielte Teilauswertung.
 

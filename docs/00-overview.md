@@ -24,7 +24,7 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 | D3 | FEEL-Scope | **Voll** (alle Boxed Expressions, volle Grammatik) | ADR-0003 |
 | D4 | Ausführungsmodell | **Compile-to-Closures** (kein Tree-Walking im Hot Path) | ADR-0004 |
 | D5 | Betriebsform | **Library-first**, Service als dünner Wrapper | ADR-0005 |
-| D6 | Editor/Frontend | dmn-js (read/write Standard-DMN-XML) | ADR-0006 |
+| D6 | Editor/Frontend | eigener eingebetteter DMN-Modeler auf MIT-Kern (diagram-js), kein dmn-js/CDN | ADR-0016 (löst ADR-0006/0012 ab) |
 | D7 | Keine externen FEEL-Abhängigkeiten | eigener Lexer/Parser/Compiler | ADR-0004 |
 | D8 | Zielgruppe Agenten | **Agent-First**: temis als Laufzeit-Verifikationswerkzeug (MCP, Entscheidungsspur, Agent-Schema) | ADR-0013 |
 
