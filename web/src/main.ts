@@ -249,7 +249,8 @@ async function boot(root: HTMLElement): Promise<void> {
       const created = await createDecisionTable(await persistGraph(currentId), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Tabelle angelegt ✓'
-      void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId))
+      const { names } = namesFor(decisionId)
+      void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId), scope: names })
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -1163,7 +1164,12 @@ async function boot(root: HTMLElement): Promise<void> {
       // decision has exactly one table; matched still spans all, for safety).
       void openTableOverlay(modelId, decisionId, undefined, typeOptions, { readOnly: true, matched, trace: tr?.tables?.[0] })
     } else {
-      void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId) })
+      // Pass the decision's wired inputs (so requirements added after the table
+      // was created surface as columns) and its in-scope variables (so input-column
+      // expressions can reference and complete them — otherwise a reference like
+      // `Name` reads as an unknown variable).
+      const { names } = namesFor(decisionId)
+      void openTableOverlay(modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId), scope: names })
     }
   }
 
