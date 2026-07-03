@@ -98,6 +98,43 @@ models/
 - **Zentrales Team besitzt** Vokabular (L0), Namens-/Modellier-Konventionen, CI-Gate,
   Plattformbetrieb — **nicht** die Fachregeln.
 
+### 4a. Runtime-Katalog-Plane — Ordnung liegt auf den Namen, nicht auf den Blobs (ADR-0034)
+
+§4 beschreibt die **Authoring-Plane**: der menschliche Verzeichnisbaum lebt in Git,
+Ownership setzt CODEOWNERS durch. Zur Laufzeit muss ein `temisd`, der **tausende** Decisions
+hält, dieselbe Ordnung aber *abbilden* können — der Server-Store ist ein flacher,
+content-adressierter Blob-Haufen (`<sha256>.dmn`, ADR-0027), und ein Hash ist anonym: kein
+Name, kein Ort. **Leitsatz: nicht die Blobs ordnen, sondern die Namen.** Organisation trennt
+sich in drei Ebenen:
+
+| Ebene | Was | Eigenschaft | Herkunft |
+|---|---|---|---|
+| **Content** | `sha256:<hex>`-Blobs | immutable, Audit-Wahrheit | Store (ADR-0027) |
+| **Katalog / Identität** | `namespace/name@version → modelId + Metadaten` | mutabel, **autoritativ**, ownbar, abfragbar | **aus Git abgeleitet** |
+| **Sicht** | Bookmarks, Tags-Filter, gespeicherte Ansichten | persönlich/Team, **nicht** autoritativ | Client (`localStorage`) |
+
+- **Namespace = Verzeichnispfad** aus §4 (`models/domains/pricing/base-price.dmn` → Namespace
+  `domains/pricing`, Name `base-price`). Ein Namensschema über **alle** Planes: Git-Verzeichnis
+  = Server-Namespace = API/MCP-Prefix-Filter. Der Namespace kodiert Schicht (L0–L3) und
+  Owner-Zuschnitt (CODEOWNERS) — die Governance oben wird zur Laufzeit sichtbar.
+- **Namespace ist die Primärachse, Tags sind die Querachse.** Hierarchie beantwortet „*wo lebt
+  es / wer besitzt es*"; Tags decken das Quer-Schneidende ab (`status`, `pii`, `jurisdiction`,
+  `consumer`). *Ein* Baum plus Labels statt tiefer Ordnerverschachtelung.
+- **Aus Git abgeleitet, read-only geladen** — der Server lädt den Katalog beim Start (spiegelt
+  `-flows-dir`/ADR-0032) und schreibt **nie** zurück; Änderungen laufen über `git_propose`
+  (compile-before-write). **Keine zweite Source of Truth, keine Drift** (§3, Klasse 3).
+- **Identität ≠ Inhalt.** Der Katalog pinnt je Namen eine **aktuelle Revision**; der Store
+  bleibt append-only, alte Revisionen bleiben für Audit/Replay, aber hinter dem Namen versteckt.
+- **Skalierbares Listing.** `list_models` / `GET /v1/models` filtern nach Prefix, Tag, Status
+  und paginieren — man rendert nie den ganzen Baum, man fragt ab.
+- **Die heutigen Modeler-„Ordner" werden zu Bookmarks** — die Sicht-Ebene über dem
+  autoritativen Namespace: persönliche Shortcuts und gespeicherte Filter, orthogonal zu
+  Ownership. Das *Zuhause* einer Decision ist ihr Namespace; ein *Bookmark* ist eine Abkürzung.
+
+Das Manifest-/Front-Matter-Format der Metadaten (Owner, Layer, Tags, Status, gepinnte
+Revision) legt ADR-0034 als Folgeaufgabe fest; Umsetzung: Etappe „Decision-Katalog" (WP-140–143)
+in `docs/20-roadmap.md`.
+
 ## 5. Der Decision-Flow (L2a) — konkret
 
 Ein L2a-Flow ist ein **JSON-Deskriptor** (ADR-0026, `*.flow.json` im `flows/`-Verzeichnis),

@@ -224,6 +224,29 @@ Betriebsbild.
 
 ---
 
+## Etappe Decision-Katalog — „tausende Decisions ordnen: Namespace + Bookmarks" (ADR-0034)
+
+**Ziel:** Einen `temisd`, der **tausende** Decisions hält, navigier- und governance-fähig
+machen — ohne den content-adressierten Store (ADR-0027) anzufassen. **Ordnung liegt auf den
+Namen, nicht auf den Blobs** (ADR-0034): eine aus Git abgeleitete, read-only geladene
+**Katalog-Ebene** (`namespace/name → modelId + Metadaten`) spiegelt das Governance-Layout aus
+`docs/90` §4 in die Laufzeit; die heutigen Modeler-„Ordner" werden zur persönlichen
+**Bookmark-Ebene** darüber. Rein additiv, stdlib-only, keine zweite Source of Truth (Git bleibt
+autoritativ, spiegelt `-flows-dir`/ADR-0032).
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-140 | Katalog-Format & Loader | ADR-0034, WP-70, WP-100 | **geplant** — Namespace/Metadaten-Format festlegen (Manifest bzw. Front-Matter neben dem Modell: `owner`, `layer`, `tags`, `status`, gepinnte Revision) und `service.WithCatalog(dir)` / `-catalog-dir` (`$TEMIS_CATALOG_DIR`): beim Start alle Einträge read-only laden, Namespace = Verzeichnispfad im Modell-Repo, gegen den geladenen Modell-Cache validieren. **Read-only** (kein Write-back → keine Drift), fail-open (nicht-auflösbarer Eintrag → geloggt + Diagnostics, blockt den Start nie; fehlendes Verzeichnis deaktiviert die Ebene), spiegelt `-flows-dir`. AK: Katalog lädt Einträge, bindet Namen an `modelId`, überspringt Kaputtes, fehlendes Verzeichnis → leerer Katalog; ohne `-catalog-dir` byte-identisches Verhalten zu heute; `make verify` grün. |
+| WP-141 | `list_models` skalierbar — Filter & Pagination | WP-140, WP-32, WP-50 | **geplant** — `GET /v1/models` und MCP `list_models` um **Prefix-Filter (Namespace), Tag-Filter, Status und Pagination** erweitern; `ModelInfo`/`modelSummary` additiv um `Namespace, Owner, Layer, Tags, Status`. Ohne Katalog leer/unverändert (rückwärtskompatibel). AK: Prefix `domains/pricing` liefert nur diese Decisions, Tag-/Status-Filter greifen, Pagination stabil sortiert; OpenAPI-Sync; `make verify` grün. |
+| WP-142 | Modeler-Sidebar — Namespace-Baum + Bookmarks | WP-141, ADR-0016 | **geplant** — die Modell-Sidebar zeigt den **Namespace-Baum** aus dem Katalog (Layer-Badges L0–L3) mit Tag-Filter statt einer flachen Liste; die bestehenden `localStorage`-„Ordner" werden zur **Bookmark-Ebene** darüber (persönliche Shortcuts/gespeicherte Filter, orthogonal zu Ownership). Bestehende Ordner-Zuweisungen (nach Name) seeden Bookmarks/Tags initial. AK: Baum rendert aus `list_models`, Tag-Filter greift, Bookmarks bleiben pro Browser erhalten, Migration verlustfrei; e2e grün. |
+| WP-143 | Katalog über MCP/Git abfragbar | WP-140 | **geplant** — den Katalog auch für Agenten/Git-Tools sichtbar machen (Namespace/Owner/Tags/Status je Decision), sodass „welche Pricing-Decisions gibt es?" ohne Vollscan beantwortbar ist. AK: ein MCP-Aufruf liefert den gefilterten Katalog-Ausschnitt; `make verify` grün. |
+
+> Offen/später (aus ADR-0034): opt-in **geteilte** Bookmarks/Views (serverseitig) und
+> GC/Retention alter Revisionen (offene Frage aus ADR-0027) sind eigene WPs, sobald der Bedarf
+> entsteht.
+
+---
+
 ## Etappe Härtung H1 — „Sicherheit & Stabilität vor dem Release" (Code-Qualitäts-Audit)
 
 **Ziel:** Die im Repository-/Code-Qualitäts-Audit (`docs/audits/2026-07-02-*`) verifizierten
