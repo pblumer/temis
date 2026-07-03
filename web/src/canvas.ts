@@ -126,7 +126,7 @@ export type ModelerHandle = {
   // context pad) to give an undecided decision a boxed invocation.
   onCreateInvocation: (cb: (decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
-  // the context pad) to edit its function.
+  // the context pad or by double-clicking the BKM) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
   // onBoxed fires with a decision's id when the user tries to open a decision
   // whose logic is a boxed expression the modeler cannot edit yet (WP-66), so the
@@ -298,7 +298,15 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let openBoxedCb = (_decisionId: string): void => {}
   eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasInvocation?: boolean } }) => {
     const el = e.element
-    if (!el || el.type !== 'dmn:decision') return
+    if (!el) return
+    // Double-click always switches to an element's content — never renames
+    // (renaming is the pencil icon or F2, see dmn-label-editing). A BKM opens its
+    // encapsulated function; a decision opens whichever logic it carries.
+    if (el.type === 'dmn:businessKnowledgeModel') {
+      openBKMCb(el.id)
+      return
+    }
+    if (el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
     else if (el.hasContext) openContextCb(el.id)
@@ -308,9 +316,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     else if (el.hasFilter) openFilterCb(el.id)
     else if (el.hasIterator) openIteratorCb(el.id)
     else if (el.hasInvocation) openInvocationCb(el.id)
-    // Any other boxed-expression decision has none of these; double-click
-    // inline-renames it (see dmn-label-editing). The "not editable" hint comes
-    // from the context pad's boxed-info icon instead, so it doesn't clash.
+    // A truly undecided decision (no logic yet) has no content to open; its logic
+    // is created from the context pad. The boxed-info hint for an uneditable
+    // boxed expression likewise stays on the context pad, so nothing clashes.
   })
   // The context pad's boxed-info icon fires this for a boxed-expression decision.
   eventBus.on('dmn.boxedInfo', (e: { element?: Shape }) => {
