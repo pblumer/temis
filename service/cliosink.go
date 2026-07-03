@@ -631,6 +631,50 @@ func (c *ClioSink) writeQuality(ctx context.Context, rec QualityRecord) error {
 	return err
 }
 
+// QueryQuality issues a clio run-query for this sink's quality events and returns
+// the NDJSON response body for the caller to stream and close. It is the READ side
+// of the quality log (writeQuality is the write side): because the server holds the
+// clio token, a browser never needs it — the quality report endpoint and the
+// temis-quality-report CLI both read through this. subject scopes the query (empty
+// uses the sink's quality prefix); recursive covers the subtree; limit caps the
+// rows (0 = clio default). It uses a generous timeout independent of the short
+// write budget, since a fleet-sized report streams many events.
+func (c *ClioSink) QueryQuality(ctx context.Context, subject string, recursive bool, limit int) (io.ReadCloser, error) {
+	if strings.TrimSpace(subject) == "" {
+		subject = c.qualityPrefix
+	}
+	q := map[string]any{
+		"subject":   subject,
+		"recursive": recursive,
+		"where":     fmt.Sprintf("event.type == %q", QualityEventType),
+	}
+	if limit > 0 {
+		q["limit"] = limit
+	}
+	buf, _ := json.Marshal(q)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/run-query", bytes.NewReader(buf))
+	if err != nil {
+		return nil, fmt.Errorf("build run-query request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("run-query: %w", err)
+	}
+	if resp.StatusCode/100 != 2 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("clio run-query: status %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))
+	}
+	return resp.Body, nil
+}
+
 // qualityHash is the idempotency key for a quality observation: a stable digest
 // over the model, entity and input.
 func qualityHash(modelID, entity string, input map[string]any) string {

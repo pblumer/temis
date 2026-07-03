@@ -38,3 +38,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0031 | Import-Cockpit — Batch-Auswertung und Quality-Events auf Entitäten (entkoppelte Queue) | accepted |
 | 0032 | Flow-Registry — beim Start geladene Verzeichnis-Quelle statt flüchtigem POST-Store | accepted |
 | 0033 | Clio-Command-Consumer — Entscheidungen per Event auslösen, Ergebnis zurück ins Logbuch (opt-in) | accepted |
+| 0034 | Quality-Report: welcher Datensatz welche Regel verletzt (geteiltes `package quality`, CLI/HTTP/Web) | accepted |

@@ -29,6 +29,7 @@ import (
 
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/mcp"
+	"github.com/pblumer/temis/quality"
 	webui "github.com/pblumer/temis/web"
 )
 
@@ -472,6 +473,12 @@ func (s *Server) dataRoutes() []route {
 		// over the sink's connection so the browser never holds the token. Audit
 		// scope, like /v1/status (admin passes too).
 		{"GET", "/v1/clio/events", ScopeAudit, s.handleClioEvents},
+		// Quality report (ADR-0031 follow-up): aggregate the quality events of
+		// productive Import runs into a per-entity / per-rule violation view — run a
+		// whole ruleset over a dataset (e.g. 70 000 servers), then ask which entity
+		// failed which rule. The server queries clio itself (it holds the token), so
+		// a browser never needs it. Read-only; guarded by the audit scope.
+		{"GET", "/v1/quality/report", ScopeAudit, s.handleQualityReport},
 		// Key lifecycle API (ADR-0028 Phase 2, WP-103): admin-scoped create/list/
 		// rotate/revoke of scoped API keys, backed by the persistent key store.
 		// Dormant (404) unless a -keys-dir is configured.
@@ -1439,6 +1446,46 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// handleQualityReport aggregates the quality events of productive Import runs into
+// a per-entity / per-rule violation report (ADR-0031 follow-up): run a whole
+// ruleset over a dataset, then ask which entity failed which rule. The server
+// holds the clio token and queries clio itself, so a browser never sees it — this
+// is the read side of the productive Import run, mirrored by the temis-quality-report
+// CLI. Guarded by the audit scope; 409 when no clio sink is configured (there is
+// nothing recorded to report on). Query params: subject (default the sink's
+// quality prefix), ruleField (the decision output holding the violated-rule list;
+// empty auto-detects), recursive (default true), limit (default the batch cap).
+func (s *Server) handleQualityReport(w http.ResponseWriter, r *http.Request) {
+	if s.sink == nil {
+		writeProblem(w, http.StatusConflict, "CLIO_NOT_CONFIGURED", "quality reporting needs a clio sink; set TEMIS_CLIO_TOKEN")
+		return
+	}
+	q := r.URL.Query()
+	recursive := q.Get("recursive") != "false"
+	limit := maxGraphBatchInputs
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "limit must be a non-negative integer")
+			return
+		}
+		limit = n
+	}
+	stream, err := s.sink.QueryQuality(r.Context(), q.Get("subject"), recursive, limit)
+	if err != nil {
+		writeProblem(w, http.StatusBadGateway, "CLIO_QUERY_FAILED", err.Error())
+		return
+	}
+	defer func() { _ = stream.Close() }()
+
+	rep, err := quality.ReadReport(r.Context(), stream, q.Get("ruleField"))
+	if err != nil {
+		writeProblem(w, http.StatusBadGateway, "CLIO_QUERY_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 // redirectTo permanently redirects to target. It keeps the retired /ui and /app/

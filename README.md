@@ -261,6 +261,30 @@ Zeile eine **Pass/Fail-Erwartung**. „Durchlaufen lassen" schickt jeden Datensa
 links (*Eingang*) durch die *Evaluation* (dieselbe Engine wie Operate) nach rechts in den *clio
 Store* — mit berechneten Ergebnissen und Pass/Fail-Badges. Reines Frontend, kein neuer Endpunkt.
 
+**Regelset über einen Datensatz + Auswertung „welcher Datensatz welche Regel verletzt" (ADR-0034):**
+Der typische Fall: ein **ganzes Regelset** über einen grossen Datensatz laufen lassen — etwa 70 000
+Server — und am Schluss wissen, **welcher Server welche Regel nicht bestanden hat**. Das Regelset ist
+ein DMN-Modell; das gebündelte Beispiel **`server_compliance`** nutzt eine **`COLLECT`**-Tabelle,
+deren Regeln je einen Server-Check prüfen (Patch-Alter, TLS-Version, freier Speicher, Firewall,
+Root-SSH) und die **verletzten Regel-IDs als Liste** ausgeben. Man streamt den Datensatz als
+**Produktivlauf** (`record: true`) über `POST /v1/models/{id}/evaluate-graph-batch` (ein einzelner
+Request bleibt an das 8-MiB-Body-Limit gebunden, ~50 000 reiche Zeilen — grössere Flotten in Blöcken).
+Pro Fall entsteht ein revisionssicheres **Quality-Event** auf der Entität. Die **Auswertung** liest
+diese Events über **einen** geteilten Kern (`package quality`) auf **drei Kanälen**:
+
+```sh
+# CLI: Report aus clio, Text oder JSON; -fail-on-violation macht es CI-gattbar
+go run ./cmd/temis-quality-report -clio-url http://127.0.0.1:3000 -clio-token kid_ro.secret
+# → Rangliste je Regel + jede verletzende Entität mit ihren Regeln; „55 000 failed …"
+
+# HTTP: der Server fragt clio selbst ab (Token bleibt serverseitig), Scope `audit`
+curl -H 'Authorization: Bearer kid.audit' localhost:8080/v1/quality/report | jq
+```
+
+Im **Import-Cockpit** öffnet der Button **„Bericht ▾"** dasselbe als Panel (Tabelle „Entität ×
+verletzte Regeln" plus Regel-Rangliste) — der Browser sieht nie einen clio-Token. Ohne konfigurierte
+clio antwortet der Endpunkt klar mit `409 CLIO_NOT_CONFIGURED`.
+
 **Flow Studio & Designer (Decision-Flows via UI, ADR-0026/0032):** Über den Modellen (L1) liegt
 eine eigene **FLOWS**-Sektion (L2a) in der Sidebar. Ein registrierter Flow wird per Klick im
 **Flow Studio** geöffnet: seine Steps als auto-gelayouteter **Cross-Model-Graph**, ein Run-Panel
