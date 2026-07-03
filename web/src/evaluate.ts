@@ -1,5 +1,11 @@
 import { evaluateGraph, listTypes, InputValidationError, type ModelDetail, type InputField, type ItemType, type Trace, type TableTrace, type GraphEvalResult } from './api'
+import { buildFieldControl, coerce } from './inputform'
 import { attachJsonEditor } from './json-editor'
+
+// coerce is re-exported here so its existing importers (the Import cockpit) keep
+// their `from './evaluate'` path while the definition lives in inputform.ts, the
+// one place the panel and the on-canvas input pills share.
+export { coerce }
 
 // EvalRun is one whole-graph evaluation: the inputs the user supplied and the
 // result (per-decision values + traces). The Operate view keeps a session list
@@ -36,40 +42,16 @@ export function renderEvaluatePanel(host: HTMLElement, model: ModelDetail, onRun
   // decision names) is still offered. Types/constraints come along for the ride.
   const fields = leafInputs(model)
   const rows: { field: InputField; input: HTMLInputElement | HTMLSelectElement; wrap: HTMLElement }[] = fields.map((field, idx) => {
-    const values = field.values ?? []
-    let input: HTMLInputElement | HTMLSelectElement
-    const extras: Node[] = []
-    if (values.length && field.valuesClosed) {
-      // Closed enumeration → a dropdown; only declared values are accepted.
-      const sel = el('select', { class: 'eval-field' }) as HTMLSelectElement
-      const blank = el('option', {}, '— wählen —') as HTMLOptionElement
-      blank.value = ''
-      sel.append(blank)
-      for (const v of values) sel.append(el('option', { value: v }, v))
-      input = sel
-    } else {
-      // Free text, with the inferred cell values offered as suggestions.
-      const box = el('input', {
-        type: 'text',
-        class: 'eval-field',
-        placeholder: field.type || 'FEEL',
-        title: field.constraint ? 'erlaubte Werte: ' + field.constraint : '',
-      }) as HTMLInputElement
-      if (values.length) {
-        const id = 'eval-dl-' + idx
-        const dl = el('datalist', { id })
-        for (const v of values) dl.append(el('option', { value: v }))
-        box.setAttribute('list', id)
-        extras.push(dl)
-      }
-      input = box
-    }
+    // The panel and the on-canvas input pills build their widgets from one shared
+    // factory (inputform.ts): a <select> for a closed enumeration, else a JSON-
+    // coerced text box with a datalist of inferred values and the deluxe JSON editor.
+    const { input, extras } = buildFieldControl(field, { idx, className: 'eval-field' })
     const label = el('label', { class: 'eval-field-label' }, field.name + (field.required ? ' *' : ''))
     const wrap = el('div', { class: 'eval-field-wrap' }, label, input, ...extras)
     inputsHost.append(wrap)
     // A free-text field coerces its value through JSON.parse, so offer the deluxe
-    // JSON editor beside it. Closed enumerations (a <select>) take only declared
-    // values and get no opener.
+    // JSON editor beside it (it wraps the input in place, hence after it is in the
+    // DOM). Closed enumerations (a <select>) take only declared values, no opener.
     if (input instanceof HTMLInputElement) attachJsonEditor(input, { title: 'JSON — ' + field.name })
     return { field, input, wrap }
   })
@@ -383,21 +365,6 @@ export function leafInputs(model: ModelDetail): InputField[] {
     if (byName.size) return [...byName.values()]
   }
   return (model.inputs ?? []).map((name) => ({ name, required: false }))
-}
-
-// coerce turns a raw form value into a JSON value: an empty box contributes
-// nothing (undefined); otherwise try JSON (numbers, booleans, null, lists,
-// objects) and fall back to the raw string for bare FEEL text like "2024-01-01".
-// Exported so the Import cockpit coerces imported CSV cells the same way the
-// evaluate form coerces typed input, keeping one parsing rule across the UI.
-export function coerce(raw: string): unknown {
-  const s = raw.trim()
-  if (s === '') return undefined
-  try {
-    return JSON.parse(s)
-  } catch {
-    return raw
-  }
 }
 
 // showResults renders one row per decision (in the model's declared order) with

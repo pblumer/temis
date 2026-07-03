@@ -161,6 +161,13 @@ export type ModelerHandle = {
   illuminate: (inputs: Record<string, unknown>, values: Record<string, unknown>) => void
   // clearFlow removes any edge illumination and floating value labels.
   clearFlow: () => void
+  // showInputPills places an editable input control on each given inputData node
+  // (Operate): the model's leaf inputs are filled directly on the diagram. items
+  // pair a node id with the ready-built control element; nodes no longer present
+  // are skipped. Replaces any previously shown input pills.
+  showInputPills: (items: { nodeId: string; html: HTMLElement }[]) => void
+  // clearInputPills removes the on-node input controls.
+  clearInputPills: () => void
 }
 
 // A Canvas with the viewbox getter/setter we need (not in the bundled types).
@@ -648,6 +655,14 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       overlays.remove({ type: 'flow-edge' })
       for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
     },
+    showInputPills: (items) => {
+      overlays.remove({ type: 'input-pill' })
+      for (const it of items) {
+        if (!elementRegistry.get(it.nodeId)) continue
+        overlays.add(it.nodeId, 'input-pill', { position: { bottom: -8, left: 0 }, html: it.html })
+      }
+    },
+    clearInputPills: () => overlays.remove({ type: 'input-pill' }),
     illuminate: (inputs, values) => {
       overlays.remove({ type: 'flow-edge' })
       for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
