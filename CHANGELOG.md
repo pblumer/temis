@@ -67,7 +67,9 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   - **Im Modeler (WP-142):** die Sidebar zeigt daraus einen **Namespace-Baum** mit Layer-Badges
     (L0–L3) und einen **Tag-Filter** statt einer flachen Liste; die bisherigen „Ordner" sind jetzt
     **Lesezeichen** (persönliche Sicht über dem Baum) — gleicher Speicher, bestehende Zuweisungen
-    migrieren verlustfrei.
+    migrieren verlustfrei. Lesezeichen lassen sich im UI **anlegen, umbenennen und löschen** (ein
+    leeres per Klick, ein befülltes nach Rückfrage; die Modelle bleiben erhalten). Namespaces
+    bleiben bewusst read-only — sie werden in Git autoriert (ADR-0034).
   - **Als Abfrage (WP-143):** das MCP-Tool **`list_catalog`** und **`GET /v1/catalog`** liefern den
     Katalog als erstklassige, gefilterte Abfrage — **unabhängig vom Cache**, also inklusive Decisions,
     deren Revision (noch) nicht geladen ist (`resolved`-Flag). So beantwortet ein Agent „welche

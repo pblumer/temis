@@ -202,8 +202,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .folder-twisty { width: 10px; color: var(--muted); font-size: 10px; }
 .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count { font: 600 10.5px/1 ui-monospace, monospace; color: var(--muted); background: #e2e8f0; padding: 2px 6px; border-radius: 999px; }
-.folder-del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; visibility: hidden; }
-.folder-head:hover .folder-del { visibility: visible; }
+.folder-act { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; visibility: hidden; display: inline-flex; align-items: center; }
+.folder-head:hover .folder-act { visibility: visible; }
+.folder-act:hover { color: var(--accent); }
 .folder-del:hover { color: #c0392b; }
 .folder-body { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 4px; }
 .folder-empty { color: var(--muted); font-size: 12px; font-style: italic; padding: 4px 10px; margin: 0; }

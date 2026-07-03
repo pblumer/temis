@@ -763,6 +763,26 @@ async function boot(root: HTMLElement): Promise<void> {
     saveFolders()
     renderModelList()
   }
+  const renameFolder = (oldName: string): void => {
+    void (async () => {
+      const name = await promptDialog({
+        title: 'Lesezeichen umbenennen',
+        label: 'Neuer Name',
+        value: oldName,
+        okLabel: 'Umbenennen',
+        hint: (v) => (v && v !== oldName && folderState.folders.includes(v) ? 'Ein Lesezeichen mit diesem Namen existiert bereits.' : null),
+      })
+      if (!name || name === oldName || folderState.folders.includes(name)) return
+      folderState.folders = folderState.folders.map((f) => (f === oldName ? name : f))
+      for (const k of Object.keys(folderState.assign)) if (folderState.assign[k] === oldName) folderState.assign[k] = name
+      if (collapsedFolders.has(oldName)) {
+        collapsedFolders.delete(oldName)
+        collapsedFolders.add(name)
+      }
+      saveFolders()
+      renderModelList()
+    })()
+  }
   newFolderBtn.addEventListener('click', createFolder)
 
   // Wire the live filter: typing re-renders the list, and the clear button (and
@@ -1030,13 +1050,35 @@ async function boot(root: HTMLElement): Promise<void> {
       const head = el('div', 'folder-head')
       const count = searching ? `${members.length}/${allMembers.length}` : String(allMembers.length)
       head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', folder), el('span', 'folder-count', count))
-      const del = el('button', 'folder-del', '✕')
-      del.title = 'Lesezeichen löschen (Modelle bleiben erhalten)'
+      const ren = el('button', 'folder-act', '') as HTMLButtonElement
+      ren.title = 'Lesezeichen umbenennen'
+      ren.innerHTML = ICON_RENAME
+      ren.addEventListener('click', (e) => {
+        e.stopPropagation()
+        renameFolder(folder)
+      })
+      const del = el('button', 'folder-act folder-del', '✕')
+      // A leaf-empty bookmark deletes on one click; a populated one asks first,
+      // since deleting it drops the (personal) filing of its models.
+      del.title = allMembers.length ? 'Lesezeichen löschen (Modelle bleiben erhalten)' : 'Leeres Lesezeichen löschen'
       del.addEventListener('click', (e) => {
         e.stopPropagation()
-        deleteFolder(folder)
+        if (!allMembers.length) {
+          deleteFolder(folder)
+          return
+        }
+        void (async () => {
+          const n = allMembers.length
+          const ok = await confirmDialog({
+            title: 'Lesezeichen löschen',
+            message: `„${folder}" enthält ${n} ${n === 1 ? 'Modell' : 'Modelle'}. Das Lesezeichen wird gelöscht; die Modelle bleiben erhalten (nur die Zuordnung entfällt).`,
+            okLabel: 'Löschen',
+            danger: true,
+          })
+          if (ok) deleteFolder(folder)
+        })()
       })
-      head.append(del)
+      head.append(ren, del)
       head.addEventListener('click', () => {
         if (collapsedFolders.has(folder)) collapsedFolders.delete(folder)
         else collapsedFolders.add(folder)
