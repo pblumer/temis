@@ -424,6 +424,10 @@ func (s *Server) dataRoutes() []route {
 	return []route{
 		{"POST", "/v1/models", ScopeModelsWrite, s.handleCreateModel},
 		{"GET", "/v1/models", ScopeModelsRead, s.handleListModels},
+		// Decision catalog (ADR-0034, WP-143): the authoritative namespace/name index
+		// over the models, queryable by namespace/tag/status, independent of what is
+		// cached. Read-only metadata, so models:read.
+		{"GET", "/v1/catalog", ScopeModelsRead, s.handleListCatalog},
 		{"GET", "/v1/models/{id}", ScopeModelsRead, s.handleGetModel},
 		// Deleting a model is an operational/admin action (ADR-0028 §2: admin covers
 		// model DELETE), distinct from the modeler's per-element edits.

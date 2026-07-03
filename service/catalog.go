@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -288,6 +289,68 @@ func (s *Server) parseCatalogEntry(path string) (*catalogEntry, bool) {
 		e.Diags = append(e.Diags, "pinned model not loaded")
 	}
 	return e, true
+}
+
+// --- HTTP surface (WP-143) ---
+
+// catalogSummary is one decision in the GET /v1/catalog response: its coordinate
+// (its stable identity), the model revision it pins, its governance metadata and
+// whether that revision is currently loaded.
+type catalogSummary struct {
+	Coordinate string   `json:"coordinate"`
+	Namespace  string   `json:"namespace,omitempty"`
+	Name       string   `json:"name"`
+	ModelID    string   `json:"modelId"`
+	Owner      string   `json:"owner,omitempty"`
+	Layer      string   `json:"layer,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Status     string   `json:"status,omitempty"`
+	Resolved   bool     `json:"resolved"`
+}
+
+type catalogListResponse struct {
+	Decisions []catalogSummary `json:"decisions"`
+	Count     int              `json:"count"`
+	Total     int              `json:"total"`
+}
+
+// handleListCatalog returns the decision catalog — the authoritative
+// namespace/name index over the model store (ADR-0034, WP-143) — with the same
+// namespace/tag/status filters and limit/offset paging as GET /v1/models. Unlike
+// that endpoint it answers from the catalog itself, so it lists decisions that
+// exist even when their pinned revision is not currently cached: an agent can ask
+// "what is under domains/pricing?" without a full scan. It is empty when no
+// catalog is configured.
+func (s *Server) handleListCatalog(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	fNamespace := strings.TrimSpace(q.Get("namespace"))
+	fStatus := strings.TrimSpace(q.Get("status"))
+	fTags := q["tag"]
+	limit, offset := atoiClamp(q.Get("limit")), atoiClamp(q.Get("offset"))
+
+	out := make([]catalogSummary, 0, s.catalog.len())
+	for _, e := range s.catalog.snapshot() {
+		if !namespaceMatches(e.Namespace, fNamespace) ||
+			(fStatus != "" && e.Status != fStatus) || !hasAllTags(e.Tags, fTags) {
+			continue
+		}
+		out = append(out, catalogSummary{
+			Coordinate: e.coord(), Namespace: e.Namespace, Name: e.Name, ModelID: e.Model,
+			Owner: e.Owner, Layer: e.Layer, Tags: e.Tags, Status: e.Status, Resolved: e.Resolved,
+		})
+	}
+	// snapshot() already returns entries sorted by coordinate, so the listing is
+	// stable for paging without an extra sort.
+	total := len(out)
+	if offset >= len(out) {
+		out = out[:0]
+	} else {
+		out = out[offset:]
+		if limit > 0 && limit < len(out) {
+			out = out[:limit]
+		}
+	}
+	writeJSON(w, http.StatusOK, catalogListResponse{Decisions: out, Count: len(out), Total: total})
 }
 
 // normalizeTags trims, drops empties and de-duplicates tags while preserving

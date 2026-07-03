@@ -53,6 +53,13 @@ type Server struct {
 	// one shared with another surface (the HTTP service), so a flow registered over
 	// MCP is visible in GET /v1/flows (and the modeler's flow list) and vice versa.
 	flows FlowStore
+
+	// catalog, when set via WithCatalog, is the decision catalog the list_catalog
+	// tool queries (ADR-0034): the authoritative namespace/name index over the model
+	// store, independent of what is currently cached. Nil leaves list_catalog
+	// answering with an empty catalog (the stdio default has none).
+	catalog Catalog
+
 	// token, when non-empty, is the deprecated single bearer token required on the
 	// HTTP transport (HTTPHandler / WithHTTPToken). It grants every tool (admin).
 	// It does not apply to the stdio transport, which is a trusted local subprocess.
@@ -179,6 +186,7 @@ const (
 // only authentication, then dispatch reports the unknown tool.
 var toolScopes = map[string]string{
 	"list_models":       "models:read",
+	"list_catalog":      "models:read",
 	"load_model":        "models:read",
 	"describe_decision": "models:read",
 	"evaluate":          "evaluate",
@@ -366,6 +374,8 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 	switch p.Name {
 	case "list_models":
 		return s.toolListModels(p.Arguments)
+	case "list_catalog":
+		return s.toolListCatalog(p.Arguments)
 	case "load_model":
 		return s.toolLoadModel(ctx, p.Arguments)
 	case "describe_decision":

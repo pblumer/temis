@@ -24,6 +24,27 @@ func (s *Server) AttachMCP(m *mcp.Server) { s.mcpServer = m }
 // both.
 func (s *Server) ModelStore() mcp.Store { return mcpStore{s} }
 
+// CatalogStore exposes this server's decision catalog as an mcp.Catalog, so an MCP
+// server built with mcp.WithCatalog(s.CatalogStore()) answers list_catalog from the
+// very catalog the HTTP service loaded from -catalog-dir (ADR-0034) — one process,
+// one catalog. It is read-only, mirroring the catalog itself.
+func (s *Server) CatalogStore() mcp.Catalog { return mcpCatalog{s} }
+
+// mcpCatalog adapts the service's catalog to the mcp.Catalog interface.
+type mcpCatalog struct{ s *Server }
+
+func (a mcpCatalog) List() []mcp.CatalogEntry {
+	entries := a.s.catalog.snapshot()
+	out := make([]mcp.CatalogEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, mcp.CatalogEntry{
+			Namespace: e.Namespace, Name: e.Name, Model: e.Model, Owner: e.Owner,
+			Layer: e.Layer, Tags: e.Tags, Status: e.Status, Resolved: e.Resolved,
+		})
+	}
+	return out
+}
+
 // FlowStore exposes this server's flow catalog as an mcp.FlowStore, so an MCP
 // server built with mcp.WithFlowStore(s.FlowStore()) registers flows into the very
 // same catalog the /v1 API and the modeler read — one process, one catalog. The

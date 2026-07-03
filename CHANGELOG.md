@@ -68,6 +68,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
     (L0–L3) und einen **Tag-Filter** statt einer flachen Liste; die bisherigen „Ordner" sind jetzt
     **Lesezeichen** (persönliche Sicht über dem Baum) — gleicher Speicher, bestehende Zuweisungen
     migrieren verlustfrei.
+  - **Als Abfrage (WP-143):** das MCP-Tool **`list_catalog`** und **`GET /v1/catalog`** liefern den
+    Katalog als erstklassige, gefilterte Abfrage — **unabhängig vom Cache**, also inklusive Decisions,
+    deren Revision (noch) nicht geladen ist (`resolved`-Flag). So beantwortet ein Agent „welche
+    Pricing-Decisions gibt es?" ohne Vollscan. Damit ist die Etappe „Decision-Katalog" komplett.
 - **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein
   Suchfeld („Modelle suchen…"). Je mehr Modelle auf dem Server liegen, desto wichtiger — die
   Suche filtert live, ist diakritik-unempfindlich (`begru` findet `Begrüßung`) und

@@ -108,6 +108,53 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+  /v1/catalog:
+    get:
+      summary: Query the decision catalog
+      description: >
+        Returns the decision catalog — the authoritative namespace/name index over
+        the model store (ADR-0034) — so an agent can discover which decisions exist
+        and where they live without a full scan. Unlike `GET /v1/models` it answers
+        from the catalog itself, so it lists decisions whose pinned revision is not
+        currently cached; each entry reports whether its revision is loaded
+        (`resolved`). Optional query parameters filter by namespace prefix, tags
+        (all must match) or lifecycle status, and page the result. The catalog is
+        empty unless the server was started with a catalog directory
+        (`temisd -catalog-dir`).
+      parameters:
+        - name: namespace
+          in: query
+          required: false
+          description: Only decisions at or under this namespace (e.g. `domains/pricing`).
+          schema: { type: string }
+        - name: tag
+          in: query
+          required: false
+          description: Only decisions carrying this catalog tag. Repeat to require several (AND).
+          schema: { type: array, items: { type: string } }
+        - name: status
+          in: query
+          required: false
+          description: Only decisions in this lifecycle status.
+          schema: { type: string, enum: [active, deprecated, archived] }
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of decisions to return (0 or omitted = no limit).
+          schema: { type: integer, minimum: 0 }
+        - name: offset
+          in: query
+          required: false
+          description: Number of matching decisions to skip before returning (for paging).
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The catalog entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/models/{id}:
     get:
       summary: Get a cached model's index
@@ -1382,6 +1429,28 @@ components:
           items: { type: string }
           description: Catalog labels for the cross-cutting axis (e.g. pii, jurisdiction=CH).
         status: { type: string, enum: [active, deprecated, archived], description: Lifecycle status from the catalog entry. }
+    CatalogListResponse:
+      type: object
+      properties:
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogEntry" }
+        count: { type: integer, description: Number of entries in this response (after pagination). }
+        total: { type: integer, description: Number of entries that matched the filter before pagination. }
+    CatalogEntry:
+      type: object
+      properties:
+        coordinate: { type: string, description: "The decision's stable identity: namespace/name (or just name at the root).", example: "domains/pricing/base-price" }
+        namespace: { type: string, description: "Its place in the layered layout (docs/90)." }
+        name: { type: string, description: Its stable name within the namespace. }
+        modelId: { type: string, description: The pinned model revision., example: "sha256:..." }
+        owner: { type: string }
+        layer: { type: string, description: "Governance layer L0–L3." }
+        tags:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [active, deprecated, archived] }
+        resolved: { type: boolean, description: Whether the pinned revision is currently loaded in the cache. }
     ModelResponse:
       type: object
       properties:

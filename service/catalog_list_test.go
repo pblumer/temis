@@ -89,3 +89,67 @@ func TestListModelsCatalogFilters(t *testing.T) {
 		t.Errorf("offset past end → count %d total %d, want 0/2", p.Count, p.Total)
 	}
 }
+
+// TestCatalogEndpoint exercises GET /v1/catalog (WP-143): it answers from the
+// catalog itself — so it lists a decision whose pinned revision is NOT loaded
+// (resolved=false), the key difference from GET /v1/models — and honours the
+// namespace/status filters.
+func TestCatalogEndpoint(t *testing.T) {
+	modelsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(modelsDir, "discount.dmn"), []byte(discountModelXML), 0o600); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	loadedID := modelID([]byte(discountModelXML))
+	unloadedID := "sha256:" + repeat64('b') // well-formed but never loaded
+
+	catalogDir := t.TempDir()
+	writeEntry := func(rel, body string) {
+		p := filepath.Join(catalogDir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	writeEntry("domains/pricing/discount.catalog.json", `{"model":"`+loadedID+`","owner":"@pricing","layer":"L1","tags":["pii"],"status":"active"}`)
+	writeEntry("domains/pricing/legacy.catalog.json", `{"model":"`+unloadedID+`","layer":"L1","status":"deprecated"}`)
+
+	h := NewServer(nil, WithModelStore(modelsDir), WithCatalog(catalogDir)).Handler()
+	get := func(query string) catalogListResponse {
+		rec := do(t, h, "GET", "/v1/catalog"+query, "", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /v1/catalog%s = %d: %s", query, rec.Code, rec.Body)
+		}
+		return decode[catalogListResponse](t, rec)
+	}
+
+	// Both decisions are listed, sorted by coordinate; the unloaded one carries
+	// resolved=false but is present — unlike GET /v1/models, which never shows it.
+	all := get("")
+	if all.Count != 2 || all.Total != 2 {
+		t.Fatalf("catalog listed %d/%d, want 2/2", all.Count, all.Total)
+	}
+	if d := all.Decisions[0]; d.Coordinate != "domains/pricing/discount" || !d.Resolved || d.ModelID != loadedID || d.Owner != "@pricing" {
+		t.Errorf("loaded entry = %+v", d)
+	}
+	if d := all.Decisions[1]; d.Coordinate != "domains/pricing/legacy" || d.Resolved || d.ModelID != unloadedID {
+		t.Errorf("unloaded entry should be listed with resolved=false: %+v", d)
+	}
+
+	// The unloaded revision is absent from GET /v1/models (it is not cached), which
+	// is exactly why list_catalog exists.
+	models := decode[modelListResponse](t, do(t, h, "GET", "/v1/models", "", nil))
+	for _, m := range models.Models {
+		if m.ModelID == unloadedID {
+			t.Errorf("unloaded revision must not appear in /v1/models: %+v", m)
+		}
+	}
+
+	if p := get("?status=deprecated"); p.Count != 1 || p.Decisions[0].ModelID != unloadedID {
+		t.Errorf("status=deprecated → %d, want 1 (legacy)", p.Count)
+	}
+	if p := get("?namespace=domains/risk"); p.Count != 0 {
+		t.Errorf("namespace=domains/risk → %d, want 0", p.Count)
+	}
+}

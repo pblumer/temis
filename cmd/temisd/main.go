@@ -200,6 +200,7 @@ func main() {
 			mcp.WithAuth(srv.MCPAuth()),
 			mcp.WithStore(srv.ModelStore()),
 			mcp.WithFlowStore(srv.FlowStore()),
+			mcp.WithCatalog(srv.CatalogStore()),
 		)
 		srv.AttachMCP(mcpSrv)
 	}
