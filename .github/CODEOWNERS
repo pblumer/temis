@@ -1,0 +1,3 @@
+# Code owners for Temis. The maintainer is the default reviewer for everything;
+# add more specific rules below as the team grows.
+* @pblumer

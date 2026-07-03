@@ -665,7 +665,13 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 Die Implementierung erfolgt durch einen KI-Coding-Agenten entlang der Arbeitspakete. Wer Code
 beiträgt, liest zuerst `docs/00-overview.md`, `docs/10-architecture.md` und
 `docs/60-ai-agent-guide.md`, wählt das nächste offene Arbeitspaket aus `docs/20-roadmap.md`,
-schreibt Tests zuerst und hält `make verify` grün.
+schreibt Tests zuerst und hält `make verify` grün. Der Einstieg steht in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Sicherheit
+
+Schwachstellen bitte vertraulich melden — siehe [SECURITY.md](SECURITY.md). Für den
+produktiven Betrieb ist die Grundhaltung dort dokumentiert (Auth/TLS sind opt-in).
 
 ## Lizenz
 
