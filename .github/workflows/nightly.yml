@@ -1,0 +1,46 @@
+name: Nightly
+
+# Fuzzing is too slow for the per-PR gate but valuable as a scheduled sweep
+# (audit WP-137). Each target runs for FUZZTIME asserting no crash (make fuzz,
+# WP-44, docs/50-testing-strategy.md §3). Also re-runs govulncheck so a newly
+# disclosed advisory surfaces even without a PR.
+on:
+  schedule:
+    - cron: "37 3 * * *" # 03:37 UTC daily (off-peak, off-minute)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Fuzz all targets
+        run: make fuzz
+        env:
+          FUZZTIME: 60s
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          govulncheck ./...

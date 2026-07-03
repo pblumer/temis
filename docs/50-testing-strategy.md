@@ -97,7 +97,9 @@ Regeln:
 
 ## 8. Coverage
 
-- Zielmarke: ≥ 90 % für `internal/feel`, `internal/boxed`, `internal/drg`, `dmn`.
+- Zielmarke: ≥ 90 % für `dmn`, `internal/feel`, `internal/boxed`, `internal/value`,
+  `internal/model` — **durchgesetzt** über `make cover` (eigenes CI-Lane, WP-137). `internal/drg`
+  ist ein leeres Scaffold (Graph-Logik liegt in `dmn`), daher nicht in der Liste.
 - Coverage ist Indikator, nicht Selbstzweck — TCK + E2E zählen mehr.
 
 ## 9. `make verify` (lokales & CI-Gate)

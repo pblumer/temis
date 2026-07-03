@@ -1,0 +1,28 @@
+# Dependabot keeps the few pinned dependencies current (audit WP-137). Three
+# ecosystems are in play: Go modules, the frontend's npm lockfile, and the
+# GitHub Actions used by the workflows. Weekly, grouped, to keep noise low.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      web-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
