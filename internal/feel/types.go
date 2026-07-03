@@ -100,6 +100,10 @@ func BuiltinType(name string) (*Type, bool) {
 		return ListOf(nil), true
 	case "context":
 		return ContextOf(nil), true
+	case "range":
+		// The generic parameter (range<number>) is dropped by normalizeTypeName;
+		// instance-of matches on the range kind (FEEL has no runtime element type).
+		return &Type{Kind: value.KindRange}, true
 	default:
 		return nil, false
 	}
