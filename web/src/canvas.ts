@@ -247,6 +247,11 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     ],
   })
   current = diagram
+  // Test seam: expose the live diagram only when an e2e harness opted in via a
+  // window flag. Prod never sets the flag, so nothing is leaked there.
+  if ((window as unknown as { __E2E__?: boolean }).__E2E__) {
+    ;(window as unknown as { __diagram?: Diagram }).__diagram = diagram
+  }
   const canvas = diagram.get<Canvas>('canvas')
   const factory = diagram.get<ElementFactory>('elementFactory')
   const commandStack = diagram.get<CommandStack>('commandStack')
