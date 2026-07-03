@@ -64,7 +64,7 @@
 - Gate: `internal/tck.TestOfficialTCKConformance` erzwingt einen **Ratchet-Floor**
   (`conformanceFloor`), der nur nach oben wandert; ohne `TCK_CORPUS` skippt der Test
   (offline grün). Lokal: `make tck-conformance`.
-- **Aktueller Stand:** 76,3 % (Level 2 + 3). **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren*
+- **Aktueller Stand:** 77,4 % (Level 2 + 3). **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren*
   Cases. Stand, Kategorien und bewusste Auslassungen (z. B. externe Java-Funktionen) stehen in
   `docs/tck-exceptions.md`.
 - CI bricht, wenn die TCK-Quote unter den Floor fällt (Regressionsschutz).

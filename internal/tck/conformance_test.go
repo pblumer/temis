@@ -14,7 +14,7 @@ import (
 // the real rate, bump this so a regression trips the gate. It is deliberately a
 // floor, not 100 %, because full TCK conformance is reached incrementally and the
 // not-yet-supported categories are tracked in docs/tck-exceptions.md.
-const conformanceFloor = 76.0
+const conformanceFloor = 77.0
 
 // compliance levels temis targets. Level 2 and 3 are the executable DMN suites;
 // the "non-compliant" tree exercises error handling and is out of scope here.

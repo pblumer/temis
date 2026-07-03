@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2667 / 3495 Cases grün (76,3 %)** |
+| Compliance Level 2 + 3 | **2704 / 3495 Cases grün (77,4 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 76,0 % |
+| Ratchet-Floor im CI | 77,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -41,16 +41,19 @@ Regressionen den Gate brechen.
   Funktions-Match-Form) (1155).
 - **`number(from, grouping, decimal)`** — mehrargumentige Form mit
   Trenner-Normalisierung (0058).
+- **`range(from)`-Builtin** (1156, 56→19 Fails): Laufzeit-Parsing von Range-Strings
+  (`[1..3]`, `(18..21]`, `]18..21[`, unbeschränkte Enden `[1..]`/`[..2]`, String- und
+  `@`-Temporal-Endpunkte) + `instance of range<T>` (Range-Typ).
 
 ## Offene Kategorien (Priorität nach Case-Zahl)
 
 | Suite / Feature | ~Fails | Klasse | Anmerkung |
 |---|---|---|---|
 | `0100-arithmetic` | 96 | Engine | 91 % grün; Rest sind numerische Rand-/Nullfälle & Exponenten-Grenzen. |
-| `1156-range-function` | 56 | Engine | `range("[1..10]")`-Builtin: Laufzeit-String→Range-Parsing (Zahlen/Datum/Zeit). |
 | `1117-…-date-and-time` | 35 | Engine | `date and time`-Konstruktor-Kombinationen & Offsets. |
 | `0082-feel-coercion` | 28 | Engine | Singleton-Listen↔Wert-Koerzierung an Ausdrucksgrenzen. |
-| `0070-feel-instance-of` | 25 | Typsystem | `instance of` für generische (`range<number>`, `list<T>`) & benutzerdef. Typen. |
+| `0070-feel-instance-of` | 25 | Typsystem | `instance of` für `list<T>`, `function`, benutzerdef. Typen (`range<T>` erledigt). |
+| `1156-range-function` | 19 | Engine | Rest: `instance of range<T>`-Feindiskriminierung + String-Endpunkt-Randfälle. |
 | `0068-feel-equality` | 23 | Engine | Cross-Typ-Gleichheit, null-Fälle, Kontext-/Listen-Tiefvergleich. |
 | `0084-feel-for-loops` | 21 | Engine | `for … return`-Randfälle (partielle Ergebnisse, verschachtelte Domains). |
 | `1111-feel-matches` | 21 | Engine | `matches`/Flags-Semantik (XPath-Regex-Details). |
@@ -67,10 +70,9 @@ Regressionen den Gate brechen.
 
 ## Vorgehen zur 95-%-Quote
 
-1. `range()`-Builtin (56) — Laufzeit-Range-Parsing (`range("[1..10]")`).
-2. Arithmetik-Randfälle (96) — überwiegend Grenz-/Nullverhalten & Exponenten.
-3. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen.
-4. Temporale Detailfälle (~70) — Konstruktoren, Properties, Offsets.
-5. Rest-`feel-in` (21), `matches`-Flags (21), `for`-Randfälle (21), Properties (17).
+1. Arithmetik-Randfälle (96) — überwiegend Grenz-/Nullverhalten & Exponenten.
+2. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
+3. Temporale Detailfälle (~70) — Konstruktoren, Properties, Offsets.
+4. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
 
 Jeder Schritt hebt `conformanceFloor` in `internal/tck/conformance_test.go` an.

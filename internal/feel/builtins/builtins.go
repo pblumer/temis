@@ -71,6 +71,7 @@ func buildDefault() *Registry {
 	registerList(r)
 	registerListMore(r)
 	registerListReplaceAndIs(r)
+	registerRangeFn(r)
 	registerString(r)
 	registerConversion(r)
 	registerNumeric(r)
