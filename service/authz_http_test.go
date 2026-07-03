@@ -54,14 +54,14 @@ type scopedKey struct {
 // (no/unknown key) and that admin reaches everything.
 func TestHTTPScopeAuthorization(t *testing.T) {
 	path := writeKeysFile(t, []scopedKey{
-		{"reader", "r", []Scope{ScopeModelsRead}},
-		{"writer", "w", []Scope{ScopeModelsWrite}},
-		{"runner", "e", []Scope{ScopeEvaluate}},
-		{"flower", "f", []Scope{ScopeFlow}},
-		{"chatter", "c", []Scope{ScopeAssist}},
-		{"gitter", "g", []Scope{ScopeGit}},
-		{"auditor", "au", []Scope{ScopeAudit}},
-		{"boss", "a", []Scope{ScopeAdmin}},
+		{kid: "reader", secret: "r", scopes: []Scope{ScopeModelsRead}},
+		{kid: "writer", secret: "w", scopes: []Scope{ScopeModelsWrite}},
+		{kid: "runner", secret: "e", scopes: []Scope{ScopeEvaluate}},
+		{kid: "flower", secret: "f", scopes: []Scope{ScopeFlow}},
+		{kid: "chatter", secret: "c", scopes: []Scope{ScopeAssist}},
+		{kid: "gitter", secret: "g", scopes: []Scope{ScopeGit}},
+		{kid: "auditor", secret: "au", scopes: []Scope{ScopeAudit}},
+		{kid: "boss", secret: "a", scopes: []Scope{ScopeAdmin}},
 	})
 	// Point the /v1/git routes at a fake GitHub so this test is hermetic: the
 	// authorization gate is what we exercise, not real network access (a real
@@ -168,7 +168,7 @@ func TestHTTPScopeAuthorization(t *testing.T) {
 // different status. A GET on a gated path without a key is 401, same as an
 // existing one, and an unknown path under no auth is a plain 404.
 func TestHTTPNoAuthLeak(t *testing.T) {
-	path := writeKeysFile(t, []scopedKey{{"reader", "r", []Scope{ScopeModelsRead}}})
+	path := writeKeysFile(t, []scopedKey{{kid: "reader", secret: "r", scopes: []Scope{ScopeModelsRead}}})
 	h := NewServer(nil, WithKeysFile(path)).Handler()
 
 	// A gated route with no credentials is 401 whether or not the model exists —

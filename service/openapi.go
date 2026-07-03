@@ -80,13 +80,28 @@ func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFu
 		// The resource a prefix-scope (WP-105) constrains against is the request's
 		// model/flow id where present ("/v1/models/{id}/…"); resource-less routes
 		// pass "" and only an unconstrained grant satisfies them.
-		if !key.HasScopeFor(scope, r.PathValue("id")) {
+		id := r.PathValue("id")
+		if !key.HasScopeFor(scope, id) {
 			writeProblem(w, http.StatusForbidden, "FORBIDDEN", "the key lacks the required scope: "+string(scope))
 			return
 		}
+		// Owner isolation (WP-106): on an id-bearing model/flow route, a caller who
+		// does not own the resource (and is not an admin) gets a 404 — same answer as
+		// a truly absent resource, so isolation never leaks that the id exists. Unowned
+		// resources (examples, git-declared flows, pre-auth models) stay shared. The
+		// catalog listings apply the same filter in their handlers.
+		ident := identityOf(key)
+		if id != "" && s.ownership != nil &&
+			!key.hasConstrainedGrantFor(scope, id) && !s.ownership.visible(id, ident) {
+			writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
+			return
+		}
 		// Stash the authenticated kid so the audit sink can stamp authorship
-		// (clioauthkid) on the decision/flow event (ADR-0023, WP-105).
-		next(w, r.WithContext(withAuthKid(r.Context(), key.Kid)))
+		// (clioauthkid) on the decision/flow event (ADR-0023, WP-105), and the
+		// ownership identity so writes claim the artefact for this key (WP-106).
+		ctx := withAuthKid(r.Context(), key.Kid)
+		ctx = withIdentity(ctx, ident)
+		next(w, r.WithContext(ctx))
 	}
 }
 

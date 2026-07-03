@@ -102,6 +102,12 @@ type Server struct {
 	storeDir string
 	store    *diskStore
 
+	// ownership scopes model/flow visibility to the creating key (WP-106): only when
+	// auth is enabled does it gate the {id} routes and filter the catalog listings,
+	// so the open-API default stays byte-identical. Always set by NewServer;
+	// persisted alongside the model store when one is configured.
+	ownership *ownership
+
 	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
@@ -356,6 +362,21 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			s.loadPersisted(context.Background())
 		}
 	}
+	// Owner visibility index (WP-106). Persisted alongside the model store so
+	// isolation survives a restart; in-memory otherwise. It is built after the
+	// store is opened (so persistence can share its directory) but its filter only
+	// engages when auth is enabled, so the open-API default is untouched. A store
+	// that cannot be read is fatal, like a malformed keys file — isolation must not
+	// silently degrade to "everything visible".
+	var ownerPersist *ownerPersist
+	if s.store != nil {
+		ownerPersist = newOwnerPersist(s.storeDir)
+	}
+	own, err := newOwnership(ownerPersist)
+	if err != nil {
+		panic("temis: ownership index: " + err.Error())
+	}
+	s.ownership = own
 	// Finally load declared flows from disk (ADR-0032), after the models they
 	// reference are in the cache so validation is meaningful. Read-only: the
 	// directory is the source of truth, never written back.
@@ -741,7 +762,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 // cache, sorted by id for a stable order. When listing is disabled
 // (WithModelListing(false)) it responds 404 so the cached decisions stay
 // private and the endpoint looks absent.
-func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if !s.listModels {
 		writeProblem(w, http.StatusNotFound, "NOT_FOUND", "model listing is disabled")
 		return
@@ -750,6 +771,9 @@ func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
 	models := s.cache.snapshot()
 	summaries := make([]modelSummary, 0, len(models))
 	for _, sm := range models {
+		if !s.listVisible(r, sm.id) {
+			continue
+		}
 		summaries = append(summaries, modelSummary{
 			ModelID:   sm.id,
 			Name:      sm.name,
@@ -1567,6 +1591,9 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 	id := modelID(xml)
 
 	if sm, ok := s.cache.get(id); ok {
+		// Re-uploading identical content still claims the model for this caller, so
+		// two people who upload the same DMN both see it (WP-106).
+		s.claimOwnership(ctx, id)
 		return sm, nil
 	}
 
@@ -1576,6 +1603,7 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 	}
 	sm := &storedModel{id: id, name: defs.ModelName(), xml: xml, defs: defs, index: defs.Index(), diags: diags}
 	s.cache.add(sm)
+	s.claimOwnership(ctx, id)
 	// Persist the raw XML so this model survives a restart (ADR-0027). Idempotent:
 	// a content-addressed file that already exists is left untouched. A failed
 	// write is logged but never fails the request — the model is already cached
@@ -1586,6 +1614,43 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 		}
 	}
 	return sm, nil
+}
+
+// listVisible reports whether resource id belongs in a catalog listing for the
+// current request under owner isolation (WP-106). On the open API (no identity)
+// everything lists. With "?owner=me" only artefacts the caller's own key created
+// list; otherwise everything the caller may see lists (their own and
+// unowned/shared). An admin sees all unless it narrows with owner=me.
+func (s *Server) listVisible(r *http.Request, id string) bool {
+	if s.ownership == nil {
+		return true
+	}
+	ident, ok := identityFromContext(r.Context())
+	if !ok {
+		return true
+	}
+	if r.URL.Query().Get("owner") == "me" {
+		return s.ownership.ownedByKid(id, ident)
+	}
+	return s.ownership.visible(id, ident)
+}
+
+// claimOwnership records the authenticated caller (from ctx) as an owner of the
+// model/flow id, so owner isolation lets them see it later (WP-106). It is a no-op
+// on the open API or an unauthenticated write (no identity in ctx) and when no
+// ownership index is set. A persistence failure is logged, not fatal — the
+// in-memory claim stands so isolation never silently widens.
+func (s *Server) claimOwnership(ctx context.Context, id string) {
+	if s.ownership == nil {
+		return
+	}
+	ident, ok := identityFromContext(ctx)
+	if !ok {
+		return
+	}
+	if err := s.ownership.claim(id, ident); err != nil {
+		log.Printf("temis: ownership: claiming %s: %v", id, err)
+	}
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {

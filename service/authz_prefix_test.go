@@ -70,7 +70,7 @@ func TestGrantSatisfies(t *testing.T) {
 // a modelId — it reaches the matching model and is 403 on any other.
 func TestHTTPPrefixScopeRestrictsModel(t *testing.T) {
 	// First, seed two models with an admin key to learn their ids.
-	admin := writeKeysFile(t, []scopedKey{{"boss", "a", []Scope{ScopeAdmin}}})
+	admin := writeKeysFile(t, []scopedKey{{kid: "boss", secret: "a", scopes: []Scope{ScopeAdmin}}})
 	h := NewServer(nil, WithKeysFile(admin)).Handler()
 	idA := decode[modelResponse](t, doAuth(t, h, "POST", "/v1/models", "application/xml", dishXML(t), "boss.a")).ModelID
 	idB := decode[modelResponse](t, doAuth(t, h, "POST", "/v1/models", "application/xml", readModel(t, "../dmn/testdata/models/discount_14.dmn"), "boss.a")).ModelID
@@ -80,8 +80,8 @@ func TestHTTPPrefixScopeRestrictsModel(t *testing.T) {
 
 	// A key pinned to model A (by its full id) via a prefix scope.
 	pinned := writeKeysFile(t, []scopedKey{
-		{"boss", "a", []Scope{ScopeAdmin}},
-		{"pin", "s", []Scope{Scope("models:read:" + idA)}},
+		{kid: "boss", secret: "a", scopes: []Scope{ScopeAdmin}},
+		{kid: "pin", secret: "s", scopes: []Scope{Scope("models:read:" + idA)}},
 	})
 	h = NewServer(nil, WithKeysFile(pinned)).Handler()
 	// Re-seed both models on the new server.

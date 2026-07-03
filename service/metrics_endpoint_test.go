@@ -86,8 +86,8 @@ func TestMetricsPrometheus(t *testing.T) {
 // audit scope — a reader key is 403, an audit key passes.
 func TestMetricsRequiresAuditScope(t *testing.T) {
 	path := writeKeysFile(t, []scopedKey{
-		{"reader", "r", []Scope{ScopeModelsRead}},
-		{"auditor", "au", []Scope{ScopeAudit}},
+		{kid: "reader", secret: "r", scopes: []Scope{ScopeModelsRead}},
+		{kid: "auditor", secret: "au", scopes: []Scope{ScopeAudit}},
 	})
 	h := NewServer(nil, WithMetrics(true), WithKeysFile(path)).Handler()
 

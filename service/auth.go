@@ -47,6 +47,38 @@ func authKidFromContext(ctx context.Context) string {
 	return kid
 }
 
+// authIdentity is the ownership identity of the authenticated caller (WP-106): it
+// scopes model/flow visibility to the owning key ("nur meine"). seeAll holds for an
+// admin key, which bypasses the filter and reaches every resource — that is how the
+// legacy -token (a synthetic admin key) keeps seeing everything.
+type authIdentity struct {
+	kid    string
+	seeAll bool
+}
+
+// identityOf derives the ownership identity from an authenticated key.
+func identityOf(k *Key) authIdentity {
+	return authIdentity{kid: k.Kid, seeAll: k.HasScope(ScopeAdmin)}
+}
+
+// authIdentityContextKey carries the caller's ownership identity through the
+// request context so the ownership filter and the claim-on-write both read it
+// without threading it through handler signatures.
+type authIdentityContextKey struct{}
+
+// withIdentity returns a context carrying the caller's ownership identity.
+func withIdentity(ctx context.Context, id authIdentity) context.Context {
+	return context.WithValue(ctx, authIdentityContextKey{}, id)
+}
+
+// identityFromContext returns the ownership identity stashed by requireScope. ok
+// is false on the open API (no auth configured) or an unauthenticated request, so
+// callers can treat "no identity" as "do not scope / do not claim".
+func identityFromContext(ctx context.Context) (authIdentity, bool) {
+	id, ok := ctx.Value(authIdentityContextKey{}).(authIdentity)
+	return id, ok
+}
+
 // Scope is a coarse permission label attached to each key and required by each
 // route (ADR-0028 §2). admin is a super-scope: a key holding it satisfies every
 // requirement, which is how the legacy -token (a synthetic admin key) keeps
@@ -105,6 +137,29 @@ func (k *Key) HasScope(scope Scope) bool {
 func (k *Key) HasScopeFor(scope Scope, resource string) bool {
 	for _, g := range k.Scopes {
 		if grantSatisfies(g, scope, resource) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasConstrainedGrantFor reports whether the key reaches resource through an
+// explicit resource-prefixed grant for scope (a deliberate pin like
+// "models:read:sha256:…" or "evaluate:/orders/*"), as opposed to an unconstrained
+// scope. Such an explicit grant is the operator deliberately authorising this
+// specific resource, so it bypasses owner isolation (WP-106): a pinned key
+// sees exactly what it was pinned to, regardless of who created it. admin is not
+// treated as constrained here — it bypasses isolation via seeAll instead.
+func (k *Key) hasConstrainedGrantFor(scope Scope, resource string) bool {
+	if resource == "" {
+		return false
+	}
+	for _, g := range k.Scopes {
+		base, prefix := splitGrant(g)
+		if prefix == "" || base != scope {
+			continue
+		}
+		if strings.HasPrefix(resource, strings.TrimSuffix(prefix, "*")) {
 			return true
 		}
 	}

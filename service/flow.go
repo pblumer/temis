@@ -190,6 +190,9 @@ func (s *Server) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
 	diags := f.Validate(r.Context(), cacheResolver{s})
 	id := flowID(body)
 	s.flows.put(&storedFlow{id: id, flow: f, desc: body, diags: diags})
+	// Claim the flow for the creating key so owner isolation applies to the catalog
+	// and the {id} routes (WP-106); a no-op on the open API.
+	s.claimOwnership(r.Context(), id)
 	writeJSON(w, http.StatusCreated, flowResponse{
 		FlowID:      id,
 		Name:        f.Name(),
@@ -200,10 +203,13 @@ func (s *Server) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
 // handleListFlows returns the catalog of registered flows (WP-96): each flow's
 // id, name, declared input names and step count. It is the entry point a UI uses
 // to list what can be run.
-func (s *Server) handleListFlows(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListFlows(w http.ResponseWriter, r *http.Request) {
 	sfs := s.flows.snapshot()
 	out := make([]flowSummary, 0, len(sfs))
 	for _, sf := range sfs {
+		if !s.listVisible(r, sf.id) {
+			continue
+		}
 		var d flow.Descriptor
 		_ = json.Unmarshal(sf.desc, &d)
 		names := make([]string, 0, len(d.Inputs))

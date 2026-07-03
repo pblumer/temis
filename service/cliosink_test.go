@@ -280,7 +280,7 @@ func TestClioSinkStampsAuthorship(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClioSink: %v", err)
 	}
-	path := writeKeysFile(t, []scopedKey{{"agent7", "sec", []Scope{ScopeEvaluate}}})
+	path := writeKeysFile(t, []scopedKey{{kid: "agent7", secret: "sec", scopes: []Scope{ScopeEvaluate}}})
 	h := NewServer(nil, WithKeysFile(path), WithClioSink(sink)).Handler()
 
 	body, _ := json.Marshal(evaluateStatelessRequest{

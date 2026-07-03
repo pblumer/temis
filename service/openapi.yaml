@@ -63,7 +63,18 @@ paths:
         Returns a summary (id, decisions, inputs) of every model currently held
         in the in-memory cache. This endpoint can be disabled at startup
         (`temisd -list-models=false`) to keep the cached decisions private; when
-        disabled it responds 404 as if it did not exist.
+        disabled it responds 404 as if it did not exist. When scoped API keys are
+        configured, the list is filtered by owner visibility (WP-106): a key sees
+        its own models and unowned/shared ones.
+      parameters:
+        - name: owner
+          in: query
+          required: false
+          schema: { type: string, enum: [me] }
+          description: >
+            "me" narrows the list to models this key itself created (excluding
+            shared/unowned ones); omit it to list everything the key may see. Ignored
+            on the open API (no keys configured).
       responses:
         "200":
           description: The cached models
@@ -851,7 +862,17 @@ paths:
       summary: List the registered decision flows (WP-96)
       description: >-
         Returns a summary (flowId, name, declared input names, step count) of
-        every flow currently registered in memory — the catalog a UI lists.
+        every flow currently registered in memory — the catalog a UI lists. When
+        scoped API keys are configured, the list is filtered by owner visibility
+        (WP-106).
+      parameters:
+        - name: owner
+          in: query
+          required: false
+          schema: { type: string, enum: [me] }
+          description: >
+            "me" narrows the list to flows this key itself created; omit it to list
+            everything the key may see. Ignored on the open API.
       responses:
         "200":
           description: The registered flows

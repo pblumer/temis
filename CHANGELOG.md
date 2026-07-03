@@ -20,6 +20,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Security
 
+- **Eigentümer-Sichtbarkeit (WP-106).** Aufsetzend auf die scoped API-Keys (ADR-0028)
+  gehören Modelle/Flows nun dem Key, der sie erstellt. Ein Aufrufer sieht nur **seine
+  eigenen** (plus geteilte); fremde Artefakte liefern **404** (harte Isolation, kein
+  bloßer Listen-Filter). Der Katalog (`GET /v1/models`, `GET /v1/flows`) wird
+  entsprechend gefiltert, mit `?owner=me` für „nur meine". Unowned Artefakte (Beispiele,
+  git-deklarierte Flows, Vor-Auth-Modelle) bleiben geteilt; ein `admin`-Key (und das
+  Legacy-`-token`) sieht alles. Der Index wird neben dem Modell-Store als `owners.json`
+  persistiert. Ohne konfigurierte Keys bleibt die API offen wie bisher (byte-identisch).
+  Eine **Team-/Gruppen-Sichtbarkeit** ist bewusst **nicht** Teil davon — sie wird separat
+  gelöst. Grenze: die co-lokierte MCP-/gRPC-Oberfläche filtert noch nicht nach Eigentümer
+  (siehe `docs/91-owner-visibility.md`).
 - **Härtungs-Etappe H2 (WP-137–139, aus dem Code-Qualitäts-Audit).** CI-Härtung: neuer
   `govulncheck`-Job, Docker-Image-Smoke-Build je PR, durchgesetztes Coverage-Gate
   (`make cover`, ≥ 90 % auf den korrektheitskritischen Paketen), `go-version-file: go.mod`

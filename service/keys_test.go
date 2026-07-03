@@ -158,7 +158,7 @@ func TestKeysSurviveRestart(t *testing.T) {
 // TestRotateUnmanagedKeyConflicts asserts a static/operator key cannot be rotated
 // or revoked through the runtime API (409), and an unknown kid is 404.
 func TestRotateUnmanagedKeyConflicts(t *testing.T) {
-	path := writeKeysFile(t, []scopedKey{{"adm", "s", []Scope{ScopeAdmin}}})
+	path := writeKeysFile(t, []scopedKey{{kid: "adm", secret: "s", scopes: []Scope{ScopeAdmin}}})
 	h := NewServer(nil, WithKeysFile(path), WithKeyStore(t.TempDir())).Handler()
 	const admin = "adm.s"
 

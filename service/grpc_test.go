@@ -158,8 +158,8 @@ func TestGRPCTokenAuth(t *testing.T) {
 // Unauthenticated.
 func TestGRPCScopeAuthorization(t *testing.T) {
 	path := writeKeysFile(t, []scopedKey{
-		{"writer", "w", []Scope{ScopeModelsWrite}},
-		{"runner", "e", []Scope{ScopeEvaluate}},
+		{kid: "writer", secret: "w", scopes: []Scope{ScopeModelsWrite}},
+		{kid: "runner", secret: "e", scopes: []Scope{ScopeEvaluate}},
 	})
 	client := newGRPCClient(t, WithKeysFile(path))
 	ctx := context.Background()
