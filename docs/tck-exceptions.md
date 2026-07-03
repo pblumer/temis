@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2464 / 3495 Cases grün (70,5 %)** |
+| Compliance Level 2 + 3 | **2667 / 3495 Cases grün (76,3 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 70,0 % |
+| Ratchet-Floor im CI | 76,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -32,6 +32,10 @@ Regressionen den Gate brechen.
 
 ## In dieser Etappe behoben
 
+- **`in`-Operator vollständig** (0072, 224→21 Fails): die RHS ist jetzt eine echte
+  positive-Unary-Test-Liste — operator-präfixierte Tests (`x in <= 10`, `x in > 10`),
+  explizite Gleichheit (`x in = 10`), Komma-Test-Listen (`x in (1, < 5, >= 10)`) und
+  Listen-Mitgliedschaft inkl. Range-Elementen (`1 in [[2..4],[1..3]]`).
 - **`is(v1, v2)`** (Builtin) — Wert- **und** Typgleichheit (0103, war 0/50).
 - **`list replace(list, position|match, newItem)`** (Builtin, Positions- und
   Funktions-Match-Form) (1155).
@@ -42,7 +46,6 @@ Regressionen den Gate brechen.
 
 | Suite / Feature | ~Fails | Klasse | Anmerkung |
 |---|---|---|---|
-| `0072-feel-in` | 224 | Engine | `in`-Operator mit Listen von Unary-Tests als Ausdruck; größter Einzelposten. |
 | `0100-arithmetic` | 96 | Engine | 91 % grün; Rest sind numerische Rand-/Nullfälle & Exponenten-Grenzen. |
 | `1156-range-function` | 56 | Engine | `range("[1..10]")`-Builtin: Laufzeit-String→Range-Parsing (Zahlen/Datum/Zeit). |
 | `1117-…-date-and-time` | 35 | Engine | `date and time`-Konstruktor-Kombinationen & Offsets. |
@@ -64,10 +67,10 @@ Regressionen den Gate brechen.
 
 ## Vorgehen zur 95-%-Quote
 
-1. `feel-in` (224) — größter Hebel; `in` mit Unary-Test-Listen im Ausdruckskontext.
-2. `range()`-Builtin (56) — Laufzeit-Range-Parsing.
+1. `range()`-Builtin (56) — Laufzeit-Range-Parsing (`range("[1..10]")`).
+2. Arithmetik-Randfälle (96) — überwiegend Grenz-/Nullverhalten & Exponenten.
 3. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen.
 4. Temporale Detailfälle (~70) — Konstruktoren, Properties, Offsets.
-5. Arithmetik-Randfälle (96) — überwiegend Grenz-/Nullverhalten.
+5. Rest-`feel-in` (21), `matches`-Flags (21), `for`-Randfälle (21), Properties (17).
 
 Jeder Schritt hebt `conformanceFloor` in `internal/tck/conformance_test.go` an.
