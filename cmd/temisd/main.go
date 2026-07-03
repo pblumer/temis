@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -97,7 +98,19 @@ func main() {
 		"PEM private-key file matching -tls-cert (default $TEMIS_TLS_KEY)")
 	rateLimit := flag.Int("rate-limit", envInt("TEMIS_RATE_LIMIT", 0),
 		"per-client-IP request/second cap on the /v1 surface (burst = 2× rate); 0 = unlimited (env TEMIS_RATE_LIMIT)")
+	metrics := flag.Bool("metrics", envBool("TEMIS_METRICS", false),
+		"expose GET /debug/vars (expvar) and GET /metrics (Prometheus text) behind the audit scope; off by default (env TEMIS_METRICS)")
+	logFormat := flag.String("log-format", envOr("TEMIS_LOG_FORMAT", "text"),
+		"operational log format: text or json (default $TEMIS_LOG_FORMAT, else text)")
+	logLevel := flag.String("log-level", envOr("TEMIS_LOG_LEVEL", "info"),
+		"minimum log level: debug, info, warn or error (default $TEMIS_LOG_LEVEL, else info)")
 	flag.Parse()
+
+	// Structured operational logging (WP-114, ADR-0030): key/value records via
+	// log/slog. Text stays the default (human-readable, close to the previous
+	// output); json is opt-in for log pipelines. The standard log package is
+	// routed through the same handler so every operational line is consistent.
+	setupLogging(*logFormat, *logLevel)
 
 	ver := version.Resolve()
 	if *showVersion {
@@ -126,6 +139,9 @@ func main() {
 	}
 	if *rateLimit > 0 {
 		opts = append(opts, service.WithRateLimit(float64(*rateLimit), float64(*rateLimit)*2))
+	}
+	if *metrics {
+		opts = append(opts, service.WithMetrics(true))
 	}
 	if *cacheSize != 0 {
 		opts = append(opts, service.WithCacheSize(*cacheSize))
@@ -172,6 +188,7 @@ func main() {
 			SubjectKey:    *clioSubjectKey,
 			Engine:        "temisd " + ver,
 			Strict:        *clioStrict,
+			Logger:        slog.Default(),
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
@@ -209,6 +226,9 @@ func main() {
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
+	}
+	if *metrics {
+		log.Printf("temisd: metrics at GET /debug/vars and GET /metrics (audit scope)")
 	}
 	if *modelsDir != "" {
 		log.Printf("temisd: persisting models to %s (survives restart)", *modelsDir)
@@ -297,6 +317,35 @@ func main() {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// setupLogging installs a log/slog default logger (WP-114). format is text
+// (default, human-readable) or json; level is debug|info|warn|error. The
+// standard log package is redirected through the same handler so every
+// operational line — including the many existing log.Printf calls across the
+// service — is emitted structured and consistently, at info level.
+func setupLogging(format, level string) {
+	var lvl slog.Level
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler
+	if strings.EqualFold(strings.TrimSpace(format), "json") {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h))
+	log.SetFlags(0)
+	log.SetOutput(slog.NewLogLogger(h, slog.LevelInfo).Writer())
 }
 
 // envOr returns the value of environment variable key, or def when it is unset.

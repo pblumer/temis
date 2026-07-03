@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -58,8 +59,12 @@ type ClioConfig struct {
 	// Nil uses a client with a 5s timeout.
 	HTTPClient *http.Client
 	// Logf overrides where best-effort write failures are logged. Nil uses
-	// log.Printf.
+	// log.Printf. Ignored when Logger is set.
 	Logf func(format string, args ...any)
+	// Logger, when set, receives best-effort write failures as a structured
+	// slog record (system=clio, error attribute) instead of the Logf text line
+	// (WP-114). Nil falls back to Logf.
+	Logger *slog.Logger
 }
 
 // ClioSink emits a tamper-evident decision event to a clio instance after each
@@ -77,6 +82,7 @@ type ClioSink struct {
 	engine        string
 	strict        bool
 	logf          func(format string, args ...any)
+	logger        *slog.Logger
 
 	// health tracks the outcome of real writes so the status endpoint (WP-112)
 	// and the readiness probe (WP-110) can report whether audits are getting
@@ -228,6 +234,7 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 		engine:        cfg.Engine,
 		strict:        cfg.Strict,
 		logf:          logf,
+		logger:        cfg.Logger,
 	}, nil
 }
 
@@ -257,7 +264,12 @@ func (c *ClioSink) Record(ctx context.Context, rec DecisionRecord) error {
 		if c.strict {
 			return err
 		}
-		c.logf("temisd: clio audit sink: %v", err)
+		if c.logger != nil {
+			c.logger.Error("clio audit write failed (best-effort)",
+				slog.String("system", "clio"), slog.Any("error", err))
+		} else {
+			c.logf("temisd: clio audit sink: %v", err)
+		}
 	}
 	return nil
 }

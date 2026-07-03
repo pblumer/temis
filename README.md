@@ -104,8 +104,8 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> Offen u. a.: **WP-33** (gRPC) und **WP-41** (offizielles TCK-Korpus). Voller Live-Status:
-> `docs/20-roadmap.md`.
+> Offen u. a.: **WP-41** (offizielles TCK-Korpus) und das erste getaggte Release. Voller
+> Live-Status: `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 
@@ -643,7 +643,7 @@ OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere As
 
 ## Entwicklung
 
-Voraussetzung: **Go ≥ 1.23**.
+Voraussetzung: **Go ≥ 1.24**.
 
 ```sh
 go test ./...      # alle Tests
@@ -689,7 +689,13 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 Die Implementierung erfolgt durch einen KI-Coding-Agenten entlang der Arbeitspakete. Wer Code
 beiträgt, liest zuerst `docs/00-overview.md`, `docs/10-architecture.md` und
 `docs/60-ai-agent-guide.md`, wählt das nächste offene Arbeitspaket aus `docs/20-roadmap.md`,
-schreibt Tests zuerst und hält `make verify` grün.
+schreibt Tests zuerst und hält `make verify` grün. Der Einstieg steht in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Sicherheit
+
+Schwachstellen bitte vertraulich melden — siehe [SECURITY.md](SECURITY.md). Für den
+produktiven Betrieb ist die Grundhaltung dort dokumentiert (Auth/TLS sind opt-in).
 
 ## Lizenz
 

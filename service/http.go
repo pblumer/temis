@@ -145,6 +145,10 @@ type Server struct {
 	// client IP (audit findings H6/M2). Nil leaves the surface unthrottled (the
 	// default).
 	limiter *rateLimiter
+
+	// metricsEnabled mounts GET /debug/vars and GET /metrics (WP-113) behind the
+	// audit scope when set via WithMetrics. Off by default → both are 404.
+	metricsEnabled bool
 }
 
 // Option configures a Server at construction time.
@@ -250,6 +254,13 @@ func WithRateLimit(rps, burst float64) Option {
 		}
 		s.limiter = newRateLimiter(rps, burst, nil)
 	}
+}
+
+// WithMetrics mounts the operational metrics endpoints (GET /debug/vars expvar
+// JSON and GET /metrics Prometheus text) behind the audit scope (ADR-0030,
+// WP-113). Off by default so the endpoints stay 404 unless a deployment opts in.
+func WithMetrics(enabled bool) Option {
+	return func(s *Server) { s.metricsEnabled = enabled }
 }
 
 // WithModelStore persists uploaded and edited models to dir on disk and reloads
@@ -521,6 +532,13 @@ func (s *Server) Handler() http.Handler {
 	// 503 when a hard start condition is unmet.
 	mux.HandleFunc("GET /healthz", s.handleLive)
 	mux.HandleFunc("GET /readyz", s.handleReady)
+
+	// Operational metrics (ADR-0030, WP-113): opt-in and audit-scoped. Left
+	// unmounted by default so both paths 404 unless WithMetrics is set.
+	if s.metricsEnabled {
+		mux.HandleFunc("GET /debug/vars", s.requireScope(ScopeAudit, s.handleExpvars))
+		mux.HandleFunc("GET /metrics", s.requireScope(ScopeAudit, s.handleMetrics))
+	}
 
 	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
 	// model cache (and its preloaded examples), so a model is visible whether it

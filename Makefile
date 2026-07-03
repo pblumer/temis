@@ -5,7 +5,11 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz proto proto-check build tidy clean help web web-wasm web-check web-e2e
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz cover proto proto-check build tidy clean help web web-wasm web-check web-e2e
+
+# Packages the coverage gate enforces, with their floors (docs/50-testing-strategy.md §8).
+# Kept well below the packages' actual coverage so a real regression trips it, not noise.
+COVER_MIN ?= 90
 
 # Pinned codegen tools (ADR-0020). go-1.23-compatible versions.
 CONNECT_VERSION ?= v1.18.1
@@ -54,6 +58,19 @@ budget:
 ## tck: run the TCK runner package (tolerant while no cases exist yet)
 tck:
 	$(GO) test ./internal/tck/...
+
+## cover: enforce the statement-coverage floor on the correctness-critical packages
+## (docs/50-testing-strategy.md §8). Fails if any drops below COVER_MIN percent.
+cover:
+	@fail=0; \
+	for pkg in ./dmn ./internal/feel ./internal/boxed ./internal/value ./internal/model; do \
+		pct=$$($(GO) test -cover $$pkg 2>/dev/null | sed -n 's/.*coverage: \([0-9.]*\)%.*/\1/p'); \
+		if [ -z "$$pct" ]; then echo "no coverage reported for $$pkg"; fail=1; continue; fi; \
+		awk -v p="$$pct" -v m="$(COVER_MIN)" 'BEGIN{ if (p+0 < m+0) exit 1 }' \
+			&& echo "ok   $$pkg $$pct% (>= $(COVER_MIN)%)" \
+			|| { echo "FAIL $$pkg $$pct% (< $(COVER_MIN)%)"; fail=1; }; \
+	done; \
+	exit $$fail
 
 ## fuzz: run every fuzz target for FUZZTIME each, asserting no crash (WP-44, docs/50-testing-strategy.md §3)
 fuzz:

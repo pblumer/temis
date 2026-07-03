@@ -19,10 +19,8 @@ type Engine struct { /* opts */ }
 func New(opts ...Option) *Engine
 
 type Option func(*config)
-// Beispiele:
-func WithLimits(l Limits) Option
-func WithClock(now func() time.Time) Option   // für deterministische now()/today()
-func WithLocale(loc string) Option
+// Konstruktions-Optionen (Stand: aktuelle v1-Oberfläche, vgl. dmn/testdata/api/dmn.api):
+func WithLimits(l Limits) Option   // Ressourcen-/Compile-Schranken (ADR-0008)
 
 // CompiledDecision ist immutable und thread-safe. Beliebig oft parallel evaluierbar.
 type CompiledDecision struct { /* opaque */ }

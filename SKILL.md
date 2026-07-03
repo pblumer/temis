@@ -98,14 +98,6 @@ Models werden im Container nach `/data` geschrieben
 
 Upload über HTTP API (siehe `/docs`).
 
-## Auth
-
-| Layer | Mechanismus |
-|---|---|
-| HTTP API | Optional BasicAuth (htpasswd) + Bearer Token |
-| MCP | Kein separater Auth; API-Token auf `/v1` |
-| Clio Audit | `kid.secret`-Format via `vault_temis_clio_token` |
-
 ## MCP Nutzung (bevorzugt via `mcp-bridge`)
 
 Das Tool `mcp-bridge` abstrahiert JSON-RPC 2.0 in einfache CLI-Befehle.
