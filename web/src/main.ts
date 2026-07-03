@@ -1072,6 +1072,9 @@ async function boot(root: HTMLElement): Promise<void> {
   const applyRun = (run: EvalRun): void => {
     activeRun = run
     handle?.showResults(run.result.values, hitRulesOf(run.result))
+    // Light up the requirement edges with the values that travelled them, so the
+    // dependency dataflow is visible on the diagram itself — not just in the panel.
+    handle?.illuminate(run.inputs, run.result.values)
   }
 
   // The Operate cockpit: a keyboard-navigable run history above the diagram and

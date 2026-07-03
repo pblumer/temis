@@ -60,6 +60,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Modeler: Live-Graph — der Datenfluss leuchtet auf dem Diagramm auf.** Nach einer
+  Auswertung illuminieren sich jetzt die Anforderungskanten direkt im Diagramm: jede Kante,
+  die einen Wert trägt, färbt sich im Operate-Blau und lässt den Wert, der durch sie floss,
+  an ihrem Mittelpunkt schweben — die Abhängigkeit zwischen Eingaben und Decisions wird auf
+  dem Graphen selbst sichtbar, nicht nur im „Auswerten"-Panel. Die Kanten leuchten gestaffelt
+  nach Graphentiefe auf (Eingaben zuerst, finale Decision zuletzt), sodass die Entscheidung
+  sichtbar von den Blättern nach oben propagiert. Reines Frontend über die bestehende
+  Whole-Graph-Auswertung; spiegelt das Illuminate-Muster des Flow Studios (WP-98) in den
+  DMN-Modeler. Erster Schritt, den „Auswerten"-Bereich ins Diagramm aufzulösen.
 - **Betriebs-Observability abgeschlossen (WP-113/114, ADR-0030):** opt-in Metriken-Export —
   `GET /debug/vars` (expvar) und `GET /metrics` (Prometheus-Textformat, stdlib-Encoder, kein
   Client) hinter dem `audit`-Scope, standardmäßig aus (`temisd -metrics`/`$TEMIS_METRICS`);

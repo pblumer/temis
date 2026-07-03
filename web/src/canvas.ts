@@ -151,6 +151,16 @@ export type ModelerHandle = {
   // also shows which rule(s) fired — the Operate view's hit-rule highlight. An
   // empty values map clears the overlays.
   showResults: (values: Record<string, unknown>, hitRules?: Record<string, number[]>) => void
+  // illuminate lights up the requirement edges after an evaluation: every edge
+  // that carried a value is coloured in the Operate accent and floats the value
+  // that travelled it at its midpoint — the dependency dataflow made visible on
+  // the diagram itself. Edges are revealed as a wave by graph depth (inputs →
+  // output). inputs are the run's leaf inputs, values each decision's result
+  // (both keyed by name). Re-applying replaces the previous illumination; edges
+  // whose source has no value (e.g. a knowledge requirement) stay unlit.
+  illuminate: (inputs: Record<string, unknown>, values: Record<string, unknown>) => void
+  // clearFlow removes any edge illumination and floating value labels.
+  clearFlow: () => void
 }
 
 // A Canvas with the viewbox getter/setter we need (not in the bundled types).
@@ -270,10 +280,50 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     canvas.addShape(shape)
     byId[n.id] = shape
   }
+  // depthOf is a node's distance from the leaf inputs (longest incoming path), so
+  // an evaluation can illuminate the edges as a wave — inputs first, the final
+  // decision last. The seen guard keeps a (non-DMN) cycle from recursing forever.
+  const incoming = new Map<string, string[]>()
+  for (const e of laid.edges) {
+    const list = incoming.get(e.target) ?? []
+    list.push(e.source)
+    incoming.set(e.target, list)
+  }
+  const depthOf = (id: string, seen: Set<string> = new Set()): number => {
+    if (seen.has(id)) return 0
+    const next = new Set(seen).add(id)
+    const ins = incoming.get(id) ?? []
+    return ins.length ? Math.max(0, ...ins.map((s) => depthOf(s, next))) + 1 : 0
+  }
+
+  // For each requirement edge, remember where to float its "flowing value" label
+  // (the midpoint of its waypoints, as an offset from the source node — shape
+  // overlays position relative to the element) and its reveal delay by depth.
+  const STAGGER_MS = 90
+  type EdgeAnchor = { id: string; sourceId: string; left: number; top: number; delay: number }
+  const edgeAnchors: EdgeAnchor[] = []
   for (const e of laid.edges) {
     if (!byId[e.source] || !byId[e.target]) continue
     const conn = factory.createConnection({ id: e.id, type: 'dmn:' + e.type, source: byId[e.source], target: byId[e.target], waypoints: e.waypoints } as never)
     canvas.addConnection(conn)
+    const wp = e.waypoints
+    if (wp && wp.length) {
+      const src = byId[e.source]
+      const mid = { x: (wp[0].x + wp[wp.length - 1].x) / 2, y: (wp[0].y + wp[wp.length - 1].y) / 2 }
+      edgeAnchors.push({ id: e.id, sourceId: e.source, left: mid.x - (src.x ?? 0), top: mid.y - (src.y ?? 0), delay: depthOf(e.target) * STAGGER_MS })
+    }
+  }
+  const marker = canvas as unknown as { addMarker: (id: string, m: string) => void; removeMarker: (id: string, m: string) => void }
+
+  // flowValueOf is the value that travels an edge: its source's own value — a leaf
+  // input's entered value, or an upstream decision's computed result. Undefined for
+  // a source that carries no data value (e.g. a BKM behind a knowledge requirement).
+  const flowValueOf = (elId: string, inputs: Record<string, unknown>, values: Record<string, unknown>): unknown => {
+    const s = byId[elId] as (Shape & { name?: string; type?: string }) | undefined
+    if (!s || !s.name) return undefined
+    if (s.type === 'dmn:inputData') return inputs[s.name]
+    if (s.type === 'dmn:decision') return values[s.name]
+    return undefined
   }
 
   fitViewport(canvas)
@@ -592,6 +642,26 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
           badge.title = s.name + ' = ' + text
         }
         overlays.add(s.id, 'eval-result', { position: { bottom: -4, left: 6 }, html: badge })
+      }
+    },
+    clearFlow: () => {
+      overlays.remove({ type: 'flow-edge' })
+      for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
+    },
+    illuminate: (inputs, values) => {
+      overlays.remove({ type: 'flow-edge' })
+      for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
+      for (const ea of edgeAnchors) {
+        const val = flowValueOf(ea.sourceId, inputs, values)
+        if (val === undefined) continue
+        marker.addMarker(ea.id, 'flow-active')
+        const text = fmtResult(val)
+        const lbl = document.createElement('div')
+        lbl.className = 'flow-edge-val flow-edge-op'
+        lbl.style.animationDelay = ea.delay + 'ms'
+        lbl.textContent = text
+        lbl.title = text
+        overlays.add(ea.sourceId, 'flow-edge', { position: { left: ea.left, top: ea.top }, html: lbl })
       }
     },
   }

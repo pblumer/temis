@@ -1515,6 +1515,24 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   pointer-events: none;
 }
 
+/* Live-Graph illumination in the modeler canvas. After an evaluation the
+   requirement edges that carried a value colour in and float the value that
+   travelled them at their midpoint — the dependency dataflow made visible on the
+   diagram itself (the "Auswerten" panel dissolved into the graph). Mirrors the
+   Flow Studio's illuminate (above) but in the Operate cockpit's blue accent. */
+.canvas .djs-connection.flow-active .djs-visual > :first-child {
+  stroke: #1d4ed8;
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 2px rgba(29, 78, 216, 0.55));
+}
+.flow-edge-op {
+  background: #1d4ed8;
+  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-val { animation: none; }
+}
+
 .flow-trace { display: flex; flex-direction: column; gap: 6px; }
 .flow-trace-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 0 0; }
 .flow-trace-step { border: 1px solid var(--line); border-left: 3px solid #7c3aed; border-radius: 8px; padding: 6px 8px; background: #faf5ff; }
