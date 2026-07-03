@@ -97,6 +97,8 @@ func main() {
 		"PEM private-key file matching -tls-cert (default $TEMIS_TLS_KEY)")
 	rateLimit := flag.Int("rate-limit", envInt("TEMIS_RATE_LIMIT", 0),
 		"per-client-IP request/second cap on the /v1 surface (burst = 2× rate); 0 = unlimited (env TEMIS_RATE_LIMIT)")
+	metrics := flag.Bool("metrics", envBool("TEMIS_METRICS", false),
+		"expose GET /debug/vars (expvar) and GET /metrics (Prometheus text) behind the audit scope; off by default (env TEMIS_METRICS)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -126,6 +128,9 @@ func main() {
 	}
 	if *rateLimit > 0 {
 		opts = append(opts, service.WithRateLimit(float64(*rateLimit), float64(*rateLimit)*2))
+	}
+	if *metrics {
+		opts = append(opts, service.WithMetrics(true))
 	}
 	if *cacheSize != 0 {
 		opts = append(opts, service.WithCacheSize(*cacheSize))
@@ -209,6 +214,9 @@ func main() {
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
+	}
+	if *metrics {
+		log.Printf("temisd: metrics at GET /debug/vars and GET /metrics (audit scope)")
 	}
 	if *modelsDir != "" {
 		log.Printf("temisd: persisting models to %s (survives restart)", *modelsDir)
