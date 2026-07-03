@@ -26,6 +26,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   statt hart codierter Version, Dependabot (gomod/npm/actions) und ein Nightly-Fuzz-Sweep.
   Neue Governance-Dateien `SECURITY.md` (Meldeweg + dokumentierte Default-Posture),
   `CONTRIBUTING.md` und `CODEOWNERS`.
+- **Mindest-Go-Version auf 1.24 angehoben.** Mehrere vom `govulncheck`-Gate gemeldete
+  stdlib-CVEs (u. a. GO-2025-4007, quadratische `crypto/x509`-Name-Constraint-Prüfung,
+  erreichbar über `ListenAndServeTLS`) sind ausschließlich in Go 1.24.9+ gefixt und werden
+  nicht in die EOL-1.23-Linie zurückportiert. Bauen auf 1.24 ist daher zur echten Behebung
+  nötig (nicht nur, um den Scan grün zu bekommen); die Security-CI-Lane scannt mit dem
+  jeweils aktuellen Stable-Go. `go.mod` (`go 1.24.0`), Dockerfile und Doku entsprechend.
 - **Härtungs-Etappe H1 (WP-130–135, aus dem Code-Qualitäts-Audit `docs/audits/`).** Behebt die
   im Audit verifizierten kritischen/hohen Befunde:
   - **Kein Prozess-Crash mehr durch Eingaben (K1):** FEEL-Parser und DMN-XML-Decoder hatten kein

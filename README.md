@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/pblumer/temis"><img alt="Repository" src="https://img.shields.io/badge/GitHub-pblumer%2Ftemis-24292f?logo=github"></a>
-  <img alt="Go" src="https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
   <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
   <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
@@ -643,7 +643,7 @@ OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere As
 
 ## Entwicklung
 
-Voraussetzung: **Go ≥ 1.23**.
+Voraussetzung: **Go ≥ 1.24**.
 
 ```sh
 go test ./...      # alle Tests

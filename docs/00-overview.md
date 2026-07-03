@@ -19,7 +19,7 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 
 | # | Entscheidung | Wert | ADR |
 |---|---|---|---|
-| D1 | Sprache | Go (≥ 1.23) | ADR-0001 |
+| D1 | Sprache | Go (≥ 1.24) | ADR-0001 |
 | D2 | DMN-Zielversion | 1.5 (formal OMG), abwärtskompatibel 1.3/1.4 lesen | ADR-0002 |
 | D3 | FEEL-Scope | **Voll** (alle Boxed Expressions, volle Grammatik) | ADR-0003 |
 | D4 | Ausführungsmodell | **Compile-to-Closures** (kein Tree-Walking im Hot Path) | ADR-0004 |

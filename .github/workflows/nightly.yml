@@ -34,13 +34,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Scan with the latest stable Go (see ci.yml security lane).
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
           cache: true
 
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
