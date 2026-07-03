@@ -301,10 +301,9 @@ class DmnContextPadProvider {
     }
 
     // Rename: an explicit, deliberate gesture to inline-edit the element's name.
-    // Double-click renames only decisions WITHOUT logic (a decision with logic
-    // opens its editor on double-click instead — see dmn-label-editing), so this
-    // is the way to rename every other nameable shape, including a decided
-    // decision. Requirement edges carry no name.
+    // This pencil icon and the F2 key are the ONLY ways to rename — double-click
+    // is reserved throughout the editor for switching to an element's content
+    // (see dmn-label-editing and canvas.ts). Requirement edges carry no name.
     if (element.type !== 'dmn:informationRequirement' && element.type !== 'dmn:knowledgeRequirement') {
       entries['rename'] = {
         group: 'edit',

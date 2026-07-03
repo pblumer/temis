@@ -313,6 +313,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Changed
 
+- **Doppelklick wechselt durchgängig in den Inhalt, Umbenennen nur noch bewusst:**
+  Ein Doppelklick auf ein Element öffnet jetzt **immer** dessen Inhalt statt es zu
+  benennen — eine Decision ihre Logik (Tabelle/FEEL/Boxed-Ausdruck), ein Business
+  Knowledge Model seine gekapselte Funktion; eine noch undefinierte Decision (ohne
+  Logik) hat keinen Inhalt und öffnet nichts. **Umbenennen** läuft ausschließlich
+  über das **Bleistift-Symbol** im Context-Pad und die **F2-Taste** auf dem
+  selektierten Element. Damit kollidieren die beiden Gesten nie mehr (bisher
+  benannte der Doppelklick logiklose Decisions/BKMs inline). Betroffen sind
+  `web/src/dmn-label-editing.ts` (Doppelklick-Rename entfernt, F2-Handler ergänzt),
+  `web/src/canvas.ts` (Doppelklick auf BKM öffnet die Funktion) und der
+  Context-Pad-Hinweis. Headless (Chromium) verifiziert.
 - **Flow-Studio-Autolayout auf dagre (WP-97/98):** Die read-only Flow-Ansicht
   ordnet ihre Schritte jetzt mit **dagre** (`@dagrejs/dagre`) statt der
   handgeschriebenen Barycentre-Sweeps an. Ränge, Kreuzungs-Minimierung und
