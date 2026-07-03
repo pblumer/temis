@@ -70,6 +70,7 @@ func buildDefault() *Registry {
 	registerBoolean(r)
 	registerList(r)
 	registerListMore(r)
+	registerListReplaceAndIs(r)
 	registerString(r)
 	registerConversion(r)
 	registerNumeric(r)
