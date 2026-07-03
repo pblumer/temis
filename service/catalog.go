@@ -118,6 +118,52 @@ func (c *catalogStore) len() int {
 	return len(c.m)
 }
 
+// byModel returns the catalog entry that pins model id, so a model listing can be
+// enriched with its namespace/owner/layer/tags/status (WP-141). When more than one
+// entry pins the same revision (unusual) the lexicographically smallest coordinate
+// wins, so the join is deterministic.
+func (c *catalogStore) byModel(id string) (*catalogEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var best *catalogEntry
+	for _, e := range c.m {
+		if e.Model == id && (best == nil || e.coord() < best.coord()) {
+			best = e
+		}
+	}
+	return best, best != nil
+}
+
+// namespaceMatches reports whether ns lies at or under the prefix namespace: an
+// exact match or a proper descendant (so "domains" matches "domains/pricing" but
+// not "domains-x"). An empty prefix matches everything. Leading/trailing slashes
+// on the prefix are ignored, mirroring how a namespace is stored.
+func namespaceMatches(ns, prefix string) bool {
+	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
+	if prefix == "" {
+		return true
+	}
+	return ns == prefix || strings.HasPrefix(ns, prefix+"/")
+}
+
+// hasAllTags reports whether tags contains every tag in want (AND semantics), so
+// a listing can require several labels at once. An empty want matches everything.
+func hasAllTags(tags, want []string) bool {
+	for _, w := range want {
+		found := false
+		for _, t := range tags {
+			if t == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // loadCatalog walks s.catalogDir for *.catalog.json manifests and registers each
 // in the catalog (ADR-0034). It runs at construction, after the models it
 // references are loaded, so validation against the cache is meaningful; it needs

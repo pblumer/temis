@@ -103,7 +103,14 @@ func (a mcpStore) List() []mcp.ModelInfo {
 	models := a.s.cache.snapshot()
 	out := make([]mcp.ModelInfo, 0, len(models))
 	for _, sm := range models {
-		out = append(out, mcp.ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+		mi := mcp.ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs}
+		// Enrich with catalog metadata so list_models over MCP carries the same
+		// namespace/owner/layer/tags/status as the HTTP surface (ADR-0034, WP-141).
+		if e, ok := a.s.catalog.byModel(sm.id); ok {
+			mi.Namespace, mi.Name = e.Namespace, e.Name
+			mi.Owner, mi.Layer, mi.Tags, mi.Status = e.Owner, e.Layer, e.Tags, e.Status
+		}
+		out = append(out, mi)
 	}
 	return out
 }

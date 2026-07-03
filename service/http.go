@@ -593,7 +593,10 @@ func schemaOf(defs *dmn.Definitions, decisions []string) map[string][]dmn.InputF
 
 type modelListResponse struct {
 	Models []modelSummary `json:"models"`
-	Count  int            `json:"count"`
+	// Count is the number of models in this response (after pagination); Total is
+	// the number that matched the filter before pagination, so a client can page.
+	Count int `json:"count"`
+	Total int `json:"total"`
 }
 
 type modelSummary struct {
@@ -604,6 +607,30 @@ type modelSummary struct {
 	// Seq is the model's creation order (higher = newer), so the client can show a
 	// model's same-named revisions newest-first as a history.
 	Seq uint64 `json:"seq"`
+	// Catalog metadata (ADR-0034, WP-141), present when a catalog entry pins this
+	// model revision. Namespace is its place in the layered layout (docs/90);
+	// CatalogName is its stable name within the namespace. These drive the modeler's
+	// namespace tree and the namespace/tag/status filters below.
+	Namespace   string   `json:"namespace,omitempty"`
+	CatalogName string   `json:"catalogName,omitempty"`
+	Owner       string   `json:"owner,omitempty"`
+	Layer       string   `json:"layer,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Status      string   `json:"status,omitempty"`
+
+	// cataloged records whether a catalog entry matched, so a catalog-scoped filter
+	// can exclude uncatalogued models. Unexported: it never marshals.
+	cataloged bool
+}
+
+// sortKey orders a listing so catalogued models group by their coordinate
+// (namespace/name) and uncatalogued ones follow, ordered by id — giving the
+// modeler a stable, tree-friendly order and stable pagination.
+func (m modelSummary) sortKey() string {
+	if m.cataloged {
+		return "0" + m.Namespace + "/" + m.CatalogName
+	}
+	return "1" + m.ModelID
 }
 
 type saveModelRequest struct {
@@ -745,32 +772,93 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleListModels returns a summary of every model currently held in the
-// cache, sorted by id for a stable order. When listing is disabled
-// (WithModelListing(false)) it responds 404 so the cached decisions stay
-// private and the endpoint looks absent.
-func (s *Server) handleListModels(w http.ResponseWriter, _ *http.Request) {
+// handleListModels returns a summary of every model currently held in the cache,
+// each enriched with its catalog metadata (namespace/owner/layer/tags/status) when
+// a catalog entry pins it (ADR-0034, WP-141). It supports catalog-aware filtering
+// and pagination via query parameters — so a server holding thousands of decisions
+// is navigable by asking, not by rendering everything:
+//
+//	namespace=domains/pricing   only models at or under that namespace
+//	tag=pii&tag=jurisdiction=CH  only models carrying ALL given tags
+//	status=active               only models in that lifecycle state
+//	limit=50&offset=100         page the (filtered) result
+//
+// Any catalog filter (namespace/tag/status) excludes uncatalogued models. With no
+// filter the listing is every cached model as before (additive, backward
+// compatible). When listing is disabled (WithModelListing(false)) it responds 404
+// so the cached decisions stay private and the endpoint looks absent.
+func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if !s.listModels {
 		writeProblem(w, http.StatusNotFound, "NOT_FOUND", "model listing is disabled")
 		return
 	}
 
+	q := r.URL.Query()
+	fNamespace := strings.TrimSpace(q.Get("namespace"))
+	fStatus := strings.TrimSpace(q.Get("status"))
+	fTags := q["tag"] // repeated ?tag=… params, AND-combined
+	catalogScoped := fNamespace != "" || fStatus != "" || len(fTags) > 0
+	limit, offset := atoiClamp(q.Get("limit")), atoiClamp(q.Get("offset"))
+
 	models := s.cache.snapshot()
 	summaries := make([]modelSummary, 0, len(models))
 	for _, sm := range models {
-		summaries = append(summaries, modelSummary{
+		su := modelSummary{
 			ModelID:   sm.id,
 			Name:      sm.name,
 			Decisions: sm.index.Decisions,
 			Inputs:    sm.index.Inputs,
 			Seq:       sm.seq,
-		})
+		}
+		if e, ok := s.catalog.byModel(sm.id); ok {
+			su.cataloged = true
+			su.Namespace, su.CatalogName = e.Namespace, e.Name
+			su.Owner, su.Layer, su.Tags, su.Status = e.Owner, e.Layer, e.Tags, e.Status
+		}
+		if catalogScoped {
+			if !su.cataloged || !namespaceMatches(su.Namespace, fNamespace) ||
+				(fStatus != "" && su.Status != fStatus) || !hasAllTags(su.Tags, fTags) {
+				continue
+			}
+		}
+		summaries = append(summaries, su)
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {
+		if ki, kj := summaries[i].sortKey(), summaries[j].sortKey(); ki != kj {
+			return ki < kj
+		}
 		return summaries[i].ModelID < summaries[j].ModelID
 	})
-	writeJSON(w, http.StatusOK, modelListResponse{Models: summaries, Count: len(summaries)})
+
+	total := len(summaries)
+	summaries = paginate(summaries, offset, limit)
+	writeJSON(w, http.StatusOK, modelListResponse{Models: summaries, Count: len(summaries), Total: total})
+}
+
+// atoiClamp parses a non-negative decimal query value, returning 0 for empty,
+// malformed or negative input — so a bad ?limit= or ?offset= degrades to "no
+// bound" rather than erroring the whole listing.
+func atoiClamp(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// paginate returns the window [offset, offset+limit) of xs, clamped to its
+// bounds. A limit of 0 means "no limit" (everything from offset on); an offset at
+// or past the end yields an empty slice.
+func paginate(xs []modelSummary, offset, limit int) []modelSummary {
+	if offset >= len(xs) {
+		return xs[:0]
+	}
+	xs = xs[offset:]
+	if limit > 0 && limit < len(xs) {
+		xs = xs[:limit]
+	}
+	return xs
 }
 
 // handleGetModel returns a cached model's index.

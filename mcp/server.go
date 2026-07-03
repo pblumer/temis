@@ -72,11 +72,20 @@ type Server struct {
 }
 
 // ModelInfo summarises a cached model for list_models: its content-addressed id
-// and the names of its evaluable decisions and input data.
+// and the names of its evaluable decisions and input data, plus the catalog
+// metadata (ADR-0034, WP-141) when a catalog entry pins this revision — namespace,
+// owner, layer, tags and lifecycle status. The catalog fields are empty for a
+// store without a catalog (e.g. the in-process memStore).
 type ModelInfo struct {
 	ID        string
 	Decisions []string
 	Inputs    []string
+	Namespace string
+	Name      string
+	Owner     string
+	Layer     string
+	Tags      []string
+	Status    string
 }
 
 // Store is the model cache the MCP tools operate on. Splitting it out lets the
@@ -272,13 +281,31 @@ func obj(props map[string]any, required ...string) map[string]any {
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 
+func intProp(desc string) map[string]any {
+	return map[string]any{"type": "integer", "description": desc}
+}
+
+func arr(desc string, items map[string]any) map[string]any {
+	return map[string]any{"type": "array", "description": desc, "items": items}
+}
+
 // tools is the static tool catalogue advertised via tools/list.
 var tools = []toolSpec{
 	{
 		Name: "list_models",
-		Description: "List the DMN models currently loaded in this server's cache, " +
-			"each with its evaluable decisions and input-data names.",
-		InputSchema: obj(map[string]any{}),
+		Description: "List the DMN models currently loaded in this server's cache, each " +
+			"with its evaluable decisions and input-data names, plus catalog metadata " +
+			"(namespace, owner, layer, tags, status) when a catalog entry pins it. " +
+			"Optional filters narrow the list — by namespace prefix, tags (all must " +
+			"match) or lifecycle status — and limit/offset page it, so a server holding " +
+			"thousands of decisions is navigable by asking rather than listing everything.",
+		InputSchema: obj(map[string]any{
+			"namespace": str("Only models at or under this catalog namespace (e.g. \"domains/pricing\")."),
+			"status":    str("Only models in this lifecycle status (active, deprecated or archived)."),
+			"tags":      arr("Only models carrying ALL of these catalog tags.", str("A catalog tag.")),
+			"limit":     intProp("Maximum number of models to return (0 = no limit)."),
+			"offset":    intProp("Number of matching models to skip before returning (for paging)."),
+		}),
 	},
 	{
 		Name: "load_model",
@@ -338,7 +365,7 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 	}
 	switch p.Name {
 	case "list_models":
-		return s.toolListModels()
+		return s.toolListModels(p.Arguments)
 	case "load_model":
 		return s.toolLoadModel(ctx, p.Arguments)
 	case "describe_decision":
@@ -366,14 +393,111 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 	}
 }
 
-func (s *Server) toolListModels() (any, *rpcError) {
+func (s *Server) toolListModels(raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		Namespace string   `json:"namespace"`
+		Status    string   `json:"status"`
+		Tags      []string `json:"tags"`
+		Limit     int      `json:"limit"`
+		Offset    int      `json:"offset"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &a); err != nil {
+			return toolError("invalid arguments: " + err.Error()), nil
+		}
+	}
+	catalogScoped := a.Namespace != "" || a.Status != "" || len(a.Tags) > 0
+
 	infos := s.store.List()
 	summaries := make([]modelSummary, 0, len(infos))
 	for _, mi := range infos {
-		summaries = append(summaries, modelSummary{ModelID: mi.ID, Decisions: mi.Decisions, Inputs: mi.Inputs})
+		if catalogScoped {
+			if mi.Namespace == "" && mi.Name == "" && mi.Status == "" ||
+				!namespaceMatches(mi.Namespace, a.Namespace) ||
+				(a.Status != "" && mi.Status != a.Status) || !hasAllTags(mi.Tags, a.Tags) {
+				continue
+			}
+		}
+		summaries = append(summaries, modelSummary{
+			ModelID: mi.ID, Decisions: mi.Decisions, Inputs: mi.Inputs,
+			Namespace: mi.Namespace, CatalogName: mi.Name, Owner: mi.Owner,
+			Layer: mi.Layer, Tags: mi.Tags, Status: mi.Status,
+		})
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ModelID < summaries[j].ModelID })
-	return toolText(map[string]any{"models": summaries, "count": len(summaries)})
+	sort.Slice(summaries, func(i, j int) bool {
+		if ki, kj := listSortKey(summaries[i]), listSortKey(summaries[j]); ki != kj {
+			return ki < kj
+		}
+		return summaries[i].ModelID < summaries[j].ModelID
+	})
+	total := len(summaries)
+	summaries = pageModels(summaries, a.Offset, a.Limit)
+	return toolText(map[string]any{"models": summaries, "count": len(summaries), "total": total})
+}
+
+// listSortKey mirrors the HTTP listing order (WP-141): catalogued models group by
+// their coordinate, uncatalogued ones follow by id, for a stable, tree-friendly
+// order and stable pagination.
+func listSortKey(m modelSummary) string {
+	if m.Namespace != "" || m.CatalogName != "" {
+		return "0" + m.Namespace + "/" + m.CatalogName
+	}
+	return "1" + m.ModelID
+}
+
+// namespaceMatches reports whether ns lies at or under the prefix namespace (exact
+// or a proper descendant); an empty prefix matches everything. It mirrors the HTTP
+// surface's filter so both list_models paths agree.
+func namespaceMatches(ns, prefix string) bool {
+	prefix = trimSlash(prefix)
+	if prefix == "" {
+		return true
+	}
+	return ns == prefix || (len(ns) > len(prefix) && ns[:len(prefix)] == prefix && ns[len(prefix)] == '/')
+}
+
+func trimSlash(s string) string {
+	for len(s) > 0 && s[0] == '/' {
+		s = s[1:]
+	}
+	for len(s) > 0 && s[len(s)-1] == '/' {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// hasAllTags reports whether tags contains every tag in want (AND); empty want
+// matches everything.
+func hasAllTags(tags, want []string) bool {
+	for _, w := range want {
+		found := false
+		for _, t := range tags {
+			if t == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// pageModels returns the window [offset, offset+limit) of xs; limit 0 means no
+// bound, an offset past the end yields empty.
+func pageModels(xs []modelSummary, offset, limit int) []modelSummary {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(xs) {
+		return xs[:0]
+	}
+	xs = xs[offset:]
+	if limit > 0 && limit < len(xs) {
+		xs = xs[:limit]
+	}
+	return xs
 }
 
 func (s *Server) toolLoadModel(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
@@ -599,9 +723,15 @@ type modelResponse struct {
 }
 
 type modelSummary struct {
-	ModelID   string   `json:"modelId"`
-	Decisions []string `json:"decisions"`
-	Inputs    []string `json:"inputs"`
+	ModelID     string   `json:"modelId"`
+	Decisions   []string `json:"decisions"`
+	Inputs      []string `json:"inputs"`
+	Namespace   string   `json:"namespace,omitempty"`
+	CatalogName string   `json:"catalogName,omitempty"`
+	Owner       string   `json:"owner,omitempty"`
+	Layer       string   `json:"layer,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Status      string   `json:"status,omitempty"`
 }
 
 type evaluateResponse struct {

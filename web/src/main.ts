@@ -51,7 +51,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <div class="sidebar-section">
             <button class="section-title" id="modelsToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Modelle <span class="section-layer" title="Schicht L1 — Domänen-Decisions">L1</span></button>
             <span class="sidebar-actions">
-              <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+              <button id="newFolder" class="icon-btn" type="button" title="Neues Lesezeichen"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h10v14l-5-3.2L4 16z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></button>
               <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
             </span>
@@ -700,11 +700,14 @@ async function boot(root: HTMLElement): Promise<void> {
     return n
   }
 
-  // Folders organise the model list. A model is filed by NAME (its stable
-  // identity across revisions), and the assignment is persisted in the browser
-  // (localStorage) — per browser, since the server's model cache is content-
-  // addressed and ephemeral. Drag a model onto a folder to file it; drop it on
-  // empty space to unfile it.
+  // Bookmarks are the personal view layer over the authoritative namespace tree
+  // (ADR-0034): a model's *home* is its catalog namespace; a bookmark is a
+  // per-browser shortcut. A model is bookmarked by NAME (its stable identity
+  // across revisions), persisted in localStorage — per browser, since the
+  // server's model cache is content-addressed and ephemeral. Drag a model onto a
+  // bookmark to file it; drop it on empty space to remove it. (The storage key is
+  // unchanged from when these were called "folders", so existing assignments
+  // migrate losslessly into bookmarks.)
   const FOLDERS_KEY = 'temis.modeler.folders'
   type FolderState = { folders: string[]; assign: Record<string, string> }
   const loadFolders = (): FolderState => {
@@ -718,6 +721,14 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   const folderState = loadFolders()
   const collapsedFolders = new Set<string>()
+  // The namespace tree (ADR-0034) is the authoritative organisation: namespaces
+  // start collapsed-free (open), and a tag filter (AND across selected tags)
+  // narrows the whole list. Both are view state, not persisted.
+  const collapsedNs = new Set<string>()
+  const activeTags = new Set<string>()
+  const nsOf = (g: Group): string => (g.revisions[0]?.namespace ?? '').trim()
+  const layerOf = (g: Group): string => (g.revisions[0]?.layer ?? '').trim()
+  const tagsOf = (g: Group): string[] => g.revisions[0]?.tags ?? []
   const saveFolders = (): void => {
     try {
       localStorage.setItem(FOLDERS_KEY, JSON.stringify(folderState))
@@ -734,11 +745,11 @@ async function boot(root: HTMLElement): Promise<void> {
   const createFolder = (): void => {
     void (async () => {
       const name = await promptDialog({
-        title: 'Neuer Ordner',
-        label: 'Name des Ordners',
+        title: 'Neues Lesezeichen',
+        label: 'Name des Lesezeichens',
         placeholder: 'z. B. Kunde A',
         okLabel: 'Anlegen',
-        hint: (v) => (v && folderState.folders.includes(v) ? 'Ein Ordner mit diesem Namen existiert bereits.' : null),
+        hint: (v) => (v && folderState.folders.includes(v) ? 'Ein Lesezeichen mit diesem Namen existiert bereits.' : null),
       })
       if (!name || folderState.folders.includes(name)) return
       folderState.folders.push(name)
@@ -970,7 +981,9 @@ async function boot(root: HTMLElement): Promise<void> {
     modelList.textContent = ''
     const terms = queryTerms()
     const searching = terms.length > 0
-    const groups = groupModels()
+    // The tag filter (ADR-0034 cross-cutting axis) AND-narrows the whole list.
+    const activeTagList = [...activeTags]
+    const groups = groupModels().filter((g) => activeTagList.every((t) => tagsOf(g).includes(t)))
     const known = new Set(folderState.folders)
     const byFolder = new Map<string, Group[]>()
     const unassigned: Group[] = []
@@ -991,6 +1004,24 @@ async function boot(root: HTMLElement): Promise<void> {
     let shown = 0
     const keep = (g: Group, folder?: string): boolean => (searching ? matchesTerms(folder ? g.name + ' ' + folder : g.name, terms) : true)
 
+    // Tag filter chips: the union of catalog tags across all models. Rendered
+    // first so it narrows bookmarks and the namespace tree alike.
+    const allTags = [...new Set(models.flatMap((m) => m.tags ?? []))].sort((a, b) => a.localeCompare(b))
+    if (allTags.length) {
+      const bar = el('div', 'tag-filter')
+      for (const tag of allTags) {
+        const chip = el('button', 'tag-chip' + (activeTags.has(tag) ? ' is-active' : ''), tag)
+        chip.addEventListener('click', () => {
+          if (activeTags.has(tag)) activeTags.delete(tag)
+          else activeTags.add(tag)
+          renderModelList()
+        })
+        bar.append(chip)
+      }
+      modelList.append(bar)
+    }
+
+    // --- Bookmarks: the personal view layer, above the authoritative tree ---
     for (const folder of folderState.folders) {
       const allMembers = byFolder.get(folder) ?? []
       const members = allMembers.filter((g) => keep(g, folder))
@@ -1000,7 +1031,7 @@ async function boot(root: HTMLElement): Promise<void> {
       const count = searching ? `${members.length}/${allMembers.length}` : String(allMembers.length)
       head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', folder), el('span', 'folder-count', count))
       const del = el('button', 'folder-del', '✕')
-      del.title = 'Ordner löschen (Modelle bleiben erhalten)'
+      del.title = 'Lesezeichen löschen (Modelle bleiben erhalten)'
       del.addEventListener('click', (e) => {
         e.stopPropagation()
         deleteFolder(folder)
@@ -1039,7 +1070,65 @@ async function boot(root: HTMLElement): Promise<void> {
       }
     }
 
+    // --- Namespace tree: the authoritative catalog layer (ADR-0034) ---
+    // Non-bookmarked models are grouped by their catalog namespace (its path in
+    // the layered layout, docs/90). Each namespace node is a collapsible folder
+    // with a layer badge (when its models share one L0–L3 layer) and a count.
+    // Unnamespaced models (examples, ad-hoc uploads) render flat at the root, so
+    // a server with no catalog looks exactly as it did before.
+    type NsNode = { seg: string; path: string; kids: Map<string, NsNode>; groups: Group[] }
+    const root: NsNode = { seg: '', path: '', kids: new Map(), groups: [] }
     for (const g of unassigned) {
+      const ns = nsOf(g)
+      if (!ns) {
+        root.groups.push(g)
+        continue
+      }
+      let node = root
+      for (const seg of ns.split('/')) {
+        let kid = node.kids.get(seg)
+        if (!kid) {
+          kid = { seg, path: node.path ? node.path + '/' + seg : seg, kids: new Map(), groups: [] }
+          node.kids.set(seg, kid)
+        }
+        node = kid
+      }
+      node.groups.push(g)
+    }
+    const subtree = (n: NsNode): Group[] => [...n.groups, ...[...n.kids.values()].flatMap(subtree)]
+    const renderNsNode = (node: NsNode, container: HTMLElement): void => {
+      for (const kid of [...node.kids.values()].sort((a, b) => a.seg.localeCompare(b.seg))) {
+        const all = subtree(kid)
+        const members = all.filter((g) => keep(g))
+        if (searching && !members.length) continue
+        const open = searching || !collapsedNs.has(kid.path)
+        const head = el('div', 'folder-head ns-head')
+        head.append(el('span', 'folder-twisty', open ? '▾' : '▸'), el('span', 'folder-name', kid.seg))
+        const layers = new Set(all.map(layerOf).filter(Boolean))
+        if (layers.size === 1) head.append(el('span', 'section-layer ns-layer', [...layers][0]))
+        head.append(el('span', 'folder-count', searching ? `${members.length}/${all.length}` : String(all.length)))
+        head.addEventListener('click', () => {
+          if (collapsedNs.has(kid.path)) collapsedNs.delete(kid.path)
+          else collapsedNs.add(kid.path)
+          renderModelList()
+        })
+        container.append(head)
+        if (open) {
+          const body = el('div', 'folder-body')
+          renderNsNode(kid, body)
+          for (const g of kid.groups) {
+            if (!keep(g)) continue
+            renderGroup(g, body, terms)
+            shown++
+          }
+          container.append(body)
+        } else {
+          shown += members.length
+        }
+      }
+    }
+    renderNsNode(root, modelList)
+    for (const g of root.groups) {
       if (!keep(g)) continue
       renderGroup(g, modelList, terms)
       shown++

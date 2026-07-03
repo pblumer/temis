@@ -32,8 +32,23 @@ export type GraphEdge = { type: string; source: string; target: string }
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 // seq is the model's server-side creation order (higher = newer), so same-named
-// revisions can be shown newest-first as a history.
-export type ModelSummary = { modelId: string; name?: string; decisions: string[]; inputs: string[]; seq?: number }
+// revisions can be shown newest-first as a history. The catalog fields
+// (namespace, catalogName, owner, layer, tags, status) are present when a catalog
+// entry pins this revision (ADR-0034) and drive the sidebar's namespace tree,
+// layer badges and tag filter.
+export type ModelSummary = {
+  modelId: string
+  name?: string
+  decisions: string[]
+  inputs: string[]
+  seq?: number
+  namespace?: string
+  catalogName?: string
+  owner?: string
+  layer?: string
+  tags?: string[]
+  status?: string
+}
 
 // InputField mirrors dmn.InputField: a decision's typed input, with its optional
 // allowed-values constraint and discrete suggested values, for building the

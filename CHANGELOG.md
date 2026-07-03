@@ -48,18 +48,26 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
-- **Decision-Katalog: tausende Decisions ordnen (ADR-0034, WP-140).** Ein `temisd`, der viele
-  Decisions hält, bekommt eine **Runtime-Katalog-Plane** über dem flachen, content-adressierten
-  Modell-Store: **Ordnung liegt auf den Namen, nicht auf den Blobs.** Ein `*.catalog.json`-
-  Manifest bindet eine menschliche Koordinate `namespace/name` an eine **gepinnte Revision**
-  (`sha256:<hex>`) plus Governance-Metadaten (`owner`, `layer`, `tags`, `status`); `namespace`/
-  `name` leiten sich, wenn nicht gesetzt, aus **Verzeichnispfad/Dateiname** ab — das Git-Layout
-  *ist* der Namespace. Aktiviert über **`-catalog-dir`** / `service.WithCatalog(dir)` /
-  `$TEMIS_CATALOG_DIR`, beim Start **nach** den Modellen geladen (jede Revision gegen den Cache
-  validiert). **Read-only** (Git bleibt Source of Truth, kein Write-back → keine Drift; spiegelt
-  `-flows-dir`) und **fail-open** (Kaputtes wird geloggt & übersprungen, ein noch nicht geladenes
-  Modell registriert mit Diagnostic). Ohne `-catalog-dir` unverändertes Verhalten. Listing-
-  Filter/Pagination, Modeler-Namespace-Baum und MCP-Abfrage folgen (WP-141–143).
+- **Decision-Katalog: tausende Decisions ordnen (ADR-0034, WP-140–142).** Ein `temisd`, der
+  viele Decisions hält, bekommt eine **Runtime-Katalog-Plane** über dem flachen, content-
+  adressierten Modell-Store: **Ordnung liegt auf den Namen, nicht auf den Blobs.** Ein
+  `*.catalog.json`-Manifest bindet eine menschliche Koordinate `namespace/name` an eine
+  **gepinnte Revision** (`sha256:<hex>`) plus Governance-Metadaten (`owner`, `layer`, `tags`,
+  `status`); `namespace`/`name` leiten sich, wenn nicht gesetzt, aus **Verzeichnispfad/Dateiname**
+  ab — das Git-Layout *ist* der Namespace. Aktiviert über **`-catalog-dir`** /
+  `service.WithCatalog(dir)` / `$TEMIS_CATALOG_DIR`, beim Start **nach** den Modellen geladen
+  (jede Revision gegen den Cache validiert). **Read-only** (Git bleibt Source of Truth, kein
+  Write-back → keine Drift; spiegelt `-flows-dir`) und **fail-open** (Kaputtes wird geloggt &
+  übersprungen, ein noch nicht geladenes Modell registriert mit Diagnostic). Ohne `-catalog-dir`
+  unverändertes Verhalten.
+  - **Sichtbar gemacht (WP-141):** `GET /v1/models` und MCP `list_models` sind **katalog-bewusst**
+    — jede Zusammenfassung trägt `namespace`/`owner`/`layer`/`tags`/`status` und lässt sich per
+    **`?namespace=` (Präfix), `?tag=` (mehrfach, AND), `?status=`** filtern sowie mit
+    **`?limit`/`?offset`** paginieren (Antwort mit `count` **und** `total`).
+  - **Im Modeler (WP-142):** die Sidebar zeigt daraus einen **Namespace-Baum** mit Layer-Badges
+    (L0–L3) und einen **Tag-Filter** statt einer flachen Liste; die bisherigen „Ordner" sind jetzt
+    **Lesezeichen** (persönliche Sicht über dem Baum) — gleicher Speicher, bestehende Zuweisungen
+    migrieren verlustfrei.
 - **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein
   Suchfeld („Modelle suchen…"). Je mehr Modelle auf dem Server liegen, desto wichtiger — die
   Suche filtert live, ist diakritik-unempfindlich (`begru` findet `Begrüßung`) und

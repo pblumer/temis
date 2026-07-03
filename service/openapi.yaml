@@ -61,9 +61,40 @@ paths:
       summary: List cached models
       description: >
         Returns a summary (id, decisions, inputs) of every model currently held
-        in the in-memory cache. This endpoint can be disabled at startup
+        in the in-memory cache, each enriched with its catalog metadata
+        (namespace, owner, layer, tags, status) when a catalog entry pins it
+        (ADR-0034). Optional query parameters filter by namespace prefix, tags
+        (all must match) or lifecycle status, and page the result — so a server
+        holding thousands of decisions is navigable by asking rather than
+        listing everything. This endpoint can be disabled at startup
         (`temisd -list-models=false`) to keep the cached decisions private; when
         disabled it responds 404 as if it did not exist.
+      parameters:
+        - name: namespace
+          in: query
+          required: false
+          description: Only models at or under this catalog namespace (e.g. `domains/pricing`).
+          schema: { type: string }
+        - name: tag
+          in: query
+          required: false
+          description: Only models carrying this catalog tag. Repeat to require several (AND).
+          schema: { type: array, items: { type: string } }
+        - name: status
+          in: query
+          required: false
+          description: Only models in this lifecycle status.
+          schema: { type: string, enum: [active, deprecated, archived] }
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of models to return (0 or omitted = no limit).
+          schema: { type: integer, minimum: 0 }
+        - name: offset
+          in: query
+          required: false
+          description: Number of matching models to skip before returning (for paging).
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: The cached models
@@ -1326,7 +1357,8 @@ components:
         models:
           type: array
           items: { $ref: "#/components/schemas/ModelSummary" }
-        count: { type: integer }
+        count: { type: integer, description: Number of models in this response (after pagination). }
+        total: { type: integer, description: Number of models that matched the filter before pagination. }
     ModelSummary:
       type: object
       properties:
@@ -1341,6 +1373,15 @@ components:
         seq:
           type: integer
           description: Creation order (higher = newer), so same-named revisions can be shown newest-first as a history.
+        namespace: { type: string, description: "Catalog namespace (its place in the layered layout, ADR-0034), present when a catalog entry pins this revision." }
+        catalogName: { type: string, description: The model's stable name within its catalog namespace. }
+        owner: { type: string, description: The owning team, from the catalog entry. }
+        layer: { type: string, description: "The governance layer (L0–L3, docs/90), from the catalog entry." }
+        tags:
+          type: array
+          items: { type: string }
+          description: Catalog labels for the cross-cutting axis (e.g. pii, jurisdiction=CH).
+        status: { type: string, enum: [active, deprecated, archived], description: Lifecycle status from the catalog entry. }
     ModelResponse:
       type: object
       properties:

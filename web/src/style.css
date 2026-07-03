@@ -207,6 +207,24 @@ body.resizing { cursor: col-resize; user-select: none; }
 .folder-del:hover { color: #c0392b; }
 .folder-body { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 4px; }
 .folder-empty { color: var(--muted); font-size: 12px; font-style: italic; padding: 4px 10px; margin: 0; }
+/* Namespace tree (ADR-0034): reuses the folder chrome; a lighter weight and a
+   layer badge distinguish an authoritative namespace node from a bookmark. */
+.ns-head { font-weight: 500; }
+.ns-layer { margin-left: 2px; }
+/* Tag filter: chips above the list that AND-narrow it by catalog tag. */
+.tag-filter { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; }
+.tag-chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.tag-chip:hover { background: #e7effd; }
+.tag-chip.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
 h1 { font-size: 24px; margin: 0 0 4px; }
 .sub { color: var(--muted); margin: 0 0 20px; }
 .wp {
