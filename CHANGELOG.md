@@ -60,6 +60,16 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Modeler: Eingaben direkt am Knoten (Operate) — der „Auswerten"-Bereich wandert ins
+  Diagramm.** In Operate trägt jeder Blatt-Eingabeknoten jetzt eine editierbare Pille direkt am
+  inputData-Knoten: eine Auswahl-Liste bei geschlossener Enumeration, sonst ein JSON-coercedes
+  Textfeld. Jede Änderung wertet (entprellt) den ganzen Graphen live aus und lässt Ergebnisse
+  und Kanten-Illumination sofort auf dem Diagramm nachziehen — man füllt die Eingaben am
+  Graphen selbst statt nur im Seitenpanel. Das Blättern durch die Lauf-Historie spiegelt die
+  Eingaben des aktiven Laufs in die Pillen. Panel und Pillen teilen sich eine Widget-Fabrik
+  (`inputform.ts`, aus dem Panel herausgelöst), sodass beide Oberflächen dieselben Typ-Regeln,
+  Enum-Dropdowns und JSON-Coercion verwenden. Reines Frontend über die bestehende
+  Whole-Graph-Auswertung; zweiter Schritt, den „Auswerten"-Bereich ins Diagramm aufzulösen.
 - **Modeler: Live-Graph — der Datenfluss leuchtet auf dem Diagramm auf.** Nach einer
   Auswertung illuminieren sich jetzt die Anforderungskanten direkt im Diagramm: jede Kante,
   die einen Wert trägt, färbt sich im Operate-Blau und lässt den Wert, der durch sie floss,

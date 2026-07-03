@@ -1,5 +1,6 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
+import { buildInputPills, type InputPills } from './inputpills'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout, type Orientation } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -203,6 +204,10 @@ async function boot(root: HTMLElement): Promise<void> {
   // The model detail currently loaded (schema + decisions), shared with the
   // Import cockpit so it can build a matching test template and run cases.
   let currentModel: ModelDetail | null = null
+  // The on-canvas input pills (Operate) and the debounce timer that turns an edit
+  // into a whole-graph evaluation. Rebuilt whenever Operate opens for a model.
+  let inputPills: InputPills | null = null
+  let pillEvalTimer: number | undefined
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -1088,6 +1093,9 @@ async function boot(root: HTMLElement): Promise<void> {
     getActive: () => activeRun,
     onActivate: (run) => {
       applyRun(run)
+      // Reflect the picked run's inputs in the on-node pills, so the diagram's
+      // editable inputs match the run whose results it is showing.
+      inputPills?.setValues(run.inputs)
       operate.render()
     },
   })
@@ -1155,6 +1163,35 @@ async function boot(root: HTMLElement): Promise<void> {
     if (mode === 'operate') operate.render()
   }
 
+  // runFromPills turns the current on-node input values into a live whole-graph
+  // evaluation, debounced so typing doesn't fire a request per keystroke. A half-
+  // typed invalid value just fails quietly; the next edit retries. Each successful
+  // run flows through recordRun, so the result pills and edge illumination update.
+  const runFromPills = (): void => {
+    if (!currentId || !inputPills) return
+    const inputs = inputPills.collect()
+    const id = currentId
+    window.clearTimeout(pillEvalTimer)
+    pillEvalTimer = window.setTimeout(() => {
+      void evaluateGraph(id, inputs, true, true)
+        .then((res) => recordRun({ inputs, result: res }))
+        .catch(() => {})
+    }, 400)
+  }
+
+  // mountInputPills builds an editable pill for each leaf input, mounted on its
+  // inputData node, so the whole graph's inputs can be filled on the diagram
+  // itself (Operate) instead of only in the side panel. Prefills from the active
+  // run. Without a loaded schema/handle it simply shows no pills.
+  const mountInputPills = (): void => {
+    if (!handle || !currentModel) return
+    const nodeIdByName = new Map<string, string>()
+    for (const n of handle.graph().nodes) if (n.type === 'inputData' && n.name) nodeIdByName.set(n.name, n.id)
+    inputPills = buildInputPills(currentModel, nodeIdByName, runFromPills)
+    if (activeRun) inputPills.setValues(activeRun.inputs)
+    handle.showInputPills(inputPills.items)
+  }
+
   // openTable opens a decision's table — editable in Design, read-only with the
   // active run's hit rule(s) highlighted in Operate.
   const openTable = (modelId: string, decisionId: string): void => {
@@ -1188,10 +1225,16 @@ async function boot(root: HTMLElement): Promise<void> {
     if (m === 'operate') {
       operate.render()
       clioReplay.render()
+      // Fill the leaf inputs directly on the diagram (Operate); each edit re-runs
+      // the whole graph and re-illuminates it.
+      mountInputPills()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
-    } else if (m === 'import') {
-      importView.render()
+    } else {
+      // The input pills belong to Operate; leaving it takes them off the diagram.
+      handle?.clearInputPills()
+      inputPills = null
+      if (m === 'import') importView.render()
     }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
@@ -1301,7 +1344,10 @@ async function boot(root: HTMLElement): Promise<void> {
       } catch {
         evalHost.textContent = ''
       }
-      if (mode === 'operate') operate.render()
+      if (mode === 'operate') {
+        operate.render()
+        mountInputPills()
+      }
     } catch (e) {
       status.textContent = (e as Error).message
     }

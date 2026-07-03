@@ -1533,6 +1533,27 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   .flow-edge-val { animation: none; }
 }
 
+/* On-canvas input pills (Operate): fill a leaf input directly on its inputData
+   node instead of only in the side panel. Each edit re-evaluates the whole graph
+   live (debounced) and re-illuminates the diagram — the "Auswerten" form brought
+   onto the graph itself. */
+.node-input { display: flex; align-items: center; transform: translateY(3px); pointer-events: auto; }
+.pill-field {
+  font: 600 12px/1 ui-monospace, monospace;
+  color: #1e3a8a;
+  background: #eef4ff;
+  border: 1px solid #93b4f5;
+  border-radius: 999px;
+  padding: 3px 9px;
+  min-width: 68px;
+  max-width: 150px;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.18);
+  outline: none;
+}
+.pill-field:focus { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18); }
+select.pill-field { cursor: pointer; }
+.pill-field-invalid { border-color: #e5484d; box-shadow: 0 0 0 2px rgba(229, 72, 77, 0.25); }
+
 .flow-trace { display: flex; flex-direction: column; gap: 6px; }
 .flow-trace-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 0 0; }
 .flow-trace-step { border: 1px solid var(--line); border-left: 3px solid #7c3aed; border-radius: 8px; padding: 6px 8px; background: #faf5ff; }
