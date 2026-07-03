@@ -63,6 +63,8 @@ func main() {
 		"persist uploaded/edited models to this directory and reload them on start, so they survive a restart; empty = in-memory only (default $TEMIS_MODELS_DIR)")
 	flowsDir := flag.String("flows-dir", os.Getenv("TEMIS_FLOWS_DIR"),
 		"load decision-flow descriptors (*.flow.json) from this directory into the catalog on start (read-only source of truth); empty = catalog starts empty (default $TEMIS_FLOWS_DIR)")
+	catalogDir := flag.String("catalog-dir", os.Getenv("TEMIS_CATALOG_DIR"),
+		"load the decision catalog (*.catalog.json: namespace/name -> pinned model + owner/layer/tags/status) from this directory on start (read-only source of truth, ADR-0034); empty = catalog starts empty (default $TEMIS_CATALOG_DIR)")
 	serveMCP := flag.Bool("mcp", envBool("TEMIS_MCP", true),
 		"co-locate the MCP endpoint at POST /mcp, sharing this server's model cache (and examples) (env TEMIS_MCP)")
 	assist := flag.Bool("assist", envBool("TEMIS_ASSIST", true),
@@ -138,6 +140,9 @@ func main() {
 	}
 	if *flowsDir != "" {
 		opts = append(opts, service.WithFlowStore(*flowsDir))
+	}
+	if *catalogDir != "" {
+		opts = append(opts, service.WithCatalog(*catalogDir))
 	}
 	// Modeling assistant (ADR-0024): on by default so the binary is fully featured
 	// out of the box. With no server-side key it runs BYOK-only — the endpoint is

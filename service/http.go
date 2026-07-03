@@ -101,6 +101,19 @@ type Server struct {
 	storeDir string
 	store    *diskStore
 
+	// catalog holds the loaded decision-catalog entries: the runtime
+	// identity/organisation plane over the flat model store (ADR-0034), binding a
+	// human coordinate namespace/name to a pinned revision plus governance
+	// metadata. Always non-nil; empty until a catalogDir is loaded.
+	catalog *catalogStore
+
+	// catalogDir, when non-empty, is a filesystem directory of *.catalog.json
+	// manifests loaded into the catalog at construction (ADR-0034); set via
+	// WithCatalog. Read-only — git/dir stays the source of truth, so the server
+	// never writes it back (like flowsDir, unlike storeDir). Empty leaves the
+	// catalog empty.
+	catalogDir string
+
 	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
@@ -271,6 +284,19 @@ func WithFlowStore(dir string) Option {
 	return func(s *Server) { s.flowsDir = dir }
 }
 
+// WithCatalog loads the decision catalog from dir at startup: *.catalog.json
+// manifests that bind a human coordinate (namespace/name) to a pinned model
+// revision plus governance metadata (owner, layer, tags, status), so a server
+// holding thousands of decisions is navigable and its git-defined ownership is
+// visible at runtime (ADR-0034). The namespace defaults to a manifest's directory
+// path relative to dir, so the git layout is the namespace. Like WithFlowStore
+// the directory is the source of truth and read-only — the server never writes it
+// back — so there is no second source of truth. An empty dir keeps the catalog
+// empty (the default, byte-identical to before).
+func WithCatalog(dir string) Option {
+	return func(s *Server) { s.catalogDir = dir }
+}
+
 // storedModel is a compiled model held in the cache together with the index and
 // any diagnostics produced while compiling it.
 type storedModel struct {
@@ -327,6 +353,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 	}
 	s.cache = newModelCache(s.cacheSize)
 	s.flows = newFlowStore()
+	s.catalog = newCatalogStore()
 	// Examples load first, while store is still nil, so the bundled models are
 	// never written to disk — they re-embed on every start (ADR-0027).
 	if s.loadExamplesOnInit {
@@ -344,11 +371,17 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			s.loadPersisted(context.Background())
 		}
 	}
-	// Finally load declared flows from disk (ADR-0032), after the models they
-	// reference are in the cache so validation is meaningful. Read-only: the
-	// directory is the source of truth, never written back.
+	// Load declared flows from disk (ADR-0032), after the models they reference are
+	// in the cache so validation is meaningful. Read-only: the directory is the
+	// source of truth, never written back.
 	if s.flowsDir != "" {
 		s.loadFlows(context.Background())
+	}
+	// Finally load the decision catalog (ADR-0034), also after the models so each
+	// entry's pinned revision can be validated against the cache. Read-only, like
+	// flows: the directory (git) is the source of truth, never written back.
+	if s.catalogDir != "" {
+		s.loadCatalog(context.Background())
 	}
 	return s
 }
