@@ -1,4 +1,4 @@
-import { getContext, saveContext, type ContextView, type ContextEntryView } from './api'
+import { getContext, saveContext, type Anchor, type ContextView, type ContextEntryView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
@@ -13,11 +13,11 @@ type Row = { name: string; typeRef: string; text: string }
 // nodes' names); later entries also see the earlier entry names. A context whose
 // entries nest other boxed expressions (cv.simple === false) opens read-only, so
 // the text editor never clobbers the nesting. onSaved gets the saved model's id.
-export async function openBoxedContextOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { typeOptions?: string[]; readOnly?: boolean }): Promise<void> {
+export async function openBoxedContextOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { typeOptions?: string[]; readOnly?: boolean; anchor?: Anchor }): Promise<void> {
   const typeOptions = opts?.typeOptions ?? FEEL_TYPES
   let cv: ContextView | null = null
   try {
-    cv = await getContext(modelId, decisionId)
+    cv = await getContext(modelId, decisionId, opts?.anchor)
   } catch (e) {
     console.error(e)
     return
@@ -173,7 +173,7 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
         entries: rows.map((r) => ({ name: r.name.trim(), text: r.text.trim(), typeRef: r.typeRef })),
         result: resultText,
         resultTypeRef: resultText ? resultType : '',
-      })
+      }, opts?.anchor)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

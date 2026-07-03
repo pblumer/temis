@@ -1,4 +1,4 @@
-import { getTable, saveTable, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit, type TableTrace, type TraceInput, type TraceRule } from './api'
+import { getTable, saveTable, type Anchor, type TableView, type TableInput, type TableOutput, type TableRule, type TableEdit, type TableTrace, type TraceInput, type TraceRule } from './api'
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
 import { attachCompletion, feelItems, type CompletionItem } from './complete'
 import { attachHighlighter } from './highlight'
@@ -24,11 +24,12 @@ const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
 // opts.wiredInputs are the decision's information-requirement inputs, surfaced as
 // columns when the table lacks them. opts.scope is the decision's in-scope
 // variables from the graph (connected input-data nodes and upstream decisions)
-// that the input-column expressions may reference.
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace; wiredInputs?: { expression: string; typeRef?: string }[]; scope?: string[] } = {}): Promise<void> {
+// that the input-column expressions may reference. opts.anchor targets a BKM's
+// boxed decision-table body instead of a decision's logic (WP-66).
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace; wiredInputs?: { expression: string; typeRef?: string }[]; scope?: string[]; anchor?: Anchor } = {}): Promise<void> {
   let fetched: TableView | null
   try {
-    fetched = await getTable(modelId, decisionId)
+    fetched = await getTable(modelId, decisionId, opts.anchor)
   } catch (e) {
     console.error(e)
     return
@@ -172,7 +173,7 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
       rules: state.rules,
     }
     try {
-      const saved = await saveTable(modelId, decisionId, edit)
+      const saved = await saveTable(modelId, decisionId, edit, opts.anchor)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

@@ -1,4 +1,4 @@
-import { getRelation, saveRelation, type RelationView } from './api'
+import { getRelation, saveRelation, type Anchor, type RelationView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachFeelField } from './feelfield'
 
@@ -9,10 +9,10 @@ import { attachFeelField } from './feelfield'
 // reference. A relation whose cells nest other boxed expressions (rv.simple ===
 // false) opens read-only, so the text grid never clobbers the nesting. onSaved
 // gets the saved model's id.
-export async function openRelationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean }): Promise<void> {
+export async function openRelationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor }): Promise<void> {
   let rv: RelationView | null = null
   try {
-    rv = await getRelation(modelId, decisionId)
+    rv = await getRelation(modelId, decisionId, opts?.anchor)
   } catch (e) {
     console.error(e)
     return
@@ -165,7 +165,7 @@ export async function openRelationOverlay(modelId: string, decisionId: string, b
       const saved = await saveRelation(modelId, decisionId, {
         columns: columns.map((c) => c.trim()),
         rows: rows.map((r) => r.map((c) => c.trim())),
-      })
+      }, opts?.anchor)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

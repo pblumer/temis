@@ -60,25 +60,34 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 // (otherwise the existing inputs/outputs are kept). It reports whether a matching
 // decision with decision-table logic was found.
 func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
-	for i := range d.Decisions {
-		if d.Decisions[i].ID == id {
-			dt := d.Decisions[i].DecisionTable
-			if dt == nil {
-				return false
-			}
-			if hitPolicy != "" {
-				dt.HitPolicy = hitPolicy
-				dt.Aggregation = aggregation
-			}
-			if replaceColumns {
-				dt.Inputs = inputs
-				dt.Outputs = outputs
-			}
-			dt.Rules = rules
-			return true
-		}
+	return d.UpdateTableAt("decision", id, hitPolicy, aggregation, inputs, outputs, rules, replaceColumns)
+}
+
+// UpdateTableAt patches the decision table that is the logic of the anchored
+// element — a decision's logic or a business knowledge model's encapsulated body
+// (see logicSlot). Rules are always replaced; a non-empty hitPolicy sets the
+// policy and aggregation; columns are replaced only when replaceColumns is set
+// (otherwise the existing inputs/outputs are kept). It reports whether a matching
+// element with decision-table logic was found.
+func (d *Definitions) UpdateTableAt(anchorKind, anchorID, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
+	slot, ok := d.logicSlot(anchorKind, anchorID, false)
+	if !ok {
+		return false
 	}
-	return false
+	dt := slot.DecisionTable
+	if dt == nil {
+		return false
+	}
+	if hitPolicy != "" {
+		dt.HitPolicy = hitPolicy
+		dt.Aggregation = aggregation
+	}
+	if replaceColumns {
+		dt.Inputs = inputs
+		dt.Outputs = outputs
+	}
+	dt.Rules = rules
+	return true
 }
 
 // UpsertItemDefinition creates or updates a (simple) item definition by name: its
@@ -477,6 +486,91 @@ func (d *Definitions) SetBKMFunction(id string, params []FormalParameter, bodyTe
 		return true
 	}
 	return false
+}
+
+// logicSlot resolves the boxed-expression slot that is the logic of an anchored
+// element: a decision's own logic (anchorKind "decision") or a business knowledge
+// model's encapsulated-logic body (anchorKind "bkm"). For a BKM with no
+// encapsulated function yet, create fills in an empty FEEL function shell so a
+// fresh body can be written; without create an absent function yields ok=false.
+// The returned pointer aliases the element's embedded Expression, so writing
+// through it mutates the model in place while preserving siblings (a decision's
+// requirements, a BKM's formal parameters). ok is false for an unknown anchor.
+func (d *Definitions) logicSlot(anchorKind, anchorID string, create bool) (*Expression, bool) {
+	switch anchorKind {
+	case "decision":
+		i := indexDecision(d.Decisions, anchorID)
+		if i < 0 {
+			return nil, false
+		}
+		return &d.Decisions[i].Expression, true
+	case "bkm":
+		i := indexBKM(d.BKMs, anchorID)
+		if i < 0 {
+			return nil, false
+		}
+		b := &d.BKMs[i]
+		if b.EncapsulatedLogic == nil {
+			if !create {
+				return nil, false
+			}
+			b.EncapsulatedLogic = &FunctionDefinition{Kind: "FEEL"}
+		}
+		return &b.EncapsulatedLogic.Expression, true
+	default:
+		return nil, false
+	}
+}
+
+// SetLogicBody replaces the anchored element's boxed-expression logic with expr,
+// preserving everything around it (a BKM's formal parameters, a decision's
+// requirements). It refuses (returns false) when the anchor is unknown or its
+// current logic is a different boxed kind than expr — the kind-specific editors
+// must not silently switch a table into a list, only rewrite the same kind. An
+// element with no logic yet accepts any kind (a BKM function shell is created).
+func (d *Definitions) SetLogicBody(anchorKind, anchorID string, expr Expression) bool {
+	slot, ok := d.logicSlot(anchorKind, anchorID, true)
+	if !ok {
+		return false
+	}
+	if slot.present() && slotKind(slot) != slotKind(&expr) {
+		return false
+	}
+	// Assigning the whole Expression overwrites every boxed-child field at once, so
+	// a previous kind (e.g. a stale for/some/every trio) never lingers beside the
+	// new one.
+	*slot = expr
+	return true
+}
+
+// slotKind names the boxed kind currently occupying an Expression slot; the three
+// iteration elements collapse to one "iterator" kind (for/some/every are editable
+// as one). It returns "" for an empty slot.
+func slotKind(e *Expression) string {
+	switch {
+	case e.LiteralExpression != nil:
+		return "literal"
+	case e.DecisionTable != nil:
+		return "table"
+	case e.Context != nil:
+		return "context"
+	case e.Invocation != nil:
+		return "invocation"
+	case e.FunctionDefinition != nil:
+		return "function"
+	case e.List != nil:
+		return "list"
+	case e.Relation != nil:
+		return "relation"
+	case e.Conditional != nil:
+		return "conditional"
+	case e.For != nil, e.Every != nil, e.Some != nil:
+		return "iterator"
+	case e.Filter != nil:
+		return "filter"
+	default:
+		return ""
+	}
 }
 
 // MoveShape repositions the DMNShape bound to element id within a captured DMNDI

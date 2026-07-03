@@ -781,6 +781,50 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}:
+    get:
+      summary: Get an anchored element's boxed logic as the {kind} editor view
+      description: >
+        Returns the boxed-expression logic of a decision (anchorKind=decision) or
+        a business knowledge model's encapsulated body (anchorKind=bkm) as the
+        typed view for {kind} (context, list, relation, invocation, iterator,
+        conditional, filter, table) — the same views the decision routes return.
+        This is how the modeler opens the per-kind editors on a BKM's boxed body
+        (ADR-0016, WP-66).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
+        - { name: anchorId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+      responses:
+        "200":
+          description: The anchored logic as the requested kind's view
+          content:
+            application/json:
+              schema: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Rewrite an anchored element's boxed logic of the given kind
+      description: >
+        Writes the {kind} editor payload back to the anchored element (a decision's
+        logic or a BKM's encapsulated body), recompiles and returns the saved
+        model. The body kind cannot be switched to a different boxed kind.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
+        - { name: anchorId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/save:
     post:
       summary: Apply modeler edits (positions, names, types) to a model

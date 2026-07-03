@@ -57,6 +57,19 @@ export type ModelDetail = {
   diagnostics?: Diagnostic[]
 }
 
+// Anchor names the model element an editor targets: a decision's own logic
+// (kind 'decision') or a business knowledge model's encapsulated body
+// (kind 'bkm'). The per-kind get/save helpers below take an optional anchor; when
+// set they hit the anchored logic route so the same editors can edit a BKM's
+// boxed body, not just a decision's logic (ADR-0016, WP-66).
+export type Anchor = { kind: 'decision' | 'bkm'; id: string }
+
+// logicPath builds the anchored logic URL for a boxed kind
+// (context/list/relation/invocation/iterator/conditional/filter/table).
+function logicPath(modelId: string, anchor: Anchor, kind: string): string {
+  return '/v1/models/' + encodeURIComponent(modelId) + '/logic/' + encodeURIComponent(anchor.kind) + '/' + encodeURIComponent(anchor.id) + '/' + kind
+}
+
 export async function listModels(): Promise<ModelSummary[]> {
   const r = await fetch('/v1/models')
   if (!r.ok) throw new Error('Modelle laden fehlgeschlagen (HTTP ' + r.status + ')')
@@ -547,8 +560,8 @@ export type TableView = {
 
 // getTable fetches a decision's decision-table view, or null when the decision
 // has no decision-table logic (HTTP 404).
-export async function getTable(modelId: string, decision: string): Promise<TableView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table')
+export async function getTable(modelId: string, decision: string, anchor?: Anchor): Promise<TableView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'table') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Decision Table laden fehlgeschlagen (HTTP ' + r.status + ')')
   const tv = (await r.json()) as TableView
@@ -584,8 +597,8 @@ export type TableEdit = {
 // saveTable rewrites a decision's table rules (POST), recompiles the model and
 // returns the saved model's detail — incl. its new id and any compile
 // diagnostics, so the caller can surface a cell the engine rejects.
-export async function saveTable(modelId: string, decision: string, edit: TableEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table', {
+export async function saveTable(modelId: string, decision: string, edit: TableEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'table') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/table', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -627,7 +640,9 @@ export async function deleteType(modelId: string, name: string): Promise<ModelDe
 // BKMView mirrors dmn.BKMView: a business knowledge model's function (formal
 // parameters + literal body). simple=false means a boxed body (read-only here).
 export type BKMParam = { name: string; typeRef?: string }
-export type BKMView = { bkmId: string; name: string; params: BKMParam[]; bodyText: string; bodyTypeRef?: string; simple: boolean }
+// bodyKind names a non-simple (boxed) body's kind (table/context/list/…), so the
+// modeler opens the matching boxed editor on it; it is absent for a simple body.
+export type BKMView = { bkmId: string; name: string; params: BKMParam[]; bodyText: string; bodyTypeRef?: string; simple: boolean; bodyKind?: string }
 export type BKMFunctionEdit = { params: BKMParam[]; bodyText: string; bodyTypeRef: string }
 
 export async function getBKM(modelId: string, bkm: string): Promise<BKMView | null> {
@@ -717,8 +732,8 @@ export type ContextEdit = { entries: ContextEntryView[]; result?: string; result
 
 // getContext fetches a decision's boxed-context view, or null when the decision
 // has no boxed-context logic (HTTP 404).
-export async function getContext(modelId: string, decision: string): Promise<ContextView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context')
+export async function getContext(modelId: string, decision: string, anchor?: Anchor): Promise<ContextView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'context') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Boxed Context laden fehlgeschlagen (HTTP ' + r.status + ')')
   const cv = (await r.json()) as ContextView
@@ -728,8 +743,8 @@ export async function getContext(modelId: string, decision: string): Promise<Con
 
 // saveContext replaces a decision's boxed-context entries (POST), recompiles the
 // model and returns the saved detail with its new id and any compile diagnostics.
-export async function saveContext(modelId: string, decision: string, edit: ContextEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context', {
+export async function saveContext(modelId: string, decision: string, edit: ContextEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'context') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/context', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -755,8 +770,8 @@ export type ConditionalEdit = { if: string; then: string; else: string }
 
 // getConditional fetches a decision's boxed-conditional view, or null when the
 // decision has no conditional logic (HTTP 404).
-export async function getConditional(modelId: string, decision: string): Promise<ConditionalView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional')
+export async function getConditional(modelId: string, decision: string, anchor?: Anchor): Promise<ConditionalView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'conditional') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Conditional laden fehlgeschlagen (HTTP ' + r.status + ')')
   return (await r.json()) as ConditionalView
@@ -764,8 +779,8 @@ export async function getConditional(modelId: string, decision: string): Promise
 
 // saveConditional replaces a decision's if/then/else branches (POST), recompiles
 // the model and returns the saved detail with its new id and any diagnostics.
-export async function saveConditional(modelId: string, decision: string, edit: ConditionalEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional', {
+export async function saveConditional(modelId: string, decision: string, edit: ConditionalEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'conditional') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/conditional', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -791,8 +806,8 @@ export type ListEdit = { items: string[] }
 
 // getList fetches a decision's boxed-list view, or null when the decision has no
 // list logic (HTTP 404).
-export async function getList(modelId: string, decision: string): Promise<ListView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list')
+export async function getList(modelId: string, decision: string, anchor?: Anchor): Promise<ListView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'list') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Liste laden fehlgeschlagen (HTTP ' + r.status + ')')
   const lv = (await r.json()) as ListView
@@ -802,8 +817,8 @@ export async function getList(modelId: string, decision: string): Promise<ListVi
 
 // saveList replaces a decision's list items (POST), recompiles the model and
 // returns the saved detail with its new id and any diagnostics.
-export async function saveList(modelId: string, decision: string, edit: ListEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list', {
+export async function saveList(modelId: string, decision: string, edit: ListEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'list') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/list', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -829,8 +844,8 @@ export type RelationEdit = { columns: string[]; rows: string[][] }
 
 // getRelation fetches a decision's boxed-relation view, or null when the decision
 // has no relation logic (HTTP 404).
-export async function getRelation(modelId: string, decision: string): Promise<RelationView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation')
+export async function getRelation(modelId: string, decision: string, anchor?: Anchor): Promise<RelationView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'relation') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Relation laden fehlgeschlagen (HTTP ' + r.status + ')')
   const rv = (await r.json()) as RelationView
@@ -841,8 +856,8 @@ export async function getRelation(modelId: string, decision: string): Promise<Re
 
 // saveRelation replaces a decision's relation columns and rows (POST), recompiles
 // the model and returns the saved detail with its new id and any diagnostics.
-export async function saveRelation(modelId: string, decision: string, edit: RelationEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation', {
+export async function saveRelation(modelId: string, decision: string, edit: RelationEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'relation') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/relation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -869,8 +884,8 @@ export type FilterEdit = { in: string; match: string }
 
 // getFilter fetches a decision's boxed-filter view, or null when the decision has
 // no filter logic (HTTP 404).
-export async function getFilter(modelId: string, decision: string): Promise<FilterView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter')
+export async function getFilter(modelId: string, decision: string, anchor?: Anchor): Promise<FilterView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'filter') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Filter laden fehlgeschlagen (HTTP ' + r.status + ')')
   return (await r.json()) as FilterView
@@ -878,8 +893,8 @@ export async function getFilter(modelId: string, decision: string): Promise<Filt
 
 // saveFilter replaces a decision's in/match branches (POST), recompiles the model
 // and returns the saved detail with its new id and any diagnostics.
-export async function saveFilter(modelId: string, decision: string, edit: FilterEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter', {
+export async function saveFilter(modelId: string, decision: string, edit: FilterEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'filter') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/filter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -906,8 +921,8 @@ export type IteratorEdit = { kind: string; variable: string; in: string; body: s
 
 // getIterator fetches a decision's boxed-iteration view, or null when the decision
 // has no for/some/every logic (HTTP 404).
-export async function getIterator(modelId: string, decision: string): Promise<IteratorView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator')
+export async function getIterator(modelId: string, decision: string, anchor?: Anchor): Promise<IteratorView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'iterator') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Iteration laden fehlgeschlagen (HTTP ' + r.status + ')')
   return (await r.json()) as IteratorView
@@ -915,8 +930,8 @@ export async function getIterator(modelId: string, decision: string): Promise<It
 
 // saveIterator replaces a decision's iteration (POST), recompiles the model and
 // returns the saved detail with its new id and any diagnostics.
-export async function saveIterator(modelId: string, decision: string, edit: IteratorEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator', {
+export async function saveIterator(modelId: string, decision: string, edit: IteratorEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'iterator') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/iterator', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
@@ -945,8 +960,8 @@ export type InvocationEdit = { called: string; bindings: InvocationBindingView[]
 
 // getInvocation fetches a decision's boxed-invocation view, or null when the
 // decision has no invocation logic (HTTP 404).
-export async function getInvocation(modelId: string, decision: string): Promise<InvocationView | null> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation')
+export async function getInvocation(modelId: string, decision: string, anchor?: Anchor): Promise<InvocationView | null> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'invocation') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation')
   if (r.status === 404) return null
   if (!r.ok) throw new Error('Invocation laden fehlgeschlagen (HTTP ' + r.status + ')')
   const iv = (await r.json()) as InvocationView
@@ -957,8 +972,8 @@ export async function getInvocation(modelId: string, decision: string): Promise<
 // saveInvocation replaces a decision's called function and bindings (POST),
 // recompiles the model and returns the saved detail with its new id and any
 // diagnostics.
-export async function saveInvocation(modelId: string, decision: string, edit: InvocationEdit): Promise<ModelDetail> {
-  const r = await fetch('/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation', {
+export async function saveInvocation(modelId: string, decision: string, edit: InvocationEdit, anchor?: Anchor): Promise<ModelDetail> {
+  const r = await fetch(anchor ? logicPath(modelId, anchor, 'invocation') : '/v1/models/' + encodeURIComponent(modelId) + '/decisions/' + encodeURIComponent(decision) + '/invocation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(edit),
