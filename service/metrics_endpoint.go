@@ -66,25 +66,28 @@ func (s *Server) metricsSnapshot() metricsSnapshot {
 // registry, which would collide across multiple Server instances (tests).
 func (s *Server) handleExpvars(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprint(w, "{\n")
+	// Writes to the response are best-effort; a broken client connection is not an
+	// error we can act on, so the results are deliberately discarded (as elsewhere
+	// in the service layer, e.g. openapi.go).
+	_, _ = fmt.Fprint(w, "{\n")
 	first := true
 	expvar.Do(func(kv expvar.KeyValue) {
 		if !first {
-			fmt.Fprint(w, ",\n")
+			_, _ = fmt.Fprint(w, ",\n")
 		}
 		first = false
-		fmt.Fprintf(w, "%q: %s", kv.Key, kv.Value)
+		_, _ = fmt.Fprintf(w, "%q: %s", kv.Key, kv.Value)
 	})
 	if !first {
-		fmt.Fprint(w, ",\n")
+		_, _ = fmt.Fprint(w, ",\n")
 	}
-	fmt.Fprintf(w, "%q: ", "temis")
+	_, _ = fmt.Fprintf(w, "%q: ", "temis")
 	s.metricsSnapshot().writeExpvarJSON(w)
-	fmt.Fprint(w, "\n}\n")
+	_, _ = fmt.Fprint(w, "\n}\n")
 }
 
 func (m metricsSnapshot) writeExpvarJSON(w http.ResponseWriter) {
-	fmt.Fprintf(w,
+	_, _ = fmt.Fprintf(w,
 		`{"uptimeSeconds":%d,"models":%d,`+
 			`"evaluations":{"ok":%d,"failed":%d},`+
 			`"llm":{"ok":%d,"failed":%d},`+
@@ -118,9 +121,9 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func counter(w http.ResponseWriter, name, help string, v uint64) {
-	fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", name, help, name, name, v)
+	_, _ = fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", name, help, name, name, v)
 }
 
 func gauge(w http.ResponseWriter, name, help string, v float64) {
-	fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %g\n", name, help, name, name, v)
+	_, _ = fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %g\n", name, help, name, name, v)
 }
