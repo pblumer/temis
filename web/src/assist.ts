@@ -12,6 +12,7 @@ export type AssistHandle = { toggle: () => void; isOpen: () => boolean }
 const KEY_TOKEN = 'temis.assist.token'
 const KEY_PROVIDER = 'temis.assist.provider'
 const KEY_MODEL = 'temis.assist.model'
+const KEY_REMEMBER = 'temis.assist.remember'
 
 function load(key: string): string {
   try {
@@ -27,6 +28,30 @@ function save(key: string, value: string): void {
   } catch {
     /* ignore storage failures (private mode) */
   }
+}
+
+// The BYOK API key is a secret, so by default it lives in sessionStorage and is
+// dropped when the tab closes — it is not persisted across sessions unless the
+// user explicitly opts in via the "remember" checkbox (audit finding M8). A
+// persisted key can be read by any script on the page, so the opt-in is a
+// deliberate, informed trade-off.
+function loadToken(): string {
+  try {
+    return sessionStorage.getItem(KEY_TOKEN) ?? load(KEY_TOKEN)
+  } catch {
+    return load(KEY_TOKEN)
+  }
+}
+function saveToken(value: string, remember: boolean): void {
+  try {
+    if (value) sessionStorage.setItem(KEY_TOKEN, value)
+    else sessionStorage.removeItem(KEY_TOKEN)
+  } catch {
+    /* ignore storage failures (private mode) */
+  }
+  // Only mirror into persistent storage when the user asked us to remember it;
+  // otherwise make sure no stale persisted copy survives.
+  save(KEY_TOKEN, remember ? value : '')
 }
 
 // mountAssist renders the panel into host and returns a handle to toggle it.
@@ -56,7 +81,9 @@ export function mountAssist(
       <label>API-Key (optional)
         <input id="assistToken" type="password" placeholder="eigener Schlüssel" autocomplete="off" />
       </label>
+      <label class="assist-remember"><input id="assistRemember" type="checkbox" /> Auf diesem Gerät merken</label>
       <p class="assist-hint">Der Schlüssel bleibt im Browser und wird nur für deine Anfragen mitgeschickt.
+      Standardmäßig nur für diese Sitzung; „merken“ speichert ihn dauerhaft (dann für Skripte auf dieser Seite lesbar).
       Ohne Schlüssel nutzt der Server seinen eigenen.</p>
     </div>
     <div id="assistLog" class="assist-log">
@@ -71,6 +98,7 @@ export function mountAssist(
   const providerSel = host.querySelector<HTMLSelectElement>('#assistProvider')!
   const modelInput = host.querySelector<HTMLInputElement>('#assistModel')!
   const tokenInput = host.querySelector<HTMLInputElement>('#assistToken')!
+  const rememberInput = host.querySelector<HTMLInputElement>('#assistRemember')!
   const log = host.querySelector<HTMLElement>('#assistLog')!
   const form = host.querySelector<HTMLFormElement>('#assistForm')!
   const input = host.querySelector<HTMLTextAreaElement>('#assistInput')!
@@ -78,10 +106,15 @@ export function mountAssist(
 
   providerSel.value = load(KEY_PROVIDER)
   modelInput.value = load(KEY_MODEL)
-  tokenInput.value = load(KEY_TOKEN)
+  tokenInput.value = loadToken()
+  rememberInput.checked = load(KEY_REMEMBER) === '1'
   providerSel.addEventListener('change', () => save(KEY_PROVIDER, providerSel.value))
   modelInput.addEventListener('change', () => save(KEY_MODEL, modelInput.value.trim()))
-  tokenInput.addEventListener('change', () => save(KEY_TOKEN, tokenInput.value.trim()))
+  tokenInput.addEventListener('change', () => saveToken(tokenInput.value.trim(), rememberInput.checked))
+  rememberInput.addEventListener('change', () => {
+    save(KEY_REMEMBER, rememberInput.checked ? '1' : '')
+    saveToken(tokenInput.value.trim(), rememberInput.checked)
+  })
 
   host.querySelector('#assistSettings')?.addEventListener('click', () => {
     config.hidden = !config.hidden

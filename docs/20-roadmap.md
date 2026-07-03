@@ -224,6 +224,23 @@ Betriebsbild.
 
 ---
 
+## Etappe Härtung H1 — „Sicherheit & Stabilität vor dem Release" (Code-Qualitäts-Audit)
+
+**Ziel:** Die im Repository-/Code-Qualitäts-Audit (`docs/audits/2026-07-02-*`) verifizierten
+kritischen und hohen Befunde schließen, bevor ein erstes Release geschnitten wird. Alle Pakete
+side-effect-frei, testgetrieben. Herkunft: `docs/audits/2026-07-02-umsetzungsplan.md`.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-130 ✅ | Parser-/Decoder-Tiefenschutz (K1) | – | **done** — FEEL-Parser (`internal/feel`, Chokepoints `parseUnary`/`parsePrimary`, `DefaultMaxParseDepth`) und DMN-XML-Decoder (`internal/xml`, Token-Tiefenscan, `DefaultMaxElementDepth`) begrenzen die Schachtelung → `*ParseError`/Fehler statt `fatal error: stack overflow` (ADR-0008). Behebt auch die `-covermode=atomic`-Flakiness. Tests + Fuzz-Seeds. |
+| WP-131 ✅ | Frontend-Escaping konsolidieren (H1/H2/M8) | – | **done** — zentraler `escapeHtml()` (inkl. `"`/`'`) in `web/src/dom.ts`, drei Alt-Escaper konsolidiert; Typ-Dropdown über DOM statt innerHTML; BYOK-Key default `sessionStorage`. E2E `escaping.spec.ts`. |
+| WP-132 ✅ | Timeouts & TLS-Transparenz (H4/H5/M1) | – | **done** — LLM-/GitHub-Clients defaulten auf Timeout statt `http.DefaultClient`; `http.Server` mit `ReadHeaderTimeout`/`IdleTimeout` (Streaming-schonend); optionales `-tls-cert`/`-tls-key`; Klartext-Start loggt den Transportmodus. Timeout-Test. |
+| WP-133 ✅ | Missbrauchs-Schutz (H6/M2/N5) | – | **done** — opt-in Token-Bucket pro Client-IP (`WithRateLimit`, `-rate-limit`, stdlib) über die `/v1`-Oberfläche → 429; Startup-Warnung bei LLM-Server-Key ohne API-Auth. Tests (Bucket + HTTP-429). |
+| WP-134 ✅ | First-Run reparieren (H3) | – | **done** — `boot()` bricht auf leerem Server nicht mehr früh ab; Leer-Zustand gerendert, alle Aktionen verdrahtet. E2E `empty-server.spec.ts`. |
+| WP-135 ✅ | Service-Korrektheit & hermetische Tests (M3/M4/M5/N6/N7) | – | **done** — `diskStore.delete` (DELETE ist dauerhaft); `git_ok`-Test gegen Fake-GitHub (`go test ./...` offline grün); Traversal-Reject in `vcs/github`; `modelId`-Format-Validierung; `AuthKid` im Graph-Eval; begrenzte Worker-Dedupe-Menge. |
+
+---
+
 ## Etappe 1.0 — „TCK-konform, schnell, stabil"
 
 **Ziel:** Nachgewiesene Konformität, erfülltes Performance-Budget, eingefrorene API, Doku.

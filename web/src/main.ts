@@ -170,7 +170,17 @@ async function boot(root: HTMLElement): Promise<void> {
   let typeOptions: string[] = FEEL_TYPES
   const renderTypeEditor = (selected?: string): void => {
     const opts = selected && !typeOptions.includes(selected) ? [...typeOptions, selected] : typeOptions
-    datatype.innerHTML = opts.map((t) => `<option value="${t}">${t || '— Typ —'}</option>`).join('')
+    // Build <option>s via the DOM rather than innerHTML: option text carries
+    // server-supplied custom item-definition names, which must not be able to
+    // inject markup (audit finding H2). textContent/value are escape-safe.
+    datatype.replaceChildren(
+      ...opts.map((t) => {
+        const o = document.createElement('option')
+        o.value = t
+        o.textContent = t || '— Typ —'
+        return o
+      }),
+    )
     if (selected !== undefined) datatype.value = selected
   }
   renderTypeEditor()
@@ -657,10 +667,10 @@ async function boot(root: HTMLElement): Promise<void> {
     status.textContent = (e as Error).message
     return
   }
-  if (!models.length) {
-    modelList.innerHTML = '<p class="model-empty">Keine Modelle auf dem Server.</p>'
-    return
-  }
+  // Note: an empty server is NOT an early return — boot continues so every action
+  // (new model/flow/folder, search, flows catalog) is wired. renderModelList
+  // renders the "no models" empty state, and the initial selection below is
+  // guarded for the empty case (H3).
 
   // groupModels buckets revisions by display name and orders each bucket
   // newest-first (highest seq). Unnamed models each form their own bucket.
@@ -1036,6 +1046,11 @@ async function boot(root: HTMLElement): Promise<void> {
 
     if (searching && shown === 0) {
       modelList.append(el('p', 'model-empty', `Keine Modelle für „${modelQuery.trim()}".`))
+    } else if (!searching && shown === 0) {
+      // Fresh server, no models yet. Render the empty state here rather than
+      // bailing out of boot() early, so the rest of the shell (new-model / new-flow
+      // / new-folder actions, search, flows catalog) still gets wired (H3).
+      modelList.append(el('p', 'model-empty', 'Keine Modelle auf dem Server.'))
     }
   }
 
@@ -1284,10 +1299,16 @@ async function boot(root: HTMLElement): Promise<void> {
   }
 
   // Default to a clean demo DRG if present, else the first group's newest model.
+  // On an empty server there is nothing to select — just render the empty list and
+  // leave the canvas blank; the shell stays fully interactive (H3).
   const preferred = ['Pricing', 'Routing', 'Alterskette (Demo)']
   const groups = groupModels()
   const best = groups.find((g) => preferred.includes(g.name)) ?? groups[0]
-  await showModel(best.revisions[0].modelId)
+  if (best) {
+    await showModel(best.revisions[0].modelId)
+  } else {
+    renderModelList()
+  }
 
   // Populate the Flows (L2a) catalog in the sidebar; it stays visible in every
   // mode. Opening a flow from it switches the editor to the flow studio.

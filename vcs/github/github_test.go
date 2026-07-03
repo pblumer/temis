@@ -256,6 +256,22 @@ func TestReadFile_emptyPath(t *testing.T) {
 	}
 }
 
+// TestReadFile_rejectsTraversal guards audit finding N6: a path with a ".." (or
+// ".") segment is refused before any request is made, so it cannot redirect the
+// API URL. The client points at a dead address; a rejection must come from the
+// segment check, not a network error.
+func TestReadFile_rejectsTraversal(t *testing.T) {
+	c := github.New("", github.WithBaseURL("http://127.0.0.1:0"))
+	for _, bad := range []string{"../secrets", "models/../../etc", "a/./b"} {
+		if _, err := c.ReadFile(context.Background(), repo, "main", bad); !errors.Is(err, vcs.ErrNotFound) {
+			t.Errorf("ReadFile(%q) err = %v, want ErrNotFound (traversal rejected)", bad, err)
+		}
+	}
+	if _, err := c.ListFiles(context.Background(), repo, "main", "../up"); !errors.Is(err, vcs.ErrNotFound) {
+		t.Errorf("ListFiles traversal err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestAnonymous_noAuthHeader(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/pblumer/temis/branches", func(w http.ResponseWriter, r *http.Request) {

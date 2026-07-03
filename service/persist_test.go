@@ -102,6 +102,51 @@ func TestServerPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestDeleteSurvivesRestart guards audit finding M3: DELETE must remove the
+// durable copy too, so a persisted model does not resurrect from disk on the
+// next server start (before the fix DELETE only dropped the in-memory cache).
+func TestDeleteSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	xml := readExample(t, "dish_15.dmn")
+
+	first := NewServer(dmn.New(), WithModelStore(dir))
+	sm, err := first.compileAndStore(context.Background(), xml)
+	if err != nil {
+		t.Fatalf("compileAndStore: %v", err)
+	}
+	id := sm.id
+
+	h := first.Handler()
+	if rec := do(t, h, "DELETE", "/v1/models/"+id, "", nil); rec.Code != 204 {
+		t.Fatalf("DELETE = %d (%s), want 204", rec.Code, rec.Body)
+	}
+
+	// A restart must NOT bring the deleted model back.
+	second := NewServer(dmn.New(), WithModelStore(dir))
+	if _, ok := second.lookup(id); ok {
+		t.Fatal("deleted model resurrected from disk after restart")
+	}
+
+	// Deleting an unknown id is 404, and a second delete of the same id is 404.
+	if rec := do(t, h, "DELETE", "/v1/models/"+id, "", nil); rec.Code != 404 {
+		t.Fatalf("second DELETE = %d, want 404", rec.Code)
+	}
+}
+
+// TestDiskStoreDeleteRejectsMalformedID confirms the store never touches the
+// filesystem for a non-content-addressed id (defence-in-depth, N6).
+func TestDiskStoreDeleteRejectsMalformedID(t *testing.T) {
+	st, err := newDiskStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newDiskStore: %v", err)
+	}
+	for _, bad := range []string{"", "sha256:xyz", "../etc/passwd", "sha256:" + "g"} {
+		if removed, err := st.delete(bad); removed || err != nil {
+			t.Errorf("delete(%q) = (%v, %v), want (false, nil)", bad, removed, err)
+		}
+	}
+}
+
 // TestExamplesAreNotPersisted guards that the bundled examples never leak onto
 // disk — they re-embed on every start, so persisting them would just pollute the
 // store directory.

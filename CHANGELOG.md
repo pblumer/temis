@@ -18,6 +18,34 @@ gilt für die öffentliche Go-API (`package dmn`) und die HTTP-API (ADR-0019,
 Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Version
 `0.0.0-dev`. Bisher umgesetzt (Auszug, voller Stand in `docs/20-roadmap.md`):
 
+### Security
+
+- **Härtungs-Etappe H1 (WP-130–135, aus dem Code-Qualitäts-Audit `docs/audits/`).** Behebt die
+  im Audit verifizierten kritischen/hohen Befunde:
+  - **Kein Prozess-Crash mehr durch Eingaben (K1):** FEEL-Parser und DMN-XML-Decoder hatten kein
+    Rekursionstiefen-Limit; eine tiefe Eingabe (innerhalb des HTTP-Body-Limits) löste
+    `fatal error: stack overflow` aus und riss den ganzen Prozess mit. Jetzt begrenzt
+    (`DefaultMaxParseDepth`, `DefaultMaxElementDepth`) → Diagnostic statt Absturz (ADR-0008).
+  - **Kein HTML-Injection/Stored-XSS im Modeler (H1/H2):** ein einheitlicher `escapeHtml()`
+    (inkl. Anführungszeichen) ersetzt drei uneinheitliche Escaper; Typ-Dropdown baut über den
+    DOM. BYOK-LLM-Key default nur in `sessionStorage`.
+  - **Timeouts & TLS-Transparenz (H4/H5/M1):** LLM-/GitHub-Aufrufe mit Client-Timeout,
+    HTTP-Server mit `ReadHeaderTimeout`/`IdleTimeout`, optionales `-tls-cert`/`-tls-key`,
+    expliziter Klartext-Hinweis beim Start.
+  - **Missbrauchs-Schutz (H6/M2):** opt-in Rate-Limit (`-rate-limit`) pro Client-IP; Startup-
+    Warnung, wenn ein LLM-Server-Key ohne API-Auth einen offenen Kosten-Proxy ergäbe.
+  - **First-Run repariert (H3):** der Modeler auf einem leeren Server verdrahtet jetzt alle
+    Aktionen (kein früher `boot()`-Abbruch mehr).
+
+### Fixed
+
+- **`DELETE /v1/models/{id}` ist mit `-models-dir` dauerhaft (M3):** löschte bisher nur den
+  Cache, sodass ein persistiertes Modell beim nächsten Zugriff zurückkehrte.
+- **Testsuite offline vollständig grün (M5):** die Scope-Autorisierungs-Tests rufen nicht mehr
+  die echte GitHub-API, sondern ein Fake-Backend.
+- **GitHub-Pfad-Traversal abgewiesen (N6)**, `AuthKid` auch bei Whole-Graph-Evals gestempelt
+  (N7), begrenzte Dedupe-Menge im clio-Worker (M4).
+
 ### Added
 
 - **Modeler: Modelle in der Seitenleiste durchsuchen:** Über der Modell-Liste sitzt jetzt ein

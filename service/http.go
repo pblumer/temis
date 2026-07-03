@@ -139,6 +139,11 @@ type Server struct {
 	// metrics holds the process-level operational counters reported by the status
 	// endpoint (ADR-0030). Always set by NewServer.
 	metrics *metrics
+
+	// limiter, when set via WithRateLimit, throttles the /v1 data surface per
+	// client IP (audit findings H6/M2). Nil leaves the surface unthrottled (the
+	// default).
+	limiter *rateLimiter
 }
 
 // Option configures a Server at construction time.
@@ -225,6 +230,25 @@ func WithQualityQueue(q *QualityQueue) Option {
 // eviction). The default is a bounded cache (WP-35).
 func WithCacheSize(size int) Option {
 	return func(s *Server) { s.cacheSize = size }
+}
+
+// WithRateLimit enables a per-client-IP token-bucket throttle over the /v1 data
+// surface: rps sustained requests per second with a burst allowance (audit
+// findings H6/M2). A non-positive rps disables it (the default), leaving the
+// surface unthrottled. Burst defaults to rps (min 1) when not larger.
+func WithRateLimit(rps, burst float64) Option {
+	return func(s *Server) {
+		if rps <= 0 {
+			return
+		}
+		if burst < rps {
+			burst = rps
+		}
+		if burst < 1 {
+			burst = 1
+		}
+		s.limiter = newRateLimiter(rps, burst, nil)
+	}
 }
 
 // WithModelStore persists uploaded and edited models to dir on disk and reloads
@@ -456,7 +480,15 @@ func (s *Server) Handler() http.Handler {
 	// single dataRoutes() table so the route set has one source of truth — the
 	// OpenAPI-sync test reads the same table (see http_test.go).
 	for _, rt := range s.dataRoutes() {
-		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireScope(rt.scope, rt.handler))
+		h := s.requireScope(rt.scope, rt.handler)
+		// Rate-limit the whole gated data surface when configured: the flood
+		// vectors (BYOK /v1/chat cost abuse, recompiling modeler edits) all live
+		// here. The throttle sits in front of the scope gate so it also sheds load
+		// from unauthenticated callers on an open API (H6/M2).
+		if s.limiter != nil {
+			h = s.limiter.wrap(h)
+		}
+		mux.HandleFunc(rt.method+" "+rt.pattern, h)
 	}
 	// Git-backed models: browse, load, save and propose against a repository
 	// (WP-72). Registered outside the dataRoutes() table (and thus the
@@ -730,7 +762,21 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 // named group is done by the client calling this once per revision. It responds
 // 204 on success and 404 when no model has that id.
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
-	if !s.cache.delete(r.PathValue("id")) {
+	id := r.PathValue("id")
+	inCache := s.cache.delete(id)
+	// Also remove the durable copy, if any: without this a model persisted via
+	// -models-dir would resurrect on the next cache-miss fallback, making the
+	// admin-scoped delete a no-op (audit finding M3).
+	removedFromStore := false
+	if s.store != nil {
+		ok, err := s.store.delete(id)
+		if err != nil {
+			writeProblem(w, http.StatusInternalServerError, "DELETE_FAILED", err.Error())
+			return
+		}
+		removedFromStore = ok
+	}
+	if !inCache && !removedFromStore {
 		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
 		return
 	}
@@ -1209,6 +1255,9 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 				Input:    req.Input,
 				Outputs:  map[string]any{name: val},
 				Strict:   req.Strict,
+				// Stamp authorship so a whole-graph eval carries clioauthkid too,
+				// matching single-decision evaluate (audit finding N7, WP-105).
+				AuthKid: authKidFromContext(r.Context()),
 			}
 			if res.Traces != nil {
 				rec.Trace = res.Traces[name]

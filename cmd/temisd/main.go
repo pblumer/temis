@@ -91,6 +91,12 @@ func main() {
 		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue) (env TEMIS_CLIO_STRICT)")
 	clioActiveProbe := flag.Bool("clio-active-probe", envBool("TEMIS_CLIO_ACTIVE_PROBE", false),
 		"GET /v1/status actively pings clio's health endpoint for reachability instead of using the passive last-write outcome (env TEMIS_CLIO_ACTIVE_PROBE)")
+	tlsCert := flag.String("tls-cert", os.Getenv("TEMIS_TLS_CERT"),
+		"PEM certificate file; with -tls-key serves HTTPS instead of cleartext h2c (default $TEMIS_TLS_CERT; empty = plaintext)")
+	tlsKey := flag.String("tls-key", os.Getenv("TEMIS_TLS_KEY"),
+		"PEM private-key file matching -tls-cert (default $TEMIS_TLS_KEY)")
+	rateLimit := flag.Int("rate-limit", envInt("TEMIS_RATE_LIMIT", 0),
+		"per-client-IP request/second cap on the /v1 surface (burst = 2× rate); 0 = unlimited (env TEMIS_RATE_LIMIT)")
 	flag.Parse()
 
 	ver := version.Resolve()
@@ -117,6 +123,9 @@ func main() {
 	}
 	if *clioActiveProbe {
 		opts = append(opts, service.WithClioActiveProbe(true))
+	}
+	if *rateLimit > 0 {
+		opts = append(opts, service.WithRateLimit(float64(*rateLimit), float64(*rateLimit)*2))
 	}
 	if *cacheSize != 0 {
 		opts = append(opts, service.WithCacheSize(*cacheSize))
@@ -217,6 +226,14 @@ func main() {
 			keying = "BYOK only (send X-LLM-Token)"
 		}
 		log.Printf("temisd: modeling assistant at POST /v1/chat (provider %q, %s, BYOK=%v)", provider, keying, *llmAllowBYOK)
+		// Guard against an open cost proxy (audit finding H6): with a server-side
+		// LLM key but no auth in front of /v1, any anonymous caller can spend the
+		// key's budget. Warn loudly, and suggest the mitigations (add keys, or add
+		// a rate limit) — mirroring the clio best-effort warning.
+		apiGated := *keysFile != "" || bootstrapAdminKey != "" || *token != ""
+		if *llmToken != "" && !apiGated {
+			log.Printf("temisd: WARNING: a server-side LLM key is set but /v1 is UNAUTHENTICATED — POST /v1/chat is an open, anonymous cost proxy. Protect it with -keys-file/-token, or at least -rate-limit.")
+		}
 	}
 	if clioOn {
 		mode := "best-effort"
@@ -230,13 +247,37 @@ func main() {
 		// token away. https://github.com/pblumer/clio
 		log.Printf("temisd: tamper-evident decision log available — set TEMIS_CLIO_TOKEN to record to %s (clio, or -clio-url your own)", *clioURL)
 	}
-	log.Printf("temisd %s listening on %s — DMN modeler at http://%s/ · Swagger UI at http://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
-		ver, *addr, *addr, *addr)
+	tlsOn := *tlsCert != "" && *tlsKey != ""
+	scheme := "http"
+	if tlsOn {
+		scheme = "https"
+	}
+	log.Printf("temisd %s listening on %s — DMN modeler at %s://%s/ · Swagger UI at %s://%s/docs · gRPC (dmn.v1.DmnEngine) on the same port",
+		ver, *addr, scheme, *addr, scheme, *addr)
+	if tlsOn {
+		log.Printf("temisd: serving HTTPS (TLS from -tls-cert/-tls-key)")
+	} else {
+		// Make the cleartext posture explicit so an operator does not assume the
+		// transport is encrypted: API keys and Git/LLM tokens travel in the clear
+		// unless TLS is terminated in front of temisd (audit finding H5).
+		log.Printf("temisd: serving cleartext HTTP/h2c — terminate TLS in front of temisd or pass -tls-cert/-tls-key; credentials are unencrypted otherwise")
+	}
 
 	// Graceful shutdown so the quality queue drains before exit (guaranteed
 	// delivery). On SIGINT/SIGTERM: stop accepting requests, then drain the queue
 	// under a deadline so an unreachable clio can't hang the shutdown.
-	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	//
+	// ReadHeaderTimeout and IdleTimeout bound slow/idle connections (Slowloris,
+	// audit finding M1) without capping request/response bodies. ReadTimeout and
+	// WriteTimeout are deliberately left unset (0): the same server carries h2c
+	// bidi gRPC streams (EvaluateBatch) whose reads and writes legitimately span
+	// long periods, and a wall-clock cap there would sever live streams.
+	httpSrv := &http.Server{
+		Addr:              *addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -248,7 +289,11 @@ func main() {
 			qq.Close(ctx)
 		}
 	}()
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	serve := httpSrv.ListenAndServe
+	if tlsOn {
+		serve = func() error { return httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey) }
+	}
+	if err := serve(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
 		os.Exit(1)
 	}
