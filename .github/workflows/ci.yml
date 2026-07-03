@@ -127,6 +127,22 @@ jobs:
         run: npm run test:e2e
         working-directory: web
 
+  tck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Fetch the pinned official DMN TCK corpus and run the conformance gate,
+      # which fails if the pass rate drops below the ratchet floor (WP-41).
+      - name: Official DMN TCK conformance
+        run: make tck-conformance
+
   proto:
     runs-on: ubuntu-latest
     steps:

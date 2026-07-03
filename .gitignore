@@ -28,3 +28,6 @@ go.work.sum
 .DS_Store
 .idea/
 .vscode/
+
+# Fetched (not vendored) official DMN TCK corpus for the conformance gate.
+.tck-corpus/
