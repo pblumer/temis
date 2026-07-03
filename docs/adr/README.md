@@ -34,7 +34,7 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0027 | Dateisystem-Modell-Store (optionale Persistenz des Modell-Cache, content-adressiert, stdlib, opt-in) | accepted |
 | 0028 | Scoped API-Key-Authentifizierung (`kid.secret`, Keystore, Scopes) — angeglichen an clio | accepted |
 | 0029 | Öffentliches FEEL-Ausdruck-Primitive (`dmn.CompileExpression`) für volle Flow-Mappings | accepted |
-| 0030 | Betriebs-Observability (Status-Endpoint, `expvar`-Metriken, `slog`) — Grenze zur externen Control Plane | proposed |
+| 0030 | Betriebs-Observability (Status-Endpoint, `expvar`-Metriken, `slog`) — Grenze zur externen Control Plane | accepted |
 | 0031 | Import-Cockpit — Batch-Auswertung und Quality-Events auf Entitäten (entkoppelte Queue) | accepted |
 | 0032 | Flow-Registry — beim Start geladene Verzeichnis-Quelle statt flüchtigem POST-Store | accepted |
 | 0033 | Clio-Command-Consumer — Entscheidungen per Event auslösen, Ergebnis zurück ins Logbuch (opt-in) | accepted |

@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,6 +198,34 @@ func TestClioSinkBestEffortSurvivesClioFailure(t *testing.T) {
 	}
 	if len(clio.calls()) != 1 {
 		t.Errorf("clio writes = %d, want 1 (attempted)", len(clio.calls()))
+	}
+}
+
+// TestClioSinkBestEffortLogsStructured asserts a best-effort write failure is
+// emitted as a structured slog record carrying system=clio and an error
+// attribute (WP-114), rather than an opaque printf line.
+func TestClioSinkBestEffortLogsStructured(t *testing.T) {
+	clio := &captureClio{status: http.StatusInternalServerError}
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	h := auditServer(t, clio, func(c *ClioConfig) { c.Logger = logger })
+
+	if rec := evalDish(t, h); rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d, want 200 (best-effort)", rec.Code)
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
+		t.Fatalf("log line is not JSON: %v\n%s", err, buf.String())
+	}
+	if rec["system"] != "clio" {
+		t.Errorf("log record system = %v, want clio", rec["system"])
+	}
+	if rec["level"] != "ERROR" {
+		t.Errorf("log record level = %v, want ERROR", rec["level"])
+	}
+	if _, ok := rec["error"]; !ok {
+		t.Errorf("log record missing error attribute: %s", buf.String())
 	}
 }
 
