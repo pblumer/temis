@@ -59,6 +59,9 @@ func TestStrings(t *testing.T) {
 		{`"tab\tend"`, "tab\tend"},
 		{`"slash\/"`, "slash/"},
 		{`"unicA"`, "unicA"},
+		{`"\u0041"`, "A"},                // 4-hex \u escape
+		{`"\U01F40E"`, "\U0001F40E"},     // 6-hex \U escape → horse
+		{`"\uD83D\uDCA9"`, "\U0001F4A9"}, // UTF-16 surrogate pair → poo
 		{`""`, ""},
 	}
 	for _, c := range cases {

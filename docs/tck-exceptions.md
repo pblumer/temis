@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3196 / 3495 Cases grün (91,4 %)** |
+| Compliance Level 2 + 3 | **3203 / 3495 Cases grün (91,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 91,4 % |
+| Ratchet-Floor im CI | 91,6 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,16 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `is()` auf Temporalen (WP-41.10, +9)
+## In dieser Etappe behoben — Unicode-String-Escapes (WP-41.11, +7)
+
+Der String-Lexer dekodiert jetzt **`\U`** (6-Hex-Codepoint, `\U01F40E` → 🐎) und
+kombiniert **UTF-16-Surrogatpaare** `\uD83D\uDCA9` zu einem Codepoint (💩). Damit
+zählt `string length` Codepoints korrekt und `=` vergleicht Emoji-Strings. 0083: 9→2.
+
+Netto **+7 Cases** (91,4 % → 91,6 %). Rest in 0083: Emoji in Kontext-Keys
+(Namens-Lexer).
+
+## Früher behoben — `is()` auf Temporalen (WP-41.10, +9)
 
 `is(v1, v2)` prüft Wert- **und** Typgleichheit. Für `date`/`time`/`date and time`
 vergleicht es jetzt die **Repräsentation** statt des Instants: `is(@"23:00:50",
