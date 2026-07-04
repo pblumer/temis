@@ -31,6 +31,11 @@ func TestListReplaceAndIsAndNumber(t *testing.T) {
 		{"is", []value.Value{num("1"), str("1")}, "false", false},
 		{"is", []value.Value{value.Null, value.Null}, "true", false},
 		{"is", []value.Value{num("1"), value.Null}, "false", false},
+		// is on temporals compares representation, not the instant: two times that
+		// are the same instant but rendered differently are not `is`.
+		{"is", []value.Value{mustTime("23:00:50"), mustTime("23:00:50Z")}, "false", false},
+		{"is", []value.Value{mustTime("20:00:50+00:00"), mustTime("21:00:50+01:00")}, "false", false},
+		{"is", []value.Value{mustTime("10:30:00Z"), mustTime("10:30:00Z")}, "true", false},
 	})
 
 	// list replace with a match function replaces every matching element.
@@ -45,4 +50,12 @@ func TestListReplaceAndIsAndNumber(t *testing.T) {
 	if got.String() != "[9, 3, 9]" {
 		t.Errorf("list replace(match) = %s, want [9, 3, 9]", got)
 	}
+}
+
+func mustTime(s string) value.Value {
+	t, err := value.ParseTime(s)
+	if err != nil {
+		panic(err)
+	}
+	return t
 }
