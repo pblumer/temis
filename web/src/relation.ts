@@ -9,10 +9,10 @@ import { attachFeelField } from './feelfield'
 // reference. A relation whose cells nest other boxed expressions (rv.simple ===
 // false) opens read-only, so the text grid never clobbers the nesting. onSaved
 // gets the saved model's id.
-export async function openRelationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor }): Promise<void> {
+export async function openRelationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let rv: RelationView | null = null
   try {
-    rv = await getRelation(modelId, decisionId, opts?.anchor)
+    rv = await getRelation(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -165,7 +165,7 @@ export async function openRelationOverlay(modelId: string, decisionId: string, b
       const saved = await saveRelation(modelId, decisionId, {
         columns: columns.map((c) => c.trim()),
         rows: rows.map((r) => r.map((c) => c.trim())),
-      }, opts?.anchor)
+      }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

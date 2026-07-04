@@ -9,10 +9,10 @@ import { attachFeelField } from './feelfield'
 // branch additionally sees `item`. A filter whose branch nests another boxed
 // expression (fv.simple === false) opens read-only, so the text editor never
 // clobbers the nesting. onSaved gets the saved model's id.
-export async function openFilterOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor }): Promise<void> {
+export async function openFilterOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let fv: FilterView | null = null
   try {
-    fv = await getFilter(modelId, decisionId, opts?.anchor)
+    fv = await getFilter(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -86,7 +86,7 @@ export async function openFilterOverlay(modelId: string, decisionId: string, bas
     status.className = 'dt-status'
     status.textContent = 'speichert …'
     try {
-      const saved = await saveFilter(modelId, decisionId, { in: branches[0].text.trim(), match: branches[1].text.trim() }, opts?.anchor)
+      const saved = await saveFilter(modelId, decisionId, { in: branches[0].text.trim(), match: branches[1].text.trim() }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

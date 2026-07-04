@@ -1103,6 +1103,8 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   border-radius: 6px;
 }
 .ctx-del:hover { color: #e5484d; background: #fff4f4; }
+/* Drill-in action for a context entry whose value is a nested boxed expression. */
+.ctx-drill { padding: 2px 8px; font-size: 12px; line-height: 1.6; white-space: nowrap; }
 .ctx-result {
   display: grid;
   grid-template-columns: auto 130px 1fr;

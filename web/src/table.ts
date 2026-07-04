@@ -26,10 +26,10 @@ const AGGREGATIONS = ['', 'SUM', 'COUNT', 'MIN', 'MAX']
 // variables from the graph (connected input-data nodes and upstream decisions)
 // that the input-column expressions may reference. opts.anchor targets a BKM's
 // boxed decision-table body instead of a decision's logic (WP-66).
-export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace; wiredInputs?: { expression: string; typeRef?: string }[]; scope?: string[]; anchor?: Anchor } = {}): Promise<void> {
+export async function openTableOverlay(modelId: string, decisionId: string, onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES, opts: { matched?: number[]; readOnly?: boolean; trace?: TableTrace; wiredInputs?: { expression: string; typeRef?: string }[]; scope?: string[]; anchor?: Anchor; at?: string } = {}): Promise<void> {
   let fetched: TableView | null
   try {
-    fetched = await getTable(modelId, decisionId, opts.anchor)
+    fetched = await getTable(modelId, decisionId, opts.anchor, opts.at)
   } catch (e) {
     console.error(e)
     return
@@ -173,7 +173,7 @@ export async function openTableOverlay(modelId: string, decisionId: string, onSa
       rules: state.rules,
     }
     try {
-      const saved = await saveTable(modelId, decisionId, edit, opts.anchor)
+      const saved = await saveTable(modelId, decisionId, edit, opts.anchor, opts.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

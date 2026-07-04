@@ -229,9 +229,11 @@ type ContextEdit struct {
 }
 
 type ContextEntryView struct {
-	Name	string	`json:"name"`
-	Text	string	`json:"text"`
-	TypeRef	string	`json:"typeRef,omitempty"`
+	Name		string	`json:"name"`
+	Text		string	`json:"text"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+	Index		int	`json:"index"`
+	ChildKind	string	`json:"childKind,omitempty"`
 }
 
 type ContextView struct {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pblumer/temis/internal/model"
 	dmnxml "github.com/pblumer/temis/internal/xml"
 )
 
@@ -23,11 +22,17 @@ type ContextView struct {
 }
 
 // ContextEntryView is one boxed-context entry: a bound name and its literal FEEL
-// expression with an optional declared result type.
+// expression with an optional declared result type. Index is the entry's position
+// in the context (used as the `entry.N` locator step for a drill-in). ChildKind is
+// set when the entry's value is itself a nested boxed expression rather than a
+// literal, naming which boxed editor edits it in place (WP-66 Phase 2); Text is
+// then empty.
 type ContextEntryView struct {
-	Name    string `json:"name"`
-	Text    string `json:"text"`
-	TypeRef string `json:"typeRef,omitempty"`
+	Name      string `json:"name"`
+	Text      string `json:"text"`
+	TypeRef   string `json:"typeRef,omitempty"`
+	Index     int    `json:"index"`
+	ChildKind string `json:"childKind,omitempty"`
 }
 
 // BoxedContext returns the decision's boxed-context view. ok is false when no
@@ -37,29 +42,7 @@ func (d *Definitions) BoxedContext(idOrName string) (ContextView, bool) {
 	if dec == nil || dec.Context == nil {
 		return ContextView{}, false
 	}
-	v := ContextView{DecisionID: dec.ID, Name: dec.Name, Simple: true}
-	for _, e := range dec.Context.Entries {
-		lit, ok := e.Value.(*model.LiteralExpression)
-		if !ok {
-			// A nested boxed entry: this text view can't carry it, so the context
-			// is not simply editable. Still surface a named placeholder so the
-			// structure is visible.
-			v.Simple = false
-			if e.Name != "" {
-				v.Entries = append(v.Entries, ContextEntryView{Name: e.Name})
-			}
-			continue
-		}
-		if e.Name == "" {
-			v.Result = lit.Text
-			v.ResultTypeRef = canonicalType(lit.TypeRef)
-			continue
-		}
-		// A named entry's declared type lives on its bound variable (entry.TypeRef);
-		// the literal's own typeRef is rarely set for context entries.
-		v.Entries = append(v.Entries, ContextEntryView{Name: e.Name, Text: lit.Text, TypeRef: canonicalType(e.TypeRef)})
-	}
-	return v, true
+	return contextViewFromModel(dec.ID, dec.Name, dec.Context), true
 }
 
 // ContextEdit is the editable payload for a boxed context: named entries (each a
