@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/readme-hero.svg" alt="Temis — DMN decision engine with FEEL, API service, modeler and agent integrations" width="900">
+  <img src="docs/readme-hero.svg" alt="Temis — deterministische DMN-1.5/FEEL-Engine, erreichbar als eingebettete Go-Library, über REST, gRPC und MCP für AI-Agenten; im Kern wertet eine Decision-Table mit Hit Policy U aus und liefert typisierte, nachvollziehbare Entscheidungen" width="900">
 </p>
 
-<h1 align="center">Temis — Decisioning, das sich gut anfühlt</h1>
+<h1 align="center">Temis — Deterministische DMN-Engine: Go-Library, REST, gRPC & MCP für AI-Agenten</h1>
 
 <p align="center">
   <strong>Schnelle DMN-1.5-Engine in Go</strong> · <strong>volles FEEL</strong> · <strong>Library</strong> · <strong>HTTP/gRPC</strong> · <strong>Modeler</strong> · <strong>MCP für Agenten</strong>
