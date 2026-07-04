@@ -29,12 +29,19 @@ func TestRangeFunction(t *testing.T) {
 	if r := rng("[18..21["); !r.LowClosed || r.HighClosed {
 		t.Errorf("[18..21[ brackets wrong: %v", r)
 	}
-	// Unbounded ends.
-	if r := rng("[1..]"); !value.IsNull(r.High) || r.Low.String() != "1" {
-		t.Errorf("[1..] should be low-bounded only: %v", r)
+	// Unbounded ends must use an open bracket on the unbounded side.
+	if r := rng("[1..)"); !value.IsNull(r.High) || r.Low.String() != "1" {
+		t.Errorf("[1..) should be low-bounded only: %v", r)
 	}
-	if r := rng("[..2]"); !value.IsNull(r.Low) || r.High.String() != "2" {
-		t.Errorf("[..2] should be high-bounded only: %v", r)
+	if r := rng("(..2]"); !value.IsNull(r.Low) || r.High.String() != "2" {
+		t.Errorf("(..2] should be high-bounded only: %v", r)
+	}
+	// A closed bracket on an unbounded side, mismatched endpoint types, or a
+	// reversed range are all invalid (null).
+	for _, bad := range []string{"[1..]", "[..2]", `[1.."b"]`, "[3..1]", `["z".."a"]`} {
+		if got := call(t, "range", value.Str(bad)); !value.IsNull(got) {
+			t.Errorf("range(%q) = %s, want null", bad, got)
+		}
 	}
 	// String and temporal endpoints.
 	if r := rng(`["a".."c"]`); r.Low.Kind() != value.KindString || r.High.String() != "c" {

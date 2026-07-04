@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3175 / 3495 Cases grün (90,8 %)** |
+| Compliance Level 2 + 3 | **3187 / 3495 Cases grün (91,2 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 90,8 % |
+| Ratchet-Floor im CI | 91,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,16 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Range-Literale aus Vergleichen (WP-41.8, +7)
+## In dieser Etappe behoben — `range()`-Validierung (WP-41.9, +12)
+
+Die `range(from)`-Builtin weist jetzt malformte Range-Strings korrekt als **null** ab
+(`validRangeBounds`): ein **unbounded** Endpunkt mit **geschlossener** Klammer
+(`[1..]`, `[..2]`), **Typ-Mismatch** der Endpunkte (`[1.."b"]`, date vs date-and-time)
+und **umgekehrte** Grenzen (`[3..1]`, `["z".."a"]`, reversed Temporale). 1156: 16→4.
+
+Netto **+12 Cases** (90,8 % → 91,2 %).
+
+## Früher behoben — Range-Literale aus Vergleichen (WP-41.8, +7)
 
 `(< v)`, `(<= v)`, `(> v)`, `(>= v)`, `(= v)` parsen jetzt als **halb-/geschlossene
 Range-Literale**: `(<10)` → `(..10)` (unbounded low), `(>=10)` → `[10..)`, `(=10)` →

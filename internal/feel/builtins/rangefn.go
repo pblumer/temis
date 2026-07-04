@@ -56,7 +56,28 @@ func parseRangeString(s string) (value.Value, bool) {
 	if !ok1 || !ok2 {
 		return value.Null, false
 	}
+	if !validRangeBounds(low, high, lowClosed, highClosed) {
+		return value.Null, false
+	}
 	return value.Range{LowClosed: lowClosed, Low: low, High: high, HighClosed: highClosed}, true
+}
+
+// validRangeBounds rejects the malformed ranges the DMN range() constructor must
+// turn into null: an unbounded endpoint marked as closed, endpoints of different
+// types, and a low bound that exceeds the high bound.
+func validRangeBounds(low, high value.Value, lowClosed, highClosed bool) bool {
+	lowUnbounded, highUnbounded := value.IsNull(low), value.IsNull(high)
+	if (lowUnbounded && lowClosed) || (highUnbounded && highClosed) {
+		return false
+	}
+	if lowUnbounded || highUnbounded {
+		return true
+	}
+	if low.Kind() != high.Kind() {
+		return false
+	}
+	cmp, ok := value.Compare(low, high)
+	return ok && cmp <= 0
 }
 
 // parseRangeEndpoint parses one range endpoint. An empty endpoint is an
