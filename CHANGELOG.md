@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Range-Literale aus Vergleichen (WP-41.8, 90,6 % → 90,8 %).**
+  `(< v)`, `(<= v)`, `(> v)`, `(>= v)`, `(= v)` parsen jetzt als halb-/geschlossene
+  Range-Literale (`(<10)` → `(..10)`; `(>=10)` → `[10..)`; `(=10)` → `[10..10]`), inkl.
+  unbounded Grenzen und Range-Membership (`5 in (>3)`). +7 Cases (0074 komplett grün);
+  der Ratchet-Floor des CI-Gates steigt auf 90,8 %.
 - **DMN-TCK-Konformität: Cross-Typ-Gleichheit → null (WP-41.7, 90,3 % → 90,6 %).** `=` und
   `!=` zwischen zwei nicht-null-Werten unterschiedlichen Typs ergeben jetzt `null` statt
   `false` (`100 = "100"`, `[] = 0`, `{} = []` → null; DMN §10.3.2.7). Chirurgisch nur an den
