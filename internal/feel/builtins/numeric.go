@@ -7,7 +7,26 @@ func registerNumeric(r *Registry) {
 	// (round to an integer), matching DMN 1.5's optional scale argument.
 	r.Register(fixed("floor", []string{"n", "scale"}, 1, 2, scaled(value.Number.FloorTo)))
 	r.Register(fixed("ceiling", []string{"n", "scale"}, 1, 2, scaled(value.Number.CeilingTo)))
-	r.Register(fixed("abs", []string{"n"}, 1, 1, numberMap(value.Number.Abs)))
+	// abs(n): absolute value of a number or a duration (DMN 1.4+ extends abs to
+	// both duration types).
+	r.Register(fixed("abs", []string{"n"}, 1, 1, func(args []value.Value) (value.Value, error) {
+		switch x := args[0].(type) {
+		case value.Number:
+			return x.Abs(), nil
+		case value.DaysTimeDuration:
+			if x.Duration() < 0 {
+				return value.Neg(x), nil
+			}
+			return x, nil
+		case value.YearsMonthsDuration:
+			if x.Months() < 0 {
+				return value.Neg(x), nil
+			}
+			return x, nil
+		default:
+			return value.Null, nil
+		}
+	}))
 
 	// decimal and the explicit rounding modes take a mandatory scale.
 	r.Register(fixed("decimal", []string{"n", "scale"}, 2, 2, scaled(value.Number.RoundHalfEven)))

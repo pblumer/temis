@@ -246,6 +246,12 @@ func (p *parser) parseInTest() Expr {
 // comma-separated test list rather than a single parenthesised test (such as an
 // interval `(2..4)`). It scans to the matching close paren for a top-level comma.
 func (p *parser) isInTestList() bool {
+	// A parenthesised RHS whose first token is a comparison operator is a test
+	// list even without a comma, e.g. `(= 10)` or `(!= 10)`; the general
+	// expression parser cannot consume a leading operator.
+	if _, ok := comparisonOps[p.peek(1).Kind]; ok {
+		return true
+	}
 	depth := 0
 	for i := 0; ; i++ {
 		k := p.peek(i).Kind

@@ -60,6 +60,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `in`-Operator & `abs` (WP-41.4, 89,0 % → 89,6 %).** `X in (= Y)`
+  und `X in (!= Y)` — ein parenthesierter Operator-Unary-Test ohne Komma — parsen jetzt
+  (`10 in (=10)` → true); und `abs` liefert auch für beide Dauer-Typen den Betrag. +20
+  Cases; der Ratchet-Floor des CI-Gates steigt auf 89,5 %.
 - **DMN-TCK-Konformität: Property-Zugriff auf Temporale & Ranges (WP-41.3, 88,7 % → 89,0 %).**
   FEEL-Member-Namen mit Leerzeichen (`x.time offset`, `[1..10].start included`) parsen
   jetzt — der Parser assembliert den ganzen Namens-Lauf nach `.`. `value.Member`

@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3110 / 3495 Cases grün (89,0 %)** |
+| Compliance Level 2 + 3 | **3130 / 3495 Cases grün (89,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 88,9 % |
+| Ratchet-Floor im CI | 89,5 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,18 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Property-Zugriff auf Temporale & Ranges (WP-41.3, 0074: 14 → 5)
+## In dieser Etappe behoben — `in`-Operator & `abs` (WP-41.4, +20 Cases)
+
+- **`X in (= Y)` / `X in (!= Y)`** — ein **parenthesierter** Operator-Unary-Test
+  (ohne Komma) parst jetzt (`isInTestList` erkennt einen führenden Vergleichs-
+  operator nach `(`). Zuvor scheiterte `10 in (=10)` am Parsen (0072, 16 Fälle über
+  alle Typen).
+- **`abs(duration)`** — `abs` liefert jetzt auch für beide Dauer-Typen den Betrag
+  (`abs(duration("-P1D"))` → `P1DT0H0M0S`), nicht nur für Zahlen (0050).
+
+Netto **+20 Cases** (89,0 % → 89,6 %); 0072 21→5, 0050 7→0.
+
+## Früher behoben — Property-Zugriff auf Temporale & Ranges (WP-41.3, 0074: 14 → 5)
 
 FEEL-Member-Namen dürfen **Leerzeichen** enthalten (`time offset`, `start included`);
 der Parser las nach `.` bisher nur ein Wort → `date and time(…).time offset` und

@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3110 / 3495 Cases (**89,0 %**) nach WP-41.3, Ratchet-Floor 88,9 %.
+**Stand:** 3130 / 3495 Cases (**89,6 %**) nach WP-41.4, Ratchet-Floor 89,5 %.
 **Nahziel:** > 90 % (≈ +276 Cases). **Endziel (WP-41):** ≥ 95 % der anwendbaren Cases.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
@@ -18,7 +18,8 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.2 ✅** | **TCK-Runner: item-verpackte Listen dekodieren** (`<list><item>…`); reiner Harness-Fix | quer (0008/0009/0012, alle Listen-Ergebnisse) | **+108** |
 | **WP-41.2b** | FEEL-Zahl: kanonische Präzision der Ausgabe | quer (0012, 0100, Statistik) | ~20–40 |
 | **WP-41.3 ✅** | **Property-Zugriff auf Temporale & Ranges** (Mehrwort-Member-Namen; Range-`start`/`end`/`…included`) | 0074 | **+9** |
-| **WP-41.4** | Math-Builtins (Überladungen + null/leer + Rundungs-Werte) | 0050 abs, 0052 exp, 0053 log, 0051 sqrt, 0062 mode, 0063 stddev, 0061 median, 0094 product, 0054/0055, 0058, 0075, 1141–1144/1100–1102 Rest | ~70 |
+| **WP-41.4 ✅** | **`in (=Y)`/`(!=Y)` parenthesiert + `abs(duration)`** | 0072, 0050 | **+20** |
+| **WP-41.4b** | Math-Builtins (Überladungen + null/leer + Rundungs-Werte) | 0050 abs, 0052 exp, 0053 log, 0051 sqrt, 0062 mode, 0063 stddev, 0061 median, 0094 product, 0054/0055, 0058, 0075, 1141–1144/1100–1102 Rest | ~70 |
 | **WP-41.5** | Listen-Funktionen | 0069, 0012, 0009 append/flatten-Rest, 0059/0060 all/any, 0011 insert/remove, 0010 concatenate, 0021 singleton | ~50 |
 | **WP-41.6** | Kontext-Funktionen | 1146 put, 1145, 1147 merge, 0080 get value, 0081 get entries, 0057 | ~36 |
 | **WP-41.7** | String- & Unicode-Funktionen | 0083 unicode, 1140 string join, 1109 replace, 1103 substring, 0067 split, 1105/1106 upper/lower | ~29 |

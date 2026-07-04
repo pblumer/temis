@@ -25,8 +25,14 @@ func TestEvalBuiltinCalls(t *testing.T) {
 		"floor(2.7)":                   "2",
 		"ceiling(2.1)":                 "3",
 		"abs(-5)":                      "5",
+		`abs(duration("-P1D"))`:        "P1DT0H0M0S", // abs on a days-time duration
+		`abs(duration("-P1Y"))`:        "P1Y0M",      // abs on a years-months duration
 		`number("3.14")`:               "3.14",
 		`list contains([1, 2, 3], 2)`:  "true",
+		// `in` with a parenthesised operator test (single element, no comma)
+		"10 in (= 10)":   "true",
+		"10 in (!= 10)":  "false",
+		`"a" in (= "a")`: "true",
 	}
 	for src, want := range cases {
 		if got := evalStr(t, src, nil); got.String() != want {
