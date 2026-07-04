@@ -100,3 +100,47 @@ func TestStringConcatenation(t *testing.T) {
 		t.Errorf(`"foo" + "bar" = %q, want "foobar"`, got)
 	}
 }
+
+// TestWideYearRoundTrip covers years wider than four digits (up to the FEEL max
+// of nine), which the reference layout cannot parse without help.
+func TestWideYearRoundTrip(t *testing.T) {
+	for _, s := range []string{
+		"99999-12-31T11:22:33",
+		"999999999-12-31T23:59:59",
+		"-999999999-12-31T23:59:59+02:00",
+	} {
+		dt, err := ParseDateTime(s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		if got := dt.String(); got != s {
+			t.Errorf("round-trip %q = %q", s, got)
+		}
+	}
+}
+
+// TestFractionalSecondsRendering checks that sub-second precision survives parse
+// and render, while whole seconds still elide the fraction.
+func TestFractionalSecondsRendering(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"2011-12-31T10:15:30.987@Europe/Paris", "2011-12-31T10:15:30.987@Europe/Paris"},
+		{"2011-12-31T10:15:30.123456789+02:00", "2011-12-31T10:15:30.123456789+02:00"},
+		{"2011-12-31T10:15:30", "2011-12-31T10:15:30"},
+	}
+	for _, c := range cases {
+		dt, err := ParseDateTime(c.in)
+		if err != nil {
+			t.Fatalf("parse %q: %v", c.in, err)
+		}
+		if got := dt.String(); got != c.want {
+			t.Errorf("render %q = %q, want %q", c.in, got, c.want)
+		}
+	}
+	tm, err := ParseTime("10:15:30.5")
+	if err != nil {
+		t.Fatalf("parse time: %v", err)
+	}
+	if got := tm.String(); got != "10:15:30.5" {
+		t.Errorf("time render = %q, want 10:15:30.5", got)
+	}
+}

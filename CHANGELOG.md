@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `date and time`-Konstruktor & Rendering (WP-41, 80,3 % → 81,2 %).**
+  Vier FEEL-Engine-Fixes am offiziellen DMN-TCK (Level 2+3, +32 Cases, `1117` von 35
+  auf 10 Fails): der Zwei-Argument-Konstruktor `date and time(date, time)` akzeptiert
+  als erstes Argument nun auch ein `date and time` (dessen Datums-Teil); ein
+  date-only-String promoviert zum Tagesbeginn (`date and time("2012-12-24")` →
+  `2012-12-24T00:00:00`); Sekundenbruchteile überleben Parse und Rendering
+  (`…:30.987@Europe/Paris`); und Jahre mit 1–9 Ziffern (bis `999999999`) parsen jetzt.
+  Der Ratchet-Floor des CI-Gates steigt auf 81,0 %; Details in `docs/tck-exceptions.md`.
 - **DMN-TCK-Konformität: Arithmetik & Temporal (WP-41, 77,4 % → 80,3 %).** Fünf
   FEEL-Engine-Fixes, gemessen am offiziellen DMN-TCK (Level 2+3, +103 Cases):
   negative (BCE-/astronomische) Jahre in Datums-/Zeit-Literalen inkl. IANA-Zonen

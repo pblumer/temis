@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2807 / 3495 Cases grün (80,3 %)** |
+| Compliance Level 2 + 3 | **2839 / 3495 Cases grün (81,2 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 80,0 % |
+| Ratchet-Floor im CI | 81,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,22 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Arithmetik & Temporal (0100: 96 → 5 Fails)
+## In dieser Etappe behoben — `date and time`-Konstruktor & Rendering (1117: 35 → 10 Fails)
+
+- **Zwei-Argument-Konstruktor `date and time(date, time)`** akzeptiert als erstes
+  Argument nun auch ein `date and time` (dessen Datums-Teil genutzt wird), nicht nur
+  ein `date` (1117, ~21 Fails).
+- **`date and time("2012-12-24")`** — ein date-only-String promoviert zum Tagesbeginn
+  (`2012-12-24T00:00:00`).
+- **Sekundenbruchteile** überleben Parse **und** Rendering (`…:30.987@Europe/Paris`);
+  ganze Sekunden lassen den Bruchteil weiterhin weg.
+- **Jahre mit 1–9 Ziffern** (bis zur FEEL-Grenze `999999999`) parsen jetzt —
+  `parseSignedTime` löst das Jahr über einen Platzhalter vom Referenz-Layout, das
+  genau vier Ziffern konsumiert.
+
+Netto **+32 Cases** (80,3 % → 81,2 %); hebt neben `1117` auch `1116` (13→9) an.
+
+## Früher behoben — Arithmetik & Temporal (0100: 96 → 5 Fails)
 
 - **Negative (BCE-/astronomische) Jahre** in `date`/`date and time`-Literalen
   (`@"-2021-01-01T10:10:10+11:00"`, auch mit IANA-Zone `@Australia/Melbourne`).
@@ -64,7 +79,6 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 
 | Suite / Feature | ~Fails | Klasse | Anmerkung |
 |---|---|---|---|
-| `1117-…-date-and-time` | 35 | Engine | `date and time`-Konstruktor-Kombinationen & Offsets. |
 | `0082-feel-coercion` | 28 | Engine | Singleton-Listen↔Wert-Koerzierung an Ausdrucksgrenzen. |
 | `0070-feel-instance-of` | 25 | Typsystem | `instance of` für `list<T>`, `function`, benutzerdef. Typen (`range<T>` erledigt). |
 | `0068-feel-equality` | 23 | Engine | Cross-Typ-Gleichheit, null-Fälle, Kontext-/Listen-Tiefvergleich. |
@@ -74,9 +88,11 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 | `1156-range-function` | 19 | Engine | `instance of range<T>`-Feindiskriminierung + String-Endpunkt-Randfälle. |
 | `0074-feel-properties` | 17 | Engine | Property-Zugriff auf Temporale/Ranges. |
 | `1155-list-replace` | 16 | Engine | Rest-Randfälle von `list replace`. |
-| `0007`/`1116` date/time | ~28 | Engine | Temporale Konstruktor- & Property-Details. |
+| `0007`-date-time | 15 | Engine | Temporale Konstruktor- & Property-Details. |
 | `0069-feel-list` | 15 | Engine | Listen-Randfälle. |
+| **Strikte Temporal-Lexik** | ~15+ | Engine | Malformte date/time-Strings müssen **null** ergeben: Jahr < 4 oder > 9 Ziffern, führendes `+`, einstellige Stunde (`T7:`), Offset > ±18:00. Verteilt über `1117`/`0007`/`1115`/`1116`. |
 | `0085`/`0034` decision services / DRG scopes | ~23 | Engine | Decision-Service-Invocation als FEEL-Funktion. |
+| `date and time`-Named-Params | 2 | Compiler | `date and time(date: …, time: …)` — 2-Arg-Signatur braucht Parameternamen (1117 087/088). |
 | `0100-arithmetic` (Rest) | 5 | Engine | Dauer-Rundung (Tie-Richtung) + `**`-Assoziativität/`-x**y`-Präzedenz + Exponent-Präzision. |
 
 ### Bewusst nicht anwendbar (dokumentierte Ausnahmen)
@@ -88,7 +104,7 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 
 ## Vorgehen zur 95-%-Quote
 
-1. Temporale Detailfälle (`1117`/`0007`/`1116`, ~63) — Konstruktoren, Properties, Offsets.
+1. Strikte Temporal-Lexik (~15+) — malformte date/time-Strings → null (breit über `1117`/`0007`/`1115`/`1116`).
 2. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
 3. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
 4. Arithmetik-Rest (5) — Dauer-Rundung, `**`-Assoziativität/`-x**y`-Präzedenz, Exponent-Präzision.

@@ -129,16 +129,30 @@ func dateAndTimeFn(args []value.Value) (value.Value, error) {
 		switch v := args[0].(type) {
 		case value.DateTime:
 			return v, nil
+		case value.Date:
+			// a date becomes date-and-time at the start of its day
+			if dt, err := value.ParseDateTime(v.String() + "T00:00:00"); err == nil {
+				return dt, nil
+			}
+			return value.Null, nil
 		case value.Str:
 			if dt, err := value.ParseDateTime(string(v)); err == nil {
 				return dt, nil
+			}
+			// a date-only string yields date-and-time at the start of the day
+			if _, err := value.ParseDate(string(v)); err == nil {
+				if dt, err := value.ParseDateTime(string(v) + "T00:00:00"); err == nil {
+					return dt, nil
+				}
 			}
 			return value.Null, nil
 		default:
 			return value.Null, nil
 		}
 	case 2:
-		d, ok1 := args[0].(value.Date)
+		// The first argument may be a date or a date-and-time (its date part is
+		// taken); the second is the time to attach.
+		d, ok1 := dateValue(args[0])
 		t, ok2 := args[1].(value.Time)
 		if !ok1 || !ok2 {
 			return value.Null, nil
