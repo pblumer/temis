@@ -363,6 +363,10 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
+		// FEEL `in` is a 3-valued disjunction: any true test wins; otherwise a null
+		// test (e.g. an indeterminate range comparison) makes the whole test null,
+		// and only all-false yields false (FEEL 10.3.2.15).
+		sawNull := false
 		for _, t := range tests {
 			tv, err := t.e(s)
 			if err != nil {
@@ -372,9 +376,17 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 				if cmpSatisfies(t.cmp, xv, tv) {
 					return value.True, nil
 				}
-			} else if matchIn(xv, tv) {
-				return value.True, nil
+				continue
 			}
+			switch matchIn3(xv, tv) {
+			case value.True:
+				return value.True, nil
+			case value.Null:
+				sawNull = true
+			}
+		}
+		if sawNull {
+			return value.Null, nil
 		}
 		return value.False, nil
 	}
@@ -877,29 +889,55 @@ func boolVal(v value.Value) (bool, bool) {
 	return false, false
 }
 
-// matchIn reports whether x matches a single `in` test: containment for a range
-// test, equality otherwise.
-func matchIn(x, t value.Value) bool {
+// matchIn3 evaluates one `in` test with FEEL 3-valued logic: True on a match,
+// Null when the comparison is indeterminate (a null tested value against a range,
+// or an explicit null range endpoint), False otherwise. A list on the right is a
+// list of positive unary tests: x matches if it is contained in a range element
+// or equals any other element (e.g. 1 in [2,3,1] and 1 in [[2..4],[1..3]]).
+func matchIn3(x, t value.Value) value.Value {
 	switch tv := t.(type) {
 	case value.Range:
-		return rangeContains(tv, x)
+		return rangeContains3(tv, x)
 	case value.List:
-		// A list on the right of `in` is a list of positive unary tests: x matches
-		// if it is contained in a range element or equals any other element (FEEL
-		// membership). E.g. 1 in [2,3,1] and 1 in [[2..4],[1..3]] are both true.
+		sawNull := false
 		for _, e := range tv.Elements {
 			if r, ok := e.(value.Range); ok {
-				if rangeContains(r, x) {
-					return true
+				switch rangeContains3(r, x) {
+				case value.True:
+					return value.True
+				case value.Null:
+					sawNull = true
 				}
 			} else if value.Equal(x, e) == value.True {
-				return true
+				return value.True
 			}
 		}
-		return false
+		if sawNull {
+			return value.Null
+		}
+		return value.False
 	default:
-		return value.Equal(x, t) == value.True
+		return value.Equal(x, t)
 	}
+}
+
+// rangeContains3 is 3-valued range membership: Null when the tested value is null
+// or a present endpoint is an explicit null (distinct from an omitted, unbounded
+// endpoint, which stays a Go-nil bound), otherwise True/False per rangeContains.
+func rangeContains3(r value.Range, x value.Value) value.Value {
+	if value.IsNull(x) {
+		return value.Null
+	}
+	if r.Low != nil && value.IsNull(r.Low) {
+		return value.Null
+	}
+	if r.High != nil && value.IsNull(r.High) {
+		return value.Null
+	}
+	if rangeContains(r, x) {
+		return value.True
+	}
+	return value.False
 }
 
 func rangeContains(r value.Range, x value.Value) bool {
