@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3146 / 3495 Cases grün (90,0 %)** |
+| Compliance Level 2 + 3 | **3156 / 3495 Cases grün (90,3 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 90,0 % |
+| Ratchet-Floor im CI | 90,3 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,19 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Collection-Funktionen (WP-41.5, +16 → **90,0 %** 🎉)
+## In dieser Etappe behoben — `instance of` Funktionstypen (WP-41.6, +10)
+
+Der Parser akzeptiert jetzt **Funktionstyp-Ausdrücke** `function<P, …> -> ReturnType`
+in `instance of` (`function` ist ein Keyword-Token, das `parseTypeName` bisher
+ablehnte); Parameterliste und Rückgabetyp werden konsumiert, aber verworfen —
+`instance of` matcht nur auf die Funktions-**Art**. `BuiltinType` kennt jetzt
+`function` (Kind `function`).
+
+Netto **+10 Cases** (90,0 % → 90,3 %); 0070 von 25 auf 15. Rest in 0070:
+benutzerdefinierte Typen (`t255`, braucht Item-Definition-Auflösung, cross-layer)
+und generische Feld-Diskriminierung (`context<{a:number}>`) — eigenes WP.
+
+## Früher behoben — Collection-Funktionen (WP-41.5, +16 → **90,0 %** 🎉)
 
 Drei Collection-Builtins vervollständigt:
 - **`context put(ctx, path, value)`** mit **Pfad-Liste** — verschachteltes Update:

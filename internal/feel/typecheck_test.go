@@ -111,6 +111,10 @@ func TestInstanceOfTypes(t *testing.T) {
 		{`[1] instance of list`, "true"},
 		{`@"P1D" instance of duration`, "true"},
 		{`@"P1D" instance of days and time duration`, "true"},
+		// function types: `function<…> -> …` matches on the function kind
+		{`(function(x) x + 1) instance of function<number> -> number`, "true"},
+		{`(function() 1) instance of function<> -> Any`, "true"},
+		{`5 instance of function<> -> Any`, "false"},
 	}
 	for _, c := range cases {
 		ce, err := CompileString(c.src, NewEnv())
