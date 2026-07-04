@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Property-Zugriff auf Temporale & Ranges (WP-41.3, 88,7 % → 89,0 %).**
+  FEEL-Member-Namen mit Leerzeichen (`x.time offset`, `[1..10].start included`) parsen
+  jetzt — der Parser assembliert den ganzen Namens-Lauf nach `.`. `value.Member`
+  exponiert zudem Range-Properties (`start`, `end`, `start included`, `end included`).
+  +9 Cases; der Ratchet-Floor des CI-Gates steigt auf 88,9 %.
 - **DMN-TCK-Konformität: Runner dekodiert item-verpackte Listen (WP-41.2, 85,6 % → 88,7 %).**
   Der TCK-Runner las erwartete Listen bisher nur als `<list><value>…`; das offizielle
   Korpus nutzt breit auch `<list><item><value>…` (inkl. verschachtelter Listen und

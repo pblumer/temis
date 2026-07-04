@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3101 / 3495 Cases grün (88,7 %)** |
+| Compliance Level 2 + 3 | **3110 / 3495 Cases grün (89,0 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 88,5 % |
+| Ratchet-Floor im CI | 88,9 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,20 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — TCK-Runner: item-verpackte Listen (WP-41.2, +108 Cases)
+## In dieser Etappe behoben — Property-Zugriff auf Temporale & Ranges (WP-41.3, 0074: 14 → 5)
+
+FEEL-Member-Namen dürfen **Leerzeichen** enthalten (`time offset`, `start included`);
+der Parser las nach `.` bisher nur ein Wort → `date and time(…).time offset` und
+`[1..10].start included` scheiterten am Parsen. Der Parser assembliert jetzt den
+Namens-Lauf (Keywords wie `and`/`in` sind eigene Token-Kinds und stoppen ihn
+korrekt). Zusätzlich exponiert `value.Member` nun **Range**-Properties (`start`,
+`end`, `start included`, `end included`) — die temporalen Accessoren (`time offset`,
+`timezone`, Duration-Felder) existierten bereits.
+
+Netto **+9 Cases** (88,7 % → 89,0 %). Rest in `0074` sind Range-**Literale** aus
+Vergleichen (`(<10)`, `(>=10)`) — eigener Parser-Mechanismus, separates WP.
+
+## Früher behoben — TCK-Runner: item-verpackte Listen (WP-41.2, +108 Cases)
 
 Der Runner dekodierte erwartete Listen bisher nur in der Form
 `<list><value>…</value></list>`. Das offizielle Korpus verwendet aber breit auch
