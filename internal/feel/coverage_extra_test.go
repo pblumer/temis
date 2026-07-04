@@ -1,6 +1,7 @@
 package feel
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -317,22 +318,15 @@ func TestForEachDomainNullAndScalar(t *testing.T) {
 }
 
 func TestForEachRangeNonInteger(t *testing.T) {
-	// A range whose bounds are not integers (or open) yields nothing.
+	// An unbounded range is not iterable; forEachRange reports the non-iterable
+	// domain (which makes a comprehension null) rather than yielding nothing.
 	open := value.Range{LowClosed: true, Low: value.Null, High: value.NumberFromInt64(3), HighClosed: true}
-	count := 0
-	if err := forEachRange(nil, open, func(value.Value) error { count++; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Errorf("open-low range produced %d, want 0", count)
+	if err := forEachRange(nil, open, func(value.Value) error { return nil }); !errors.Is(err, errNonIterableDomain) {
+		t.Errorf("open-low range err = %v, want errNonIterableDomain", err)
 	}
 	openHi := value.Range{LowClosed: true, Low: value.NumberFromInt64(1), High: value.Null, HighClosed: true}
-	count = 0
-	if err := forEachRange(nil, openHi, func(value.Value) error { count++; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Errorf("open-high range produced %d, want 0", count)
+	if err := forEachRange(nil, openHi, func(value.Value) error { return nil }); !errors.Is(err, errNonIterableDomain) {
+		t.Errorf("open-high range err = %v, want errNonIterableDomain", err)
 	}
 }
 
