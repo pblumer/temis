@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2993 / 3495 Cases grün (85,6 %)** |
+| Compliance Level 2 + 3 | **3101 / 3495 Cases grün (88,7 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 85,5 % |
+| Ratchet-Floor im CI | 88,5 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,19 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — FEEL-Invocation-Fehlersemantik (WP-41.1, +123 Cases)
+## In dieser Etappe behoben — TCK-Runner: item-verpackte Listen (WP-41.2, +108 Cases)
+
+Der Runner dekodierte erwartete Listen bisher nur in der Form
+`<list><value>…</value></list>`. Das offizielle Korpus verwendet aber breit auch
+`<list><item><value>…</value></item></list>` (inkl. verschachtelter Listen und
+Kontext-Items). Diese item-verpackten Listen wurden als **leer** gelesen → viele
+korrekte Engine-Ergebnisse zählten fälschlich als Fehlschlag.
+
+`tckList` akzeptiert jetzt beide Kodierungen (`internal/tck/case.go`). **Reiner
+Harness-Fix — keine Engine-Änderung:** +108 Cases (85,6 % → 88,7 %), quer über die
+Listen-Suiten (0008/0009 je 10→0, 0012 12→2) und alle Suiten mit Listen-Ergebnissen.
+
+## Früher behoben — FEEL-Invocation-Fehlersemantik (WP-41.1, +123 Cases)
 
 Ein **syntaktisch gültiger** Funktionsaufruf mit **semantischem** Fehler — falsche
 Argument-Anzahl, unbekannter oder mit Positional gemischter benannter Parameter —
