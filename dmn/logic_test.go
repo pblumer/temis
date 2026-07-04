@@ -35,7 +35,7 @@ func TestLogicView_BKMBoxedBodies(t *testing.T) {
 		{"id_inv", "invocation"}, {"id_iter", "iterator"}, {"id_cond", "conditional"},
 		{"id_filt", "filter"}, {"id_tab", "table"},
 	} {
-		v, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: c.id}, c.kind)
+		v, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: c.id}, "", c.kind)
 		if !ok || v == nil {
 			t.Errorf("LogicView(bkm %s, %s) = (%v, %v), want a view", c.id, c.kind, v, ok)
 		}
@@ -46,21 +46,21 @@ func TestLogicView_BKMBoxedBodies(t *testing.T) {
 		t.Errorf("Iter BKM view = %+v, want boxed iterator", b)
 	}
 	// A boxed context reads its entries and result.
-	if v, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_ctx"}, "context"); !ok || v.(dmn.ContextView).Result != "p * factor" {
+	if v, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_ctx"}, "", "context"); !ok || v.(dmn.ContextView).Result != "p * factor" {
 		t.Errorf("Ctx view = %+v (ok=%v)", v, ok)
 	}
 
 	// Wrong kind, unknown anchor kind, unknown id and unknown kind all fail.
-	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "context"); ok {
+	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "", "context"); ok {
 		t.Error("a table body must not read as a context")
 	}
-	if _, ok := defs.LogicView(dmn.Anchor{Kind: "nope", ID: "id_tab"}, "table"); ok {
+	if _, ok := defs.LogicView(dmn.Anchor{Kind: "nope", ID: "id_tab"}, "", "table"); ok {
 		t.Error("unknown anchor kind must fail")
 	}
-	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "nope"}, "table"); ok {
+	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "nope"}, "", "table"); ok {
 		t.Error("unknown bkm must fail")
 	}
-	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "bogus"); ok {
+	if _, ok := defs.LogicView(dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "", "bogus"); ok {
 		t.Error("unknown kind must fail")
 	}
 }
@@ -82,7 +82,7 @@ func TestSetLogic_BKMBoxedBodies(t *testing.T) {
 		{"id_filt", "filter", dmn.FilterEdit{In: "[1, 2, 3]", Match: "item > p"}},
 		{"id_tab", "table", dmn.TableEdit{Rules: []dmn.TableRule{{InputEntries: []string{">= 90"}, OutputEntries: []string{`"A"`}}, {InputEntries: []string{"< 90"}, OutputEntries: []string{`"B"`}}}}},
 	} {
-		out, err := dmn.SetLogic(src, dmn.Anchor{Kind: "bkm", ID: e.id}, e.kind, mustJSON(t, e.edit))
+		out, err := dmn.SetLogic(src, dmn.Anchor{Kind: "bkm", ID: e.id}, "", e.kind, mustJSON(t, e.edit))
 		if err != nil {
 			t.Errorf("SetLogic(bkm %s, %s): %v", e.id, e.kind, err)
 			continue
@@ -91,7 +91,7 @@ func TestSetLogic_BKMBoxedBodies(t *testing.T) {
 	}
 
 	// Editing the table body changes Root's evaluation and preserves the parameter.
-	out, err := dmn.SetLogic(src, dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "table",
+	out, err := dmn.SetLogic(src, dmn.Anchor{Kind: "bkm", ID: "id_tab"}, "", "table",
 		mustJSON(t, dmn.TableEdit{Rules: []dmn.TableRule{{InputEntries: []string{">= 80"}, OutputEntries: []string{`"top"`}}, {InputEntries: []string{"< 80"}, OutputEntries: []string{`"B"`}}}}))
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestSetLogic_Errors(t *testing.T) {
 		{"unknown bkm", dmn.Anchor{Kind: "bkm", ID: "nope"}, "list", mustJSON(t, dmn.ListEdit{Items: []string{"1"}})},
 	}
 	for _, c := range cases {
-		if _, err := dmn.SetLogic(src, c.anchor, c.kind, c.edit); err == nil {
+		if _, err := dmn.SetLogic(src, c.anchor, "", c.kind, c.edit); err == nil {
 			t.Errorf("%s: expected an error", c.name)
 		}
 	}
@@ -141,21 +141,70 @@ func TestSetLogic_Errors(t *testing.T) {
 // TestLogicView_DecisionAnchor confirms the anchored route also serves a decision's
 // own logic (the same views the decision routes return).
 func TestLogicView_DecisionAnchor(t *testing.T) {
-	if v, ok := compileModel(t, "boxed_context_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "Score"}, "context"); !ok || v.(dmn.ContextView).Result != "Bonus" {
+	if v, ok := compileModel(t, "boxed_context_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "Score"}, "", "context"); !ok || v.(dmn.ContextView).Result != "Bonus" {
 		t.Errorf("decision context view = %+v (ok=%v)", v, ok)
 	}
-	if _, ok := compileModel(t, "dish_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "Dish"}, "table"); !ok {
+	if _, ok := compileModel(t, "dish_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "Dish"}, "", "table"); !ok {
 		t.Error("dish table not viewable via the logic route")
 	}
-	if _, ok := compileModel(t, "dish_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "nope"}, "table"); ok {
+	if _, ok := compileModel(t, "dish_15.dmn").LogicView(dmn.Anchor{Kind: "decision", ID: "nope"}, "", "table"); ok {
 		t.Error("unknown decision must fail")
+	}
+}
+
+// TestLogic_Nested drills into a boxed expression nested inside another (a list
+// that is a context entry's value) and edits it in place (WP-66 Phase 2).
+func TestLogic_Nested(t *testing.T) {
+	defs := compileModel(t, "nested_boxed_16.dmn")
+	dec := dmn.Anchor{Kind: "decision", ID: "id_nested"}
+
+	// The parent context reports the nested entry as not-simply-editable.
+	if v, ok := defs.LogicView(dec, "", "context"); !ok || v.(dmn.ContextView).Simple {
+		t.Errorf("context view = %+v (ok=%v), want simple=false", v, ok)
+	}
+	// The nested list at entry.1 reads through the locator.
+	if v, ok := defs.LogicView(dec, "entry.1", "list"); !ok || len(v.(dmn.ListView).Items) != 2 || v.(dmn.ListView).Items[1] != "base" {
+		t.Errorf("nested list view = %+v (ok=%v)", v, ok)
+	}
+	// A path that misses (wrong kind at the child, out-of-range index, malformed) fails.
+	if _, ok := defs.LogicView(dec, "entry.1", "context"); ok {
+		t.Error("nested list must not read as a context")
+	}
+	if _, ok := defs.LogicView(dec, "entry.9", "list"); ok {
+		t.Error("out-of-range entry must fail")
+	}
+	if _, ok := defs.LogicView(dec, "entry.x", "list"); ok {
+		t.Error("malformed locator must fail")
+	}
+
+	// Editing the nested list in place recomputes the parent: sum([1, base, base*2]).
+	out, err := dmn.SetLogic(readModel(t, "nested_boxed_16.dmn"), dec, "entry.1", "list",
+		mustJSON(t, dmn.ListEdit{Items: []string{"1", "base", "base * 2"}}))
+	if err != nil {
+		t.Fatalf("SetLogic nested: %v", err)
+	}
+	d2, _ := recompile(t, out).Decision("Nested")
+	res, err := d2.Evaluate(context.Background(), dmn.Input{})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if res.Outputs["Nested"] != "31" { // 1 + 10 + 20
+		t.Errorf("Nested = %v, want 31 after editing the nested list", res.Outputs["Nested"])
+	}
+
+	// A write to a missing/malformed path errors rather than corrupting siblings.
+	if _, err := dmn.SetLogic(readModel(t, "nested_boxed_16.dmn"), dec, "entry.9", "list", mustJSON(t, dmn.ListEdit{Items: []string{"1"}})); err == nil {
+		t.Error("write to out-of-range path must fail")
+	}
+	if _, err := dmn.SetLogic(readModel(t, "nested_boxed_16.dmn"), dec, "entry.x", "list", mustJSON(t, dmn.ListEdit{Items: []string{"1"}})); err == nil {
+		t.Error("write to malformed path must fail")
 	}
 }
 
 // TestSetLogic_DecisionDelegation confirms the decision anchor delegates to the
 // existing per-kind setters (a round-trip evaluation proves it).
 func TestSetLogic_DecisionDelegation(t *testing.T) {
-	out, err := dmn.SetLogic(readModel(t, "boxed_context_15.dmn"), dmn.Anchor{Kind: "decision", ID: "id_score"}, "context",
+	out, err := dmn.SetLogic(readModel(t, "boxed_context_15.dmn"), dmn.Anchor{Kind: "decision", ID: "id_score"}, "", "context",
 		mustJSON(t, dmn.ContextEdit{Entries: []dmn.ContextEntryView{{Name: "Base", Text: "Points * 3"}, {Name: "Bonus", Text: "Base + 10"}}, Result: "Bonus"}))
 	if err != nil {
 		t.Fatal(err)

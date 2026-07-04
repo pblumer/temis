@@ -796,6 +796,7 @@ paths:
         - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
         - { name: anchorId, in: path, required: true, schema: { type: string } }
         - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+        - { name: at, in: query, required: false, description: "Locator into a nested child (e.g. entry.1/item.0); empty = the root logic.", schema: { type: string } }
       responses:
         "200":
           description: The anchored logic as the requested kind's view
@@ -815,6 +816,7 @@ paths:
         - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
         - { name: anchorId, in: path, required: true, schema: { type: string } }
         - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+        - { name: at, in: query, required: false, description: "Locator into a nested child (e.g. entry.1/item.0); empty = the root logic.", schema: { type: string } }
       requestBody:
         required: true
         content:

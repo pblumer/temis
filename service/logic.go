@@ -19,7 +19,7 @@ func (s *Server) handleGetLogic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := dmn.Anchor{Kind: r.PathValue("anchorKind"), ID: r.PathValue("anchorId")}
-	v, ok := sm.defs.LogicView(a, r.PathValue("kind"))
+	v, ok := sm.defs.LogicView(a, r.URL.Query().Get("at"), r.PathValue("kind"))
 	if !ok {
 		writeProblem(w, http.StatusNotFound, "LOGIC_NOT_FOUND", "no boxed logic of that kind for that anchor")
 		return
@@ -43,7 +43,7 @@ func (s *Server) handleSaveLogic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := dmn.Anchor{Kind: r.PathValue("anchorKind"), ID: r.PathValue("anchorId")}
-	patched, err := dmn.SetLogic(sm.xml, a, r.PathValue("kind"), raw)
+	patched, err := dmn.SetLogic(sm.xml, a, r.URL.Query().Get("at"), r.PathValue("kind"), raw)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, "LOGIC_SAVE_FAILED", err.Error())
 		return

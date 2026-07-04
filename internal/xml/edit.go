@@ -60,17 +60,17 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 // (otherwise the existing inputs/outputs are kept). It reports whether a matching
 // decision with decision-table logic was found.
 func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
-	return d.UpdateTableAt("decision", id, hitPolicy, aggregation, inputs, outputs, rules, replaceColumns)
+	return d.UpdateTableAt("decision", id, nil, hitPolicy, aggregation, inputs, outputs, rules, replaceColumns)
 }
 
-// UpdateTableAt patches the decision table that is the logic of the anchored
-// element — a decision's logic or a business knowledge model's encapsulated body
-// (see logicSlot). Rules are always replaced; a non-empty hitPolicy sets the
+// UpdateTableAt patches the decision table at anchor+steps — a decision's logic,
+// a business knowledge model's encapsulated body, or a table nested inside another
+// boxed expression (see exprSlotAt). Rules are always replaced; a non-empty hitPolicy sets the
 // policy and aggregation; columns are replaced only when replaceColumns is set
 // (otherwise the existing inputs/outputs are kept). It reports whether a matching
 // element with decision-table logic was found.
-func (d *Definitions) UpdateTableAt(anchorKind, anchorID, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
-	slot, ok := d.logicSlot(anchorKind, anchorID, false)
+func (d *Definitions) UpdateTableAt(anchorKind, anchorID string, steps []Step, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
+	slot, ok := d.exprSlotAt(anchorKind, anchorID, steps, false)
 	if !ok {
 		return false
 	}
@@ -529,7 +529,15 @@ func (d *Definitions) logicSlot(anchorKind, anchorID string, create bool) (*Expr
 // must not silently switch a table into a list, only rewrite the same kind. An
 // element with no logic yet accepts any kind (a BKM function shell is created).
 func (d *Definitions) SetLogicBody(anchorKind, anchorID string, expr Expression) bool {
-	slot, ok := d.logicSlot(anchorKind, anchorID, true)
+	return d.SetLogicBodyAt(anchorKind, anchorID, nil, expr)
+}
+
+// SetLogicBodyAt is SetLogicBody addressed at a nested child (steps): it rewrites
+// the boxed expression at anchor+steps, guarding the same-kind rule so a nested
+// editor rewrites the same kind rather than switching it. Nested steps require the
+// parent structure to exist (only the root may create a BKM function shell).
+func (d *Definitions) SetLogicBodyAt(anchorKind, anchorID string, steps []Step, expr Expression) bool {
+	slot, ok := d.exprSlotAt(anchorKind, anchorID, steps, true)
 	if !ok {
 		return false
 	}

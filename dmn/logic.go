@@ -50,9 +50,9 @@ func exprKind(e model.Expression) string {
 	}
 }
 
-// anchoredExpr resolves the boxed-expression logic of an anchor to its model form
-// plus the element's id and name. ok is false when the anchor is unknown; expr is
-// nil when the element exists but has no logic yet.
+// anchoredExpr resolves the root boxed-expression logic of an anchor to its model
+// form plus the element's id and name. ok is false when the anchor is unknown;
+// expr is nil when the element exists but has no logic yet.
 func (d *Definitions) anchoredExpr(a Anchor) (expr model.Expression, id, name string, ok bool) {
 	switch a.Kind {
 	case "decision":
@@ -76,12 +76,91 @@ func (d *Definitions) anchoredExpr(a Anchor) (expr model.Expression, id, name st
 	}
 }
 
+// anchoredExprAt resolves the boxed expression at anchor+steps (the root logic
+// walked into a nested child), plus the anchor element's id and name. ok is false
+// when the anchor is unknown, the path is malformed or a step misses.
+func (d *Definitions) anchoredExprAt(a Anchor, steps []dmnxml.Step) (expr model.Expression, id, name string, ok bool) {
+	root, id, name, ok := d.anchoredExpr(a)
+	if !ok || root == nil {
+		return nil, id, name, false
+	}
+	child, ok := walkModelExpr(root, steps)
+	if !ok {
+		return nil, id, name, false
+	}
+	return child, id, name, true
+}
+
+// walkModelExpr follows steps from a model expression to a nested child, mirroring
+// internal/xml.walkSlot over the model tree (the read side). ok is false for a
+// step whose op does not match the current expression's kind or is out of range.
+func walkModelExpr(e model.Expression, steps []dmnxml.Step) (model.Expression, bool) {
+	cur := e
+	for _, s := range steps {
+		var next model.Expression
+		switch p := cur.(type) {
+		case *model.ContextExpr:
+			if s.Op != "entry" || s.I < 0 || s.I >= len(p.Entries) {
+				return nil, false
+			}
+			next = p.Entries[s.I].Value
+		case *model.ListExpr:
+			if s.Op != "item" || s.I < 0 || s.I >= len(p.Items) {
+				return nil, false
+			}
+			next = p.Items[s.I]
+		case *model.RelationExpr:
+			if s.Op != "cell" || s.I < 0 || s.I >= len(p.Rows) || s.J < 0 || s.J >= len(p.Rows[s.I].Cells) {
+				return nil, false
+			}
+			next = p.Rows[s.I].Cells[s.J]
+		case *model.Invocation:
+			switch s.Op {
+			case "called":
+				next = p.Called
+			case "binding":
+				if s.I < 0 || s.I >= len(p.Bindings) {
+					return nil, false
+				}
+				next = p.Bindings[s.I].Value
+			default:
+				return nil, false
+			}
+		case *model.Conditional:
+			next = branchExpr(s.Op, map[string]model.Expression{"if": p.If, "then": p.Then, "else": p.Else})
+		case *model.ForExpr:
+			next = branchExpr(s.Op, map[string]model.Expression{"in": p.In, "return": p.Return})
+		case *model.Quantified:
+			next = branchExpr(s.Op, map[string]model.Expression{"in": p.In, "satisfies": p.Satisfies})
+		case *model.FilterExpr:
+			next = branchExpr(s.Op, map[string]model.Expression{"in": p.In, "match": p.Match})
+		default:
+			return nil, false
+		}
+		if next == nil {
+			return nil, false
+		}
+		cur = next
+	}
+	return cur, true
+}
+
+// branchExpr selects a named branch, returning nil for an unknown op or absent
+// branch.
+func branchExpr(op string, branches map[string]model.Expression) model.Expression {
+	return branches[op]
+}
+
 // LogicView returns the anchored element's boxed logic as the typed view for the
 // requested kind (the same view shapes the decision routes return), or ok=false
 // when the anchor is unknown or its logic is not of that kind. It is how the
 // modeler reads a BKM's boxed body into the matching kind's editor (WP-66).
-func (d *Definitions) LogicView(a Anchor, kind string) (any, bool) {
-	expr, id, name, ok := d.anchoredExpr(a)
+func (d *Definitions) LogicView(a Anchor, at, kind string) (any, bool) {
+	steps, err := dmnxml.ParseSteps(at)
+	if err != nil {
+		return nil, false
+	}
+	expr, id, name, ok := d.anchoredExprAt(a, steps)
 	if !ok || expr == nil {
 		return nil, false
 	}
@@ -144,15 +223,43 @@ func (d *Definitions) LogicView(a Anchor, kind string) (any, bool) {
 // per-kind setters (unchanged behaviour); for a BKM anchor it rewrites the
 // encapsulated-logic body, preserving the function's formal parameters. raw is
 // the kind's typed edit payload as JSON.
-func SetLogic(src []byte, a Anchor, kind string, raw json.RawMessage) ([]byte, error) {
-	switch a.Kind {
-	case "decision":
-		return setDecisionLogic(src, a.ID, kind, raw)
-	case "bkm":
-		return setBKMBodyLogic(src, a.ID, kind, raw)
-	default:
-		return nil, fmt.Errorf("dmn: unknown anchor kind %q", a.Kind)
+func SetLogic(src []byte, a Anchor, at, kind string, raw json.RawMessage) ([]byte, error) {
+	steps, err := dmnxml.ParseSteps(at)
+	if err != nil {
+		return nil, err
 	}
+	// A decision's own root logic keeps delegating to the per-kind setters, so that
+	// path is byte-for-byte the existing decision behaviour. Everything else — a BKM
+	// body, or any nested child of either — writes through the slot at anchor+steps.
+	if len(steps) == 0 && a.Kind == "decision" {
+		return setDecisionLogic(src, a.ID, kind, raw)
+	}
+	return setLogicAt(src, a, steps, kind, raw)
+}
+
+// setLogicAt writes an edited boxed expression to the slot at anchor+steps: the
+// table kind patches the existing table, every other kind replaces the whole slot
+// expression (guarding against switching a slot to a different boxed kind).
+func setLogicAt(src []byte, a Anchor, steps []dmnxml.Step, kind string, raw json.RawMessage) ([]byte, error) {
+	if kind == "table" {
+		var e TableEdit
+		if err := unmarshalEdit(raw, &e); err != nil {
+			return nil, err
+		}
+		return applyTableEditAt(src, a.Kind, a.ID, steps, e)
+	}
+	expr, err := buildBodyExpr(kind, raw)
+	if err != nil {
+		return nil, err
+	}
+	def, err := dmnxml.Decode(src)
+	if err != nil {
+		return nil, err
+	}
+	if !def.SetLogicBodyAt(a.Kind, a.ID, steps, expr) {
+		return nil, fmt.Errorf("dmn: cannot set a %s at that location (unknown anchor/path, or a different boxed kind)", kind)
+	}
+	return dmnxml.Encode(def)
 }
 
 // setDecisionLogic decodes raw for the given kind and delegates to the decision's
@@ -210,32 +317,6 @@ func setDecisionLogic(src []byte, decisionID, kind string, raw json.RawMessage) 
 	default:
 		return nil, fmt.Errorf("dmn: unknown logic kind %q", kind)
 	}
-}
-
-// setBKMBodyLogic rewrites a BKM's encapsulated-logic body to the edited boxed
-// expression. The table kind patches the existing table (columns/rules); every
-// other kind replaces the whole body expression via SetLogicBody, which refuses
-// to switch the body to a different boxed kind.
-func setBKMBodyLogic(src []byte, bkmID, kind string, raw json.RawMessage) ([]byte, error) {
-	if kind == "table" {
-		var e TableEdit
-		if err := unmarshalEdit(raw, &e); err != nil {
-			return nil, err
-		}
-		return applyTableEditAt(src, "bkm", bkmID, e)
-	}
-	expr, err := buildBodyExpr(kind, raw)
-	if err != nil {
-		return nil, err
-	}
-	def, err := dmnxml.Decode(src)
-	if err != nil {
-		return nil, err
-	}
-	if !def.SetLogicBody("bkm", bkmID, expr) {
-		return nil, fmt.Errorf("dmn: cannot set a %s body for BKM %q (unknown or a different boxed kind)", kind, bkmID)
-	}
-	return dmnxml.Encode(def)
 }
 
 // buildBodyExpr validates a kind's typed edit and builds the corresponding XML

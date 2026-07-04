@@ -78,7 +78,7 @@ func (d *Definitions) ItemDefinitions() []ItemType
 
 func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
 
-func (d *Definitions) LogicView(a Anchor, kind string) (any, bool)
+func (d *Definitions) LogicView(a Anchor, at, kind string) (any, bool)
 
 func (d *Definitions) ModelInputSchema() []InputField
 
@@ -158,7 +158,7 @@ func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
 func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
 
-func SetLogic(src []byte, a Anchor, kind string, raw json.RawMessage) ([]byte, error)
+func SetLogic(src []byte, a Anchor, at, kind string, raw json.RawMessage) ([]byte, error)
 
 func SetModelName(src []byte, name string) ([]byte, error)
 

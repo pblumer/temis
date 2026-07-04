@@ -92,20 +92,20 @@ type TableEdit struct {
 // An empty input entry is stored as "-" (the DMN "any" match). It errors when the
 // decision has no decision-table logic.
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error) {
-	return applyTableEditAt(src, "decision", decisionID, edit)
+	return applyTableEditAt(src, "decision", decisionID, nil, edit)
 }
 
-// applyTableEditAt is ApplyTableEdit generalised over the logic anchor (a
-// decision or a business knowledge model body, per logicSlot): it patches the
-// decision table that is the anchored element's logic.
-func applyTableEditAt(src []byte, anchorKind, anchorID string, edit TableEdit) ([]byte, error) {
+// applyTableEditAt is ApplyTableEdit generalised over the logic location (a
+// decision or BKM body, and a nested path within it, per exprSlotAt): it patches
+// the decision table found at anchor+steps.
+func applyTableEditAt(src []byte, anchorKind, anchorID string, steps []dmnxml.Step, edit TableEdit) ([]byte, error) {
 	def, err := dmnxml.Decode(src)
 	if err != nil {
 		return nil, err
 	}
 	inputs, outputs, rules := buildTableParts(edit)
-	if !def.UpdateTableAt(anchorKind, anchorID, hitPolicyXML(edit.HitPolicy), aggregationFor(edit), inputs, outputs, rules, edit.ReplaceColumns) {
-		return nil, fmt.Errorf("dmn: %s %q has no decision table", anchorKind, anchorID)
+	if !def.UpdateTableAt(anchorKind, anchorID, steps, hitPolicyXML(edit.HitPolicy), aggregationFor(edit), inputs, outputs, rules, edit.ReplaceColumns) {
+		return nil, fmt.Errorf("dmn: %s %q has no decision table at that location", anchorKind, anchorID)
 	}
 	return dmnxml.Encode(def)
 }
