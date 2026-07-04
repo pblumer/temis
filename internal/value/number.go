@@ -128,6 +128,45 @@ func (n Number) Int64() (int64, bool) {
 	return i, err == nil
 }
 
+// SecondsNanos splits a non-negative second count into whole seconds and the
+// remaining nanoseconds, for the time()/date and time() constructors, which
+// accept a fractional second (e.g. time(12,59,1.3,…) → …01.3…). The fraction is
+// rounded half-even to nanosecond precision. ok is false when n is negative or
+// its whole-second part does not fit an int64.
+func (n Number) SecondsNanos() (sec int64, nanos int, ok bool) {
+	if n.dec.Negative {
+		return 0, 0, false
+	}
+	ctx := numberContext // copy so we do not mutate the shared context
+	ctx.Rounding = apd.RoundDown
+	whole := new(apd.Decimal)
+	if _, err := ctx.RoundToIntegralValue(whole, n.dec); err != nil {
+		return 0, 0, false
+	}
+	sec, err := whole.Int64()
+	if err != nil {
+		return 0, 0, false
+	}
+	frac := new(apd.Decimal)
+	if _, err := ctx.Sub(frac, n.dec, whole); err != nil {
+		return 0, 0, false
+	}
+	scaled := new(apd.Decimal)
+	if _, err := ctx.Mul(scaled, frac, apd.New(1_000_000_000, 0)); err != nil {
+		return 0, 0, false
+	}
+	ctx.Rounding = apd.RoundHalfEven
+	rounded := new(apd.Decimal)
+	if _, err := ctx.RoundToIntegralValue(rounded, scaled); err != nil {
+		return 0, 0, false
+	}
+	nn, err := rounded.Int64()
+	if err != nil {
+		return 0, 0, false
+	}
+	return sec, int(nn), true
+}
+
 func (n Number) roundIntegral(mode apd.Rounder) Number {
 	ctx := numberContext // copy so we don't mutate the shared context
 	ctx.Rounding = mode

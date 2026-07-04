@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"testing"
+	"time"
 
 	"github.com/pblumer/temis/internal/value"
 )
@@ -25,6 +26,28 @@ func TestDateAndTimeConstructorForms(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := call(t, "date and time", c.args...)
+		if got.String() != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// TestTimeConstructorFractionalSeconds covers WP-41.15: the time() constructor's
+// seconds component may be fractional, and the four-arg form attaches a
+// dayTimeDuration offset.
+func TestTimeConstructorFractionalSeconds(t *testing.T) {
+	offset := value.NewDaysTimeDuration(-time.Hour)
+	cases := []struct {
+		name string
+		args []value.Value
+		want string
+	}{
+		{"fractional second + offset", []value.Value{num("12"), num("59"), num("1.3"), offset}, "12:59:01.3-01:00"},
+		{"fractional second, no offset", []value.Value{num("0"), num("0"), num("0.5")}, "00:00:00.5"},
+		{"whole second unchanged", []value.Value{num("23"), num("59"), num("59")}, "23:59:59"},
+	}
+	for _, c := range cases {
+		got := call(t, "time", c.args...)
 		if got.String() != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}

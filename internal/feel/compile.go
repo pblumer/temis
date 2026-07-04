@@ -54,7 +54,7 @@ func CompileString(src string, env *Env) (CompiledExpr, error) {
 // parser's name oracle covers both the built-ins and the function names, so a
 // multi-word function name (e.g. a BKM named "Rate Table") assembles correctly.
 func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
-	expr, err := ParseWithNames(src, nameOracle(funcs))
+	expr, err := ParseWithNames(src, nameOracleWithEnv(env, funcs))
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +98,18 @@ func nameOracle(funcs map[string]*Func) NameSet {
 		sets = append(sets, funcNames(funcs))
 	}
 	return sets
+}
+
+// nameOracleWithEnv extends nameOracle with the in-scope variable names, so a
+// reference to a variable whose name embeds a keyword or a hyphen (e.g. the
+// decision output "Date-Time") assembles as that single name rather than being
+// parsed as a subtraction of two shorter names (WP-41.15).
+func nameOracleWithEnv(env *Env, funcs map[string]*Func) NameSet {
+	oracle := nameOracle(funcs)
+	if env == nil {
+		return oracle
+	}
+	return append(oracle.(unionNames), env)
 }
 
 type compiler struct {

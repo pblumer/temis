@@ -103,6 +103,18 @@ func asInt(v value.Value) (int, bool) {
 	return int(i), ok
 }
 
+// asSecond reads a seconds component that may carry a fraction (e.g. 1.3),
+// returning the whole seconds and the remaining nanoseconds for the time()
+// constructors.
+func asSecond(v value.Value) (sec, nanos int, ok bool) {
+	n, isNum := v.(value.Number)
+	if !isNum {
+		return 0, 0, false
+	}
+	s, ns, ok := n.SecondsNanos()
+	return int(s), ns, ok
+}
+
 // listOf treats a single list argument as the list, otherwise the arguments
 // themselves form the list (so sum([1,2,3]) and sum(1,2,3) both work).
 func listOf(args []value.Value) []value.Value {

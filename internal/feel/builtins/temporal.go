@@ -104,7 +104,9 @@ func timeFn(args []value.Value) (value.Value, error) {
 	case 3, 4:
 		h, ok1 := asInt(args[0])
 		m, ok2 := asInt(args[1])
-		s, ok3 := asInt(args[2])
+		// The seconds component may be fractional (e.g. 1.3), yielding sub-second
+		// precision on the resulting time.
+		s, nanos, ok3 := asSecond(args[2])
 		if !ok1 || !ok2 || !ok3 || !validHMS(h, m, s) {
 			return value.Null, nil
 		}
@@ -116,7 +118,7 @@ func timeFn(args []value.Value) (value.Value, error) {
 			}
 			offset = &d
 		}
-		return value.NewTime(h, m, s, 0, offset), nil
+		return value.NewTime(h, m, s, nanos, offset), nil
 	default:
 		return value.Null, nil
 	}
