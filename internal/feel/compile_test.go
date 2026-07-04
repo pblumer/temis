@@ -328,3 +328,18 @@ func TestRangeFromComparison(t *testing.T) {
 		}
 	}
 }
+
+// TestContextEntryReferences covers FEEL context semantics where an entry may
+// reference the entries declared before it.
+func TestContextEntryReferences(t *testing.T) {
+	cases := map[string]string{
+		`{a: 1 + 2, b: a + 3}`:            "{a: 3, b: 6}",
+		`{a: 1 + 2, b: 3, c: {d: a + b}}`: "{a: 3, b: 3, c: {d: 6}}",
+		`{a: 2, b: a * a, c: b + a}`:      "{a: 2, b: 4, c: 6}",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
+		}
+	}
+}

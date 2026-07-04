@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3216 / 3495 Cases grün (92,0 %)** |
+| Compliance Level 2 + 3 | **3220 / 3495 Cases grün (92,1 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 92,0 % |
+| Ratchet-Floor im CI | 92,1 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,16 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — FEEL-Kommentare (WP-41.13, +3)
+## In dieser Etappe behoben — Kontext-Eintrags-Referenzen & string join (WP-41.14, +4)
+
+- **Kontext-Einträge referenzieren frühere Einträge** (FEEL-Kontext-Semantik):
+  `{a: 1+2, b: a+3}` → `{a:3, b:6}`. `compileContext` baut die Umgebung inkrementell
+  auf und bindet jeden ausgewerteten Wert in den Scope der nachfolgenden Einträge.
+- **`string join(null)`** (null-Liste) ergibt `null` statt `""` (1140).
+
+Netto **+4 Cases** (92,0 % → 92,1 %); 0057: 4→2.
+
+## Früher behoben — FEEL-Kommentare (WP-41.13, +3)
 
 Der Lexer überspringt jetzt FEEL-Kommentare: `// …` bis Zeilenende und `/* … */`
 Block-Kommentare (`1 + /* 1 + */ 1` → 2). 0073: 3→0.

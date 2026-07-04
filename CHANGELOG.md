@@ -60,6 +60,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Kontext-Eintrags-Referenzen & string join (WP-41.14, 92,0 % → 92,1 %).**
+  Ein Kontext-Eintrag kann jetzt die vor ihm deklarierten Einträge referenzieren
+  (`{a: 1+2, b: a+3}` → `{a:3, b:6}`); und `string join(null)` ergibt `null` statt `""`.
+  +4 Cases; der Ratchet-Floor des CI-Gates steigt auf 92,1 %.
 - **DMN-TCK-Konformität: FEEL-Kommentare (WP-41.13, 91,9 % → 92,0 %).** Der Lexer
   überspringt jetzt `// …`-Zeilen- und `/* … */`-Block-Kommentare. +3 Cases (0073: 3→0);
   der Ratchet-Floor des CI-Gates steigt auf 92,0 %.

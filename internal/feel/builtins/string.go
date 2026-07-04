@@ -152,6 +152,9 @@ func split(args []value.Value) (value.Value, error) {
 }
 
 func stringJoin(args []value.Value) (value.Value, error) {
+	if value.IsNull(args[0]) { // a null list argument yields null, not ""
+		return value.Null, nil
+	}
 	elems := listOf(args[:1])
 	delim, prefix, suffix := "", "", ""
 	if s, ok := optString(args, 1); ok {
