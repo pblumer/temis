@@ -228,8 +228,18 @@ async function boot(root: HTMLElement): Promise<void> {
   // the live canvas graph (moved/renamed/retyped nodes AND nodes/edges added or
   // removed, ADR-0016) and returns the saved model's id. It is a no-op returning
   // modelId unchanged when there is nothing to save.
-  const persistGraph = async (modelId: string): Promise<string> => {
-    if (!handle || !dirty) return modelId
+  //
+  // force skips the `dirty` fast-path and always posts the live canvas. The
+  // element-must-exist flows below (create a decision's logic, open a BKM) use it:
+  // they need the target element to be present server-side, and `dirty` is only a
+  // best-effort hint — if it is stale (e.g. a freshly created node that never
+  // flipped it, or a revision swapped in underneath), the fast-path would skip the
+  // save and the follow-up create-* request would 400 for an id the server model
+  // does not carry ("cannot create a table for decision … (unknown …)"). Re-posting
+  // the identical canvas is cheap (content-addressed; grouped by name in the list),
+  // so forcing here trades a redundant revision for a guaranteed-present element.
+  const persistGraph = async (modelId: string, force = false): Promise<string> => {
+    if (!handle || (!dirty && !force)) return modelId
     const { nodes, edges } = handle.graph()
     const saved = await saveGraph(modelId, {
       nodes: nodes.map((n) => ({ ...n, dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined })),
@@ -258,7 +268,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Tabelle an …'
     try {
-      const created = await createDecisionTable(await persistGraph(currentId), decisionId)
+      const created = await createDecisionTable(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Tabelle angelegt ✓'
       const { names } = namesFor(decisionId)
@@ -313,7 +323,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Boxed Context an …'
     try {
-      const created = await createBoxedContext(await persistGraph(currentId), decisionId)
+      const created = await createBoxedContext(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Boxed Context angelegt ✓'
       openContext(created.modelId, decisionId)
@@ -335,7 +345,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Conditional an …'
     try {
-      const created = await createBoxedConditional(await persistGraph(currentId), decisionId)
+      const created = await createBoxedConditional(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Conditional angelegt ✓'
       openConditional(created.modelId, decisionId)
@@ -357,7 +367,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Liste an …'
     try {
-      const created = await createBoxedList(await persistGraph(currentId), decisionId)
+      const created = await createBoxedList(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Liste angelegt ✓'
       openList(created.modelId, decisionId)
@@ -379,7 +389,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Relation an …'
     try {
-      const created = await createBoxedRelation(await persistGraph(currentId), decisionId)
+      const created = await createBoxedRelation(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Relation angelegt ✓'
       openRelation(created.modelId, decisionId)
@@ -401,7 +411,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Filter an …'
     try {
-      const created = await createBoxedFilter(await persistGraph(currentId), decisionId)
+      const created = await createBoxedFilter(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Filter angelegt ✓'
       openFilter(created.modelId, decisionId)
@@ -423,7 +433,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Iteration an …'
     try {
-      const created = await createBoxedIterator(await persistGraph(currentId), decisionId)
+      const created = await createBoxedIterator(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Iteration angelegt ✓'
       openIterator(created.modelId, decisionId)
@@ -439,7 +449,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const openBKM = async (bkmId: string): Promise<void> => {
     if (!currentId) return
     try {
-      const savedId = await persistGraph(currentId)
+      const savedId = await persistGraph(currentId, true)
       if (savedId !== currentId) await reselect(savedId)
       void openBKMOverlay(savedId, bkmId, (newId) => void reselect(newId), typeOptions)
     } catch (e) {
@@ -460,7 +470,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Invocation an …'
     try {
-      const created = await createBoxedInvocation(await persistGraph(currentId), decisionId)
+      const created = await createBoxedInvocation(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Invocation angelegt ✓'
       openInvocation(created.modelId, decisionId)
@@ -517,7 +527,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Ausdruck an …'
     try {
-      const baseId = await persistGraph(currentId)
+      const baseId = await persistGraph(currentId, true)
       await reselect(baseId)
       status.textContent = ''
       openLiteral(baseId, decisionId, true)
