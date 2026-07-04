@@ -260,10 +260,10 @@ func (c *compiler) compileBinary(n *BinaryExpr) CompiledExpr {
 	case "**":
 		return valueBinop(x, y, value.Exp)
 	case "=":
-		return valueBinop(x, y, value.Equal)
+		return valueBinop(x, y, feelEqualOp)
 	case "!=":
 		return valueBinop(x, y, func(a, b value.Value) value.Value {
-			return value.BoolOf(value.Equal(a, b) == value.False)
+			return notBool(feelEqualOp(a, b))
 		})
 	case "<", "<=", ">", ">=":
 		return c.compileCompare(n.Op, x, y)
@@ -782,6 +782,29 @@ func valueBinop(x, y CompiledExpr, op func(a, b value.Value) value.Value) Compil
 			return nil, err
 		}
 		return op(a, b), nil
+	}
+}
+
+// feelEqualOp is the `=` operator. It follows value.Equal, except that comparing
+// two non-null values of different types is undefined (null), not false
+// (DMN §10.3.2.7). The internal value.Equal predicate keeps its boolean result
+// for list membership, decision-table matching and the like.
+func feelEqualOp(a, b value.Value) value.Value {
+	if !value.IsNull(a) && !value.IsNull(b) && a.Kind() != b.Kind() {
+		return value.Null
+	}
+	return value.Equal(a, b)
+}
+
+// notBool negates a three-valued boolean, propagating null.
+func notBool(v value.Value) value.Value {
+	switch v {
+	case value.True:
+		return value.False
+	case value.False:
+		return value.True
+	default:
+		return value.Null
 	}
 }
 
