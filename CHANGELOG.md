@@ -60,6 +60,9 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: FEEL-Kommentare (WP-41.13, 91,9 % → 92,0 %).** Der Lexer
+  überspringt jetzt `// …`-Zeilen- und `/* … */`-Block-Kommentare. +3 Cases (0073: 3→0);
+  der Ratchet-Floor des CI-Gates steigt auf 92,0 %.
 - **DMN-TCK-Konformität: `for`/Quantifier über Ranges (WP-41.12, 91,6 % → 91,9 %).**
   `for i in a..b` (und `some`/`every`) enumeriert jetzt neben Zahlen-Ranges auch
   Date-Ranges tageweise (auf-/absteigend); Ranges anderer Typen (String, date-and-time,

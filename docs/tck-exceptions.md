@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3213 / 3495 Cases grün (91,9 %)** |
+| Compliance Level 2 + 3 | **3216 / 3495 Cases grün (92,0 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 91,9 % |
+| Ratchet-Floor im CI | 92,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,14 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `for`/Quantifier über Ranges (WP-41.12, +10)
+## In dieser Etappe behoben — FEEL-Kommentare (WP-41.13, +3)
+
+Der Lexer überspringt jetzt FEEL-Kommentare: `// …` bis Zeilenende und `/* … */`
+Block-Kommentare (`1 + /* 1 + */ 1` → 2). 0073: 3→0.
+
+Netto **+3 Cases** (91,9 % → 92,0 %).
+
+## Früher behoben — `for`/Quantifier über Ranges (WP-41.12, +10)
 
 `for i in a..b` (und `some`/`every`) enumeriert jetzt neben **Zahlen-Ranges** auch
 **Date-Ranges** tageweise (`for i in @"1980-01-01"..@"1980-01-03"` → die drei Tage,
