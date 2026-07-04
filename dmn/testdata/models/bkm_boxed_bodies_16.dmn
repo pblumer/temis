@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/bkm-boxed-bodies"
+             name="BkmBoxedBodies" id="def_bkm_bodies">
+  <inputData id="id_in" name="In">
+    <variable name="In" typeRef="number"/>
+  </inputData>
+
+  <businessKnowledgeModel id="id_ctx" name="Ctx">
+    <variable name="Ctx" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <context>
+        <contextEntry>
+          <variable name="factor" typeRef="number"/>
+          <literalExpression><text>2</text></literalExpression>
+        </contextEntry>
+        <contextEntry>
+          <literalExpression><text>p * factor</text></literalExpression>
+        </contextEntry>
+      </context>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_lst" name="Lst">
+    <variable name="Lst"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <list>
+        <literalExpression><text>p</text></literalExpression>
+        <literalExpression><text>p * 2</text></literalExpression>
+      </list>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_rel" name="Rel">
+    <variable name="Rel"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <relation>
+        <column name="a"/>
+        <column name="b"/>
+        <row>
+          <literalExpression><text>p</text></literalExpression>
+          <literalExpression><text>p + 1</text></literalExpression>
+        </row>
+      </relation>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_inv" name="Inv">
+    <variable name="Inv" typeRef="number"/>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_ctx"/>
+    </knowledgeRequirement>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <invocation>
+        <literalExpression><text>Ctx</text></literalExpression>
+        <binding>
+          <parameter name="p"/>
+          <literalExpression><text>p</text></literalExpression>
+        </binding>
+      </invocation>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_iter" name="Iter">
+    <variable name="Iter"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <for iteratorVariable="x">
+        <in><literalExpression><text>[1, 2, 3]</text></literalExpression></in>
+        <return><literalExpression><text>x * p</text></literalExpression></return>
+      </for>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_cond" name="Cond">
+    <variable name="Cond" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <conditional>
+        <if><literalExpression><text>p &gt; 0</text></literalExpression></if>
+        <then><literalExpression><text>1</text></literalExpression></then>
+        <else><literalExpression><text>0</text></literalExpression></else>
+      </conditional>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_filt" name="Filt">
+    <variable name="Filt"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <filter>
+        <in><literalExpression><text>[1, 2, 3]</text></literalExpression></in>
+        <match><literalExpression><text>item &gt; p</text></literalExpression></match>
+      </filter>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel id="id_tab" name="Tab">
+    <variable name="Tab" typeRef="string"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="p" typeRef="number"/>
+      <decisionTable hitPolicy="FIRST">
+        <input id="in_p" label="p">
+          <inputExpression typeRef="number"><text>p</text></inputExpression>
+        </input>
+        <output id="out_note" name="note" typeRef="string"/>
+        <rule>
+          <inputEntry><text>&gt;= 80</text></inputEntry>
+          <outputEntry><text>"A"</text></outputEntry>
+        </rule>
+        <rule>
+          <inputEntry><text>&lt; 80</text></inputEntry>
+          <outputEntry><text>"B"</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="id_root" name="Root">
+    <variable name="Root" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#id_in"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_tab"/>
+    </knowledgeRequirement>
+    <literalExpression><text>Tab(In)</text></literalExpression>
+  </decision>
+</definitions>

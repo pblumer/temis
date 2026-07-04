@@ -446,6 +446,11 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/decisions/{decision}/create-invocation", ScopeModelsWrite, s.handleCreateInvocation},
 		{"GET", "/v1/models/{id}/bkm/{bkm}", ScopeModelsRead, s.handleGetBKM},
 		{"POST", "/v1/models/{id}/bkm/{bkm}", ScopeModelsWrite, s.handleSaveBKM},
+		// Anchored boxed logic (ADR-0016, WP-66): read/write the boxed expression of
+		// a decision or a BKM body by {anchorKind}/{anchorId}/{kind}, so the per-kind
+		// editors can edit a BKM's boxed body — not just a decision's logic.
+		{"GET", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsRead, s.handleGetLogic},
+		{"POST", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsWrite, s.handleSaveLogic},
 		{"POST", "/v1/models/{id}/save", ScopeModelsWrite, s.handleSaveModel},
 		// Evaluation.
 		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
