@@ -60,3 +60,45 @@ func TestContextBuiltins(t *testing.T) {
 		t.Errorf("get value on non-context = %s, want null", got)
 	}
 }
+
+// TestContextPutPathAndContextEdges covers the WP-41.5 additions: nested
+// context put via a key path, and the context() constructor's single-entry and
+// duplicate-key handling.
+func TestContextPutPathAndContextEdges(t *testing.T) {
+	ctx := func(kv ...value.Value) value.Value {
+		c := value.NewContext()
+		for i := 0; i+1 < len(kv); i += 2 {
+			c.Put(string(kv[i].(value.Str)), kv[i+1])
+		}
+		return c
+	}
+	list := func(vs ...value.Value) value.Value { return value.NewList(vs...) }
+	s := func(x string) value.Value { return value.Str(x) }
+	n := value.MustNumber
+
+	// context put with a path list updates a nested entry.
+	nested := ctx(s("x"), n("1"), s("y"), ctx(s("a"), n("0")))
+	got := call(t, "context put", nested, list(s("y"), s("a")), n("2"))
+	if got.String() != "{x: 1, y: {a: 2}}" {
+		t.Errorf("nested context put = %s, want {x: 1, y: {a: 2}}", got)
+	}
+	// A path into a non-context intermediate is null.
+	if got := call(t, "context put", nested, list(s("x"), s("a")), n("2")); !value.IsNull(got) {
+		t.Errorf("path through scalar = %s, want null", got)
+	}
+	// An empty path is null.
+	if got := call(t, "context put", nested, list(), n("2")); !value.IsNull(got) {
+		t.Errorf("empty path = %s, want null", got)
+	}
+
+	// context() accepts a single unwrapped entry.
+	entry := ctx(s("key"), s("a"), s("value"), n("1"))
+	if got := call(t, "context", entry); got.String() != "{a: 1}" {
+		t.Errorf("context(single entry) = %s, want {a: 1}", got)
+	}
+	// Duplicate keys make the result null.
+	dup := list(ctx(s("key"), s("a"), s("value"), n("1")), ctx(s("key"), s("a"), s("value"), n("2")))
+	if got := call(t, "context", dup); !value.IsNull(got) {
+		t.Errorf("context(duplicate keys) = %s, want null", got)
+	}
+}

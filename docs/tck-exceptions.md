@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3130 / 3495 Cases grün (89,6 %)** |
+| Compliance Level 2 + 3 | **3146 / 3495 Cases grün (90,0 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 89,5 % |
+| Ratchet-Floor im CI | 90,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,20 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `in`-Operator & `abs` (WP-41.4, +20 Cases)
+## In dieser Etappe behoben — Collection-Funktionen (WP-41.5, +16 → **90,0 %** 🎉)
+
+Drei Collection-Builtins vervollständigt:
+- **`context put(ctx, path, value)`** mit **Pfad-Liste** — verschachteltes Update:
+  `context put({x:1, y:{a:0}}, ["y","a"], 2)` → `{x:1, y:{a:2}}` (1146).
+- **`context(entries)`** — akzeptiert einen **einzelnen** Entry unverpackt und liefert
+  bei **Duplikat-Keys** `null` (1145).
+- **`list replace`** — Singleton-Koerzierung des Listen-Arguments, nicht-ganzzahlige
+  Position truncatet Richtung null, Match-Funktion mit Arity ≠ 2 oder Nicht-Boolean-
+  Ergebnis → `null` (1155).
+
+Netto **+16 Cases** (89,6 % → **90,0 %**) — die 90-%-Marke ist erreicht.
+
+## Früher behoben — `in`-Operator & `abs` (WP-41.4, +20 Cases)
 
 - **`X in (= Y)` / `X in (!= Y)`** — ein **parenthesierter** Operator-Unary-Test
   (ohne Komma) parst jetzt (`isInTestList` erkennt einen führenden Vergleichs-
