@@ -37,25 +37,34 @@ func ParseDate(s string) (Date, error) {
 	return Date{t: t.UTC()}, nil
 }
 
-// parseSignedTime parses body with the given layout and location, transparently
-// handling a leading '-' year sign. FEEL/ISO-8601 permit negative (astronomical
-// BCE) years such as "-2021-01-01", which Go's reference layout cannot parse; we
-// strip the sign, parse, and reconstruct the instant with the year negated so the
-// value round-trips (Format renders the sign back).
+// parseSignedTime parses body with the given layout and location, handling year
+// fields that Go's reference layout cannot: FEEL/ISO-8601 permit a leading '-'
+// (negative astronomical/BCE years) and years of 1–9 digits, but the "2006" verb
+// consumes exactly four digits. We split the year off, parse the remainder with a
+// canonical placeholder year, then reconstruct the instant with the real year so
+// the value round-trips (Format renders any width and sign back).
 func parseSignedTime(layout, body string, loc *time.Location) (time.Time, error) {
 	neg := strings.HasPrefix(body, "-")
 	if neg {
 		body = body[1:]
 	}
-	t, err := time.ParseInLocation(layout, body, loc)
+	sep := strings.IndexByte(body, '-')
+	if sep <= 0 {
+		return time.Time{}, fmt.Errorf("missing year in %q", body)
+	}
+	year, err := strconv.Atoi(body[:sep])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid year in %q: %w", body, err)
+	}
+	if neg {
+		year = -year
+	}
+	t, err := time.ParseInLocation(layout, "0000"+body[sep:], loc)
 	if err != nil {
 		return time.Time{}, err
 	}
-	if neg {
-		t = time.Date(-t.Year(), t.Month(), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
-	}
-	return t, nil
+	return time.Date(year, t.Month(), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location()), nil
 }
 
 // --- Time and DateTime share zone handling ---
@@ -91,7 +100,8 @@ type Time struct {
 func (Time) Kind() Kind { return KindTime }
 func (Time) isValue()   {}
 func (t Time) String() string {
-	return t.t.Format("15:04:05") + t.z.suffix(t.t)
+	// The fractional part is elided when zero (see DateTime.String).
+	return t.t.Format("15:04:05.999999999") + t.z.suffix(t.t)
 }
 
 // DateTime is a date and time, optionally with a zone.
@@ -104,7 +114,9 @@ type DateTime struct {
 func (DateTime) Kind() Kind { return KindDateTime }
 func (DateTime) isValue()   {}
 func (dt DateTime) String() string {
-	return dt.t.Format("2006-01-02T15:04:05") + dt.z.suffix(dt.t)
+	// The ".999999999" fraction is elided (dot and all) when the sub-second part
+	// is zero, so whole seconds still render as "…:05".
+	return dt.t.Format("2006-01-02T15:04:05.999999999") + dt.z.suffix(dt.t)
 }
 
 // Time returns the underlying instant.
