@@ -556,6 +556,28 @@ func (p *parser) captureGeneric() string {
 
 func (p *parser) parseParenOrInterval() Expr {
 	t := p.expect(LParen)
+	// A range built from a single comparison endpoint: (< v), (<= v), (> v),
+	// (>= v), (= v). ('!=' has no single-range meaning and is left to fail.)
+	switch op := p.cur().Kind; op {
+	case Lt, Lte, Gt, Gte, Eq:
+		p.advance()
+		v := p.parseEndpoint()
+		p.expect(RParen)
+		lit := &IntervalLit{baseNode: base(t)}
+		switch op {
+		case Lt:
+			lit.High = v // (..v)
+		case Lte:
+			lit.High, lit.HighClosed = v, true // (..v]
+		case Gt:
+			lit.Low = v // (v..)
+		case Gte:
+			lit.Low, lit.LowClosed = v, true // [v..)
+		case Eq:
+			lit.Low, lit.High, lit.LowClosed, lit.HighClosed = v, v, true, true // [v..v]
+		}
+		return lit
+	}
 	e := p.parseExpr()
 	if p.cur().Kind == DotDot {
 		p.advance()

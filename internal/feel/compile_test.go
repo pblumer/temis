@@ -301,3 +301,30 @@ func TestCrossTypeEqualityIsNull(t *testing.T) {
 		}
 	}
 }
+
+// TestRangeFromComparison covers range literals built from a single comparison
+// endpoint: (< v), (<= v), (> v), (>= v), (= v), including half-bounded ranges.
+func TestRangeFromComparison(t *testing.T) {
+	cases := map[string]string{
+		`(< 10).start included`:  "false",
+		`(< 10).start`:           "null", // unbounded low
+		`(< 10).end`:             "10",
+		`(< 10).end included`:    "false",
+		`(<= 10).end included`:   "true",
+		`(> 10).start`:           "10",
+		`(> 10).start included`:  "false",
+		`(>= 10).start included`: "true",
+		`(>= 10).end`:            "null", // unbounded high
+		`(= 10).start`:           "10",
+		`(= 10).end included`:    "true",
+		// membership against a half-bounded range
+		`5 in (> 3)`:  "true",
+		`5 in (< 3)`:  "false",
+		`2 in (>= 2)`: "true",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
+		}
+	}
+}

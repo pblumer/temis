@@ -473,17 +473,29 @@ func (c *compiler) compileContext(n *ContextLit) CompiledExpr {
 }
 
 func (c *compiler) compileInterval(n *IntervalLit) CompiledExpr {
-	lo := c.compile(n.Low)
-	hi := c.compile(n.High)
+	// An endpoint may be absent for a half-bounded range built from a comparison,
+	// e.g. (< 10) has no lower bound; it compiles to a nil (unbounded) Range bound.
+	var lo, hi CompiledExpr
+	if n.Low != nil {
+		lo = c.compile(n.Low)
+	}
+	if n.High != nil {
+		hi = c.compile(n.High)
+	}
 	lc, hc := n.LowClosed, n.HighClosed
 	return func(s *Scope) (value.Value, error) {
-		l, err := lo(s)
-		if err != nil {
-			return nil, err
+		var l, h value.Value
+		if lo != nil {
+			var err error
+			if l, err = lo(s); err != nil {
+				return nil, err
+			}
 		}
-		h, err := hi(s)
-		if err != nil {
-			return nil, err
+		if hi != nil {
+			var err error
+			if h, err = hi(s); err != nil {
+				return nil, err
+			}
 		}
 		return value.Range{LowClosed: lc, Low: l, High: h, HighClosed: hc}, nil
 	}

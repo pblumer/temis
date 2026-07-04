@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3168 / 3495 Cases grün (90,6 %)** |
+| Compliance Level 2 + 3 | **3175 / 3495 Cases grün (90,8 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 90,6 % |
+| Ratchet-Floor im CI | 90,8 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,18 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Cross-Typ-Gleichheit → null (WP-41.7, +12)
+## In dieser Etappe behoben — Range-Literale aus Vergleichen (WP-41.8, +7)
+
+`(< v)`, `(<= v)`, `(> v)`, `(>= v)`, `(= v)` parsen jetzt als **halb-/geschlossene
+Range-Literale**: `(<10)` → `(..10)` (unbounded low), `(>=10)` → `[10..)`, `(=10)` →
+`[10..10]`. Umgesetzt in `parseParenOrInterval`; `compileInterval` erzeugt für einen
+fehlenden Endpunkt eine unbounded Range-Grenze (nil). Cross-cutting über
+`0074` (5→0, komplett grün), `0068` (10→8) und Range-Membership (`5 in (>3)`).
+
+Netto **+7 Cases** (90,6 % → 90,8 %). `!=` hat keine Ein-Range-Bedeutung und bleibt
+außen vor.
+
+## Früher behoben — Cross-Typ-Gleichheit → null (WP-41.7, +12)
 
 `=` und `!=` zwischen zwei **nicht-null**-Werten **unterschiedlichen Typs** ergeben
 jetzt **`null`** statt `false` (DMN §10.3.2.7): `100 = "100"`, `[] = 0`, `{} = []`,
