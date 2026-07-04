@@ -60,6 +60,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Runner dekodiert item-verpackte Listen (WP-41.2, 85,6 % → 88,7 %).**
+  Der TCK-Runner las erwartete Listen bisher nur als `<list><value>…`; das offizielle
+  Korpus nutzt breit auch `<list><item><value>…` (inkl. verschachtelter Listen und
+  Kontext-Items), was als leere Liste fehlgelesen wurde und viele korrekte Engine-
+  Ergebnisse fälschlich als Fehlschlag zählte. Reiner Harness-Fix (keine Engine-
+  Änderung): +108 Cases; der Ratchet-Floor des CI-Gates steigt auf 88,5 %.
 - **DMN-TCK-Konformität: FEEL-Invocation-Fehlersemantik (WP-41.1, 82,1 % → 85,6 %).**
   Ein syntaktisch gültiger Funktionsaufruf mit falscher Argument-Anzahl oder
   unbekanntem·gemischtem benanntem Parameter ergibt jetzt zur Laufzeit `null` und

@@ -1,6 +1,7 @@
 package tck
 
 import (
+	"encoding/xml"
 	"reflect"
 	"testing"
 
@@ -105,5 +106,31 @@ func TestToValueShapes(t *testing.T) {
 	// Empty content is null.
 	if got := (valueContent{}).toValue(); !value.IsNull(got) {
 		t.Errorf("empty content toValue = %s, want null", got)
+	}
+}
+
+// TestItemWrappedListDecoding covers the TCK <list><item>… encoding (as opposed
+// to direct <value> children), including nested lists and context items, which
+// must decode to a populated list rather than collapsing to empty.
+func TestItemWrappedListDecoding(t *testing.T) {
+	const xmlSrc = `<expected xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	  <list>
+	    <item><value xsi:type="xsd:string">a</value></item>
+	    <item><value xsi:type="xsd:string">b</value></item>
+	    <item>
+	      <list>
+	        <item><value xsi:type="xsd:decimal">1</value></item>
+	        <item><value xsi:type="xsd:decimal">2</value></item>
+	      </list>
+	    </item>
+	    <item><component name="k"><value xsi:type="xsd:string">v</value></component></item>
+	  </list>
+	</expected>`
+	var vc valueContent
+	if err := xml.Unmarshal([]byte(xmlSrc), &vc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := vc.toValue().String(); got != `[a, b, [1, 2], {k: v}]` {
+		t.Errorf("item-wrapped list = %s, want [a, b, [1, 2], {k: v}]", got)
 	}
 }

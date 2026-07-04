@@ -85,14 +85,22 @@ func (v tckValue) toValue() value.Value {
 	return scalarValue(v.Type, strings.TrimSpace(v.Text))
 }
 
+// tckList decodes a TCK <list>. The corpus uses two element encodings: direct
+// <value> children, and <item> wrappers (each holding a value, a nested list or
+// context components). Both are accepted so nested and context-valued lists decode
+// correctly rather than collapsing to empty.
 type tckList struct {
-	Values []tckValue `xml:"value"`
+	Values []tckValue     `xml:"value"`
+	Items  []valueContent `xml:"item"`
 }
 
 func (l *tckList) toValue() value.Value {
-	elems := make([]value.Value, len(l.Values))
+	elems := make([]value.Value, 0, len(l.Values)+len(l.Items))
 	for i := range l.Values {
-		elems[i] = l.Values[i].toValue()
+		elems = append(elems, l.Values[i].toValue())
+	}
+	for i := range l.Items {
+		elems = append(elems, l.Items[i].toValue())
 	}
 	return value.NewList(elems...)
 }
