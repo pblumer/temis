@@ -28,6 +28,9 @@ func TestStringMoreBuiltins(t *testing.T) {
 		{name: "string join", args: []value.Value{list(str("a"), str("b")), str("-")}, want: "a-b"},
 		{name: "string join", args: []value.Value{list(str("a"), value.Null, str("c")), str(",")}, want: "a,c"},
 		{name: "string join", args: []value.Value{list(str("a"), num("1"))}, wantNull: true},
+		// a null list argument yields null (not the empty string).
+		{name: "string join", args: []value.Value{value.Null}, wantNull: true},
+		{name: "string join", args: []value.Value{value.Null, str("X")}, wantNull: true},
 	})
 }
 

@@ -455,18 +455,25 @@ func (c *compiler) compileList(n *ListLit) CompiledExpr {
 func (c *compiler) compileContext(n *ContextLit) CompiledExpr {
 	keys := make([]string, len(n.Entries))
 	vals := make([]CompiledExpr, len(n.Entries))
+	// Each entry's value may reference the entries declared before it (FEEL context
+	// semantics), so compile entry i against an env extended with keys[0..i-1] and
+	// bind each evaluated value into the scope for the entries that follow.
+	env := c.env
 	for i, entry := range n.Entries {
 		keys[i] = entry.Key
-		vals[i] = c.compile(entry.Value)
+		c.withEnv(env, func() { vals[i] = c.compile(entry.Value) })
+		env = env.Append(entry.Key)
 	}
 	return func(s *Scope) (value.Value, error) {
 		ctx := value.NewContext()
+		scope := s
 		for i, ce := range vals {
-			v, err := ce(s)
+			v, err := ce(scope)
 			if err != nil {
 				return nil, err
 			}
 			ctx.Put(keys[i], v)
+			scope = scope.Extend(v)
 		}
 		return ctx, nil
 	}
