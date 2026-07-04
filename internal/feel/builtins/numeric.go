@@ -53,16 +53,6 @@ func registerNumeric(r *Registry) {
 	r.Register(fixed("odd", []string{"number"}, 1, 1, parity(value.Number.Odd)))
 }
 
-func numberMap(f func(value.Number) value.Number) Func {
-	return func(args []value.Value) (value.Value, error) {
-		n, ok := asNumber(args[0])
-		if !ok {
-			return value.Null, nil
-		}
-		return f(n), nil
-	}
-}
-
 // numberCalc adapts a Number method that may fail (returning ok=false) into a
 // builtin, mapping failure to null.
 func numberCalc(f func(value.Number) (value.Number, bool)) Func {
