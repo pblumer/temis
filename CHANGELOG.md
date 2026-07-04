@@ -60,6 +60,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `in`/Range mit null-Endpunkten (WP-41.16, 93,4 % → 93,6 %).**
+  Der `in`-Operator ist eine 3-wertige Disjunktion: ein null-Testwert gegen eine Range oder ein
+  expliziter null-Endpunkt ergibt `null` statt `false` (`null in [1..10]`, `5 in [null..10]` → `null`);
+  ein weggelassener (unbounded) Endpunkt bleibt unberührt. Range-Gleichheit unterscheidet jetzt
+  einen unbounded von einem expliziten null-Endpunkt (`(< 10)` ≠ `(null..10)`). +9 Cases (0072 5→0,
+  0068 4→0); der Ratchet-Floor des CI-Gates steigt auf 93,6 %.
 - **DMN-TCK-Konformität: Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, 92,1 % → 93,4 %).**
   FEEL-Namen dürfen einen Bindestrich enthalten (`Date-Time`, `Pre-bureauRiskCategory`): Der
   Parser assembliert eine Referenz über den `-` hinweg zu einem Namen, sobald das Namens-Orakel

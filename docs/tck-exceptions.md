@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3263 / 3495 Cases grün (93,4 %)** |
+| Compliance Level 2 + 3 | **3272 / 3495 Cases grün (93,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 93,3 % |
+| Ratchet-Floor im CI | 93,6 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,23 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, +43)
+## In dieser Etappe behoben — `in`/Range mit null-Endpunkten (WP-41.16, +9)
+
+- **`in` als 3-wertige Disjunktion**: Ein null-Testwert gegen eine Range oder ein
+  **expliziter null-Endpunkt** macht den Membership-Test **null** (nicht `false`):
+  `null in [1..10]`, `5 in [null..10]`, `5 in [1..null)` → `null`. Ein **weggelassener**
+  (unbounded) Endpunkt bleibt davon unberührt (`5 in (< 10)` → `true`). 0072: 5→0.
+- **Range-Gleichheit unterscheidet unbounded ↔ expliziten null-Endpunkt**: `(< 10)`
+  (Go-nil-Grenze) ist **nicht** gleich `(null..10)` (explizite null-Grenze). 0068
+  range_006–009: 4→0.
+
+Die Unterscheidung nutzt, dass ein weggelassener Endpunkt als Go-`nil` gespeichert
+wird, ein explizites `null` dagegen als `value.Null`.
+
+Netto **+9 Cases** (93,4 % → 93,6 %). Rest in 0068: Sekunden-Auflösung der Temporal-
+Gleichheit (`time_005`) und Operator-Punkt-Range (`(=10)`).
+
+## Früher behoben — Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, +43)
 
 - **FEEL-Namen mit Bindestrich** (`Date-Time`, `Pre-bureauRiskCategory`, …): Der
   Parser assembliert eine Name-Referenz jetzt über einen `-` hinweg zu **einem**
