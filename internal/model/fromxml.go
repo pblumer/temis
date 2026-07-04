@@ -351,6 +351,7 @@ func mapTable(t *dmnxml.DecisionTable) *DecisionTable {
 			Label:         out.Label,
 			TypeRef:       out.TypeRef,
 			AllowedValues: textValue(out.AllowedValues),
+			DefaultOutput: textValue(out.DefaultOutput),
 		})
 	}
 	for _, r := range t.Rules {

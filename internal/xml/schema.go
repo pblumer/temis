@@ -224,6 +224,7 @@ type Output struct {
 	Label         string `xml:"label,attr,omitempty"`
 	TypeRef       string `xml:"typeRef,attr,omitempty"`
 	AllowedValues *Text  `xml:"outputValues>text"`
+	DefaultOutput *Text  `xml:"defaultOutputEntry>text"`
 }
 
 // Rule mirrors a decision table <rule> row.

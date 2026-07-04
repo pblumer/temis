@@ -60,6 +60,17 @@ func CompileTable(dt *model.DecisionTable, env *feel.Env, funcs map[string]*feel
 			return nil, fmt.Errorf("output %q values %q: %w", out.Name, out.AllowedValues, err)
 		}
 		ct.priorities = append(ct.priorities, prio)
+
+		// The optional default output entry is the column's value when no rule
+		// matches (DMN 8.2.11); nil when the column declares none.
+		var def feel.CompiledExpr
+		if text := strings.TrimSpace(out.DefaultOutput); text != "" {
+			def, err = feel.CompileStringWith(text, env, funcs)
+			if err != nil {
+				return nil, fmt.Errorf("output %q default %q: %w", out.Name, out.DefaultOutput, err)
+			}
+		}
+		ct.defaults = append(ct.defaults, def)
 	}
 
 	for i, in := range dt.Inputs {
@@ -120,7 +131,8 @@ type compiledTable struct {
 	inputs      []feel.CompiledExpr
 	inputExprs  []string // raw input-column expressions, for tracing
 	outputNames []string
-	priorities  [][]value.Value // per output: allowed values in priority order (P/O)
+	priorities  [][]value.Value     // per output: allowed values in priority order (P/O)
+	defaults    []feel.CompiledExpr // per output: default output entry (nil when none)
 	rules       []compiledRule
 	hitPolicy   model.HitPolicy
 	aggregation model.Aggregation
@@ -187,7 +199,7 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int, tt *TableT
 	switch ct.hitPolicy {
 	case model.HitUnique:
 		if len(matched) == 0 {
-			return value.Null, nil
+			return ct.noMatch(s)
 		}
 		if len(matched) > 1 {
 			return nil, &MultipleMatchError{Matched: len(matched)}
@@ -196,13 +208,13 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int, tt *TableT
 
 	case model.HitFirst:
 		if len(matched) == 0 {
-			return value.Null, nil
+			return ct.noMatch(s)
 		}
 		return ct.ruleOutput(s, matched[0], tt)
 
 	case model.HitAny:
 		if len(matched) == 0 {
-			return value.Null, nil
+			return ct.noMatch(s)
 		}
 		first, err := ct.ruleOutput(s, matched[0], tt)
 		if err != nil {
@@ -281,6 +293,46 @@ func (ct *compiledTable) outputValue(cells []value.Value) value.Value {
 	return ctx
 }
 
+// noMatch is the result when no rule matches a single-hit (or aggregating)
+// table: the declared default output entry, or null when none is declared.
+func (ct *compiledTable) noMatch(s *feel.Scope) (value.Value, error) {
+	if v, ok, err := ct.defaultValue(s); err != nil {
+		return nil, err
+	} else if ok {
+		return v, nil
+	}
+	return value.Null, nil
+}
+
+// defaultValue assembles the table's default output: the bare value for a single
+// output, or a context keyed by output name. ok is false when no output column
+// declares a default entry.
+func (ct *compiledTable) defaultValue(s *feel.Scope) (value.Value, bool, error) {
+	any := false
+	for _, d := range ct.defaults {
+		if d != nil {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return value.Null, false, nil
+	}
+	cells := make([]value.Value, len(ct.defaults))
+	for i, d := range ct.defaults {
+		if d == nil {
+			cells[i] = value.Null
+			continue
+		}
+		v, err := d(s)
+		if err != nil {
+			return nil, false, err
+		}
+		cells[i] = v
+	}
+	return ct.outputValue(cells), true, nil
+}
+
 func (ct *compiledTable) collectList(s *feel.Scope, matched []int, tt *TableTrace) (value.Value, error) {
 	elems := make([]value.Value, 0, len(matched))
 	for _, ri := range matched {
@@ -298,7 +350,7 @@ func (ct *compiledTable) aggregate(s *feel.Scope, matched []int, tt *TableTrace)
 		return value.NumberFromInt64(int64(len(matched))), nil
 	}
 	if len(matched) == 0 {
-		return value.Null, nil
+		return ct.noMatch(s)
 	}
 	vals := make([]value.Value, 0, len(matched))
 	for _, ri := range matched {

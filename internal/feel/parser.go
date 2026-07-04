@@ -444,6 +444,14 @@ func (p *parser) nameRunLen(i int) int {
 // name (true/false/null are excluded so literals are never swallowed).
 func isNameableKeyword(k Kind) bool { return k >= And && k <= External }
 
+// isNameFragmentKind reports whether a token may continue a multi-word name run:
+// a plain name, a nameable keyword, or a number word (e.g. the trailing "1" in
+// "Extra days case 1" or "K-MatchesFunc-1"). Extension across these is always
+// gated by the name oracle in takeNameRun, so plain arithmetic is unaffected.
+func isNameFragmentKind(k Kind) bool {
+	return k == Name || isNameableKeyword(k) || k == Number
+}
+
 func (p *parser) parseName() Expr {
 	start := p.cur()
 	name, parts := p.takeNameRun()
@@ -468,11 +476,11 @@ func (p *parser) takeNameRun() (string, []string) {
 		case k == Name:
 			run = append(run, p.toks[j])
 			j++
-		case p.names != nil && isNameableKeyword(k):
+		case p.names != nil && (isNameableKeyword(k) || k == Number):
 			run = append(run, p.toks[j])
 			j++
 		case p.names != nil && k == Minus && j+1 < len(p.toks) &&
-			(p.toks[j+1].Kind == Name || isNameableKeyword(p.toks[j+1].Kind)):
+			isNameFragmentKind(p.toks[j+1].Kind):
 			run = append(run, p.toks[j], p.toks[j+1])
 			j += 2
 		default:

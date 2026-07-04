@@ -174,7 +174,6 @@ func TestCompileErrors(t *testing.T) {
 		line, col int
 	}{
 		{"x + 1", 1, 1},                     // unknown variable
-		{"f(1)", 1, 1},                      // unknown function, at the name position
 		{"function(x) x + y", 1, 17},        // function body references unknown variable
 		{"some x in xs satisfies x", 1, 11}, // unknown domain variable "xs"
 	}

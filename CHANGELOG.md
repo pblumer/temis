@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, 93,6 % → 94,5 %).**
+  Drei kaskadierende Fixes: (1) der Aufruf eines unbekannten Namens oder eines Nicht-Funktions-Werts
+  (`123()`, `"x"()`, `true()`) ergibt `null` statt die Decision nicht-ausführbar zu machen
+  (Total-Funktions-Semantik); (2) Name-Referenzen assemblieren über Zahl-Wörter (`Extra days case 1`)
+  und `-`+Zahl (`K-MatchesFunc-1`) hinweg, wenn das Orakel den Namen kennt; (3) Entscheidungstabellen
+  werten `defaultOutputEntry` aus — trifft keine Regel, liefert die Tabelle den Default-Output statt
+  `null` (Single-Hit-Policies und Collect-mit-Aggregation). +30 Cases (1131 8→0, 0020 0→7, 0034 u. a.);
+  der Ratchet-Floor des CI-Gates steigt auf 94,4 %.
 - **DMN-TCK-Konformität: `in`/Range mit null-Endpunkten (WP-41.16, 93,4 % → 93,6 %).**
   Der `in`-Operator ist eine 3-wertige Disjunktion: ein null-Testwert gegen eine Range oder ein
   expliziter null-Endpunkt ergibt `null` statt `false` (`null in [1..10]`, `5 in [null..10]` → `null`);
