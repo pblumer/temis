@@ -9,14 +9,27 @@ func registerListReplaceAndIs(r *Registry) {
 	// negative position counts from the end). list replace(list, match, newItem):
 	// replace every element for which match(item, newItem) is true (DMN 1.5).
 	r.Register(fixed("list replace", []string{"list", "position", "newItem"}, 3, 3, func(args []value.Value) (value.Value, error) {
-		l, ok := args[0].(value.List)
-		if !ok {
-			return value.Null, nil
+		// The list argument coerces a singleton scalar to a one-element list; null
+		// stays null.
+		var elems []value.Value
+		switch a := args[0].(type) {
+		case value.List:
+			elems = a.Elements
+		default:
+			if value.IsNull(a) {
+				return value.Null, nil
+			}
+			elems = []value.Value{a}
 		}
-		out := append([]value.Value{}, l.Elements...)
+		out := append([]value.Value{}, elems...)
 		switch sel := args[1].(type) {
 		case value.Number:
-			i, ok := sel.Int64()
+			// A non-integer position truncates toward zero (2.5 → 2, -1.5 → -1).
+			n, ok := sel.RoundDown(0)
+			if !ok {
+				return value.Null, nil
+			}
+			i, ok := n.Int64()
 			if !ok {
 				return value.Null, nil
 			}
@@ -29,12 +42,21 @@ func registerListReplaceAndIs(r *Registry) {
 			}
 			out[idx-1] = args[2]
 		case *value.Function:
+			// The match predicate is match(item, newItem); a different arity, or a
+			// non-boolean result, makes the call undefined (null).
+			if sel.Arity != 2 {
+				return value.Null, nil
+			}
 			for i := range out {
 				res, err := sel.Call([]value.Value{out[i], args[2]})
 				if err != nil {
 					return value.Null, err
 				}
-				if b, ok := res.(value.Bool); ok && bool(b) {
+				b, ok := res.(value.Bool)
+				if !ok {
+					return value.Null, nil
+				}
+				if bool(b) {
 					out[i] = args[2]
 				}
 			}

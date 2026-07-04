@@ -14,9 +14,12 @@ func TestListReplaceAndIsAndNumber(t *testing.T) {
 		// list replace by position (1-indexed; negative from the end).
 		{"list replace", []value.Value{list(num("1"), num("2"), num("3")), num("2"), num("9")}, "[1, 9, 3]", false},
 		{"list replace", []value.Value{list(num("1"), num("2"), num("3")), num("-1"), num("9")}, "[1, 2, 9]", false},
-		// out-of-range position and non-list → null.
+		// out-of-range position → null.
 		{"list replace", []value.Value{list(num("1")), num("5"), num("9")}, "", true},
-		{"list replace", []value.Value{str("x"), num("1"), num("9")}, "", true},
+		// a non-list argument coerces to a one-element list (FEEL singleton coercion).
+		{"list replace", []value.Value{str("x"), num("1"), num("9")}, "[9]", false},
+		// a non-integer position truncates toward zero.
+		{"list replace", []value.Value{list(num("1"), num("2"), num("3")), num("2.5"), num("9")}, "[1, 9, 3]", false},
 
 		// number with grouping + decimal separators.
 		{"number", []value.Value{str("1.000,5"), str("."), str(",")}, "1000.5", false},

@@ -60,6 +60,11 @@ func registerContext(r *Registry) {
 		if !ok {
 			return value.Null, nil
 		}
+		// The key may be a single string, or a list of strings addressing a nested
+		// entry (DMN 1.4): context put(ctx, ["y", "a"], v) sets ctx.y.a to v.
+		if path, ok := args[1].(value.List); ok {
+			return contextPutPath(ctx, path.Elements, args[2]), nil
+		}
 		key, ok := args[1].(value.Str)
 		if !ok {
 			return value.Null, nil
@@ -86,12 +91,19 @@ func registerContext(r *Registry) {
 
 	// context(entries): build a context from a list of {key, value} entry contexts.
 	r.Register(fixed("context", []string{"entries"}, 1, 1, func(args []value.Value) (value.Value, error) {
-		l, ok := args[0].(value.List)
-		if !ok {
+		// entries is a list of {key, value} contexts; a single entry may be passed
+		// unwrapped (singleton coercion).
+		var entries []value.Value
+		switch a := args[0].(type) {
+		case value.List:
+			entries = a.Elements
+		case *value.Context:
+			entries = []value.Value{a}
+		default:
 			return value.Null, nil
 		}
 		out := value.NewContext()
-		for _, e := range l.Elements {
+		for _, e := range entries {
 			entry, ok := e.(*value.Context)
 			if !ok {
 				return value.Null, nil
@@ -108,10 +120,45 @@ func registerContext(r *Registry) {
 			if !ok {
 				return value.Null, nil
 			}
+			// Duplicate keys make the result undefined (null).
+			if _, dup := out.Get(string(ks)); dup {
+				return value.Null, nil
+			}
 			out.Put(string(ks), val)
 		}
 		return out, nil
 	}))
+}
+
+// contextPutPath sets the entry addressed by a key path to value, returning a new
+// context (DMN 1.4 nested context put). Every key must be a string; intermediate
+// keys must already address a nested context (the final key may be new). An empty
+// path, a non-string key, or a missing/non-context intermediate yields null.
+func contextPutPath(ctx *value.Context, path []value.Value, val value.Value) value.Value {
+	if len(path) == 0 {
+		return value.Null
+	}
+	ks, ok := path[0].(value.Str)
+	if !ok {
+		return value.Null
+	}
+	key := string(ks)
+	if len(path) == 1 {
+		return cloneContext(ctx).Put(key, val)
+	}
+	child, ok := ctx.Get(key)
+	if !ok {
+		return value.Null
+	}
+	childCtx, ok := child.(*value.Context)
+	if !ok {
+		return value.Null
+	}
+	updated := contextPutPath(childCtx, path[1:], val)
+	if value.IsNull(updated) {
+		return value.Null
+	}
+	return cloneContext(ctx).Put(key, updated)
 }
 
 // cloneContext returns a shallow copy so builtins never mutate their input.

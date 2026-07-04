@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Collection-Funktionen — 90 % erreicht (WP-41.5, 89,6 % → 90,0 %).**
+  Drei Builtins vervollständigt (+16 Cases): `context put` mit Pfad-Liste für
+  verschachtelte Updates (`context put({x:1,y:{a:0}}, ["y","a"], 2)` → `{x:1,y:{a:2}}`);
+  `context(entries)` akzeptiert einen einzelnen Entry unverpackt und liefert bei
+  Duplikat-Keys `null`; `list replace` mit Singleton-Koerzierung, Positions-Truncation
+  und null bei Match-Funktion falscher Arity/Nicht-Boolean-Ergebnis. Damit ist die
+  **90-%-Marke** der offiziellen DMN-TCK-Konformität erreicht; der Ratchet-Floor des
+  CI-Gates steigt auf 90,0 %.
 - **DMN-TCK-Konformität: `in`-Operator & `abs` (WP-41.4, 89,0 % → 89,6 %).** `X in (= Y)`
   und `X in (!= Y)` — ein parenthesierter Operator-Unary-Test ohne Komma — parsen jetzt
   (`10 in (=10)` → true); und `abs` liefert auch für beide Dauer-Typen den Betrag. +20
