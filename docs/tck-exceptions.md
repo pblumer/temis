@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3203 / 3495 Cases grün (91,6 %)** |
+| Compliance Level 2 + 3 | **3213 / 3495 Cases grün (91,9 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 91,6 % |
+| Ratchet-Floor im CI | 91,9 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,17 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Unicode-String-Escapes (WP-41.11, +7)
+## In dieser Etappe behoben — `for`/Quantifier über Ranges (WP-41.12, +10)
+
+`for i in a..b` (und `some`/`every`) enumeriert jetzt neben **Zahlen-Ranges** auch
+**Date-Ranges** tageweise (`for i in @"1980-01-01"..@"1980-01-03"` → die drei Tage,
+auf- und absteigend). Ranges anderer Typen (String, date-and-time, time, Dauer,
+unbounded) sind **nicht iterierbar** → das Comprehension-Ergebnis ist **null**
+(zuvor eine leere Liste). 0084: 13→3, 0016: 5→2.
+
+Netto **+10 Cases** (91,6 % → 91,9 %).
+
+## Früher behoben — Unicode-String-Escapes (WP-41.11, +7)
 
 Der String-Lexer dekodiert jetzt **`\U`** (6-Hex-Codepoint, `\U01F40E` → 🐎) und
 kombiniert **UTF-16-Surrogatpaare** `\uD83D\uDCA9` zu einem Codepoint (💩). Damit

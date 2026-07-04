@@ -1,9 +1,17 @@
 package feel
 
 import (
+	"errors"
+	"time"
+
 	"github.com/pblumer/temis/internal/feel/builtins"
 	"github.com/pblumer/temis/internal/value"
 )
+
+// errNonIterableDomain marks a for/quantifier domain that is a range of a type
+// that cannot be enumerated (a string, date-and-time, time, duration or unbounded
+// range). The comprehension yields null rather than an empty list.
+var errNonIterableDomain = errors.New("feel: non-iterable range domain")
 
 // itemVar is the implicit name bound to the current element inside a filter
 // predicate (e.g. nums[item > 2]). Context elements additionally expose their
@@ -52,6 +60,9 @@ func (c *compiler) compileForExpr(n *ForExpr) CompiledExpr {
 			out = append(out, v)
 			return sc.st.checkItems(len(out))
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -86,6 +97,9 @@ func (c *compiler) compileQuantified(n *QuantifiedExpr) CompiledExpr {
 			}
 			return nil
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -156,17 +170,36 @@ func forEachDomain(st *evalState, v value.Value, fn func(value.Value) error) err
 	}
 }
 
-// forEachRange streams an integer numeric range one value at a time, charging an
-// iteration step per value. A non-integer or unbounded range yields nothing.
+// forEachRange streams an iterable range one value at a time, charging an
+// iteration step per value. FEEL enumerates integer number ranges and date ranges
+// (both ascending and descending, both ends inclusive); any other range type
+// (string, date-and-time, time, duration, or unbounded) is non-iterable and makes
+// the comprehension null (errNonIterableDomain).
 func forEachRange(st *evalState, r value.Range, fn func(value.Value) error) error {
-	lo, ok := integerOf(r.Low)
-	if !ok {
-		return nil
+	switch lo := r.Low.(type) {
+	case value.Number:
+		loI, ok1 := lo.Int64()
+		hi, ok2 := r.High.(value.Number)
+		if !ok1 || !ok2 {
+			return errNonIterableDomain
+		}
+		hiI, ok3 := hi.Int64()
+		if !ok3 {
+			return errNonIterableDomain
+		}
+		return forEachIntStep(st, loI, hiI, fn)
+	case value.Date:
+		hi, ok := r.High.(value.Date)
+		if !ok {
+			return errNonIterableDomain
+		}
+		return forEachDay(st, lo.Time(), hi.Time(), fn)
+	default:
+		return errNonIterableDomain
 	}
-	hi, ok := integerOf(r.High)
-	if !ok {
-		return nil
-	}
+}
+
+func forEachIntStep(st *evalState, lo, hi int64, fn func(value.Value) error) error {
 	step := int64(1)
 	if lo > hi {
 		step = -1
@@ -179,6 +212,25 @@ func forEachRange(st *evalState, r value.Range, fn func(value.Value) error) erro
 			return err
 		}
 		if i == hi {
+			break
+		}
+	}
+	return nil
+}
+
+func forEachDay(st *evalState, lo, hi time.Time, fn func(value.Value) error) error {
+	days := 1
+	if lo.After(hi) {
+		days = -1
+	}
+	for d := lo; ; d = d.AddDate(0, 0, days) {
+		if err := st.step(); err != nil {
+			return err
+		}
+		if err := fn(value.NewDate(d.Year(), d.Month(), d.Day())); err != nil {
+			return err
+		}
+		if d.Equal(hi) {
 			break
 		}
 	}
@@ -312,6 +364,9 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 			}
 			return nil
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
 		}

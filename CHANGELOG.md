@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `for`/Quantifier über Ranges (WP-41.12, 91,6 % → 91,9 %).**
+  `for i in a..b` (und `some`/`every`) enumeriert jetzt neben Zahlen-Ranges auch
+  Date-Ranges tageweise (auf-/absteigend); Ranges anderer Typen (String, date-and-time,
+  time, Dauer, unbounded) sind nicht iterierbar → das Ergebnis ist `null` statt einer
+  leeren Liste. +10 Cases (0084: 13→3, 0016: 5→2); Ratchet-Floor auf 91,9 %.
 - **DMN-TCK-Konformität: Unicode-String-Escapes (WP-41.11, 91,4 % → 91,6 %).** Der
   String-Lexer dekodiert jetzt `\U`-Escapes (6-Hex-Codepoint) und kombiniert UTF-16-
   Surrogatpaare (`\uD83D\uDCA9` → ein Codepoint), sodass `string length` Codepoints
