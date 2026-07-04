@@ -143,10 +143,11 @@ func TestNegAndExpEdges(t *testing.T) {
 	if !IsNull(Exp(Str("x"), MustNumber("2"))) || !IsNull(Exp(MustNumber("2"), Str("x"))) {
 		t.Error("** with non-number should be null")
 	}
-	// undefined combinations
-	if !IsNull(Add(Str("a"), Str("b"))) {
-		t.Error("string + string should be null")
+	// FEEL: string + string concatenates
+	if got := Add(Str("a"), Str("b")); got != Str("ab") {
+		t.Errorf(`"a" + "b" = %q, want "ab"`, got)
 	}
+	// undefined combinations
 	if !IsNull(Div(Str("a"), MustNumber("1"))) {
 		t.Error("string / number should be null")
 	}
