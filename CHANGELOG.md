@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Typ-Koerzierung am Decision-Output (WP-41, 81,7 % → 82,1 %).**
+  Das Ergebnis einer Decision wird jetzt an den deklarierten `typeRef` ihrer Variable
+  angepasst (DMN §10.3.2.9.4), bevor es zurückgegeben und nachgelagerten Decisions
+  zugewiesen wird (+16 Cases, Suite `0082` von 28 auf 13 Fails): eine Singleton-Liste
+  wird zum Skalar entpackt (`["foo"]` bei Ziel `string` → `"foo"`), und ein Wert, der
+  nicht zum deklarierten Typ passt, wird `null`. Listen und Kontexte werden element-
+  bzw. feldweise geprüft; `null` ist Mitglied jedes Typs, ein fehlender `typeRef`
+  (`Any`) erzwingt nichts. Der Ratchet-Floor des CI-Gates steigt auf 82,0 %.
 - **DMN-TCK-Konformität: strikte Temporal-Lexik (WP-41, 81,2 % → 81,7 %).** Die
   FEEL-Konstruktoren (`date`/`time`/`date and time`) und `@"…"`-Literale weisen
   lexikalisch malformte Datums-/Zeit-Strings jetzt korrekt als `null` ab, statt sie

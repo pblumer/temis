@@ -157,6 +157,7 @@ func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string
 		inputs:      buildInputSchema(m, dec, items, constraints),
 		reqInputs:   reqInputNames(m, dec),
 		constraints: constraints,
+		outType:     resolveType(dec.VariableTypeRef, items),
 	}
 
 	logic := dec.Logic()
