@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: strikte Temporal-Lexik (WP-41, 81,2 % → 81,7 %).** Die
+  FEEL-Konstruktoren (`date`/`time`/`date and time`) und `@"…"`-Literale weisen
+  lexikalisch malformte Datums-/Zeit-Strings jetzt korrekt als `null` ab, statt sie
+  tolerant zu akzeptieren (+15 Cases über die Suiten `1115`/`1116`/`1117`): Jahre mit
+  weniger als 4 oder mehr als 9 Ziffern, 5+-stellige Jahre mit führender Null,
+  führendes `+`, einstellige Stunden (`T7:00:00`) und Zonen-Offsets jenseits ±18:00
+  (`+19:00`). Reale Zonen (≤ ±14:00) bleiben gültig. Der Ratchet-Floor des CI-Gates
+  steigt auf 81,5 %.
 - **DMN-TCK-Konformität: `date and time`-Konstruktor & Rendering (WP-41, 80,3 % → 81,2 %).**
   Vier FEEL-Engine-Fixes am offiziellen DMN-TCK (Level 2+3, +32 Cases, `1117` von 35
   auf 10 Fails): der Zwei-Argument-Konstruktor `date and time(date, time)` akzeptiert
