@@ -60,6 +60,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `instance of` Funktionstypen (WP-41.6, 90,0 % → 90,3 %).** Der
+  Parser akzeptiert jetzt Funktionstyp-Ausdrücke `function<…> -> ReturnType` in
+  `instance of` (`function` ist ein Keyword); Signatur wird verworfen, gematcht wird die
+  Funktions-Art. +10 Cases; der Ratchet-Floor des CI-Gates steigt auf 90,3 %.
 - **DMN-TCK-Konformität: Collection-Funktionen — 90 % erreicht (WP-41.5, 89,6 % → 90,0 %).**
   Drei Builtins vervollständigt (+16 Cases): `context put` mit Pfad-Liste für
   verschachtelte Updates (`context put({x:1,y:{a:0}}, ["y","a"], 2)` → `{x:1,y:{a:2}}`);

@@ -506,6 +506,21 @@ func (p *parser) assembleNameString() string {
 // parseTypeName parses a type reference: a name run, optionally followed by a
 // balanced <...> generic captured verbatim. The full type grammar lands in WP-31.
 func (p *parser) parseTypeName() string {
+	// A function type: `function<P, …> -> ReturnType`. The parameter list and
+	// return type are consumed but discarded — instance-of matches on the function
+	// kind only (FEEL has no runtime signature).
+	if p.cur().Kind == Function {
+		p.advance()
+		if p.cur().Kind == Lt {
+			p.captureGeneric()
+		}
+		if p.cur().Kind == Minus && p.peek(1).Kind == Gt {
+			p.advance() // -
+			p.advance() // >
+			p.parseTypeName()
+		}
+		return "function"
+	}
 	if p.cur().Kind != Name {
 		p.fail("expected a type name, got %s", describe(p.cur()))
 	}

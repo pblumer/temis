@@ -104,6 +104,10 @@ func BuiltinType(name string) (*Type, bool) {
 		// The generic parameter (range<number>) is dropped by normalizeTypeName;
 		// instance-of matches on the range kind (FEEL has no runtime element type).
 		return &Type{Kind: value.KindRange}, true
+	case "function":
+		// The signature (function<…> -> …) is dropped; instance-of matches on the
+		// function kind only.
+		return &Type{Kind: value.KindFunction}, true
 	default:
 		return nil, false
 	}
