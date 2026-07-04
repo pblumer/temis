@@ -60,6 +60,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `is()` auf Temporalen (WP-41.10, 91,2 % → 91,4 %).** `is(v1, v2)`
+  vergleicht für `date`/`time`/`date and time` jetzt die Repräsentation statt des Instants:
+  `is(@"23:00:50", @"23:00:50Z")` → false (gleicher Instant, andere Darstellung). +9 Cases
+  (0103: 11→2); der Ratchet-Floor des CI-Gates steigt auf 91,4 %.
 - **DMN-TCK-Konformität: `range()`-Validierung (WP-41.9, 90,8 % → 91,2 %).** Die
   `range(from)`-Builtin weist malformte Range-Strings jetzt als `null` ab: unbounded
   Endpunkt mit geschlossener Klammer (`[1..]`), Typ-Mismatch (`[1.."b"]`, date/dateTime)

@@ -77,6 +77,13 @@ func registerListReplaceAndIs(r *Registry) {
 		if a.Kind() != b.Kind() {
 			return value.False, nil
 		}
+		// For date/time/date-and-time, `is` requires an identical representation,
+		// not merely the same instant: @"10:00:00+01:00" and @"09:00:00Z" are the
+		// same instant but are not `is` (they render differently).
+		switch a.Kind() {
+		case value.KindDate, value.KindTime, value.KindDateTime:
+			return value.BoolOf(a.String() == b.String()), nil
+		}
 		return value.BoolOf(value.Equal(a, b) == value.True), nil
 	}))
 }
