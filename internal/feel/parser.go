@@ -327,8 +327,14 @@ func (p *parser) parsePostfix() Expr {
 		switch p.cur().Kind {
 		case Dot:
 			t := p.advance()
-			name := p.expect(Name)
-			x = &PathExpr{baseNode: base(t), X: x, Name: name.Text}
+			// FEEL member names may span several words (e.g. `time offset`,
+			// `start included`); assemble the run of Name tokens (keywords like
+			// `and`/`in` are distinct kinds and correctly stop the run).
+			if p.cur().Kind != Name {
+				p.expect(Name) // records the error
+				return x
+			}
+			x = &PathExpr{baseNode: base(t), X: x, Name: p.assembleNameString()}
 		case LBracket:
 			if p.noFilter {
 				return x

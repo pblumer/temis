@@ -36,6 +36,17 @@ func TestTemporalEndToEnd(t *testing.T) {
 		// arithmetic + difference
 		`date("2024-01-31") + duration("P1M")`:                         "2024-02-29",
 		`years and months duration(date("2020-01-01"), @"2021-06-15")`: "P1Y5M",
+
+		// multi-word member names (FEEL names may contain spaces) on temporals
+		`time("10:30:00+05:00").time offset`:                    "P0DT5H0M0S",
+		`date and time("2018-12-10T10:30:00@Etc/UTC").timezone`: "Etc/UTC",
+
+		// range endpoint properties, including inclusivity (multi-word names)
+		`[1..10].start`:          "1",
+		`[1..10].end`:            "10",
+		`[1..10].start included`: "true",
+		`(1..10].start included`: "false",
+		`[1..10).end included`:   "false",
 	}
 	for src, want := range cases {
 		if got := evalStr(t, src, nil); got.String() != want {
