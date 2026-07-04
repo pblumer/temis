@@ -136,6 +136,14 @@ func (c *compiler) fail(pos Position, format string, args ...any) CompiledExpr {
 	return constNull
 }
 
+// nullCall handles a function invocation that is syntactically well-formed but
+// semantically invalid — the wrong number of arguments, or unknown/mixed named
+// parameters. FEEL evaluates such a call to null and keeps the decision
+// executable (a total-function semantics), rather than making the whole decision
+// non-executable. bindArgs/bindNamedArgs return this (nil), which their callers
+// compile to a null-yielding expression; c.err is deliberately left unset.
+func (c *compiler) nullCall() []CompiledExpr { return nil }
+
 func constNull(*Scope) (value.Value, error) { return value.Null, nil }
 
 // NullExpr is a CompiledExpr that always yields null. It fills omitted arguments
@@ -668,12 +676,10 @@ func (c *compiler) bindNamedArgs(params []string, name string, n *CallExpr) []Co
 		}
 	}
 	if named && positional {
-		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", name)
-		return nil
+		return c.nullCall()
 	}
 	if len(n.Args) > len(params) {
-		c.fail(n.Pos(), "%q expects at most %d arguments, got %d", name, len(params), len(n.Args))
-		return nil
+		return c.nullCall()
 	}
 	out := make([]CompiledExpr, len(params))
 	for i := range out {
@@ -688,8 +694,7 @@ func (c *compiler) bindNamedArgs(params []string, name string, n *CallExpr) []Co
 	for _, a := range n.Args {
 		idx := indexOf(params, a.Name)
 		if idx < 0 {
-			c.fail(n.Pos(), "%q has no parameter %q", name, a.Name)
-			return nil
+			return c.nullCall()
 		}
 		out[idx] = c.compile(a.Value)
 	}
@@ -721,14 +726,12 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 		}
 	}
 	if named && positional {
-		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", b.Name)
-		return nil
+		return c.nullCall()
 	}
 
 	count := len(n.Args)
 	if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
-		c.fail(n.Pos(), "%q expects %s arguments, got %d", b.Name, arityText(b), count)
-		return nil
+		return c.nullCall()
 	}
 
 	if !named {
@@ -742,8 +745,7 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 	// Named arguments: place each at its parameter index; omitted parameters
 	// default to null so optional trailing parameters work.
 	if len(b.Params) == 0 {
-		c.fail(n.Pos(), "%q does not accept named arguments", b.Name)
-		return nil
+		return c.nullCall()
 	}
 	out := make([]CompiledExpr, len(b.Params))
 	for i := range out {
@@ -752,8 +754,7 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 	for _, a := range n.Args {
 		idx := indexOf(b.Params, a.Name)
 		if idx < 0 {
-			c.fail(n.Pos(), "%q has no parameter %q", b.Name, a.Name)
-			return nil
+			return c.nullCall()
 		}
 		out[idx] = c.compile(a.Value)
 	}
@@ -767,16 +768,6 @@ func indexOf(ss []string, s string) int {
 		}
 	}
 	return -1
-}
-
-func arityText(b *builtins.Builtin) string {
-	if b.Variadic() {
-		return fmt.Sprintf("at least %d", b.MinArgs)
-	}
-	if b.MinArgs == b.MaxArgs {
-		return fmt.Sprintf("exactly %d", b.MinArgs)
-	}
-	return fmt.Sprintf("%d to %d", b.MinArgs, b.MaxArgs)
 }
 
 // valueBinop evaluates both operands and applies a value-level binary op.

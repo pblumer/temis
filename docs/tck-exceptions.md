@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2870 / 3495 Cases grün (82,1 %)** |
+| Compliance Level 2 + 3 | **2993 / 3495 Cases grün (85,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 82,0 % |
+| Ratchet-Floor im CI | 85,5 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,24 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Typ-Koerzierung am Decision-Output (0082: 28 → 13 Fails)
+## In dieser Etappe behoben — FEEL-Invocation-Fehlersemantik (WP-41.1, +123 Cases)
+
+Ein **syntaktisch gültiger** Funktionsaufruf mit **semantischem** Fehler — falsche
+Argument-Anzahl, unbekannter oder mit Positional gemischter benannter Parameter —
+ergibt jetzt zur Laufzeit **`null`** und lässt die Decision **ausführbar**, statt sie
+als „nicht ausführbar" abzubrechen. Das ist FEEL's Total-Funktions-Semantik und die
+korrekte TCK-Erwartung (`round up()`, `modulo(4)`, `floor(n:1.5, scal:1)` → null).
+
+Umgesetzt an einer Naht im FEEL-Compiler (`bindArgs`/`bindNamedArgs` in
+`internal/feel/compile.go`): diese Arity-/Named-Parameter-Fehler kompilieren zu
+`null` (`c.nullCall`), ohne den fatalen Compile-Fehler zu setzen. **Echte** Fehler
+(unbekannte Funktion, Nicht-Funktions-Callee, Syntaxfehler) bleiben unverändert
+nicht ausführbar.
+
+Netto **+123 Cases** (82,1 % → 85,6 %) — der größte Einzelhebel, quer über nahezu
+alle Funktions-Suiten (allein die „error case"-Tests jeder Builtin-Suite).
+
+## Früher behoben — Typ-Koerzierung am Decision-Output (0082: 28 → 13 Fails)
 
 FEEL-Item-Definition-Koerzierung (DMN §10.3.2.9.4) an der Decision-Ausgabe: das
 Ergebnis wird jetzt an den deklarierten `typeRef` der Decision-Variable angepasst,

@@ -65,12 +65,8 @@ func TestCallCompileErrors(t *testing.T) {
 	cases := []struct {
 		src string
 	}{
-		{"bogus(1)"},                       // unknown function
-		{"count()"},                        // too few arguments
-		{`substring("a", 1, 2, 3)`},        // too many arguments
-		{"1(2)"},                           // callee is not a function name
-		{`substring("foobar", length: 3)`}, // mixed positional and named
-		{`upper case(value: "x")`},         // unknown parameter name
+		{"bogus(1)"}, // unknown function
+		{"1(2)"},     // callee is not a function name
 	}
 	for _, c := range cases {
 		_, err := CompileString(c.src, NewEnv())
@@ -80,6 +76,27 @@ func TestCallCompileErrors(t *testing.T) {
 		}
 		if _, ok := err.(*CompileError); !ok {
 			t.Errorf("Compile(%q) error type %T, want *CompileError", c.src, err)
+		}
+	}
+}
+
+// TestInvalidInvocationYieldsNull covers FEEL's total-function semantics: a
+// syntactically valid call with the wrong arity or unknown/mixed named parameters
+// compiles and evaluates to null (it does not make the decision non-executable).
+func TestInvalidInvocationYieldsNull(t *testing.T) {
+	for _, src := range []string{
+		"count()",                        // too few arguments
+		`substring("a", 1, 2, 3)`,        // too many arguments
+		`substring("foobar", length: 3)`, // mixed positional and named
+		`upper case(value: "x")`,         // unknown parameter name
+		`count(x: [1, 2])`,               // named args on a no-param builtin
+	} {
+		if _, err := CompileString(src, NewEnv()); err != nil {
+			t.Errorf("Compile(%q) = %v, want no error", src, err)
+			continue
+		}
+		if got := evalStr(t, src, nil); !value.IsNull(got) {
+			t.Errorf("eval(%q) = %s, want null", src, got)
 		}
 	}
 }

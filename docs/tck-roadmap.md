@@ -1,0 +1,50 @@
+# DMN-TCK-Konformität — Umsetzungsplan (WP-41.x)
+
+> Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
+> `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
+
+**Stand:** 2993 / 3495 Cases (**85,6 %**) nach WP-41.1, Ratchet-Floor 85,5 %.
+**Nahziel:** > 90 % (≈ +276 Cases). **Endziel (WP-41):** ≥ 95 % der anwendbaren Cases.
+
+Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
+sind langschwänzig über ~100 Suiten verteilt; die Reihenfolge priorisiert
+Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
+
+## Weg zu > 90 %
+
+| WP | Thema | Suiten (Auswahl) | ~Cases |
+|---|---|---|---|
+| **WP-41.1 ✅** | **FEEL-Invocation-Fehlersemantik → null** (falsche Arity / unbekannte·gemischte Named-Params ergeben `null` statt „nicht ausführbar"); quer über **alle** Funktions-Suiten | breit (1141–1144, 0056, 1101/1102, 0050, 1145/1146, …) | **+123** |
+| **WP-41.2** | FEEL-Zahl: kanonische Präzision der Ausgabe | quer (0012, 0100, Statistik) | ~20–40 |
+| **WP-41.3** | Math-Builtins (Überladungen + null/leer + Rundungs-Werte) | 0050 abs, 0052 exp, 0053 log, 0051 sqrt, 0062 mode, 0063 stddev, 0061 median, 0094 product, 0054/0055 even/odd, 0058 number, 0075 exponent, 1141–1144/1100–1102 Rest | ~70 |
+| **WP-41.4** | Listen-Funktionen | 0069, 0012, 0008 listGen, 0009 append/flatten, 0059/0060 all/any, 0011 insert/remove, 0010 concatenate, 0021 singleton | ~84 |
+| **WP-41.5** | Kontext-Funktionen | 1146 put, 1145, 1147 merge, 0080 get value, 0081 get entries, 0057 | ~36 |
+| **WP-41.6** | String- & Unicode-Funktionen | 0083 unicode, 1140 string join, 1109 replace, 1103 substring, 0067 split, 1105/1106 upper/lower | ~29 |
+| **WP-41.7** | Koerzierung an BKM/Invocation/Decision-Service-Grenzen | 0082-Rest, 1131, 0005, 0009-invoc, 0030/0031 | ~30 |
+| **WP-41.8** | Temporal-Rest | 0007, 1120/1121 duration, 0095–0098 date-parts, 0093 at-literals, 1116/1117-Rest | ~52 |
+
+Bündel 41.1–41.7 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
+schwierigen Brocken unten.
+
+## Weg zu ≥ 95 % (danach)
+
+| WP | Thema | Suiten | ~Cases |
+|---|---|---|---|
+| **WP-41.9** | Typsystem: `instance of` generics, Cross-Typ-Gleichheit, `is` | 0070, 0068, 0103 | ~59 |
+| **WP-41.10** | `matches`/`replace` (XPath-Regex-Semantik) | 1111, 1109 | ~25 |
+| **WP-41.11** | `in` + `range`-Rest | 0072, 1156 | ~40 |
+| **WP-41.12** | Decision Services / DRG-Scopes | 0085, 0034, 0036, 0035, 0037 | ~36 |
+| **WP-41.13** | Iteration/`for`, Boxed-Expr., Hit-Policies, `list replace`-Rest | 0084, 0016, 1150–1161, 0109–0119, 1155 | ~70 |
+
+## Bewusst nicht anwendbar
+
+- **`0076-feel-external-java`** (~18 Cases) — externe Java-Funktionen über die JVM.
+  Reine Go-Engine ohne JVM (ADR-0008-Geist); zählt nicht zu den anwendbaren Cases.
+
+## Arbeitsweise je WP
+
+1. Ziel-Suite(n) diagnostizieren (Fail-Cluster + Ursache).
+2. Fix in der Engine, mit Offline-Unit-Tests für jeden Pfad.
+3. Voller Korpus-Lauf (Regressions-Check) + `go test ./...`.
+4. `conformanceFloor` anheben, `docs/tck-exceptions.md` fortschreiben, CHANGELOG.
+5. Commit, Push, PR, CI (`tck`-Lane) grün, Merge.

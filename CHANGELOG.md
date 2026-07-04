@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: FEEL-Invocation-Fehlersemantik (WP-41.1, 82,1 % → 85,6 %).**
+  Ein syntaktisch gültiger Funktionsaufruf mit falscher Argument-Anzahl oder
+  unbekanntem·gemischtem benanntem Parameter ergibt jetzt zur Laufzeit `null` und
+  lässt die Decision ausführbar (FEEL-Total-Funktions-Semantik), statt sie als „nicht
+  ausführbar" abzubrechen (`round up()`, `modulo(4)`, `floor(n:1.5, scal:1)` → null).
+  Echte Fehler (unbekannte Funktion, Nicht-Funktions-Callee, Syntaxfehler) bleiben
+  unverändert. Der mit Abstand größte Konformitäts-Hebel: **+123 Cases** quer über
+  fast alle Builtin-Suiten; der Ratchet-Floor des CI-Gates steigt auf 85,5 %.
 - **DMN-TCK-Konformität: Typ-Koerzierung am Decision-Output (WP-41, 81,7 % → 82,1 %).**
   Das Ergebnis einer Decision wird jetzt an den deklarierten `typeRef` ihrer Variable
   angepasst (DMN §10.3.2.9.4), bevor es zurückgegeben und nachgelagerten Decisions
