@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `range()`-Validierung (WP-41.9, 90,8 % → 91,2 %).** Die
+  `range(from)`-Builtin weist malformte Range-Strings jetzt als `null` ab: unbounded
+  Endpunkt mit geschlossener Klammer (`[1..]`), Typ-Mismatch (`[1.."b"]`, date/dateTime)
+  und umgekehrte Grenzen (`[3..1]`, `["z".."a"]`). +12 Cases (1156: 16→4); der
+  Ratchet-Floor des CI-Gates steigt auf 91,0 %.
 - **DMN-TCK-Konformität: Range-Literale aus Vergleichen (WP-41.8, 90,6 % → 90,8 %).**
   `(< v)`, `(<= v)`, `(> v)`, `(>= v)`, `(= v)` parsen jetzt als halb-/geschlossene
   Range-Literale (`(<10)` → `(..10)`; `(>=10)` → `[10..)`; `(=10)` → `[10..10]`), inkl.
