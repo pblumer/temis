@@ -1,15 +1,8 @@
-import { getBKM, saveBKM, type Anchor, type BKMView, type BKMParam } from './api'
+import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
-import { openTableOverlay } from './table'
-import { openBoxedContextOverlay } from './boxedcontext'
-import { openListOverlay } from './list'
-import { openRelationOverlay } from './relation'
-import { openInvocationOverlay } from './invocation'
-import { openIteratorOverlay } from './iterator'
-import { openConditionalOverlay } from './conditional'
-import { openFilterOverlay } from './filter'
+import { openBoxed } from './boxededitors'
 
 // openBKMOverlay edits a business knowledge model's encapsulated function (ADR-
 // 0016): its formal parameters (name + type, add/remove) and a literal FEEL body,
@@ -189,33 +182,5 @@ function el(tag: string, attrs: Record<string, string> = {}, ...children: (strin
 // with no editor (e.g. a nested function), so the caller can fall back to a
 // read-only note.
 function openBoxedBody(modelId: string, bkmId: string, kind: string, names: string[], onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES): boolean {
-  const anchor: Anchor = { kind: 'bkm', id: bkmId }
-  switch (kind) {
-    case 'table':
-      void openTableOverlay(modelId, bkmId, onSaved, typeOptions, { anchor })
-      return true
-    case 'context':
-      void openBoxedContextOverlay(modelId, bkmId, names, onSaved, { typeOptions, anchor })
-      return true
-    case 'list':
-      void openListOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    case 'relation':
-      void openRelationOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    case 'invocation':
-      void openInvocationOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    case 'iterator':
-      void openIteratorOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    case 'conditional':
-      void openConditionalOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    case 'filter':
-      void openFilterOverlay(modelId, bkmId, names, onSaved, { anchor })
-      return true
-    default:
-      return false
-  }
+  return openBoxed(kind, { modelId, anchor: { kind: 'bkm', id: bkmId }, names, onSaved, typeOptions })
 }

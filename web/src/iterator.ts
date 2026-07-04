@@ -9,10 +9,10 @@ import { attachFeelField } from './feelfield'
 // the engine. baseNames are the in-scope variables; the body additionally sees
 // the iterator variable. A branch that nests another boxed expression
 // (iv.simple === false) opens read-only. onSaved gets the saved model's id.
-export async function openIteratorOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor }): Promise<void> {
+export async function openIteratorOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let iv: IteratorView | null = null
   try {
-    iv = await getIterator(modelId, decisionId, opts?.anchor)
+    iv = await getIterator(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -128,7 +128,7 @@ export async function openIteratorOverlay(modelId: string, decisionId: string, b
     status.className = 'dt-status'
     status.textContent = 'speichert …'
     try {
-      const saved = await saveIterator(modelId, decisionId, { kind, variable: variable.trim(), in: inText.trim(), body: body.trim() }, opts?.anchor)
+      const saved = await saveIterator(modelId, decisionId, { kind, variable: variable.trim(), in: inText.trim(), body: body.trim() }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

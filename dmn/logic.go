@@ -538,14 +538,15 @@ func unmarshalEdit(raw json.RawMessage, v any) error {
 
 func contextViewFromModel(id, name string, ctx *model.ContextExpr) ContextView {
 	v := ContextView{DecisionID: id, Name: name, Simple: true}
-	for _, e := range ctx.Entries {
+	for i, e := range ctx.Entries {
 		lit, ok := e.Value.(*model.LiteralExpression)
 		if !ok {
-			// A nested boxed entry this text view can't carry; keep a named
-			// placeholder so the structure stays visible and mark it not simple.
+			// A nested boxed entry this text view can't carry: mark the context not
+			// simply editable, but surface a named placeholder carrying the child's
+			// kind and index so the editor offers a drill-in to edit it in place.
 			v.Simple = false
 			if e.Name != "" {
-				v.Entries = append(v.Entries, ContextEntryView{Name: e.Name})
+				v.Entries = append(v.Entries, ContextEntryView{Name: e.Name, Index: i, ChildKind: exprKind(e.Value)})
 			}
 			continue
 		}
@@ -554,7 +555,7 @@ func contextViewFromModel(id, name string, ctx *model.ContextExpr) ContextView {
 			v.ResultTypeRef = canonicalType(lit.TypeRef)
 			continue
 		}
-		v.Entries = append(v.Entries, ContextEntryView{Name: e.Name, Text: lit.Text, TypeRef: canonicalType(e.TypeRef)})
+		v.Entries = append(v.Entries, ContextEntryView{Name: e.Name, Text: lit.Text, TypeRef: canonicalType(e.TypeRef), Index: i})
 	}
 	return v
 }

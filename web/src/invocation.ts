@@ -8,10 +8,10 @@ import { ensureFeel, validateExpr, validateName } from './feel'
 // arguments may reference. An invocation whose call or a binding nests another
 // boxed expression (iv.simple === false) opens read-only, so the text editor
 // never clobbers the nesting. onSaved gets the saved model's id.
-export async function openInvocationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor }): Promise<void> {
+export async function openInvocationOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let iv: InvocationView | null = null
   try {
-    iv = await getInvocation(modelId, decisionId, opts?.anchor)
+    iv = await getInvocation(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -138,7 +138,7 @@ export async function openInvocationOverlay(modelId: string, decisionId: string,
       const saved = await saveInvocation(modelId, decisionId, {
         called: called.trim(),
         bindings: rows.map((r) => ({ parameter: r.parameter.trim(), value: r.value.trim() })),
-      }, opts?.anchor)
+      }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'
