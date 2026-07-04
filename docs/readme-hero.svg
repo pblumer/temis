@@ -88,7 +88,7 @@
     <rect x="404" y="140" width="452" height="352" rx="34" fill="#07111F" stroke="url(#engine)" stroke-width="4"/>
     <circle cx="630" cy="320" r="120" fill="url(#engine)" opacity="0.14" filter="url(#soft)"/>
 
-    <text x="630" y="182" text-anchor="middle" class="label small">TEMIS ENGINE</text>
+    <text x="630" y="182" text-anchor="middle" class="label small">temis engine</text>
 
     <!-- capability chips -->
     <g>
@@ -133,8 +133,8 @@
       <text x="745" y="377" text-anchor="middle" class="cell" fill="#CBD5E1">0</text>
     </g>
 
-    <text x="630" y="428" text-anchor="middle" class="mono" font-size="15" fill="#D9F99D">compile → evaluate · 0.1 + 0.2 = 0.3</text>
-    <text x="630" y="456" text-anchor="middle" class="micro" fill="#7DD3FC">Lexer · Parser · Compiler — deterministisch, decimal-genau</text>
+    <text x="630" y="430" text-anchor="middle" class="mono" font-size="15" fill="#D9F99D">compile → evaluate</text>
+    <text x="630" y="458" text-anchor="middle" class="micro" fill="#7DD3FC">Lexer · Parser · Compiler — deterministisch, decimal-genau</text>
   </g>
 
   <!-- output flow: engine -> decisions -->
