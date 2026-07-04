@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Cross-Typ-Gleichheit → null (WP-41.7, 90,3 % → 90,6 %).** `=` und
+  `!=` zwischen zwei nicht-null-Werten unterschiedlichen Typs ergeben jetzt `null` statt
+  `false` (`100 = "100"`, `[] = 0`, `{} = []` → null; DMN §10.3.2.7). Chirurgisch nur an den
+  `=`/`!=`-Operatoren; das interne Gleichheits-Prädikat für Decision-Tables/`in`/`contains`
+  bleibt boolesch. +12 Cases; der Ratchet-Floor des CI-Gates steigt auf 90,6 %.
 - **DMN-TCK-Konformität: `instance of` Funktionstypen (WP-41.6, 90,0 % → 90,3 %).** Der
   Parser akzeptiert jetzt Funktionstyp-Ausdrücke `function<…> -> ReturnType` in
   `instance of` (`function` ist ein Keyword); Signatur wird verworfen, gematcht wird die

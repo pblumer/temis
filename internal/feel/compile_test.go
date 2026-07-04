@@ -277,3 +277,27 @@ func BenchmarkEval(b *testing.B) {
 		}
 	}
 }
+
+// TestCrossTypeEqualityIsNull covers FEEL's rule that = / != between two
+// non-null values of different types is null, not false (DMN §10.3.2.7); same-type
+// and null comparisons keep their boolean result.
+func TestCrossTypeEqualityIsNull(t *testing.T) {
+	cases := map[string]string{
+		`100 = "100"`:                       "null",
+		`false = 0`:                         "null",
+		`[] = 0`:                            "null",
+		`{} = []`:                           "null",
+		`duration("P1Y") = duration("P1D")`: "null",
+		`100 != "100"`:                      "null",
+		// same-type and null comparisons are unaffected
+		`100 = 100`:   "true",
+		`100 != 200`:  "true",
+		`null = null`: "true",
+		`1 = null`:    "false",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
+		}
+	}
+}

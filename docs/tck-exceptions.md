@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3156 / 3495 Cases grün (90,3 %)** |
+| Compliance Level 2 + 3 | **3168 / 3495 Cases grün (90,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 90,3 % |
+| Ratchet-Floor im CI | 90,6 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,19 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `instance of` Funktionstypen (WP-41.6, +10)
+## In dieser Etappe behoben — Cross-Typ-Gleichheit → null (WP-41.7, +12)
+
+`=` und `!=` zwischen zwei **nicht-null**-Werten **unterschiedlichen Typs** ergeben
+jetzt **`null`** statt `false` (DMN §10.3.2.7): `100 = "100"`, `[] = 0`, `{} = []`,
+`duration("P1Y") = duration("P365D")` → null. Chirurgisch nur an den `=`/`!=`-
+**Operatoren** (`feelEqualOp`/`notBool` in `internal/feel/compile.go`) — das interne
+`value.Equal`-Prädikat behält seinen booleschen Rückgabewert für Decision-Table-
+Matching, `in` und `list contains`.
+
+Netto **+12 Cases** (90,3 % → 90,6 %); 0068 von 22 auf 10. Rest: Range-Literale aus
+Vergleichen (`(<10) = …`) — eigener Parser-Mechanismus.
+
+## Früher behoben — `instance of` Funktionstypen (WP-41.6, +10)
 
 Der Parser akzeptiert jetzt **Funktionstyp-Ausdrücke** `function<P, …> -> ReturnType`
 in `instance of` (`function` ist ein Keyword-Token, das `parseTypeName` bisher
