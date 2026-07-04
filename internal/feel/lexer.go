@@ -59,14 +59,31 @@ func (l *Lexer) Next() Token {
 	}
 }
 
+// skipSpace consumes whitespace and FEEL comments (`// …` to end of line and
+// `/* … */` block comments) between tokens.
 func (l *Lexer) skipSpace() {
 	for {
 		r := l.peek()
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || (r != eof && unicode.IsSpace(r)) {
+		switch {
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || (r != eof && unicode.IsSpace(r)):
 			l.advance()
-			continue
+		case r == '/' && l.peekAt(1) == '/':
+			for l.peek() != '\n' && l.peek() != eof {
+				l.advance()
+			}
+		case r == '/' && l.peekAt(1) == '*':
+			l.advance() // /
+			l.advance() // *
+			for l.peek() != eof && (l.peek() != '*' || l.peekAt(1) != '/') {
+				l.advance()
+			}
+			if l.peek() != eof {
+				l.advance() // *
+				l.advance() // /
+			}
+		default:
+			return
 		}
-		return
 	}
 }
 

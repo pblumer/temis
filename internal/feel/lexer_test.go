@@ -197,3 +197,25 @@ func equalKinds(a, b []Kind) bool {
 	}
 	return true
 }
+
+func TestComments(t *testing.T) {
+	// Line and block comments are skipped between tokens.
+	cases := map[string]int{
+		"1 + /* mid */ 2": 3,
+		"/* intro */ 3":   1,
+		"4 // trailing\n": 1,
+	}
+	for src, want := range cases {
+		toks := Tokenize(src)
+		// count non-EOF tokens
+		n := 0
+		for _, tk := range toks {
+			if tk.Kind != EOF {
+				n++
+			}
+		}
+		if n != want {
+			t.Errorf("Tokenize(%q) produced %d tokens, want %d", src, n, want)
+		}
+	}
+}
