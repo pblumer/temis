@@ -60,6 +60,10 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Unicode-String-Escapes (WP-41.11, 91,4 % → 91,6 %).** Der
+  String-Lexer dekodiert jetzt `\U`-Escapes (6-Hex-Codepoint) und kombiniert UTF-16-
+  Surrogatpaare (`\uD83D\uDCA9` → ein Codepoint), sodass `string length` Codepoints
+  korrekt zählt. +7 Cases (0083: 9→2); der Ratchet-Floor des CI-Gates steigt auf 91,6 %.
 - **DMN-TCK-Konformität: `is()` auf Temporalen (WP-41.10, 91,2 % → 91,4 %).** `is(v1, v2)`
   vergleicht für `date`/`time`/`date and time` jetzt die Repräsentation statt des Instants:
   `is(@"23:00:50", @"23:00:50Z")` → false (gleicher Instant, andere Darstellung). +9 Cases

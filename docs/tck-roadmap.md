@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3196 / 3495 Cases (**91,4 %**) nach WP-41.10, Ratchet-Floor 91,4 %.
+**Stand:** 3203 / 3495 Cases (**91,6 %**) nach WP-41.11, Ratchet-Floor 91,6 %.
 **Nahziel:** > 90 % (≈ +276 Cases). **Endziel (WP-41):** ≥ 95 % der anwendbaren Cases.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler

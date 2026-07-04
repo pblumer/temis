@@ -3,6 +3,7 @@ package feel
 import (
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -183,24 +184,46 @@ func (l *Lexer) scanEscape(b *strings.Builder) bool {
 	case 't':
 		b.WriteByte('\t')
 	case 'u':
-		return l.scanUnicodeEscape(b)
+		return l.scanHexEscape(b, 4)
+	case 'U':
+		return l.scanHexEscape(b, 6)
 	default:
 		return false
 	}
 	return true
 }
 
-func (l *Lexer) scanUnicodeEscape(b *strings.Builder) bool {
-	var cp rune
-	for i := 0; i < 4; i++ {
-		d, ok := hexValue(l.advance())
+// scanHexEscape reads n hex digits after \u (4) or \U (6) and writes the
+// codepoint. A 4-digit high surrogate is combined with a following \uXXXX low
+// surrogate into a single codepoint (UTF-16 surrogate pair).
+func (l *Lexer) scanHexEscape(b *strings.Builder, n int) bool {
+	cp, ok := l.readHex(n)
+	if !ok {
+		return false
+	}
+	if n == 4 && cp >= 0xD800 && cp <= 0xDBFF && l.peek() == '\\' && l.peekAt(1) == 'u' {
+		l.advance() // backslash
+		l.advance() // u
+		lo, ok := l.readHex(4)
 		if !ok {
 			return false
 		}
-		cp = cp<<4 | d
+		cp = utf16.DecodeRune(cp, lo)
 	}
 	b.WriteRune(cp)
 	return true
+}
+
+func (l *Lexer) readHex(n int) (rune, bool) {
+	var cp rune
+	for i := 0; i < n; i++ {
+		d, ok := hexValue(l.advance())
+		if !ok {
+			return 0, false
+		}
+		cp = cp<<4 | d
+	}
+	return cp, true
 }
 
 func (l *Lexer) scanName(line, col int) Token {
