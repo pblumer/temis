@@ -81,6 +81,10 @@ func (e *evaluator) eval(d *CompiledDecision) (value.Value, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dmn: evaluate decision %q: %w", d.name, err)
 	}
+	// Coerce the result to the decision's declared output type (FEEL singleton-list
+	// coercion, then conformance-or-null); downstream decisions see the coerced
+	// value bound to this decision's variable.
+	out = coerceToType(out, d.outType)
 	e.visiting[d] = false
 	e.cache[d] = out
 	if d.name != "" {

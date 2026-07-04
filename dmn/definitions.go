@@ -41,6 +41,10 @@ type CompiledDecision struct {
 	// limits are the resource bounds enforced for an evaluation rooted at this
 	// decision (WP-34), resolved from the engine configuration at compile time.
 	limits feel.Limits
+	// outType is the decision's declared output type (from its variable's typeRef),
+	// nil when none is declared. The result is coerced to conform to it (FEEL
+	// singleton-list coercion, then type conformance or null) — see coerceToType.
+	outType *feel.Type
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error

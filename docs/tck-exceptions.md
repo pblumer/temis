@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2854 / 3495 Cases grün (81,7 %)** |
+| Compliance Level 2 + 3 | **2870 / 3495 Cases grün (82,1 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 81,5 % |
+| Ratchet-Floor im CI | 82,0 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,26 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Strikte Temporal-Lexik (1115/1116/1117: −15 Fails)
+## In dieser Etappe behoben — Typ-Koerzierung am Decision-Output (0082: 28 → 13 Fails)
+
+FEEL-Item-Definition-Koerzierung (DMN §10.3.2.9.4) an der Decision-Ausgabe: das
+Ergebnis wird jetzt an den deklarierten `typeRef` der Decision-Variable angepasst,
+bevor es zurückgegeben und nachgelagerten Decisions als Variablenwert zugewiesen wird
+(`dmn/coerce.go`, angewandt in `eval.go`):
+
+- **Singleton-Liste ↔ Skalar**: `["foo"]` bei Ziel `string` → `"foo"`; `[10]` bei
+  Ziel `number` → `10`.
+- **Typ-Konformität sonst → null**: ein Wert, der (nach etwaigem Entpacken) nicht
+  zum deklarierten Typ passt, wird `null` (`2` bei Ziel `string`, `[1 2 foo]` bei
+  Ziel `string`, Kontext bei Ziel Skalar). `null` ist Mitglied jedes Typs; `Any`
+  (kein `typeRef`) erzwingt nichts.
+- Listen/Kontexte werden element- bzw. feldweise gegen deklarierte Element-/Feld-
+  typen geprüft.
+
+Netto **+16 Cases** (81,7 % → 82,1 %). Die verbleibenden `0082`-Fälle liegen an
+BKM-/Invocation-/Decision-Service-Grenzen (eigene Auswertungspfade, Follow-up).
+
+## Früher behoben — Strikte Temporal-Lexik (1115/1116/1117: −15 Fails)
 
 Die Konstruktoren (`date`/`time`/`date and time`) und `@"…"`-Literale weisen jetzt
 lexikalisch **malformte** Strings korrekt als **null** ab, statt sie tolerant zu
@@ -95,7 +114,6 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 
 | Suite / Feature | ~Fails | Klasse | Anmerkung |
 |---|---|---|---|
-| `0082-feel-coercion` | 28 | Engine | Singleton-Listen↔Wert-Koerzierung an Ausdrucksgrenzen. |
 | `0070-feel-instance-of` | 25 | Typsystem | `instance of` für `list<T>`, `function`, benutzerdef. Typen (`range<T>` erledigt). |
 | `0068-feel-equality` | 23 | Engine | Cross-Typ-Gleichheit, null-Fälle, Kontext-/Listen-Tiefvergleich. |
 | `1111-feel-matches` | 21 | Engine | `matches`/Flags-Semantik (XPath-Regex-Details). |
@@ -106,6 +124,7 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 | `1155-list-replace` | 16 | Engine | Rest-Randfälle von `list replace`. |
 | `0007`-date-time | 15 | Engine | Temporale Konstruktor- & Property-Details. |
 | `0069-feel-list` | 15 | Engine | Listen-Randfälle. |
+| `0082-feel-coercion` (Rest) | 13 | Engine | Koerzierung an BKM-/Invocation-/Decision-Service-Grenzen (eigene Auswertungspfade). |
 | `0085`/`0034` decision services / DRG scopes | ~23 | Engine | Decision-Service-Invocation als FEEL-Funktion. |
 | `date and time`-Named-Params | 2 | Compiler | `date and time(date: …, time: …)` — 2-Arg-Signatur braucht Parameternamen (1117 087/088). |
 | `0100-arithmetic` (Rest) | 5 | Engine | Dauer-Rundung (Tie-Richtung) + `**`-Assoziativität/`-x**y`-Präzedenz + Exponent-Präzision. |
@@ -119,9 +138,9 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 
 ## Vorgehen zur 95-%-Quote
 
-1. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
-2. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
-3. `0007`-date-time (15) + `date and time`-Named-Params (2) — restliche temporale Details.
-4. Arithmetik-Rest (5) — Dauer-Rundung, `**`-Assoziativität/`-x**y`-Präzedenz, Exponent-Präzision.
+1. Gleichheit/`instance of` (~48) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
+2. Koerzierung an BKM-/Invocation-/Service-Grenzen (`0082`-Rest, 13) — dieselbe Regel wie am Decision-Output, an weiteren Auswertungspfaden.
+3. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
+4. `0007`-date-time (15) + `date and time`-Named-Params (2); Arithmetik-Rest (5).
 
 Jeder Schritt hebt `conformanceFloor` in `internal/tck/conformance_test.go` an.
