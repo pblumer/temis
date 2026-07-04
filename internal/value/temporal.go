@@ -28,13 +28,34 @@ func NewDate(year int, month time.Month, day int) Date {
 	return Date{t: time.Date(year, month, day, 0, 0, 0, 0, time.UTC)}
 }
 
-// ParseDate parses an ISO date "YYYY-MM-DD".
+// ParseDate parses an ISO date "YYYY-MM-DD", including negative (BCE) years.
 func ParseDate(s string) (Date, error) {
-	t, err := time.Parse("2006-01-02", s)
+	t, err := parseSignedTime("2006-01-02", s, time.UTC)
 	if err != nil {
 		return Date{}, fmt.Errorf("invalid date %q: %w", s, err)
 	}
 	return Date{t: t.UTC()}, nil
+}
+
+// parseSignedTime parses body with the given layout and location, transparently
+// handling a leading '-' year sign. FEEL/ISO-8601 permit negative (astronomical
+// BCE) years such as "-2021-01-01", which Go's reference layout cannot parse; we
+// strip the sign, parse, and reconstruct the instant with the year negated so the
+// value round-trips (Format renders the sign back).
+func parseSignedTime(layout, body string, loc *time.Location) (time.Time, error) {
+	neg := strings.HasPrefix(body, "-")
+	if neg {
+		body = body[1:]
+	}
+	t, err := time.ParseInLocation(layout, body, loc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if neg {
+		t = time.Date(-t.Year(), t.Month(), t.Day(),
+			t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+	}
+	return t, nil
 }
 
 // --- Time and DateTime share zone handling ---
@@ -131,8 +152,17 @@ func ParseDateTime(s string) (DateTime, error) {
 // parseClock parses a "YYYY-MM-DDTHH:MM:SS(.fff)?" body in the given location,
 // trying with and without fractional seconds.
 func parseClock(body string, loc *time.Location) (time.Time, error) {
+	// ISO 8601 permits "24:00:00" as the end-of-day midnight (equivalent to
+	// 00:00:00 of the following day); Go's parser rejects hour 24, so normalize it.
+	addDay := strings.Contains(body, "T24:00:00")
+	if addDay {
+		body = strings.Replace(body, "T24:00:00", "T00:00:00", 1)
+	}
 	for _, layout := range []string{"2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05"} {
-		if t, err := time.ParseInLocation(layout, body, loc); err == nil {
+		if t, err := parseSignedTime(layout, body, loc); err == nil {
+			if addDay {
+				t = t.AddDate(0, 0, 1)
+			}
 			return t, nil
 		}
 	}

@@ -60,6 +60,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Arithmetik & Temporal (WP-41, 77,4 % → 80,3 %).** Fünf
+  FEEL-Engine-Fixes, gemessen am offiziellen DMN-TCK (Level 2+3, +103 Cases):
+  negative (BCE-/astronomische) Jahre in Datums-/Zeit-Literalen inkl. IANA-Zonen
+  (`@"-2021-01-01T10:10:10@Australia/Melbourne"`); `date ± duration` bleibt ein
+  `date` (Zeit-Anteil abgeschnitten); gemischte `date`/`date and time`-Subtraktion
+  ergibt eine Dauer, mit korrektem `null` bei unterschiedlicher Zonen-Kennzeichnung;
+  ISO-`24:00:00` (Ende-des-Tages-Mitternacht); und `string + string`-Konkatenation.
+  Der Ratchet-Floor des CI-Gates steigt entsprechend auf 80,0 %. `0100-arithmetic`
+  fällt von 96 auf 5 Fails; Details in `docs/tck-exceptions.md`.
 - **Modeler: Der Graph pulsiert beim Auswerten (Stage 3 — „Juice").** Eine frische
   Auswertung spielt die Illumination jetzt als tiefen-gestaffelte Welle: Die Leitungen
   streamen (fließende Striche), jede Decision pulsiert mit einem Partikel-Burst, sobald ihre
