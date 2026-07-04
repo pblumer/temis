@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/readme-hero.svg" alt="Temis — Events fließen in die DMN/FEEL-Engine und werden zu nachvollziehbaren Entscheidungen, die unveränderlich im hash-verketteten Audit-Ledger landen" width="900">
+  <img src="docs/readme-hero.svg" alt="Temis — deterministische DMN-1.5/FEEL-Engine: Eingaben vom IoT-Sensor über gRPC/HTTP-Service-Calls bis zum Enterprise-Regelwerk laufen durch eine Decision-Table mit Hit Policy U und liefern typisierte, nachvollziehbare Entscheidungen" width="900">
 </p>
 
-<h1 align="center">Temis — Jede Entscheidung ein Event für die Ewigkeit</h1>
+<h1 align="center">Temis — Deterministische DMN-Engine, vom IoT-Edge bis zum Enterprise-Regelwerk</h1>
 
 <p align="center">
   <strong>Schnelle DMN-1.5-Engine in Go</strong> · <strong>volles FEEL</strong> · <strong>Library</strong> · <strong>HTTP/gRPC</strong> · <strong>Modeler</strong> · <strong>MCP für Agenten</strong>

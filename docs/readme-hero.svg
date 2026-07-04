@@ -1,6 +1,6 @@
 <svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Temis — jede Entscheidung ein Event für die Ewigkeit</title>
-  <desc id="desc">Business-Events fließen von links in die Temis-Engine, werden zu einer nachvollziehbaren Entscheidung ausgewertet und landen rechts unveränderlich in einem hash-verketteten Audit-Ledger, das in die Unendlichkeit läuft.</desc>
+  <title id="title">Temis — deterministische DMN-Engine vom IoT-Edge bis zum Enterprise-Regelwerk</title>
+  <desc id="desc">Eingaben von einem IoT-Sensor, einem gRPC/HTTP-Service-Call und einem Enterprise-Regelwerk fließen in die Temis-Engine. Im Zentrum wertet eine DMN-1.5-Decision-Table mit Hit Policy U deterministisch aus; rechts entstehen eine typisierte Entscheidung, die gefeuerte Regel und ein Explain-Trace.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
       <stop stop-color="#080D1C"/>
@@ -21,12 +21,13 @@
       <stop offset="1" stop-color="#F59E0B"/>
     </linearGradient>
     <linearGradient id="card" x1="380" y1="110" x2="900" y2="530" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF" stop-opacity="0.17"/>
+      <stop stop-color="#FFFFFF" stop-opacity="0.16"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
     </linearGradient>
-    <linearGradient id="chain" x1="980" y1="0" x2="1240" y2="0" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#34D399"/>
-      <stop offset="1" stop-color="#34D399" stop-opacity="0.15"/>
+    <linearGradient id="span" x1="72" y1="0" x2="1208" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="0.5" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#F59E0B"/>
     </linearGradient>
     <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%" color-interpolation-filters="sRGB">
       <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#020617" flood-opacity="0.45"/>
@@ -37,10 +38,10 @@
     <style>
       .label{font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill:#E9F7FF; font-weight:700; letter-spacing:.02em}
       .small{font-size:22px}.tiny{font-size:15px}.micro{font-size:12.5px; fill:#BFE9FF; font-weight:600}
-      .mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; fill:#D9F99D; font-weight:700}
-      .hash{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; fill:#6EE7B7; font-weight:600; font-size:11px; letter-spacing:.04em}
+      .mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; font-weight:700}
+      .cell{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; fill:#CBD5E1; font-weight:600; font-size:15px}
+      .chip{font-family:Inter, ui-sans-serif, sans-serif; font-weight:700; font-size:13px; fill:#0B1120}
       .flow{stroke:#7DD3FC; stroke-width:4; stroke-linecap:round; stroke-dasharray:10 14; opacity:.85}
-      .spark{fill:#FDE68A}
     </style>
   </defs>
 
@@ -48,100 +49,119 @@
   <rect width="1280" height="640" rx="34" fill="url(#glowA)"/>
   <rect width="1280" height="640" rx="34" fill="url(#glowB)"/>
 
-  <g opacity="0.2">
-    <path d="M60 116C214 58 318 118 470 70C620 22 781 55 938 90C1069 119 1167 84 1223 52" stroke="#93C5FD" stroke-width="2"/>
-    <path d="M66 552C210 493 348 588 503 518C650 453 743 521 907 484C1050 452 1129 509 1222 444" stroke="#F0ABFC" stroke-width="2"/>
-    <circle cx="94" cy="84" r="3" fill="#BAE6FD"/><circle cx="1002" cy="63" r="3" fill="#A7F3D0"/><circle cx="120" cy="486" r="4" fill="#F0ABFC"/>
+  <g opacity="0.16" stroke="#93C5FD" stroke-width="1.5">
+    <path d="M60 120 H1220" stroke-dasharray="2 22"/>
+    <path d="M60 520 H1220" stroke-dasharray="2 22"/>
   </g>
 
-  <!-- event flow lines: left -> engine -->
+  <!-- input flow: sources -> engine -->
   <path class="flow" d="M158 210 C262 158 322 180 416 242"/>
   <path class="flow" d="M151 324 C265 314 315 332 413 318"/>
   <path class="flow" d="M158 438 C258 502 330 453 418 390"/>
 
-  <!-- events in -->
-  <g filter="url(#shadow)" transform="translate(58 160)">
-    <rect width="182" height="78" rx="20" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
-    <circle cx="36" cy="39" r="17" fill="#06B6D4"/><path d="M31 39h10M36 34v10" stroke="white" stroke-width="3" stroke-linecap="round"/>
-    <text x="66" y="34" class="label tiny">Order Event</text><text x="66" y="55" class="micro">CloudEvent rein</text>
+  <!-- inputs: IoT-Edge -> Service -> Enterprise -->
+  <g filter="url(#shadow)" transform="translate(52 160)">
+    <rect width="196" height="80" rx="20" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+    <circle cx="38" cy="40" r="18" fill="#06B6D4"/>
+    <path d="M30 45a12 12 0 0 1 16 0M34 40a6 6 0 0 1 8 0" stroke="white" stroke-width="2.4" stroke-linecap="round" fill="none"/><circle cx="38" cy="46" r="2" fill="white"/>
+    <text x="70" y="35" class="label tiny">IoT-Sensor</text>
+    <text x="70" y="57" class="mono" font-size="13" fill="#7DD3FC">temperature &gt; 8</text>
   </g>
   <g filter="url(#shadow)" transform="translate(52 288)">
-    <rect width="190" height="78" rx="20" fill="#0F172A" stroke="#A78BFA" stroke-width="2"/>
-    <circle cx="38" cy="39" r="17" fill="#8B5CF6"/><path d="M30 40l7 7 12-18" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="70" y="34" class="label tiny">Customer Data</text><text x="70" y="55" class="micro">typisierter Input</text>
+    <rect width="196" height="80" rx="20" fill="#0F172A" stroke="#A78BFA" stroke-width="2"/>
+    <circle cx="38" cy="40" r="18" fill="#8B5CF6"/>
+    <path d="M31 32l-7 8 7 8M45 32l7 8-7 8" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="70" y="35" class="label tiny">Service-Call</text>
+    <text x="70" y="57" class="mono" font-size="13" fill="#C4B5FD">POST /v1/evaluate</text>
   </g>
-  <g filter="url(#shadow)" transform="translate(61 415)">
-    <rect width="180" height="78" rx="20" fill="#0F172A" stroke="#F472B6" stroke-width="2"/>
-    <circle cx="36" cy="39" r="17" fill="#EC4899"/><path d="M27 39h18M36 30v18" stroke="white" stroke-width="3" stroke-linecap="round"/>
-    <text x="66" y="34" class="label tiny">Risk Signal</text><text x="66" y="55" class="micro">Streaming-Fakt</text>
+  <g filter="url(#shadow)" transform="translate(52 415)">
+    <rect width="196" height="80" rx="20" fill="#0F172A" stroke="#F472B6" stroke-width="2"/>
+    <circle cx="38" cy="40" r="18" fill="#EC4899"/>
+    <path d="M28 34h20v4H28zM28 42h20v4H28zM28 50h13v4H28z" fill="white"/>
+    <text x="70" y="35" class="label tiny">Enterprise-Regelwerk</text>
+    <text x="70" y="57" class="micro">DRG · BKM · Services</text>
   </g>
 
-  <!-- engine: scales of justice + DMN decision core -->
+  <!-- engine: DMN decision table + hit policy -->
   <g filter="url(#shadow)">
     <rect x="360" y="98" width="540" height="436" rx="44" fill="url(#card)" stroke="white" stroke-opacity="0.22" stroke-width="2"/>
     <rect x="404" y="140" width="452" height="352" rx="34" fill="#07111F" stroke="url(#engine)" stroke-width="4"/>
-    <circle cx="630" cy="320" r="118" fill="url(#engine)" opacity="0.16" filter="url(#soft)"/>
+    <circle cx="630" cy="320" r="120" fill="url(#engine)" opacity="0.14" filter="url(#soft)"/>
 
     <text x="630" y="182" text-anchor="middle" class="label small">TEMIS ENGINE</text>
 
-    <!-- scales of justice (Themis) -->
-    <g stroke="#7DD3FC" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.95">
-      <path d="M630 226v150"/>
-      <path d="M545 258h170"/>
-      <path d="M545 258l-26 44M545 258l26 44M519 302a26 15 0 0 0 52 0"/>
-      <path d="M715 258l-26 44M715 258l26 44M689 302a26 15 0 0 0 52 0"/>
-      <path d="M600 384h60"/>
+    <!-- capability chips -->
+    <g>
+      <rect x="497" y="196" width="80" height="24" rx="12" fill="#22D3EE"/><text x="537" y="212" text-anchor="middle" class="chip">DMN 1.5</text>
+      <rect x="585" y="196" width="60" height="24" rx="12" fill="#8B5CF6"/><text x="615" y="212" text-anchor="middle" class="chip" fill="#F5F3FF">FEEL</text>
+      <rect x="653" y="196" width="86" height="24" rx="12" fill="#F59E0B"/><text x="696" y="212" text-anchor="middle" class="chip">Decimal</text>
     </g>
-    <circle cx="630" cy="226" r="7" fill="#FDE68A"/>
 
-    <!-- decision diamond -->
-    <path d="M630 300l34 44-34 44-34-44 34-44Z" fill="#111827" stroke="#F59E0B" stroke-width="4"/>
-    <text x="630" y="349" text-anchor="middle" class="label" font-size="17" fill="#FDE68A">DMN</text>
+    <!-- decision table -->
+    <g>
+      <rect x="470" y="238" width="320" height="152" rx="10" fill="#0B1220" stroke="#334155" stroke-width="1.5"/>
+      <!-- output column tint -->
+      <rect x="700" y="238" width="90" height="152" fill="#F59E0B" opacity="0.07"/>
+      <!-- matched rule highlight -->
+      <rect x="470" y="276" width="320" height="38" fill="#22C55E" opacity="0.16"/>
+      <rect x="470.75" y="276.75" width="318.5" height="36.5" rx="3" fill="none" stroke="#22C55E" stroke-width="1.5" opacity="0.9"/>
+      <!-- grid -->
+      <g stroke="#1E293B" stroke-width="1.5">
+        <path d="M470 276H790M470 314H790M470 352H790"/>
+        <path d="M508 238V390M610 238V390M700 238V390"/>
+      </g>
+      <!-- header -->
+      <rect x="470" y="238" width="320" height="38" fill="#111C33"/>
+      <text x="489" y="263" text-anchor="middle" class="mono" font-size="15" fill="#FBBF24">U</text>
+      <text x="559" y="263" text-anchor="middle" class="cell" fill="#93C5FD">Bonität</text>
+      <text x="655" y="263" text-anchor="middle" class="cell" fill="#93C5FD">Betrag</text>
+      <text x="745" y="263" text-anchor="middle" class="cell" fill="#FCD34D">Limit</text>
+      <!-- row 1 (matched) -->
+      <text x="489" y="301" text-anchor="middle" class="cell" fill="#86EFAC">1</text>
+      <text x="559" y="301" text-anchor="middle" class="cell" fill="#E2E8F0">≥ 700</text>
+      <text x="655" y="301" text-anchor="middle" class="cell" fill="#E2E8F0">≤ 5.000</text>
+      <text x="745" y="301" text-anchor="middle" class="cell" fill="#86EFAC" font-weight="700">5.000</text>
+      <!-- row 2 -->
+      <text x="489" y="339" text-anchor="middle" class="cell">2</text>
+      <text x="559" y="339" text-anchor="middle" class="cell">≥ 700</text>
+      <text x="655" y="339" text-anchor="middle" class="cell">&gt; 5.000</text>
+      <text x="745" y="339" text-anchor="middle" class="cell" fill="#CBD5E1">manuell</text>
+      <!-- row 3 -->
+      <text x="489" y="377" text-anchor="middle" class="cell">3</text>
+      <text x="559" y="377" text-anchor="middle" class="cell">&lt; 700</text>
+      <text x="655" y="377" text-anchor="middle" class="cell">–</text>
+      <text x="745" y="377" text-anchor="middle" class="cell" fill="#CBD5E1">0</text>
+    </g>
 
-    <text x="630" y="466" text-anchor="middle" class="mono" font-size="19">FEEL · 0.1 + 0.2 = 0.3</text>
+    <text x="630" y="428" text-anchor="middle" class="mono" font-size="15" fill="#D9F99D">compile → evaluate · 0.1 + 0.2 = 0.3</text>
+    <text x="630" y="456" text-anchor="middle" class="micro" fill="#7DD3FC">Lexer · Parser · Compiler — deterministisch, decimal-genau</text>
   </g>
 
-  <!-- engine -> decision flow -->
-  <path class="flow" d="M904 250 C912 222 916 210 924 196"/>
+  <!-- output flow: engine -> decisions -->
+  <path class="flow" d="M900 250 C955 205 1000 198 1028 208"/>
+  <path class="flow" d="M900 322 C958 320 1002 322 1028 322"/>
+  <path class="flow" d="M900 396 C956 452 1004 450 1028 430"/>
 
-  <!-- decision out -->
-  <g filter="url(#shadow)" transform="translate(924 150)">
-    <rect width="152" height="86" rx="22" fill="#052E2B" stroke="#34D399" stroke-width="2"/>
-    <text x="76" y="35" text-anchor="middle" class="label tiny">Entscheidung</text>
-    <text x="76" y="62" text-anchor="middle" class="label small" fill="#A7F3D0">APPROVE</text>
+  <!-- outputs: typed decision, fired rule, explain trace -->
+  <g filter="url(#shadow)" transform="translate(1028 156)">
+    <rect width="196" height="80" rx="20" fill="#052E2B" stroke="#34D399" stroke-width="2"/>
+    <text x="98" y="34" text-anchor="middle" class="label tiny">Entscheidung</text>
+    <text x="98" y="58" text-anchor="middle" class="mono" font-size="16" fill="#A7F3D0">limit = 5.000</text>
+  </g>
+  <g filter="url(#shadow)" transform="translate(1028 286)">
+    <rect width="196" height="80" rx="20" fill="#131A2E" stroke="#FBBF24" stroke-width="2"/>
+    <text x="98" y="34" text-anchor="middle" class="label tiny">Hit Policy U</text>
+    <text x="98" y="58" text-anchor="middle" class="mono" font-size="15" fill="#FCD34D">Regel #1 gefeuert</text>
+  </g>
+  <g filter="url(#shadow)" transform="translate(1028 414)">
+    <rect width="196" height="82" rx="20" fill="#1E1B4B" stroke="#C084FC" stroke-width="2"/>
+    <text x="98" y="34" text-anchor="middle" class="label tiny">Explain-Trace</text>
+    <text x="98" y="58" text-anchor="middle" class="micro" fill="#DDD6FE">warum diese Regel · MCP</text>
   </g>
 
-  <!-- decision -> eternal ledger -->
-  <path class="flow" d="M1000 236 C1010 252 1035 262 1062 272"/>
-
-  <!-- eternal hash-linked ledger, receding toward infinity -->
-  <text x="1090" y="258" text-anchor="middle" class="label tiny" fill="#A7F3D0">Audit-Ledger</text>
-
-  <g filter="url(#shadow)">
-    <rect x="1006" y="272" width="126" height="92" rx="16" fill="#0B2721" stroke="#34D399" stroke-width="2.5"/>
-    <text x="1069" y="300" text-anchor="middle" class="label tiny" fill="#D1FAE5">Block #001</text>
-    <text x="1069" y="322" text-anchor="middle" class="hash">sha256 9f2a…</text>
-    <text x="1069" y="342" text-anchor="middle" class="hash" opacity="0.85">prev — Genesis</text>
-  </g>
-  <path d="M1132 318 H1150" stroke="#34D399" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round" opacity="0.8"/>
-  <g opacity="0.66">
-    <rect x="1150" y="286" width="84" height="66" rx="13" fill="#0B2721" stroke="#34D399" stroke-width="2"/>
-    <text x="1192" y="312" text-anchor="middle" class="label" font-size="12.5" fill="#D1FAE5">Block #002</text>
-    <text x="1192" y="332" text-anchor="middle" class="hash">prev 9f2a…</text>
-  </g>
-
-  <!-- infinity mark = für die Ewigkeit -->
-  <g transform="translate(1058 384)" opacity="0.95">
-    <path d="M0 11c0-7 5-11 11-11s11 4 11 11-5 11-11 11-11-4-11-11ZM22 11c0-7 5-11 11-11s11 4 11 11-5 11-11 11-11-4-11-11Z" fill="none" stroke="#6EE7B7" stroke-width="3"/>
-    <text x="52" y="16" class="label tiny" fill="#A7F3D0">unveränderlich</text>
-  </g>
-
-  <!-- sparks -->
-  <g opacity="0.95">
-    <path d="M300 100l10 22 24 3-18 16 5 24-21-12-21 12 5-24-18-16 24-3 10-22Z" class="spark"/>
-    <path d="M918 118l7 15 17 2-12 11 3 17-15-8-15 8 3-17-12-11 17-2 7-15Z" class="spark"/>
-  </g>
-
-  <text x="72" y="588" class="label" font-size="30">Events rein</text>
-  <text x="1208" y="588" text-anchor="end" class="label" font-size="30">für die Ewigkeit</text>
+  <!-- deployment span axis: IoT-Edge -> Enterprise -->
+  <path d="M84 566 H1196" stroke="url(#span)" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="84" cy="566" r="5" fill="#22D3EE"/><circle cx="1196" cy="566" r="5" fill="#F59E0B"/>
+  <text x="80" y="600" class="label" font-size="26" fill="#7DD3FC">IoT-Edge</text>
+  <text x="1200" y="600" text-anchor="end" class="label" font-size="26" fill="#FCD34D">Enterprise-Regelwerk</text>
 </svg>
