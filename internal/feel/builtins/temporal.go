@@ -78,6 +78,9 @@ func validYMD(y, m, d int) bool {
 	if m < 1 || m > 12 || d < 1 || d > 31 {
 		return false
 	}
+	if y < -999999999 || y > 999999999 { // FEEL year magnitude bound
+		return false
+	}
 	t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
 	return t.Year() == y && int(t.Month()) == m && t.Day() == d
 }

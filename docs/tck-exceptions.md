@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **2839 / 3495 Cases grün (81,2 %)** |
+| Compliance Level 2 + 3 | **2854 / 3495 Cases grün (81,7 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 81,0 % |
+| Ratchet-Floor im CI | 81,5 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,23 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `date and time`-Konstruktor & Rendering (1117: 35 → 10 Fails)
+## In dieser Etappe behoben — Strikte Temporal-Lexik (1115/1116/1117: −15 Fails)
+
+Die Konstruktoren (`date`/`time`/`date and time`) und `@"…"`-Literale weisen jetzt
+lexikalisch **malformte** Strings korrekt als **null** ab, statt sie tolerant zu
+akzeptieren (gated an den `Parse*`-Einstiegspunkten in `internal/value/temporal.go`):
+
+- **Jahr**: nur führendes `-` (kein `+`); genau 4 Ziffern dürfen mit `0` beginnen,
+  5+ Ziffern nicht; Betrag ≤ `999999999`. Verworfen: `998`, `01211`, `+2012`,
+  `9999999999`, `+99999`; die numerische `date(y,m,d)`-Form prüft die Jahresgrenze
+  ebenfalls (`date(-1000999999,…)` → null).
+- **Zeit**: feste Feldbreiten — einstellige Stunde `T7:00:00` → null.
+- **Offset**: über ±18:00 hinaus ungültig (`+19:00`/`-19:00` → null); reale Zonen
+  (≤ ±14:00) bleiben gültig.
+
+Netto **+15 Cases** (81,2 % → 81,7 %) über `1115` (−5), `1116` (−3), `1117` (−7).
+
+## Früher behoben — `date and time`-Konstruktor & Rendering (1117: 35 → 10 Fails)
 
 - **Zwei-Argument-Konstruktor `date and time(date, time)`** akzeptiert als erstes
   Argument nun auch ein `date and time` (dessen Datums-Teil genutzt wird), nicht nur
@@ -90,7 +106,6 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 | `1155-list-replace` | 16 | Engine | Rest-Randfälle von `list replace`. |
 | `0007`-date-time | 15 | Engine | Temporale Konstruktor- & Property-Details. |
 | `0069-feel-list` | 15 | Engine | Listen-Randfälle. |
-| **Strikte Temporal-Lexik** | ~15+ | Engine | Malformte date/time-Strings müssen **null** ergeben: Jahr < 4 oder > 9 Ziffern, führendes `+`, einstellige Stunde (`T7:`), Offset > ±18:00. Verteilt über `1117`/`0007`/`1115`/`1116`. |
 | `0085`/`0034` decision services / DRG scopes | ~23 | Engine | Decision-Service-Invocation als FEEL-Funktion. |
 | `date and time`-Named-Params | 2 | Compiler | `date and time(date: …, time: …)` — 2-Arg-Signatur braucht Parameternamen (1117 087/088). |
 | `0100-arithmetic` (Rest) | 5 | Engine | Dauer-Rundung (Tie-Richtung) + `**`-Assoziativität/`-x**y`-Präzedenz + Exponent-Präzision. |
@@ -104,9 +119,9 @@ Diese Fixes heben neben `0100` auch die reinen Datums-/Zeit-Suites (`0007`,
 
 ## Vorgehen zur 95-%-Quote
 
-1. Strikte Temporal-Lexik (~15+) — malformte date/time-Strings → null (breit über `1117`/`0007`/`1115`/`1116`).
-2. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
-3. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
+1. Koerzierung/Gleichheit/`instance of` (~76) — FEEL-Typsemantik an den Grenzen (`list<T>`, `function`).
+2. `matches`-Flags (21), `for`-Randfälle (21), Properties (17), Rest-`feel-in`/`range` (~40).
+3. `0007`-date-time (15) + `date and time`-Named-Params (2) — restliche temporale Details.
 4. Arithmetik-Rest (5) — Dauer-Rundung, `**`-Assoziativität/`-x**y`-Präzedenz, Exponent-Präzision.
 
 Jeder Schritt hebt `conformanceFloor` in `internal/tck/conformance_test.go` an.

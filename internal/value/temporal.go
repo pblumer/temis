@@ -2,10 +2,42 @@ package value
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// FEEL/ISO-8601 lexical rules for temporal strings. The engine parses leniently
+// for arithmetic, but the constructor functions and `@"…"` literals must reject
+// malformed input with null, so these gate the Parse* entry points.
+//
+//   - Year: optional leading '-' only (no '+'); 4 digits may lead with 0, but 5+
+//     digits must not; magnitude ≤ 999999999 is checked separately.
+//   - Month/day/clock fields are fixed-width; hour 00–23 ('24:00:00' is handled as
+//     a special end-of-day form by parseClock).
+var (
+	dateLexRe  = regexp.MustCompile(`^(-?(?:0[0-9]{3}|[1-9][0-9]{3,}))-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$`)
+	clockLexRe = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?$`)
+)
+
+const maxTemporalYear = 999999999
+
+// validDateLex reports whether s is a lexically valid FEEL date (no zone).
+func validDateLex(s string) bool {
+	m := dateLexRe.FindStringSubmatch(s)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	return err == nil && n >= -maxTemporalYear && n <= maxTemporalYear
+}
+
+// validClockLex reports whether s is a lexically valid FEEL time-of-day (no zone),
+// accepting the ISO end-of-day form "24:00:00".
+func validClockLex(s string) bool {
+	return s == "24:00:00" || clockLexRe.MatchString(s)
+}
 
 // --- Date ---
 
@@ -30,6 +62,9 @@ func NewDate(year int, month time.Month, day int) Date {
 
 // ParseDate parses an ISO date "YYYY-MM-DD", including negative (BCE) years.
 func ParseDate(s string) (Date, error) {
+	if !validDateLex(s) {
+		return Date{}, fmt.Errorf("invalid date %q", s)
+	}
 	t, err := parseSignedTime("2006-01-02", s, time.UTC)
 	if err != nil {
 		return Date{}, fmt.Errorf("invalid date %q: %w", s, err)
@@ -137,6 +172,9 @@ func ParseTime(s string) (Time, error) {
 	if err != nil {
 		return Time{}, fmt.Errorf("invalid time %q: %w", s, err)
 	}
+	if !validClockLex(body) {
+		return Time{}, fmt.Errorf("invalid time %q", s)
+	}
 	t, err := parseClock(refDay+"T"+body, loc)
 	if err != nil {
 		return Time{}, fmt.Errorf("invalid time %q: %w", s, err)
@@ -153,6 +191,10 @@ func ParseDateTime(s string) (DateTime, error) {
 	body, z, loc, err := splitZone(s)
 	if err != nil {
 		return DateTime{}, fmt.Errorf("invalid date and time %q: %w", s, err)
+	}
+	// body is the zoneless "date T clock"; validate each half lexically.
+	if j := strings.IndexByte(body, 'T'); j < 0 || !validDateLex(body[:j]) || !validClockLex(body[j+1:]) {
+		return DateTime{}, fmt.Errorf("invalid date and time %q", s)
 	}
 	t, err := parseClock(body, loc)
 	if err != nil {
@@ -219,12 +261,20 @@ func findOffset(s string) (string, int) {
 	return "", -1
 }
 
+// maxOffsetSecs bounds a fixed zone offset. XSD/FEEL cap timezone offsets at
+// ±14:00; we allow up to ±18:00 (covering every real offset) so only clearly
+// out-of-range values like ±19:00 are rejected as invalid.
+const maxOffsetSecs = 18 * 60 * 60
+
 func parseOffset(off string) (*time.Location, error) {
 	t, err := time.Parse("-07:00", off)
 	if err != nil {
 		return nil, fmt.Errorf("invalid offset %q: %w", off, err)
 	}
 	_, secs := t.Zone()
+	if secs < -maxOffsetSecs || secs > maxOffsetSecs {
+		return nil, fmt.Errorf("offset %q out of range", off)
+	}
 	return time.FixedZone(off, secs), nil
 }
 
