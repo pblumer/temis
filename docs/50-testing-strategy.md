@@ -9,7 +9,7 @@
         ┌─────────────────────┐
         │  TCK-Konformität     │  offizielle DMN-Testsuite (oberstes Korrektheitsmaß)
         ├─────────────────────┤
-        │  E2E (dmn-js-Files)  │  reale Modelle → erwartete Outputs (Golden-Files)
+        │  E2E (Playwright)    │  echter Browser → temisd → WASM-FEEL (voller Stack)
         ├─────────────────────┤
         │  Integration         │  XML→Compile→Evaluate je Feature
         ├─────────────────────┤
@@ -46,12 +46,29 @@
 - Property: `parse(print(ast)) ≡ ast` für FEEL-Ausdrücke (Round-trip), wo ein Printer
   existiert.
 
-## 4. E2E mit echten dmn-js-Dateien
+## 4. E2E — Playwright gegen den echten Modeler
 
-- `testdata/models/*.dmn` — in dmn-js erstellte/gespeicherte Dateien.
-- Je Datei eine `*.cases.json`: Liste `{input, expectedOutputs}`.
-- **Round-trip-Test:** Datei laden, unverändert serialisieren, erneut in (Headless-)dmn-js
-  oder gegen das XSD validieren → muss gültig bleiben, `DMNDI` erhalten.
+Die E2E-Schicht fährt den **vollen Stack wie ein Nutzer**: ein echtes Chromium
+gegen den von `temisd` ausgelieferten Modeler, inklusive der **WASM-FEEL-Engine**
+und der gebauten `web/dist`. Kein Mock — was grün ist, funktioniert im Browser.
+
+- **Ort:** `web/e2e/*.spec.ts` (Playwright). Konfiguration: `web/playwright.config.ts`.
+- **Lauf:** `make web-e2e` (baut Frontend via `make web`, dann `playwright test`).
+  Die `webServer`-Direktive startet `go run ./cmd/temisd -examples=true` und fährt
+  ihn danach herunter; die Specs werten gegen die gebündelten Beispielmodelle aus.
+- **CI:** eigene Lane `web-e2e` in `.github/workflows/ci.yml` (`retries: 1`,
+  `trace: on-first-retry`). **Nicht** Teil von `make verify` (braucht Browser +
+  Node-Build), sondern separat — analog zur `tck`-Lane.
+- **Abdeckung & „was testet welche Spec":** siehe den gepflegten Katalog in
+  [`web/e2e/README.md`](../web/e2e/README.md). Grob: Auswertung/Operate-Cockpit/
+  Live-Graph, Modellierung & Editor (Palette, Tabellen, BKM, Completion,
+  Highlighting), Verwaltung/Import/Clio-Status sowie gezielte Sicherheits- und
+  Boot-Regressionen (XSS-Escaping, leerer Server).
+- **Konvention:** Jede Spec trägt oben einen Intent-Kommentar (*was* + *warum*,
+  bei Regressionen mit Audit-/WP-/ADR-Bezug). Neue Spec ⇒ Katalog mitpflegen.
+
+> **DMN-Round-trip** (Datei laden → serialisieren → gültig & `DMNDI` erhalten) ist
+> auf Go-Ebene abgedeckt (`internal/xml`, `internal/model`, `dmn`), nicht hier.
 
 ## 5. TCK (Technology Compatibility Kit) — das zentrale Korrektheitsmaß
 
@@ -116,4 +133,19 @@ make verify  ==  gofmt-check + go vet + staticcheck/golangci-lint
                  + go test ./internal/tck (sofern Stand vorhanden)
 ```
 
-Kein WP gilt als `done`, solange `make verify` rot ist.
+Daneben laufen in CI (`.github/workflows/ci.yml`) eigene, von `verify` getrennte
+Lanes, weil sie zusätzliche Toolchains/Zeit brauchen:
+
+| Lane | Kommando | Absichert |
+|---|---|---|
+| `web-e2e` | `make web-e2e` | Modeler im echten Browser (§4) |
+| `tck` | `make tck-conformance` | offizielle DMN-Konformität (§5) |
+| `cover` | `make cover` | Coverage-Floor der Kernpakete (§8) |
+| `web` | `npm run typecheck` + build | Frontend-Typen & committetes `dist` |
+| `security` | `govulncheck ./...` | bekannte CVEs in Deps/Stdlib |
+| `proto` | `make proto-check` | committeter gRPC-Code nicht stale |
+| `docker` | `docker build` | Release-Image baut |
+
+Fuzzing (§3, `make fuzz`) läuft zeitgebunden separat, nicht pro PR.
+
+Kein WP gilt als `done`, solange `make verify` **oder** eine dieser Lanes rot ist.
