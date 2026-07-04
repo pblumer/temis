@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3220 / 3495 Cases grün (92,1 %)** |
+| Compliance Level 2 + 3 | **3263 / 3495 Cases grün (93,4 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 92,1 % |
+| Ratchet-Floor im CI | 93,3 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,24 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Kontext-Eintrags-Referenzen & string join (WP-41.14, +4)
+## In dieser Etappe behoben — Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, +43)
+
+- **FEEL-Namen mit Bindestrich** (`Date-Time`, `Pre-bureauRiskCategory`, …): Der
+  Parser assembliert eine Name-Referenz jetzt über einen `-` hinweg zu **einem**
+  Namen, sobald das Namens-Orakel diesen kennt — statt `a - b` (Subtraktion) zu
+  lesen. Dazu fließen die **Umgebungs-Variablennamen** einer Decision ins Orakel
+  ein (`nameOracleWithEnv`). Ein bloßes `a - b` ohne gleichnamige Variable bleibt
+  eine Subtraktion (Disambiguierung über die bekannte Namensmenge, DMN §10.3.1.2).
+  Das war die Ursache ganzer Kaskaden: 0007 (Modell nutzt `Date-Time`) 15→0,
+  0004-lending (`Pre-/Post-bureau…`) 7→0, 0087 7→0 u. a.
+- **`time(h, m, s, offset?)` mit fraktionaler Sekunde**: Die Sekunden-Komponente
+  darf einen Bruchteil tragen (`time(12,59,1.3,-PT1H)` → `12:59:01.3-01:00`);
+  `Number.SecondsNanos` teilt sie in ganze Sekunden + Nanosekunden. 0007: letzter
+  Rest → 0.
+
+Netto **+43 Cases** (92,1 % → 93,4 %).
+
+## Früher behoben — Kontext-Eintrags-Referenzen & string join (WP-41.14, +4)
 
 - **Kontext-Einträge referenzieren frühere Einträge** (FEEL-Kontext-Semantik):
   `{a: 1+2, b: a+3}` → `{a:3, b:6}`. `compileContext` baut die Umgebung inkrementell

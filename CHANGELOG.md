@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, 92,1 % → 93,4 %).**
+  FEEL-Namen dürfen einen Bindestrich enthalten (`Date-Time`, `Pre-bureauRiskCategory`): Der
+  Parser assembliert eine Referenz über den `-` hinweg zu einem Namen, sobald das Namens-Orakel
+  ihn kennt — dafür fließen die Umgebungs-Variablennamen einer Decision ins Orakel ein. Ein bloßes
+  `a - b` ohne gleichnamige Variable bleibt Subtraktion. Zusätzlich akzeptiert die
+  `time(h, m, s, offset?)`-Konstruktorform eine fraktionale Sekunde (`time(12,59,1.3,-PT1H)` →
+  `12:59:01.3-01:00`). +43 Cases (0007 15→0, 0004-lending 7→0, 0087 7→0 u. a.); der Ratchet-Floor
+  des CI-Gates steigt auf 93,3 %.
 - **DMN-TCK-Konformität: Kontext-Eintrags-Referenzen & string join (WP-41.14, 92,0 % → 92,1 %).**
   Ein Kontext-Eintrag kann jetzt die vor ihm deklarierten Einträge referenzieren
   (`{a: 1+2, b: a+3}` → `{a:3, b:6}`); und `string join(null)` ergibt `null` statt `""`.

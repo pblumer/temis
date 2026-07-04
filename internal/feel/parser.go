@@ -446,47 +446,83 @@ func isNameableKeyword(k Kind) bool { return k >= And && k <= External }
 
 func (p *parser) parseName() Expr {
 	start := p.cur()
-	parts := p.takeNameRun()
-	return &NameRef{baseNode: base(start), Name: strings.Join(parts, " "), Parts: parts}
+	name, parts := p.takeNameRun()
+	return &NameRef{baseNode: base(start), Name: name, Parts: parts}
 }
 
 // takeNameRun consumes one (possibly multi-word) name starting at the cursor and
-// returns its fragments, advancing past them. It greedily merges plain Name
-// fragments; when a name oracle is set it also extends across nameable keywords
-// (e.g. the "and" in "days and time duration") while the joined run is a name
-// the oracle knows.
-func (p *parser) takeNameRun() []string {
-	start := p.cur()
-	run := []Token{start}
-	for j := p.pos + 1; j < len(p.toks); j++ {
+// returns its assembled name string plus its plain fragments, advancing past
+// them. It greedily merges plain Name fragments; when a name oracle is set it
+// also extends across nameable keywords (e.g. the "and" in "days and time
+// duration") and single hyphens joining two fragments (e.g. "Date-Time") while
+// the assembled run is a name the oracle knows. FEEL admits "-" inside a name,
+// disambiguated against the known-name set, so a bare "a - b" (no such name)
+// still parses as a subtraction.
+func (p *parser) takeNameRun() (string, []string) {
+	// Build the maximal candidate token run: plain name fragments, plus (with an
+	// oracle) nameable keywords and hyphens that bridge two fragments.
+	run := []Token{p.cur()}
+	for j := p.pos + 1; j < len(p.toks); {
 		k := p.toks[j].Kind
-		if k == Name || (p.names != nil && isNameableKeyword(k)) {
+		switch {
+		case k == Name:
 			run = append(run, p.toks[j])
-			continue
+			j++
+		case p.names != nil && isNameableKeyword(k):
+			run = append(run, p.toks[j])
+			j++
+		case p.names != nil && k == Minus && j+1 < len(p.toks) &&
+			(p.toks[j+1].Kind == Name || isNameableKeyword(p.toks[j+1].Kind)):
+			run = append(run, p.toks[j], p.toks[j+1])
+			j += 2
+		default:
+			j = len(p.toks) // stop the scan
 		}
-		break
 	}
 
 	take := p.nameRunLen(p.pos) // plain-fragment greedy default
-	if p.names != nil {
-		joined := start.Text
-		for i := 1; i < len(run); i++ {
-			joined += " " + run[i].Text
-			if p.names.Has(joined) {
-				take = i + 1
-			}
-		}
-	}
 	if take < 1 {
 		take = 1
 	}
-
-	parts := make([]string, take)
-	for i := 0; i < take; i++ {
-		parts[i] = run[i].Text
+	if p.names != nil {
+		for k := 2; k <= len(run); k++ {
+			if run[k-1].Kind == Minus {
+				continue // a name cannot end on a hyphen
+			}
+			if p.names.Has(assembleName(run[:k])) {
+				take = k
+			}
+		}
 	}
+
+	consumed := run[:take]
 	p.pos += take
-	return parts
+	parts := make([]string, 0, take)
+	for _, t := range consumed {
+		if t.Kind != Minus {
+			parts = append(parts, t.Text)
+		}
+	}
+	return assembleName(consumed), parts
+}
+
+// assembleName renders a name-token run as its FEEL name string: plain fragments
+// join with a single space, while a hyphen fragment binds its neighbours with no
+// surrounding space (so "Date", "-", "Time" becomes "Date-Time").
+func assembleName(toks []Token) string {
+	var b strings.Builder
+	for i, t := range toks {
+		switch {
+		case t.Kind == Minus:
+			b.WriteString("-")
+		case i > 0 && toks[i-1].Kind != Minus:
+			b.WriteByte(' ')
+			b.WriteString(t.Text)
+		default:
+			b.WriteString(t.Text)
+		}
+	}
+	return b.String()
 }
 
 // assembleNameString consumes a greedy run of plain Name fragments and returns
@@ -524,7 +560,7 @@ func (p *parser) parseTypeName() string {
 	if p.cur().Kind != Name {
 		p.fail("expected a type name, got %s", describe(p.cur()))
 	}
-	name := strings.Join(p.takeNameRun(), " ")
+	name, _ := p.takeNameRun()
 	if p.cur().Kind == Lt {
 		name += p.captureGeneric()
 	}

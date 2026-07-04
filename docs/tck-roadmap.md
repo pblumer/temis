@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3220 / 3495 Cases (**92,1 %**) nach WP-41.14, Ratchet-Floor 92,1 %.
+**Stand:** 3263 / 3495 Cases (**93,4 %**) nach WP-41.15, Ratchet-Floor 93,3 %.
 **Nahziel:** > 90 % (≈ +276 Cases). **Endziel (WP-41):** ≥ 95 % der anwendbaren Cases.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
@@ -26,6 +26,7 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.7** | String- & Unicode-Funktionen | 0083 unicode, 1140 string join, 1109 replace, 1103 substring, 0067 split, 1105/1106 upper/lower | ~29 |
 | **WP-41.8** | Koerzierung an BKM/Invocation/Decision-Service-Grenzen | 0082-Rest, 1131, 0005, 0009-invoc, 0030/0031 | ~30 |
 | **WP-41.9** | Temporal-Rest | 0007, 1120/1121 duration, 0095–0098 date-parts, 0093 at-literals, 1116/1117-Rest | ~52 |
+| **WP-41.15 ✅** | **Bindestrich-Namen** (`Date-Time`, `Pre-/Post-bureau…`; Orakel + Env-Namen) **+ fraktionale `time`-Sekunden** | 0007, 0004, 0087, quer | **+43 → 93,4 %** |
 
 Bündel 41.4–41.9 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
 schwierigen Brocken unten.

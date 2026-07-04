@@ -169,6 +169,11 @@ func (e *Env) slot(name string) (int, bool) {
 // Names returns the variable names in slot order.
 func (e *Env) Names() []string { return e.order }
 
+// Has reports whether name is a bound variable. It lets an Env act as a parser
+// NameSet oracle so a variable whose name embeds a keyword or a hyphen (e.g.
+// "Date-Time") assembles as one name instead of a subtraction (WP-41.15).
+func (e *Env) Has(name string) bool { _, ok := e.index[name]; return ok }
+
 // Derive returns a new Env with extra names appended after the existing slots.
 // It is used to add the implicit unary-test input "?" to a decision env without
 // disturbing the existing slot indices.
