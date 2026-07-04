@@ -80,13 +80,17 @@ func Run(ctx context.Context, eng *dmn.Engine, modelXML, casesXML []byte) (*Repo
 		return nil, fmt.Errorf("tck: decode test cases: %w", err)
 	}
 
-	defs, diags, err := eng.Compile(ctx, modelXML)
+	defs, _, err := eng.Compile(ctx, modelXML)
 	if err != nil {
 		return nil, fmt.Errorf("tck: compile model: %w", err)
 	}
-	if diags.HasErrors() {
-		return nil, fmt.Errorf("tck: model has compile errors: %v", diags)
+	if defs == nil {
+		return nil, fmt.Errorf("tck: model did not compile")
 	}
+	// Note: per-decision compile diagnostics do NOT abort the suite. Each case
+	// evaluates its own target decision (runCheck); a decision that failed to
+	// compile fails only the cases that reference it, which is the correct TCK
+	// scoring — a single unsupported decision must not zero out a whole model.
 
 	rep := &Report{Model: suite.ModelName}
 	for _, tc := range suite.Cases {

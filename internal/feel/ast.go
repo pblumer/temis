@@ -173,6 +173,18 @@ type InExpr struct {
 
 func (n *InExpr) String() string { return "(in " + n.X.String() + joinExprs(n.Tests) + ")" }
 
+// CmpTest is an operator-prefixed positive unary test on the right-hand side of
+// `in`, e.g. the `<= 10` in `x in <= 10` or the explicit `= 10` in `x in = 10`.
+// It compares the in-value against Y with Op (one of < <= > >= = !=). It only
+// occurs inside InExpr.Tests.
+type CmpTest struct {
+	baseNode
+	Op string
+	Y  Expr
+}
+
+func (n *CmpTest) String() string { return "(" + n.Op + " ? " + n.Y.String() + ")" }
+
 // InstanceOfExpr is `X instance of Type`.
 type InstanceOfExpr struct {
 	baseNode

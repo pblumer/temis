@@ -111,8 +111,10 @@ func TestRunDecodeError(t *testing.T) {
 	}
 }
 
-// TestRunModelDiagErrors covers Run's diags.HasErrors() path: a model that
-// parses (no Go error) but whose decision logic has a FEEL syntax error.
+// TestRunModelDiagErrors covers the per-case behaviour when a decision fails to
+// compile: Run no longer aborts the whole suite (correct TCK scoring). A case
+// targeting the broken decision must FAIL (not pass, not error the suite), so an
+// unsupported decision only costs its own cases.
 func TestRunModelDiagErrors(t *testing.T) {
 	model := []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" namespace="http://temis.example/bad" name="Bad" id="def_bad">
@@ -121,10 +123,16 @@ func TestRunModelDiagErrors(t *testing.T) {
 	cases := []byte(`<?xml version="1.0"?>
 <testCases xmlns="http://www.omg.org/spec/DMN/20160719/testcase">
   <modelName>bad.dmn</modelName>
+  <testCase id="c1">
+    <resultNode name="Bad"><expected><value>2</value></expected></resultNode>
+  </testCase>
 </testCases>`)
-	_, err := Run(context.Background(), nil, model, cases)
-	if err == nil || !strings.Contains(err.Error(), "compile errors") {
-		t.Errorf("expected a compile-errors error, got %v", err)
+	rep, err := Run(context.Background(), nil, model, cases)
+	if err != nil {
+		t.Fatalf("Run should not abort the suite on a per-decision compile error: %v", err)
+	}
+	if rep.Passed() != 0 || rep.Failed() != 1 {
+		t.Errorf("expected the broken decision's case to fail (pass=0 fail=1), got pass=%d fail=%d", rep.Passed(), rep.Failed())
 	}
 }
 

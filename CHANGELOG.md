@@ -90,6 +90,19 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
   sichtbar von den Blättern nach oben propagiert. Reines Frontend über die bestehende
   Whole-Graph-Auswertung; spiegelt das Illuminate-Muster des Flow Studios (WP-98) in den
   DMN-Modeler. Erster Schritt, den „Auswerten"-Bereich ins Diagramm aufzulösen.
+- **Offizielle DMN-TCK-Konformität — Messung & Gate (WP-41, in Arbeit):** Temis wird jetzt
+  gegen das offizielle DMN Technology Compatibility Kit (github.com/dmn-tck/tck) an einem
+  gepinnten Commit geprüft. Neu: CI-Lane `tck` + `make tck-conformance` +
+  `internal/tck.TestOfficialTCKConformance` mit **Ratchet-Floor** (skippt offline ohne
+  `TCK_CORPUS`). Der Runner bewertet jetzt **pro Case** die Ziel-Decision statt die ganze
+  Suite bei einem Compile-Fehler abzubrechen. Erste Engine-Fixes: Builtins `is`,
+  `list replace` (Positions- und Match-Funktions-Form), `number(from, grouping, decimal)`
+  der **vollständige `in`-Operator** (operator-präfixierte Unary-Tests, Komma-Test-Listen,
+  Listen-Mitgliedschaft inkl. Range-Elementen — TCK 0072, 224→21 Fails) sowie das
+  **`range(from)`-Builtin** (Range-String-Parsing inkl. unbeschränkter Enden und Temporal-
+  Endpunkte + `instance of range<T>`).
+  **Stand: 77,4 % der Level-2/3-Cases** (2704/3495); Kategorien & Ausnahmen in
+  `docs/tck-exceptions.md`, Ziel ≥ 95 %.
 - **Betriebs-Observability abgeschlossen (WP-113/114, ADR-0030):** opt-in Metriken-Export —
   `GET /debug/vars` (expvar) und `GET /metrics` (Prometheus-Textformat, stdlib-Encoder, kein
   Client) hinter dem `audit`-Scope, standardmäßig aus (`temisd -metrics`/`$TEMIS_METRICS`);

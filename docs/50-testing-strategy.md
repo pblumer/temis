@@ -55,14 +55,19 @@
 
 ## 5. TCK (Technology Compatibility Kit) — das zentrale Korrektheitsmaß
 
-- Quelle: offizielles DMN-TCK-Repository (Modelle + Testdefinitionen im standardisierten
-  Format). Wird als Submodule/Vendored-Copy eingebunden.
-- `internal/tck`-Runner: liest `*.dmn` + zugehörige Testcase-XML, ruft die Engine, vergleicht.
-- Report listet pro Case: pass/fail/not-applicable + Grund.
-- **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren* Cases grün. Jede bewusste Auslassung
-  (z. B. PMML/ONNX, externe Funktionen) wird in `docs/tck-exceptions.md` mit Begründung
-  geführt.
-- CI bricht, wenn die TCK-Quote unter den eingefrorenen Stand fällt (Regressionsschutz).
+- Quelle: offizielles DMN-TCK-Repository (github.com/dmn-tck/tck). Es wird **an einem
+  gepinnten Commit bezogen, nicht vendored** (18 MB XML): `make tck-corpus` holt es nach
+  `.tck-corpus/` (gitignored); die CI-Lane `tck` tut dasselbe. So bleibt das Repo schlank.
+- `internal/tck`-Runner: liest `*.dmn` + zugehörige Testcase-XML, ruft die Engine, vergleicht
+  **pro Case** die Ziel-Decision (ein Compile-Fehler in einer Decision schlägt nur deren Cases
+  fehl, nicht die ganze Suite).
+- Gate: `internal/tck.TestOfficialTCKConformance` erzwingt einen **Ratchet-Floor**
+  (`conformanceFloor`), der nur nach oben wandert; ohne `TCK_CORPUS` skippt der Test
+  (offline grün). Lokal: `make tck-conformance`.
+- **Aktueller Stand:** 77,4 % (Level 2 + 3). **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren*
+  Cases. Stand, Kategorien und bewusste Auslassungen (z. B. externe Java-Funktionen) stehen in
+  `docs/tck-exceptions.md`.
+- CI bricht, wenn die TCK-Quote unter den Floor fällt (Regressionsschutz).
 
 ## 6. Benchmarks & Performance-Budget (CI-Gate, WP-42)
 

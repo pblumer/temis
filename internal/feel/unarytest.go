@@ -137,6 +137,8 @@ func refersToInput(e Expr) bool {
 		return anyRefersToInput(n.Tests)
 	case *InstanceOfExpr:
 		return refersToInput(n.X)
+	case *CmpTest:
+		return refersToInput(n.Y)
 	case *IfExpr:
 		return refersToInput(n.Cond) || refersToInput(n.Then) || refersToInput(n.Else)
 	case *PathExpr:

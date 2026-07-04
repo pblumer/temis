@@ -205,23 +205,66 @@ func (p *parser) parseComparison() Expr {
 }
 
 // parseInTests parses the right-hand side of `in`: a parenthesised, comma
-// separated list of tests, or a single test expression. Operator-prefixed unary
-// tests (e.g. `in < 5`) are handled by the unary-test parser in WP-08.
+// separated list of positive unary tests, or a single test. Each test may be an
+// operator-prefixed comparison (`<= 10`, `= 10`), an interval, a list or a plain
+// value (compiled by compileIn against the in-value). A bare `(2..4)` stays a
+// single interval test; `(1, 5, 9)` is the comma-list form.
 func (p *parser) parseInTests() []Expr {
 	if p.cur().Kind == LParen {
-		p.advance()
-		var tests []Expr
-		for p.cur().Kind != RParen {
-			tests = append(tests, p.parseExpr())
-			if p.cur().Kind != Comma {
-				break
-			}
+		// Look past the "(" for the comma-list form; a single parenthesised test
+		// (e.g. an interval) is handled by the general expression parser, which
+		// consumes its own parentheses.
+		if p.isInTestList() {
 			p.advance()
+			var tests []Expr
+			for p.cur().Kind != RParen {
+				tests = append(tests, p.parseInTest())
+				if p.cur().Kind != Comma {
+					break
+				}
+				p.advance()
+			}
+			p.expect(RParen)
+			return tests
 		}
-		p.expect(RParen)
-		return tests
 	}
-	return []Expr{p.parseAdd()}
+	return []Expr{p.parseInTest()}
+}
+
+// parseInTest parses one positive unary test on the right of `in`. A leading
+// comparison operator yields a CmpTest against the in-value; otherwise it is a
+// plain expression (value, interval or list) matched by compileIn.
+func (p *parser) parseInTest() Expr {
+	if op, ok := comparisonOps[p.cur().Kind]; ok {
+		t := p.advance()
+		return &CmpTest{baseNode: base(t), Op: op, Y: p.parseAdd()}
+	}
+	return p.parseExpr()
+}
+
+// isInTestList reports whether the parenthesised `in` right-hand side is a
+// comma-separated test list rather than a single parenthesised test (such as an
+// interval `(2..4)`). It scans to the matching close paren for a top-level comma.
+func (p *parser) isInTestList() bool {
+	depth := 0
+	for i := 0; ; i++ {
+		k := p.peek(i).Kind
+		switch k {
+		case LParen, LBracket:
+			depth++
+		case RParen, RBracket:
+			if k == RParen && depth == 1 {
+				return false
+			}
+			depth--
+		case Comma:
+			if depth == 1 {
+				return true
+			}
+		case EOF:
+			return false
+		}
+	}
 }
 
 func (p *parser) parseAdd() Expr {

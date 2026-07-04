@@ -104,8 +104,9 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> Offen u. a.: **WP-41** (offizielles TCK-Korpus) und das erste getaggte Release. Voller
-> Live-Status: `docs/20-roadmap.md`.
+> Offen u. a.: **WP-41** (offizielle TCK-Konformität — Infrastruktur steht, aktuell **77,4 %**
+> der Level-2/3-Cases, Ziel ≥ 95 %; siehe `docs/tck-exceptions.md`) und das erste getaggte
+> Release. Voller Live-Status: `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 

@@ -5,7 +5,7 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck fuzz cover proto proto-check build tidy clean help web web-wasm web-check web-e2e
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck tck-corpus tck-conformance fuzz cover proto proto-check build tidy clean help web web-wasm web-check web-e2e
 
 # Packages the coverage gate enforces, with their floors (docs/50-testing-strategy.md §8).
 # Kept well below the packages' actual coverage so a real regression trips it, not noise.
@@ -55,9 +55,27 @@ bench:
 budget:
 	$(GO) test -run '^TestPerformanceBudget$$' -count=1 ./dmn/
 
-## tck: run the TCK runner package (tolerant while no cases exist yet)
+## tck: run the TCK runner package (unit tests; the conformance test skips
+## unless TCK_CORPUS is set — see tck-conformance)
 tck:
 	$(GO) test ./internal/tck/...
+
+# Official DMN TCK corpus (github.com/dmn-tck/tck), pinned for reproducibility.
+# The corpus is fetched, not vendored, to keep the repo lean (18 MB of XML).
+TCK_REPO ?= https://github.com/dmn-tck/tck.git
+TCK_REF  ?= 0dbcaf9b98bc3af4e36d44a7aed95e9e85703a13
+TCK_DIR  ?= .tck-corpus
+
+## tck-corpus: fetch the pinned official DMN TCK corpus into $(TCK_DIR) (gitignored)
+tck-corpus:
+	@if [ ! -d "$(TCK_DIR)/.git" ]; then \
+		git clone --no-checkout --filter=blob:none $(TCK_REPO) $(TCK_DIR); \
+	fi
+	@cd $(TCK_DIR) && git fetch --depth 1 origin $(TCK_REF) && git checkout -q $(TCK_REF)
+
+## tck-conformance: run the official-TCK conformance gate against the fetched corpus
+tck-conformance: tck-corpus
+	TCK_CORPUS="$(CURDIR)/$(TCK_DIR)/TestCases" $(GO) test ./internal/tck/ -run TestOfficialTCKConformance -count=1 -v
 
 ## cover: enforce the statement-coverage floor on the correctness-critical packages
 ## (docs/50-testing-strategy.md §8). Fails if any drops below COVER_MIN percent.

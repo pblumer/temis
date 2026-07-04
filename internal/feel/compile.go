@@ -323,26 +323,67 @@ func (c *compiler) compileBetween(n *BetweenExpr) CompiledExpr {
 
 func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 	x := c.compile(n.X)
-	tests := make([]CompiledExpr, len(n.Tests))
+	// Each right-hand test is either an operator comparison (CmpTest → compare the
+	// in-value against the operand) or a plain value/interval/list matched by
+	// matchIn. `x in t1, t2, …` is the disjunction of the tests (FEEL 10.3.2.15).
+	type inTest struct {
+		cmp string       // comparison op when non-empty; otherwise a matchIn test
+		e   CompiledExpr // the operand (cmp) or the test value (matchIn)
+	}
+	tests := make([]inTest, len(n.Tests))
 	for i, t := range n.Tests {
-		tests[i] = c.compile(t)
+		if ct, ok := t.(*CmpTest); ok {
+			tests[i] = inTest{cmp: ct.Op, e: c.compile(ct.Y)}
+		} else {
+			tests[i] = inTest{e: c.compile(t)}
+		}
 	}
 	return func(s *Scope) (value.Value, error) {
 		xv, err := x(s)
 		if err != nil {
 			return nil, err
 		}
-		for _, tc := range tests {
-			tv, err := tc(s)
+		for _, t := range tests {
+			tv, err := t.e(s)
 			if err != nil {
 				return nil, err
 			}
-			if matchIn(xv, tv) {
+			if t.cmp != "" {
+				if cmpSatisfies(t.cmp, xv, tv) {
+					return value.True, nil
+				}
+			} else if matchIn(xv, tv) {
 				return value.True, nil
 			}
 		}
 		return value.False, nil
 	}
+}
+
+// cmpSatisfies reports whether `x <op> y` holds for an operator-prefixed unary
+// test on the right of `in`. Incomparable operands are not a match.
+func cmpSatisfies(op string, x, y value.Value) bool {
+	switch op {
+	case "=":
+		return value.Equal(x, y) == value.True
+	case "!=":
+		return value.Equal(x, y) == value.False
+	}
+	cmp, ok := value.Compare(x, y)
+	if !ok {
+		return false
+	}
+	switch op {
+	case "<":
+		return cmp < 0
+	case "<=":
+		return cmp <= 0
+	case ">":
+		return cmp > 0
+	case ">=":
+		return cmp >= 0
+	}
+	return false
 }
 
 // compileInstanceOf compiles `X instance of Type`. The type name must be a FEEL
@@ -794,10 +835,26 @@ func boolVal(v value.Value) (bool, bool) {
 // matchIn reports whether x matches a single `in` test: containment for a range
 // test, equality otherwise.
 func matchIn(x, t value.Value) bool {
-	if r, ok := t.(value.Range); ok {
-		return rangeContains(r, x)
+	switch tv := t.(type) {
+	case value.Range:
+		return rangeContains(tv, x)
+	case value.List:
+		// A list on the right of `in` is a list of positive unary tests: x matches
+		// if it is contained in a range element or equals any other element (FEEL
+		// membership). E.g. 1 in [2,3,1] and 1 in [[2..4],[1..3]] are both true.
+		for _, e := range tv.Elements {
+			if r, ok := e.(value.Range); ok {
+				if rangeContains(r, x) {
+					return true
+				}
+			} else if value.Equal(x, e) == value.True {
+				return true
+			}
+		}
+		return false
+	default:
+		return value.Equal(x, t) == value.True
 	}
-	return value.Equal(x, t) == value.True
 }
 
 func rangeContains(r value.Range, x value.Value) bool {
