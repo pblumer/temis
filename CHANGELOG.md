@@ -60,6 +60,14 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: 95 % erreicht — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, 94,5 % → 95,1 %).**
+  Die Etappe, die das WP-41-Endziel (≥ 95 % der Cases) knackt. Vier Fixes: (1) `number()` validiert
+  seine Separatoren (grouping/decimal müssen gültig, verschieden und Strings sein, sonst `null`);
+  (2) `range()` parst Konstruktor-Endpunkte wie `date("…")`/`duration("…")` gleichwertig zu `@"…"`;
+  (3) `replace()` bildet FEEL-`$N`-Gruppenreferenzen auf Gos `${N}` ab und setzt das `x`-Flag durch
+  Whitespace-Strippen um (RE2 kennt `(?x)` nicht); (4) unbekannte String-Escapes (`\d`, `\.`, `\s`)
+  werden verbatim durchgereicht, sodass Regex-Muster als FEEL-String-Literale kompilieren. +21 Cases
+  (1111 +9, 0058 +4, 1156 +4, 1109 +3); der Ratchet-Floor des CI-Gates steigt auf 95,0 %.
 - **DMN-TCK-Konformität: Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, 93,6 % → 94,5 %).**
   Drei kaskadierende Fixes: (1) der Aufruf eines unbekannten Namens oder eines Nicht-Funktions-Werts
   (`123()`, `"x"()`, `true()`) ergibt `null` statt die Decision nicht-ausführbar zu machen

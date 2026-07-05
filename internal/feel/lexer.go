@@ -204,8 +204,15 @@ func (l *Lexer) scanEscape(b *strings.Builder) bool {
 		return l.scanHexEscape(b, 4)
 	case 'U':
 		return l.scanHexEscape(b, 6)
+	case eof:
+		return false // a trailing backslash: unterminated
 	default:
-		return false
+		// Not a FEEL string escape, but the DMN-TCK writes regex patterns as string
+		// literals (e.g. "\d{3}", "\." or "\s"), so keep the backslash and the
+		// character verbatim rather than rejecting the whole literal — matching the
+		// reference engines' lenient behaviour (WP-41.18).
+		b.WriteByte('\\')
+		b.WriteRune(e)
 	}
 	return true
 }

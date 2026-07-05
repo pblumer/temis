@@ -77,7 +77,10 @@ func TestStrings(t *testing.T) {
 }
 
 func TestStringErrors(t *testing.T) {
-	for _, src := range []string{`"unterminated`, `"bad\xescape"`, `"\u00ZZ"`} {
+	// An unterminated literal, a bad \u hex escape and a trailing backslash are
+	// still errors; an unrecognised escape like \x is now passed through verbatim
+	// (WP-41.18, regex patterns as string literals), not rejected.
+	for _, src := range []string{`"unterminated`, `"\u00ZZ"`, `"trailing\`} {
 		toks := Tokenize(src)
 		if toks[0].Kind != Error {
 			t.Errorf("Tokenize(%q)[0].Kind = %v, want Error", src, toks[0].Kind)
@@ -85,6 +88,19 @@ func TestStringErrors(t *testing.T) {
 		if toks[0].Value == "" {
 			t.Errorf("Tokenize(%q): error token has no message", src)
 		}
+	}
+}
+
+// TestUnknownEscapePassthrough covers WP-41.18: an unrecognised string escape is
+// kept verbatim (backslash + char), so regex patterns like "\d{3}" tokenize as a
+// well-formed string literal instead of a lexer error.
+func TestUnknownEscapePassthrough(t *testing.T) {
+	toks := Tokenize(`"\d{3}\.\s"`)
+	if toks[0].Kind != String {
+		t.Fatalf(`Tokenize("\d{3}\.\s")[0].Kind = %v, want String`, toks[0].Kind)
+	}
+	if got, want := toks[0].Value, `\d{3}\.\s`; got != want {
+		t.Errorf("value = %q, want %q", got, want)
 	}
 }
 

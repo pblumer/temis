@@ -201,9 +201,9 @@ func TestStringEdgeBranches(t *testing.T) {
 	run(t, []tc{
 		// compileRegex: unknown flag → null; the 'x','s','m' flags are accepted.
 		{name: "matches", args: []value.Value{str("a"), str("a"), str("q")}, wantNull: true},
-		// the 'x' flag is accepted by compileRegex but Go's RE2 rejects (?x), so
-		// it yields null; still exercises the case 'x' branch.
-		{name: "matches", args: []value.Value{str("ab"), str("a b"), str("x")}, wantNull: true},
+		// the 'x' (extended) flag strips insignificant whitespace from the pattern,
+		// so "a b" becomes "ab" and matches "ab" (WP-41.18).
+		{name: "matches", args: []value.Value{str("ab"), str("a b"), str("x")}, want: "true"},
 		{name: "matches", args: []value.Value{str("a\nb"), str("a.b"), str("s")}, want: "true"},
 		{name: "matches", args: []value.Value{str("a\nb"), str("^b$"), str("m")}, want: "true"},
 		// matches: non-string pattern → null

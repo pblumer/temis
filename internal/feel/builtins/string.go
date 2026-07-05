@@ -74,7 +74,9 @@ func substringSide(before bool) Func {
 }
 
 // compileRegex builds a regexp from a FEEL pattern and optional flag string
-// (i, s, m, x), mapping the flags to RE2 inline flags. A bad pattern yields nil.
+// (i, s, m, x). The i/s/m flags map to RE2 inline flags; the x ("extended") flag
+// has no RE2 equivalent, so its insignificant-whitespace/comment stripping is
+// applied to the pattern directly. A bad pattern or unknown flag yields nil.
 func compileRegex(pattern string, flags string) *regexp.Regexp {
 	var inline string
 	for _, f := range flags {
@@ -82,7 +84,7 @@ func compileRegex(pattern string, flags string) *regexp.Regexp {
 		case 'i', 's', 'm':
 			inline += string(f)
 		case 'x':
-			inline += "x"
+			pattern = extendedPattern(pattern)
 		default:
 			return nil // unknown flag ⇒ null
 		}
@@ -95,6 +97,67 @@ func compileRegex(pattern string, flags string) *regexp.Regexp {
 		return nil
 	}
 	return re
+}
+
+// extendedPattern strips insignificant whitespace and #-comments from a pattern
+// for the XPath/FEEL "x" flag, which RE2 does not support natively. Whitespace
+// that is escaped or inside a character class is kept.
+func extendedPattern(p string) string {
+	var b strings.Builder
+	inClass := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c == '\\' && i+1 < len(p):
+			b.WriteByte(c)
+			b.WriteByte(p[i+1])
+			i++
+		case inClass:
+			b.WriteByte(c)
+			if c == ']' {
+				inClass = false
+			}
+		case c == '[':
+			inClass = true
+			b.WriteByte(c)
+		case c == ' ', c == '\t', c == '\n', c == '\r':
+			// insignificant whitespace: drop
+		case c == '#':
+			for i+1 < len(p) && p[i+1] != '\n' { // comment to end of line
+				i++
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// feelReplacement rewrites an XPath/FEEL replacement string into Go's Regexp
+// syntax: a $N group reference becomes ${N} (so "$1c" is group 1 then a literal
+// "c", not the group named "1c"), and a $ that does not introduce a group is
+// escaped to $$ so it stays literal.
+func feelReplacement(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '$' {
+			b.WriteByte(s[i])
+			continue
+		}
+		j := i + 1
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j == i+1 { // a lone $ ⇒ literal
+			b.WriteString("$$")
+			continue
+		}
+		b.WriteString("${")
+		b.WriteString(s[i+1 : j])
+		b.WriteByte('}')
+		i = j - 1
+	}
+	return b.String()
 }
 
 func regexFlags(args []value.Value, idx int) (string, bool) {
@@ -130,7 +193,7 @@ func replace(args []value.Value) (value.Value, error) {
 	if re == nil {
 		return value.Null, nil
 	}
-	return value.Str(re.ReplaceAllString(input, repl)), nil
+	return value.Str(re.ReplaceAllString(input, feelReplacement(repl))), nil
 }
 
 func split(args []value.Value) (value.Value, error) {
