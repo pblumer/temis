@@ -5,7 +5,7 @@ GO      ?= go
 PKGS    ?= ./...
 FUZZTIME ?= 10s
 
-.PHONY: all verify fmt fmt-check vet lint test bench budget tck tck-corpus tck-conformance fuzz cover proto proto-check build tidy clean help web web-wasm web-check web-e2e
+.PHONY: all verify fmt fmt-check vet lint test bench budget tck tck-corpus tck-conformance tck-results fuzz cover proto proto-check build tidy clean help web web-wasm web-check web-e2e
 
 # Packages the coverage gate enforces, with their floors (docs/50-testing-strategy.md §8).
 # Kept well below the packages' actual coverage so a real regression trips it, not noise.
@@ -76,6 +76,16 @@ tck-corpus:
 ## tck-conformance: run the official-TCK conformance gate against the fetched corpus
 tck-conformance: tck-corpus
 	TCK_CORPUS="$(CURDIR)/$(TCK_DIR)/TestCases" $(GO) test ./internal/tck/ -run TestOfficialTCKConformance -count=1 -v
+
+## tck-results: generate a dmn-tck/tck vendor submission (tck_results.csv +
+## .properties) under docs/tck-submission/Temis/<version>/ for a fork PR.
+## Override version/date with TCK_RESULT_VERSION / TCK_RESULT_DATE.
+TCK_RESULT_VERSION ?= 0.0.0-dev
+TCK_RESULT_DATE    ?= $(shell date +%Y-%m-%d)
+tck-results: tck-corpus
+	TCK_CORPUS="$(CURDIR)/$(TCK_DIR)/TestCases" $(GO) run ./cmd/temis-tck-results \
+		-out "$(CURDIR)/docs/tck-submission/Temis/$(TCK_RESULT_VERSION)" \
+		-version "$(TCK_RESULT_VERSION)" -date "$(TCK_RESULT_DATE)"
 
 ## cover: enforce the statement-coverage floor on the correctness-critical packages
 ## (docs/50-testing-strategy.md §8). Fails if any drops below COVER_MIN percent.
