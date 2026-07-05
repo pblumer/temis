@@ -115,26 +115,29 @@ JDK 21) auf **identischen DMN-Dateien**, derselben VM, beide out-of-the-box,
 | Szenario | Temis | Drools | Temis schneller |
 |---|---:|---:|---:|
 | String-Tabelle | **2,1** | 6,3 | **3,0×** |
-| Numerische Tabelle | **2,7** | 6,4 | **2,4×** |
-| COLLECT-Tabelle | **1,8** | 4,0 | **2,3×** |
-| DRG-Graph (10 tief) | **7,7** | 10,3 | **1,3×** |
+| Numerische Tabelle | **2,6** | 6,4 | **2,5×** |
+| COLLECT-Tabelle | **2,0** | 4,0 | **2,0×** |
+| DRG-Graph (10 tief) | **6,9** | 10,3 | **1,5×** |
 | FEEL-Arithmetik | **3,7** | 4,6 | **1,2×** |
 
 **Durchsatz — 4 Kerne (Auswertungen/s, mehr ist besser):**
 
 | Szenario | Temis (Default) | Drools (Default) | Temis `GOGC=400` |
 |---|---:|---:|---:|
-| String-Tabelle | **880 000** | 526 000 | 1 811 000 |
-| Numerische Tabelle | **832 000** | 572 000 | 1 266 000 |
-| COLLECT-Tabelle | **955 000** | 875 000 | 1 552 000 |
-| DRG-Graph | **290 000** | 253 000 | 405 000 |
-| FEEL-Arithmetik | 664 000 | **763 000** | 907 000 |
+| String-Tabelle | **858 000** | 526 000 | 1 571 000 |
+| Numerische Tabelle | **778 000** | 572 000 | 1 272 000 |
+| COLLECT-Tabelle | 860 000 | 875 000 | 1 709 000 |
+| DRG-Graph | **289 000** | 253 000 | 500 000 |
+| FEEL-Arithmetik | 729 000 | 763 000 | 998 000 |
 
 Single-core gewinnt Temis jedes Szenario (1,2–3,0×, am stärksten bei Tabellen).
-Im parallelen Default-Fall führt Temis überall außer bei reiner Arithmetik, wo
-Temis GC-gebunden ist und Drools' JVM-GC über Threads reifer skaliert (763k vs.
-664k) — mit `GOGC=400` dreht sich auch das. Der Single-Core-Wert ist der
-sauberste Vergleich, weil er GC-Skalierung ausklammert.
+Im parallelen Default-Fall führt Temis bei Tabellen und liegt bei COLLECT und
+reiner Arithmetik im Messrauschen gleichauf (dort ist Temis GC-gebunden und
+Drools' JVM-GC skaliert über Threads reifer) — mit `GOGC=400` führt Temis
+überall. Der Single-Core-Wert ist der sauberste Vergleich, weil er
+GC-Skalierung ausklammert. Integer-Arithmetik nimmt einen nativen int64-Pfad
+(WP-Performance), sodass Ganzzahl-Rechnung und DRG-Ketten ohne Dezimal-
+Allokation laufen.
 
 ## 4. Selbst nachstellen
 

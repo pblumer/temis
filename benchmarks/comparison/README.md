@@ -8,9 +8,9 @@ auf **derselben Maschine** aus, und beide prüfen dasselbe erwartete Ergebnis
 > **Kurzfassung:** Pro Auswertung (ein Kern) ist Temis in **jedem** Szenario
 > schneller — **1,2× bis 3,0×**, am deutlichsten bei Decision-Tables (dem
 > häufigsten realen DMN-Fall). Im parallelen Durchsatz (4 Kerne, beide Default)
-> führt Temis bei Tabellen (bis 1,7×) und liegt bei arithmetik-/graphlastigen
+> führt Temis bei Tabellen (bis 1,6×) und liegt bei arithmetik-/collect-lastigen
 > Modellen gleichauf; mit dem üblichen Go-Heap-Tuning (`GOGC=400`) zieht Temis
-> überall davon.
+> überall davon (bis 2,0×).
 
 ## Ergebnisse
 
@@ -27,31 +27,33 @@ Beide out-of-the-box konfiguriert (Temis `GOGC=100`, JVM Default-G1GC).
 | Szenario | Temis | Drools | Temis schneller |
 |---|---:|---:|---:|
 | String-Tabelle (Gleichheit) | **2,1** | 6,3 | **3,0×** |
-| Numerische Tabelle (Intervalle) | **2,7** | 6,4 | **2,4×** |
-| COLLECT-Tabelle (Liste) | **1,8** | 4,0 | **2,3×** |
-| DRG-Graph (10 tief) | **7,7** | 10,3 | **1,3×** |
+| Numerische Tabelle (Intervalle) | **2,6** | 6,4 | **2,5×** |
+| COLLECT-Tabelle (Liste) | **2,0** | 4,0 | **2,0×** |
+| DRG-Graph (10 tief) | **6,9** | 10,3 | **1,5×** |
 | FEEL-Arithmetik (dezimal) | **3,7** | 4,6 | **1,2×** |
 
 Der Single-Core-Wert ist der sauberste Vergleich — er klammert GC-Skalierung
-aus. Temis gewinnt jedes Szenario; bei Tabellen 2,3–3,0×, bei den rechen-/
-graphlastigen Modellen knapper (dort dominiert die exakte Dezimalarithmetik bzw.
-die Graph-Maschinerie, wo beide Engines ähnlich viel Arbeit leisten).
+aus. Temis gewinnt jedes Szenario; bei Tabellen 2,0–3,0×, bei den rechen-/
+graphlastigen Modellen knapper (dort dominiert die exakte Dezimalarithmetik, wo
+beide Engines ähnlich viel Arbeit leisten). Integer-Arithmetik nimmt in Temis
+einen nativen int64-Pfad (kein Dezimal-Objekt), nur echte Nicht-Ganzzahl-
+Ergebnisse (hier `45/2 = 22,5`) laufen noch über die Dezimal-Bibliothek.
 
 ### Durchsatz — 4 Kerne parallel (Auswertungen/s, mehr ist besser)
 
 | Szenario | Temis (Default) | Drools (Default) | Temis schneller | Temis `GOGC=400` |
 |---|---:|---:|---:|---:|
-| String-Tabelle | **880 000** | 526 000 | **1,67×** | 1 811 000 |
-| Numerische Tabelle | **832 000** | 572 000 | **1,45×** | 1 266 000 |
-| COLLECT-Tabelle | **955 000** | 875 000 | **1,09×** | 1 552 000 |
-| DRG-Graph | **290 000** | 253 000 | **1,15×** | 405 000 |
-| FEEL-Arithmetik | 664 000 | **763 000** | 0,87× | 907 000 |
+| String-Tabelle | **858 000** | 526 000 | **1,63×** | 1 571 000 |
+| Numerische Tabelle | **778 000** | 572 000 | **1,36×** | 1 272 000 |
+| COLLECT-Tabelle | **860 000** | 875 000 | ~1,0× | 1 709 000 |
+| DRG-Graph | **289 000** | 253 000 | **1,14×** | 500 000 |
+| FEEL-Arithmetik | 729 000 | 763 000 | ~0,96× | 998 000 |
 
-**Ehrlich benannt:** Im *parallelen Default-Fall* schlägt Drools Temis bei reiner
-Arithmetik (763k vs. 664k) — dort ist Temis GC-gebunden, und die JVM skaliert
-den GC über Threads reifer. Das ist der **einzige** der zehn Vergleiche, den
-Drools gewinnt; mit `GOGC=400` dreht sich auch dieser (907k). Bei Tabellen führt
-Temis durchgehend, single-core überall.
+**Ehrlich benannt:** Im *parallelen Default-Fall* liegen COLLECT-Tabelle und reine
+Arithmetik im Rahmen des Messrauschens (±10 % auf der geteilten VM) gleichauf mit
+Drools — Temis ist dort GC-gebunden, und die JVM skaliert ihren GC über Threads
+reifer. Sobald der Go-Heap wächst (`GOGC=400`) oder single-core gemessen wird,
+führt Temis in **jedem** Szenario. Bei Tabellen führt Temis durchgehend.
 
 ## Was gemessen wird
 

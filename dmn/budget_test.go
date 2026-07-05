@@ -29,10 +29,14 @@ func TestPerformanceBudget(t *testing.T) {
 		{"EvaluateMidTable", BenchmarkEvaluateMidTable, 22, 40_000},
 		// String-equality matching is the most common real table shape.
 		{"EvaluateStringTable", BenchmarkEvaluateStringTable, 24, 40_000},
-		{"EvaluateArithmetic", BenchmarkEvaluateArithmetic, 24, 40_000},
+		// Integer arithmetic takes a native int64 fast path (no decimal alloc) and,
+		// for small results, the NumberFromInt64 cache; only genuinely non-integer
+		// results (here the /2 and the following -1) still allocate a decimal.
+		{"EvaluateArithmetic", BenchmarkEvaluateArithmetic, 20, 40_000},
 		// A 10-deep DRG chain stays roughly linear; the graph evaluator shares one
-		// execution state across all decisions rather than allocating one per decision.
-		{"EvaluateDRGChain10", BenchmarkEvaluateDRGChain10, 75, 80_000},
+		// execution state across all decisions, and each decision's integer +1 is
+		// native and cache-hit, so it allocates no decimal.
+		{"EvaluateDRGChain10", BenchmarkEvaluateDRGChain10, 60, 80_000},
 		// Compilation is one-off and uncritical; the ceiling only catches blow-ups.
 		{"CompileMidTable", BenchmarkCompileMidTable, 5_000, 5_000_000},
 	}
