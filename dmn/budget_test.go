@@ -27,6 +27,8 @@ func TestPerformanceBudget(t *testing.T) {
 		// fast path (no graph evaluator); decision-table interval cells and the
 		// implicit "?" input match without materialising ranges or per-column scopes.
 		{"EvaluateMidTable", BenchmarkEvaluateMidTable, 22, 40_000},
+		// String-equality matching is the most common real table shape.
+		{"EvaluateStringTable", BenchmarkEvaluateStringTable, 24, 40_000},
 		{"EvaluateArithmetic", BenchmarkEvaluateArithmetic, 24, 40_000},
 		// A 10-deep DRG chain stays roughly linear; the graph evaluator shares one
 		// execution state across all decisions rather than allocating one per decision.
