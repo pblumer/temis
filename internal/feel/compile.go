@@ -482,20 +482,25 @@ func (c *compiler) compileIf(n *IfExpr) CompiledExpr {
 	return IfThenElse(c.compile(n.Cond), c.compile(n.Then), c.compile(n.Else))
 }
 
-// IfThenElse builds a FEEL conditional: then runs only when cond is exactly the
-// boolean true, otherwise els runs (so a null or non-boolean condition takes the
-// else branch). It is the shared runtime of the literal `if` and the boxed
-// <conditional> (WP-26).
+// IfThenElse builds a FEEL conditional: then runs on the boolean true; a genuine
+// non-boolean condition (e.g. a string) makes the whole conditional null (DMN
+// 10.3.2.5, TCK 1150); false and null take the else branch (the common null-safe
+// form). It is the shared runtime of the literal `if` and the boxed <conditional>
+// (WP-26).
 func IfThenElse(cond, then, els CompiledExpr) CompiledExpr {
 	return func(s *Scope) (value.Value, error) {
 		cv, err := cond(s)
 		if err != nil {
 			return nil, err
 		}
-		if cv == value.True {
+		switch {
+		case cv == value.True:
 			return then(s)
+		case cv == value.False || value.IsNull(cv):
+			return els(s)
+		default:
+			return value.Null, nil
 		}
-		return els(s)
 	}
 }
 
@@ -817,12 +822,11 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 		return c.nullCall()
 	}
 
-	count := len(n.Args)
-	if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
-		return c.nullCall()
-	}
-
 	if !named {
+		count := len(n.Args)
+		if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
+			return c.nullCall()
+		}
 		out := make([]CompiledExpr, count)
 		for i, a := range n.Args {
 			out[i] = c.compile(a.Value)
@@ -830,8 +834,10 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 		return out
 	}
 
-	// Named arguments: place each at its parameter index; omitted parameters
-	// default to null so optional trailing parameters work.
+	// Named arguments: place each at its parameter index; a missing parameter
+	// defaults to null (so a call may omit optional parameters, e.g.
+	// is(value1: x) → is(x, null), TCK 0103). Arity is not otherwise checked:
+	// every name must resolve to a parameter, and the callee handles nulls.
 	if len(b.Params) == 0 {
 		return c.nullCall()
 	}

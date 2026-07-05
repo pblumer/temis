@@ -34,12 +34,11 @@ func TestVariadicMethod(t *testing.T) {
 	}
 }
 
-func TestAsIntNonInteger(t *testing.T) {
-	// scaled() goes through asInt on its scale argument; a non-integer number
-	// (fractional) makes Int64 fail, exercising asInt's ok=false branch.
+func TestScaledFractionalScale(t *testing.T) {
+	// scaled() floors a non-integer scale argument (TCK 1100 decimal(1/3, 2.5)).
 	run(t, []tc{
-		{name: "decimal", args: []value.Value{num("3.14"), num("1.5")}, wantNull: true},
-		{name: "floor", args: []value.Value{num("3.14"), num("2.5")}, wantNull: true},
+		{name: "decimal", args: []value.Value{num("3.146"), num("1.5")}, want: "3.1"},
+		{name: "floor", args: []value.Value{num("3.14"), num("2.5")}, want: "3.14"},
 	})
 }
 

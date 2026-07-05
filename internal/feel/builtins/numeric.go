@@ -75,7 +75,8 @@ func scaled(f func(value.Number, int32) (value.Number, bool)) Func {
 		}
 		scale := 0
 		if len(args) >= 2 {
-			s, ok := asInt(args[1])
+			// The scale may be non-integer and is floored (TCK 1100 decimal(1/3, 2.5)).
+			s, ok := asIntFloor(args[1])
 			if !ok {
 				return value.Null, nil
 			}

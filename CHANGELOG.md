@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Named-Arg-Arity, decimal-Skala & Conditional-Semantik (WP-41.26, 97,4 % → 97,5 %).**
+  Ein benannter Funktionsaufruf darf optionale Parameter weglassen (sie defaulten auf null) statt an der
+  Arity zu scheitern (`is(value1: x)` → false); `decimal`/`floor`/`ceiling` floorn eine fraktionale Skala
+  (`decimal(1/3, 2.5)` → 0,33); und eine echte nicht-boolesche `if`-Bedingung ergibt null (false/null
+  nehmen weiter den Else-Zweig). +4 Cases (0103, 1100, 1150); Floor 97,4 %.
 - **DMN-TCK-Konformität: Unary-Test-Membership & Punkt-Namen (WP-41.25, 97,3 % → 97,4 %).**
   Ein Decision-Table-Unary-Test, dessen Wert eine Liste ist, ist jetzt ein Membership-Test (`? in e`)
   statt Gleichheit (ein Intervall testet Containment, ein Skalar reduziert auf Gleichheit); und FEEL-Namen
