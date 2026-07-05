@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3426 / 3495 Cases grün (98,0 %)** |
+| Compliance Level 2 + 3 | **3430 / 3495 Cases grün (98,1 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 98,0 % |
+| Ratchet-Floor im CI | 98,1 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,24 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Weg zu 98 % (WP-41.27, +14)
+## In dieser Etappe behoben — über 98 % (WP-41.28, +4)
+
+Vier weitere saubere Fixes:
+
+- **Quantoren mit nicht-boolescher Bedingung → null**: liefert die `satisfies`-Klausel
+  eines `some`/`every` einen echten Nicht-Boolean, ist das ganze Ergebnis `null` — auch
+  wenn ein anderes Element erfüllt war (dieselbe Regel wie beim Boxed-Filter; gilt für
+  die inline-FEEL- **und** die Boxed-Form). 1153.
+- **`list replace(match:…)` benannt**: die Match-Funktions-Form trägt jetzt die
+  alternative Signatur `[list, match, newItem]` neben `[list, position, newItem]`. 1155.
+- **`string join` auf 1–2 Argumente beschränkt**: das nicht-standardisierte
+  Prefix/Suffix (3./4. Argument) entfällt — `string join(["a","c"], "X", "foo")` → null. 1140.
+- **Doppelte Kontext-Schlüssel → null**: `{foo: "bar", foo: "baz"}` ist ungültig und
+  wertet zu `null` aus statt Last-Wins. 0057.
+
+Netto **+4 Cases** (98,0 % → 98,1 %).
+
+## Früher behoben — Weg zu 98 % (WP-41.27, +14)
 
 Ein gemischtes Bündel, das die 98-%-Marke überschreitet:
 

@@ -526,6 +526,15 @@ func (c *compiler) compileList(n *ListLit) CompiledExpr {
 }
 
 func (c *compiler) compileContext(n *ContextLit) CompiledExpr {
+	// Duplicate keys make a context literal invalid — it evaluates to null
+	// (DMN 10.3.2.6, TCK 0057), not last-wins.
+	seen := make(map[string]bool, len(n.Entries))
+	for _, entry := range n.Entries {
+		if seen[entry.Key] {
+			return constNull
+		}
+		seen[entry.Key] = true
+	}
 	keys := make([]string, len(n.Entries))
 	vals := make([]CompiledExpr, len(n.Entries))
 	// Each entry's value may reference the entries declared before it (FEEL context

@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: über 98 % (WP-41.28, 98,0 % → 98,1 %).**
+  Vier weitere Fixes: ein `some`/`every` mit echt nicht-boolescher `satisfies`-Klausel ergibt null
+  (dieselbe Regel wie beim Boxed-Filter, jetzt auch für Quantoren); `list replace(match: …)` bindet
+  die benannte Match-Funktions-Form; `string join` ist auf seine DMN-Formen mit 1–2 Argumenten
+  beschränkt (das nicht-standardisierte Prefix/Suffix entfällt, ein 3. Argument ergibt null); und
+  ein Kontext-Literal mit doppelten Schlüsseln (`{foo: 1, foo: 2}`) wertet zu null aus statt
+  Last-Wins. +4 Cases (1153, 1155, 1140, 0057); Floor 98,1 %.
 - **DMN-TCK-Konformität: Weg zu 98 % (WP-41.27, 97,5 % → 98,0 %). 🎯**
   Ein gemischtes Bündel über die 98-%-Marke: die Temporal-Konstruktoren binden ihre benannten
   Komponentenformen (`date(year:…, month:…, day:…)`, `time(hour:…, minute:…, second:…, offset:…)`,

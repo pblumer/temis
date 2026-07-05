@@ -8,7 +8,7 @@ func registerListReplaceAndIs(r *Registry) {
 	// list replace(list, position, newItem): replace the 1-indexed element (a
 	// negative position counts from the end). list replace(list, match, newItem):
 	// replace every element for which match(item, newItem) is true (DMN 1.5).
-	r.Register(fixed("list replace", []string{"list", "position", "newItem"}, 3, 3, func(args []value.Value) (value.Value, error) {
+	r.Register(overloaded("list replace", []string{"list", "position", "newItem"}, [][]string{{"list", "match", "newItem"}}, 3, 3, func(args []value.Value) (value.Value, error) {
 		// The list argument coerces a singleton scalar to a one-element list; null
 		// stays null.
 		var elems []value.Value
