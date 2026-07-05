@@ -2,7 +2,9 @@ package bench;
 
 import java.io.File;
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.kie.dmn.api.core.DMNContext;
@@ -23,24 +25,23 @@ import org.openjdk.jmh.annotations.State;
 
 /**
  * Drools DMN engine benchmark over the SAME model files Temis is measured
- * against ({@code ../models/*.dmn}). The DMN model is compiled once in
- * {@link #setup()} (mirroring Temis compiling once); each measured op builds a
+ * against ({@code ../models/*.dmn}). Each model's DMN is compiled once in
+ * {@link #setup()} (mirroring Temis compiling once); every measured op builds a
  * fresh context and calls {@code evaluateAll}, mirroring Temis building an Input
  * map and calling Evaluate.
  *
  * Throughput mode reports ops/s (== decisions/s); AverageTime reports ns/op.
- * Reproduce via ../README.md.
+ * A parity check in setup fails fast unless Drools produces the exact same
+ * output as Temis for each scenario. Reproduce via ../README.md.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class DmnBench {
 
-    private DMNRuntime stringRuntime;
-    private DMNModel stringModel;
-
-    private DMNRuntime numericRuntime;
-    private DMNModel numericModel;
+    // One compiled model per scenario, loaded once.
+    private DMNRuntime stringRt, numericRt, arithRt, drgRt, collectRt;
+    private DMNModel stringM, numericM, arithM, drgM, collectM;
 
     private static DMNRuntime runtimeFor(File dmn) {
         return DMNRuntimeBuilder.fromDefaults()
@@ -53,49 +54,79 @@ public class DmnBench {
     public void setup() {
         String dir = System.getProperty("models.dir", "../models");
 
-        stringRuntime = runtimeFor(new File(dir, "string-table.dmn"));
-        stringModel = stringRuntime.getModels().get(0);
+        stringRt = runtimeFor(new File(dir, "string-table.dmn"));
+        stringM = stringRt.getModels().get(0);
+        numericRt = runtimeFor(new File(dir, "numeric-table.dmn"));
+        numericM = numericRt.getModels().get(0);
+        arithRt = runtimeFor(new File(dir, "arithmetic.dmn"));
+        arithM = arithRt.getModels().get(0);
+        drgRt = runtimeFor(new File(dir, "drg-chain.dmn"));
+        drgM = drgRt.getModels().get(0);
+        collectRt = runtimeFor(new File(dir, "collect-table.dmn"));
+        collectM = collectRt.getModels().get(0);
 
-        numericRuntime = runtimeFor(new File(dir, "numeric-table.dmn"));
-        numericModel = numericRuntime.getModels().get(0);
-
-        // Parity check: fail fast if Drools does not produce the same outputs as
-        // Temis (m8, g5), so the comparison can never silently drift.
-        Object menu = evalString();
-        if (!"m8".equals(menu)) {
-            throw new IllegalStateException("string-table parity: expected m8, got " + menu);
+        // Parity checks: every scenario must match the exact output Temis produces.
+        expect("string-table", "m8", evalString());
+        expect("numeric-table", "g5", evalNumeric());
+        expectNum("arithmetic", new BigDecimal("21.5"), evalArithmetic());
+        expectNum("drg-chain", new BigDecimal("10"), evalDrgChain());
+        List<?> tags = evalCollect();
+        if (!Arrays.asList("low", "mid", "spot").equals(tags)) {
+            throw new IllegalStateException("collect-table parity: expected [low, mid, spot], got " + tags);
         }
-        Object grade = evalNumeric();
-        if (!"g5".equals(grade)) {
-            throw new IllegalStateException("numeric-table parity: expected g5, got " + grade);
+    }
+
+    private static void expect(String what, Object want, Object got) {
+        if (!want.equals(got)) {
+            throw new IllegalStateException(what + " parity: expected " + want + ", got " + got);
+        }
+    }
+
+    private static void expectNum(String what, BigDecimal want, Object got) {
+        if (!(got instanceof BigDecimal) || want.compareTo((BigDecimal) got) != 0) {
+            throw new IllegalStateException(what + " parity: expected " + want + ", got " + got);
         }
     }
 
     private Object evalString() {
-        DMNContext ctx = stringRuntime.newContext();
-        ctx.set("Season", "Winter");
-        ctx.set("Region", "R8");
-        DMNResult r = stringRuntime.evaluateAll(stringModel, ctx);
-        return r.getContext().get("Menu");
+        DMNContext c = stringRt.newContext();
+        c.set("Season", "Winter");
+        c.set("Region", "R8");
+        return stringRt.evaluateAll(stringM, c).getContext().get("Menu");
     }
 
     private Object evalNumeric() {
-        DMNContext ctx = numericRuntime.newContext();
-        ctx.set("A", BigDecimal.valueOf(55));
-        ctx.set("B", BigDecimal.ZERO);
-        ctx.set("C", BigDecimal.ZERO);
-        ctx.set("D", BigDecimal.ZERO);
-        DMNResult r = numericRuntime.evaluateAll(numericModel, ctx);
-        return r.getContext().get("Grade");
+        DMNContext c = numericRt.newContext();
+        c.set("A", BigDecimal.valueOf(55));
+        c.set("B", BigDecimal.ZERO);
+        c.set("C", BigDecimal.ZERO);
+        c.set("D", BigDecimal.ZERO);
+        return numericRt.evaluateAll(numericM, c).getContext().get("Grade");
     }
 
-    @Benchmark
-    public Object stringTable() {
-        return evalString();
+    private Object evalArithmetic() {
+        DMNContext c = arithRt.newContext();
+        c.set("A", BigDecimal.valueOf(6));
+        c.set("B", BigDecimal.valueOf(7));
+        return arithRt.evaluateAll(arithM, c).getContext().get("R");
     }
 
-    @Benchmark
-    public Object numericTable() {
-        return evalNumeric();
+    private Object evalDrgChain() {
+        DMNContext c = drgRt.newContext();
+        c.set("Seed", BigDecimal.ZERO);
+        return drgRt.evaluateAll(drgM, c).getContext().get("D10");
     }
+
+    private List<?> evalCollect() {
+        DMNContext c = collectRt.newContext();
+        c.set("Score", BigDecimal.valueOf(5));
+        Object out = collectRt.evaluateAll(collectM, c).getContext().get("Tags");
+        return (List<?>) out;
+    }
+
+    @Benchmark public Object stringTable()  { return evalString(); }
+    @Benchmark public Object numericTable() { return evalNumeric(); }
+    @Benchmark public Object arithmetic()   { return evalArithmetic(); }
+    @Benchmark public Object drgChain()     { return evalDrgChain(); }
+    @Benchmark public Object collectTable() { return evalCollect(); }
 }

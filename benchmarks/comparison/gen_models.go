@@ -82,10 +82,78 @@ func numericTable(n int) string {
 	return b.String()
 }
 
+// arithmetic: a single literal expression exercising exact decimal arithmetic —
+// the FEEL path decision tables do not cover. R = (A*B+3)/2-1.
+func arithmetic() string {
+	var b strings.Builder
+	b.WriteString(header("Arithmetic"))
+	for _, name := range []string{"A", "B"} {
+		fmt.Fprintf(&b, `  <inputData id="i_%s" name="%s"><variable name="%s" typeRef="number"/></inputData>`+"\n", name, name, name)
+	}
+	b.WriteString(`  <decision id="d_R" name="R">` + "\n")
+	b.WriteString(`    <variable name="R" typeRef="number"/>` + "\n")
+	for _, name := range []string{"A", "B"} {
+		fmt.Fprintf(&b, `    <informationRequirement id="ir_%s"><requiredInput href="#i_%s"/></informationRequirement>`+"\n", name, name)
+	}
+	b.WriteString(`    <literalExpression id="le_R"><text>(A * B + 3) / 2 - 1</text></literalExpression>` + "\n")
+	b.WriteString("  </decision>\n</definitions>\n")
+	return b.String()
+}
+
+// drgChain: n decisions D1..Dn where D1 = Seed+1 and Di = D(i-1)+1, so evaluating
+// Dn walks the whole requirement graph — the multi-decision path a single table
+// never exercises.
+func drgChain(n int) string {
+	var b strings.Builder
+	b.WriteString(header("DrgChain"))
+	b.WriteString(`  <inputData id="i_Seed" name="Seed"><variable name="Seed" typeRef="number"/></inputData>` + "\n")
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&b, `  <decision id="d_D%d" name="D%d"><variable name="D%d" typeRef="number"/>`+"\n", i, i, i)
+		if i == 1 {
+			b.WriteString(`    <informationRequirement id="ir_D1"><requiredInput href="#i_Seed"/></informationRequirement>` + "\n")
+			b.WriteString(`    <literalExpression id="le_D1"><text>Seed + 1</text></literalExpression>` + "\n")
+		} else {
+			fmt.Fprintf(&b, `    <informationRequirement id="ir_D%d"><requiredDecision href="#d_D%d"/></informationRequirement>`+"\n", i, i-1)
+			fmt.Fprintf(&b, `    <literalExpression id="le_D%d"><text>D%d + 1</text></literalExpression>`+"\n", i, i-1)
+		}
+		b.WriteString("  </decision>\n")
+	}
+	b.WriteString("</definitions>\n")
+	return b.String()
+}
+
+// collectTable: a COLLECT hit-policy table over one number input, with three
+// overlapping ranges, so several rules match and the result is a list — the
+// collect/list-building path distinct from single-hit tables.
+func collectTable() string {
+	rules := []struct {
+		lo, hi int
+		out    string
+	}{{0, 10, "low"}, {5, 15, "mid"}, {4, 6, "spot"}}
+	var b strings.Builder
+	b.WriteString(header("CollectTable"))
+	b.WriteString(`  <inputData id="i_Score" name="Score"><variable name="Score" typeRef="number"/></inputData>` + "\n")
+	b.WriteString(`  <decision id="d_Tags" name="Tags">` + "\n")
+	b.WriteString(`    <variable name="Tags"/>` + "\n")
+	b.WriteString(`    <informationRequirement id="ir_Score"><requiredInput href="#i_Score"/></informationRequirement>` + "\n")
+	b.WriteString(`    <decisionTable id="dt_Tags" hitPolicy="COLLECT">` + "\n")
+	b.WriteString(`      <input id="in_Score"><inputExpression id="ie_Score" typeRef="number"><text>Score</text></inputExpression></input>` + "\n")
+	b.WriteString(`      <output id="out_Tags" name="Tag" typeRef="string"/>` + "\n")
+	for i, r := range rules {
+		fmt.Fprintf(&b, `      <rule id="r%d"><inputEntry id="r%d_1"><text>[%d..%d]</text></inputEntry>`+
+			`<outputEntry id="r%d_o"><text>"%s"</text></outputEntry></rule>`+"\n", i, i, r.lo, r.hi, i, r.out)
+	}
+	b.WriteString("    </decisionTable>\n  </decision>\n</definitions>\n")
+	return b.String()
+}
+
 func main() {
 	must(os.WriteFile("models/string-table.dmn", []byte(stringTable(10)), 0o644))
 	must(os.WriteFile("models/numeric-table.dmn", []byte(numericTable(10)), 0o644))
-	fmt.Println("wrote models/string-table.dmn, models/numeric-table.dmn")
+	must(os.WriteFile("models/arithmetic.dmn", []byte(arithmetic()), 0o644))
+	must(os.WriteFile("models/drg-chain.dmn", []byte(drgChain(10)), 0o644))
+	must(os.WriteFile("models/collect-table.dmn", []byte(collectTable()), 0o644))
+	fmt.Println("wrote 5 models to models/")
 }
 
 func must(err error) {

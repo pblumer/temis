@@ -105,20 +105,36 @@ Go‑Dienste. Die reine Rechenarbeit pro Entscheidung ändert sich dabei nicht.
 ### 3.3 Kopf-an-Kopf gegen Drools
 
 Ein 1:1-Vergleich gegen die **Drools-DMN-Engine** (`kie-dmn-core` 8.44.0.Final,
-JDK 21) auf **identischen DMN-Dateien**, derselben VM, beide out-of-the-box
-(Details, Harness und Reproduktion in
-[`benchmarks/comparison/`](../benchmarks/comparison/README.md)):
+JDK 21) auf **identischen DMN-Dateien**, derselben VM, beide out-of-the-box,
+über fünf Feature-Typen. Beide liefern nachweislich dasselbe Ergebnis
+(Paritäts-Guard auf beiden Seiten). Details, Harness und Reproduktion in
+[`benchmarks/comparison/`](../benchmarks/comparison/README.md).
 
-| Modell | Temis | Drools | Temis schneller |
+**Latenz — ein Kern (µs/Auswertung, weniger ist besser):**
+
+| Szenario | Temis | Drools | Temis schneller |
 |---|---:|---:|---:|
-| Latenz String-Tabelle (1 Kern) | ≈ 2,1 µs | ≈ 6,1 µs | **2,9×** |
-| Latenz numerische Tabelle (1 Kern) | ≈ 2,8 µs | ≈ 5,8 µs | **2,1×** |
-| Durchsatz String-Tabelle (4 Kerne) | ≈ 861 000/s | ≈ 577 000/s | **1,49×** |
-| Durchsatz numerische Tabelle (4 Kerne) | ≈ 750 000/s | ≈ 535 000/s | **1,40×** |
+| String-Tabelle | **2,1** | 6,3 | **3,0×** |
+| Numerische Tabelle | **2,7** | 6,4 | **2,4×** |
+| COLLECT-Tabelle | **1,8** | 4,0 | **2,3×** |
+| DRG-Graph (10 tief) | **7,7** | 10,3 | **1,3×** |
+| FEEL-Arithmetik | **3,7** | 4,6 | **1,2×** |
 
-Beide Engines liefern nachweislich dasselbe Ergebnis (Paritäts-Guard auf beiden
-Seiten). Pro Kern ist Temis ~2–3× schneller; im parallelen Default-Fall ~1,4×,
-und mit `GOGC=400` wächst der Durchsatzvorsprung auf ~2,3–2,8×.
+**Durchsatz — 4 Kerne (Auswertungen/s, mehr ist besser):**
+
+| Szenario | Temis (Default) | Drools (Default) | Temis `GOGC=400` |
+|---|---:|---:|---:|
+| String-Tabelle | **880 000** | 526 000 | 1 811 000 |
+| Numerische Tabelle | **832 000** | 572 000 | 1 266 000 |
+| COLLECT-Tabelle | **955 000** | 875 000 | 1 552 000 |
+| DRG-Graph | **290 000** | 253 000 | 405 000 |
+| FEEL-Arithmetik | 664 000 | **763 000** | 907 000 |
+
+Single-core gewinnt Temis jedes Szenario (1,2–3,0×, am stärksten bei Tabellen).
+Im parallelen Default-Fall führt Temis überall außer bei reiner Arithmetik, wo
+Temis GC-gebunden ist und Drools' JVM-GC über Threads reifer skaliert (763k vs.
+664k) — mit `GOGC=400` dreht sich auch das. Der Single-Core-Wert ist der
+sauberste Vergleich, weil er GC-Skalierung ausklammert.
 
 ## 4. Selbst nachstellen
 

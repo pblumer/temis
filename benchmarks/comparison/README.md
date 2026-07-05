@@ -5,34 +5,53 @@ dieselben DMN-Dateien** (`models/*.dmn`), werten sie mit **denselben Eingaben**
 auf **derselben Maschine** aus, und beide prüfen dasselbe erwartete Ergebnis
 (`m8` bzw. `g5`), damit nichts unbemerkt auseinanderläuft.
 
-> **Kurzfassung:** Auf identischen Modellen ist Temis pro Auswertung **~2–3×
-> schneller** als Drools (ein Kern) und liefert **~1,4–1,5× mehr Durchsatz**
-> (4 Kerne, beide mit Default-GC). Mit dem üblichen Go-Durchsatz-Tuning
-> (`GOGC=400`) wächst der Durchsatzvorsprung auf **~2,3–2,8×**.
+> **Kurzfassung:** Pro Auswertung (ein Kern) ist Temis in **jedem** Szenario
+> schneller — **1,2× bis 3,0×**, am deutlichsten bei Decision-Tables (dem
+> häufigsten realen DMN-Fall). Im parallelen Durchsatz (4 Kerne, beide Default)
+> führt Temis bei Tabellen (bis 1,7×) und liegt bei arithmetik-/graphlastigen
+> Modellen gleichauf; mit dem üblichen Go-Heap-Tuning (`GOGC=400`) zieht Temis
+> überall davon.
 
 ## Ergebnisse
+
+Fünf Szenarien decken die wichtigsten DMN-Feature-Typen ab: String-Gleichheit,
+numerische Intervalle, exakte FEEL-Arithmetik, ein DRG-Graph (10 verkettete
+Entscheidungen) und eine COLLECT-Tabelle (Listen-Ergebnis).
 
 Hardware: Intel® Xeon® @ 2,80 GHz, **4 vCPU**, geteilte Cloud-VM.
 Software: Temis (Go 1.24) · Drools `kie-dmn-core` **8.44.0.Final** (JDK 21).
 Beide out-of-the-box konfiguriert (Temis `GOGC=100`, JVM Default-G1GC).
 
-### Latenz — ein Kern, warm (weniger ist besser)
+### Latenz — ein Kern, warm (µs/Auswertung, weniger ist besser)
 
-| Modell | Temis | Drools | Temis schneller |
+| Szenario | Temis | Drools | Temis schneller |
 |---|---:|---:|---:|
-| String-Tabelle (Gleichheit) | **≈ 2,1 µs** | ≈ 6,1 µs | **2,9×** |
-| Numerische Tabelle (Intervalle) | **≈ 2,8 µs** | ≈ 5,8 µs | **2,1×** |
+| String-Tabelle (Gleichheit) | **2,1** | 6,3 | **3,0×** |
+| Numerische Tabelle (Intervalle) | **2,7** | 6,4 | **2,4×** |
+| COLLECT-Tabelle (Liste) | **1,8** | 4,0 | **2,3×** |
+| DRG-Graph (10 tief) | **7,7** | 10,3 | **1,3×** |
+| FEEL-Arithmetik (dezimal) | **3,7** | 4,6 | **1,2×** |
 
-### Durchsatz — 4 Kerne parallel (mehr ist besser)
+Der Single-Core-Wert ist der sauberste Vergleich — er klammert GC-Skalierung
+aus. Temis gewinnt jedes Szenario; bei Tabellen 2,3–3,0×, bei den rechen-/
+graphlastigen Modellen knapper (dort dominiert die exakte Dezimalarithmetik bzw.
+die Graph-Maschinerie, wo beide Engines ähnlich viel Arbeit leisten).
 
-| Modell | Temis (Default) | Drools (Default) | Temis schneller | Temis `GOGC=400` |
+### Durchsatz — 4 Kerne parallel (Auswertungen/s, mehr ist besser)
+
+| Szenario | Temis (Default) | Drools (Default) | Temis schneller | Temis `GOGC=400` |
 |---|---:|---:|---:|---:|
-| String-Tabelle | **≈ 861 000/s** | ≈ 577 000/s | **1,49×** | ≈ 1 620 000/s |
-| Numerische Tabelle | **≈ 750 000/s** | ≈ 535 000/s | **1,40×** | ≈ 1 220 000/s |
+| String-Tabelle | **880 000** | 526 000 | **1,67×** | 1 811 000 |
+| Numerische Tabelle | **832 000** | 572 000 | **1,45×** | 1 266 000 |
+| COLLECT-Tabelle | **955 000** | 875 000 | **1,09×** | 1 552 000 |
+| DRG-Graph | **290 000** | 253 000 | **1,15×** | 405 000 |
+| FEEL-Arithmetik | 664 000 | **763 000** | 0,87× | 907 000 |
 
-Drools skaliert über Threads etwas besser (die JVM ist reifer im parallelen GC),
-Temis ist pro Kern deutlich schneller und im parallelen Default‑Fall trotzdem
-vorn; mit größerem Go‑Heap (`GOGC`/`GOMEMLIMIT`) zieht Temis klar davon.
+**Ehrlich benannt:** Im *parallelen Default-Fall* schlägt Drools Temis bei reiner
+Arithmetik (763k vs. 664k) — dort ist Temis GC-gebunden, und die JVM skaliert
+den GC über Threads reifer. Das ist der **einzige** der zehn Vergleiche, den
+Drools gewinnt; mit `GOGC=400` dreht sich auch dieser (907k). Bei Tabellen führt
+Temis durchgehend, single-core überall.
 
 ## Was gemessen wird
 
@@ -46,10 +65,10 @@ auswerten** — der Produktionspfad.
   `DMNModel` einmal bauen, dann pro Op einen `DMNContext` bauen und
   `evaluateAll` aufrufen (JMH, `Throughput`- und `AverageTime`-Modus).
 
-Die Modelle (`models/string-table.dmn`, `models/numeric-table.dmn`) sind
-Standard‑**DMN 1.3** (Namespace `…/20191111/MODEL/`) — die breiteste gemeinsame
-Basis: Drools unterstützt sie voll, Temis liest sie (tolerant 1.3/1.4/1.5). So
-parst garantiert **dasselbe Dokument** in beide Engines.
+Die fünf Modelle in `models/` sind Standard‑**DMN 1.3** (Namespace
+`…/20191111/MODEL/`) — die breiteste gemeinsame Basis: Drools unterstützt sie
+voll, Temis liest sie (tolerant 1.3/1.4/1.5). So parst garantiert **dasselbe
+Dokument** in beide Engines. Alle werden von `gen_models.go` erzeugt.
 
 ## Selbst nachstellen
 
@@ -59,27 +78,27 @@ go run gen_models.go
 
 # 1) Temis:
 cd temis
-go test -run=^$ -bench='BenchmarkStringTable$|BenchmarkNumericTable$' -benchmem ./   # Latenz + Allocs
-go test -run=^$ -bench=Throughput -benchtime=2s ./                                   # Durchsatz (dec/s)
-GOGC=400 go test -run=^$ -bench=Throughput -benchtime=2s ./                          # Durchsatz, größerer Heap
+go test -run=^$ -bench=Latency    -benchmem ./          # Latenz (ns/op) + Allocs, alle 5
+go test -run=^$ -bench=Throughput -benchtime=2s ./       # Durchsatz (dec/s), alle 5
+GOGC=400 go test -run=^$ -bench=Throughput -benchtime=2s ./   # Durchsatz, größerer Heap
 
 # 2) Drools (JMH):
 cd ../drools
-mvn -q package                                                                       # baut target/benchmarks.jar
-java -jar target/benchmarks.jar -bm avgt -tu us -f 1 -wi 3 -i 5 -t 1                 # Latenz (µs/op)
-java -jar target/benchmarks.jar -bm thrpt -tu s  -f 1 -wi 3 -i 5 -t 4               # Durchsatz (ops/s)
+mvn -q package                                                        # baut target/benchmarks.jar
+java -jar target/benchmarks.jar -bm avgt  -tu us -f 1 -wi 3 -i 5 -t 1 # Latenz (µs/op)
+java -jar target/benchmarks.jar -bm thrpt -tu s  -f 1 -wi 3 -i 5 -t 4 # Durchsatz (ops/s)
 ```
 
 Die `parity`-Prüfung auf beiden Seiten bricht sofort ab, falls eine Engine nicht
-`m8`/`g5` liefert — der Vergleich kann also nie stillschweigend Äpfel mit Birnen
-messen.
+das erwartete Ergebnis liefert (`m8`, `g5`, `21.5`, `10`, `[low, mid, spot]`) —
+der Vergleich kann also nie stillschweigend Äpfel mit Birnen messen.
 
 ## Ehrliche Einordnung
 
-- **Zwei repräsentative Tabellen, kein ganzer Korpus.** String‑Gleichheit und
-  numerische Intervalle sind die häufigsten realen DMN‑Formen, decken aber nicht
-  jedes Feature ab. Ein breiterer Vergleich (FEEL‑Arithmetik, DRG‑Graphen,
-  Kollektionen) ist der nächste sinnvolle Schritt.
+- **Fünf repräsentative Modelle, kein ganzer Korpus.** Sie decken die häufigsten
+  DMN‑Formen ab (Tabellen, Arithmetik, Graph, Collect), aber nicht jedes
+  FEEL‑Built‑in oder jede Hit‑Policy. Ein voller Feature‑Sweep ist der nächste
+  Schritt.
 - **Beide Default‑konfiguriert.** Fairness heißt: keine Seite getunt. Der
   getunte Temis‑Wert steht separat; die JVM ließe sich ebenso GC‑tunen. Der
   Single‑Core‑Latenzwert ist der sauberste Vergleich, weil er GC‑Skalierung
