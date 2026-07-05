@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3347 / 3495 Cases grün (95,8 %)** |
+| Compliance Level 2 + 3 | **3357 / 3495 Cases grün (96,1 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 95,7 % |
+| Ratchet-Floor im CI | 96,0 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,28 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Decision Services als aufrufbare Funktionen (WP-41.20, +5)
+## In dieser Etappe behoben — Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, +10)
+
+FEEL-Typ-Koerzierung (DMN §10.3.2.9.4) greift jetzt auch an **Funktions- und
+Service-Aufruf-Grenzen**, nicht nur an Decision-Outputs:
+
+- **BKM-Parameter & -Rückgabe**: Ein Argument wird gegen den deklarierten
+  Parametertyp geprüft — passt es nicht (auch nach Singleton-Unwrap), ist der
+  **ganze Aufruf null** („Funktion nicht invoziert"). Das Body-Ergebnis wird auf
+  den deklarierten Rückgabetyp koerziert (Singleton-Liste → Skalar, sonst null).
+- **Decision-Service-Aufruf** (aus FEEL): dieselbe Argument- und Rückgabe-
+  Koerzierung über neue `ParamTypes`/`ResultType`-Felder an `feel.Func`.
+- **Direkte Service-Auswertung**: `Service.Evaluate` koerziert eine Single-Output-
+  Ausgabe auf den Service-Typ; der TCK-Runner wertet `type="decisionService"`-
+  Cases über `invocableName` aus. Dafür wird der Service-`<variable typeRef>` jetzt
+  dekodiert.
+- Die Koerzierungs-Logik (`ConformsToType`/`CoerceToType`/`CoerceArg`) wohnt nun in
+  `internal/feel` und wird von Decision-Outputs **und** Aufruf-Grenzen geteilt.
+
+Netto **+10 Cases** (95,8 % → 96,1 %); 0082 23→31, 0085 16→18. Offen in 0082/0085:
+`functionItem`-Typen, Arity-Prüfung (0085/008), Funktions-Literal-Parameter (fd_002).
+
+## Früher behoben — Decision Services als aufrufbare Funktionen (WP-41.20, +5)
 
 Ein Decision Service kann jetzt **aus dem FEEL einer Decision heraus per Namen
 aufgerufen** werden (`decisionService_004()`, `decisionService_006("bar")`,

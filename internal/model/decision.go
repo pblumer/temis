@@ -73,6 +73,7 @@ type InputData struct {
 type DecisionService struct {
 	ID                    string
 	Name                  string
+	VariableTypeRef       string   `json:",omitempty"`
 	OutputDecisions       []string `json:",omitempty"`
 	EncapsulatedDecisions []string `json:",omitempty"`
 	InputDecisions        []string `json:",omitempty"`

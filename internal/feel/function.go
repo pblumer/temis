@@ -17,6 +17,15 @@ type Func struct {
 	Name   string
 	Params []string
 	Body   CompiledExpr
+	// ParamTypes, when non-nil for a slot, is the formal parameter's declared type:
+	// an argument that does not conform (after singleton-list unwrapping) makes the
+	// whole invocation null (the function is "not invoked"). Shorter than Params or
+	// nil entries mean an unconstrained (Any) parameter.
+	ParamTypes []*Type
+	// ResultType, when set, coerces the body's result to the declared return type
+	// (DMN §10.3.2.9.4): a non-conforming result — or a singleton list around a
+	// conforming element — is coerced, otherwise null.
+	ResultType *Type
 	// Native, when set, is called instead of Body with the positional argument
 	// values (already padded to len(Params) with null). It lets a higher layer
 	// supply a callable whose behaviour is not a compiled FEEL body — e.g. package
@@ -40,6 +49,13 @@ func (f *Func) call(s *Scope, args []value.Value) (value.Value, error) {
 		} else {
 			vars[i] = value.Null
 		}
+		if i < len(f.ParamTypes) && f.ParamTypes[i] != nil {
+			cv, ok := CoerceArg(vars[i], f.ParamTypes[i])
+			if !ok { // an argument that does not conform ⇒ the call is null
+				return value.Null, nil
+			}
+			vars[i] = cv
+		}
 	}
 	if f.Native != nil {
 		return f.Native(vars)
@@ -47,7 +63,14 @@ func (f *Func) call(s *Scope, args []value.Value) (value.Value, error) {
 	if f.Body == nil {
 		return nil, fmt.Errorf("feel: function %s has no body", f.label())
 	}
-	return f.Body(&Scope{vars: vars, st: st})
+	res, err := f.Body(&Scope{vars: vars, st: st})
+	if err != nil {
+		return nil, err
+	}
+	if f.ResultType != nil {
+		res = CoerceToType(res, f.ResultType)
+	}
+	return res, nil
 }
 
 // asValue lifts f into a first-class FEEL function value bound to the recursion

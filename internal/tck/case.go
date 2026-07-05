@@ -18,6 +18,8 @@ type testCases struct {
 
 type testCase struct {
 	ID      string       `xml:"id,attr"`
+	Type    string       `xml:"type,attr"`
+	Invoked string       `xml:"invocableName,attr"`
 	Inputs  []inputNode  `xml:"inputNode"`
 	Results []resultNode `xml:"resultNode"`
 }

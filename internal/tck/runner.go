@@ -96,10 +96,35 @@ func Run(ctx context.Context, eng *dmn.Engine, modelXML, casesXML []byte) (*Repo
 	for _, tc := range suite.Cases {
 		input := caseInput(tc)
 		for _, rn := range tc.Results {
+			if tc.Type == "decisionService" {
+				rep.Results = append(rep.Results, runServiceCheck(ctx, defs, tc, rn, input))
+				continue
+			}
 			rep.Results = append(rep.Results, runCheck(ctx, defs, tc.ID, rn, input))
 		}
 	}
 	return rep, nil
+}
+
+// runServiceCheck evaluates one resultNode of a decision-service test case: the
+// service named by invocableName is evaluated directly, which applies the
+// service's output-type coercion (a case the TCK exercises with non-conforming
+// outputs). The checked resultNode names one of the service's output decisions.
+func runServiceCheck(ctx context.Context, defs *dmn.Definitions, tc testCase, rn resultNode, input dmn.Input) CaseResult {
+	res := CaseResult{Case: tc.ID, Decision: rn.Name, Expected: goOf(rn.Expected.toValue())}
+	svc, err := defs.Service(tc.Invoked)
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	out, err := svc.Evaluate(ctx, input)
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	res.Got = out.Outputs[rn.Name]
+	res.Pass = reflect.DeepEqual(res.Got, res.Expected)
+	return res
 }
 
 // RunFile runs the suite in the testCases file at path, resolving its model from
