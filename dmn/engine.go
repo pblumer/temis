@@ -76,6 +76,11 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	funcs, funcDiags := compileBKMs(m)
 	diags = append(diags, funcDiags...)
 
+	// Register each decision service as an invocable function so a decision's FEEL
+	// can call it by name (DMN §10.4, TCK 0085). The closure resolves the compiled
+	// service lazily, since services are compiled after the decisions here.
+	registerServiceInvocables(m, defs, funcs, lim)
+
 	items := buildItemTypes(m)
 
 	for _, dec := range m.Decisions {

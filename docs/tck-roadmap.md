@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3342 / 3495 Cases (**95,6 %**) nach WP-41.19, Ratchet-Floor 95,6 %.
+**Stand:** 3347 / 3495 Cases (**95,8 %**) nach WP-41.20, Ratchet-Floor 95,7 %.
 **Endziel (WP-41): ≥ 95 % — ✅ erreicht.** Weitere Fixes heben den Ratchet-Floor.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
@@ -31,6 +31,7 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.17 ✅** | **Invocation-Null + Zahl-Wort-Namen + `defaultOutputEntry`** | 1131, 0020, 0034, quer | **+30 → 94,5 %** |
 | **WP-41.18 ✅** | **`number()`-Validierung, `range()`-Konstruktoren, Regex `$N`/`x`-Flag, Escape-Durchreichung** | 0058, 1156, 1109, 1111 | **+21 → 95,1 % 🎯** |
 | **WP-41.19 ✅** | **Rundungs-Skala-Bereich, `**`-Präzedenz (links-assoz. + unär), Time-Offset-Sekunden + `time(date)`** | 1141–1144, 0100, 1116 | **+19 → 95,6 %** |
+| **WP-41.20 ✅** | **Decision Services als aufrufbare FEEL-Funktionen** (`feel.Func.Native`; Params = InputData ++ InputDecisions) | 0085 | **+5 → 95,8 %** |
 
 Bündel 41.4–41.9 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
 schwierigen Brocken unten.
