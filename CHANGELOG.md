@@ -60,6 +60,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, 96,5 % → 96,9 %).**
+  `instance of` prüft jetzt das volle Typsystem: parametrisierte Generics (`list<T>`, `context<a: T, …>`,
+  verschachtelt und leer) werden geparst und strukturell verglichen, benutzerdefinierte Item-Typen
+  (`t255`, `t_context_013`, …) werden aufgelöst (die Typen fließen über ein neues `types`-Feld an der
+  internen `feel.Env`), und `null instance of X` ist für jeden Typ `false`. +15 Cases (0070 vollständig
+  127→142); der Ratchet-Floor steigt auf 96,9 %.
 - **DMN-TCK-Konformität: Zahl-Vergleich mit der TCK-Präzision (WP-41.22, 96,1 % → 96,5 %).**
   Die Engine rechnet spec-konform in decimal128 (34 Stellen, ADR-0007) und liefert für transzendente/
   irrationale Ergebnisse (`exp`/`log`/`sqrt`/`**`/Statistik/Zinseszins) mehr Stellen als die auf endliche

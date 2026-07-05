@@ -174,23 +174,134 @@ func ConstValue(src string) (value.Value, bool) {
 	}
 }
 
-// instanceOf evaluates `v instance of typeName` per FEEL: it reports whether v's
-// runtime kind matches the named type. "Any" matches every value (including
-// null); a duration name matches either duration kind when unqualified. ok is
-// false for a type name that is neither built-in nor "Any", so the compiler can
-// reject an unknown type.
-func instanceOf(v value.Value, typeName string) (result, ok bool) {
-	n := normalizeTypeName(typeName)
-	if n == "any" {
-		return true, true
+// resolveTypeString parses a FEEL type reference into a *Type: a built-in or
+// user-defined (item-definition) name, or a parametrized generic — list<T>,
+// context<a: T, b: U> (including nested and empty <>), or function<…>/range<…>
+// (matched by kind). A nil *Type with ok=true means Any. ok is false for a name
+// that resolves to neither a built-in, a user type nor a well-formed generic.
+func resolveTypeString(s string, types map[string]*Type) (t *Type, ok bool) {
+	s = strings.TrimSpace(s)
+	lt := strings.IndexByte(s, '<')
+	if lt < 0 { // a bare name: Any, built-in, or user-defined type
+		name := s
+		if i := strings.LastIndexByte(name, ':'); i >= 0 { // drop a namespace prefix
+			name = strings.TrimSpace(name[i+1:])
+		}
+		if strings.EqualFold(name, "Any") {
+			return nil, true
+		}
+		if bt, isBuiltin := BuiltinType(name); isBuiltin {
+			return bt, true
+		}
+		if ut, isUser := types[name]; isUser {
+			return ut, true
+		}
+		return nil, false
 	}
-	if n == "duration" {
+	close := matchAngle(s, lt)
+	if close < 0 {
+		return nil, false
+	}
+	content := s[lt+1 : close]
+	switch normalizeTypeName(s[:lt]) {
+	case "list":
+		elem, ok := resolveTypeString(content, types)
+		if !ok {
+			return nil, false
+		}
+		return ListOf(elem), true
+	case "context":
+		fields, ok := parseTypeFields(content, types)
+		if !ok {
+			return nil, false
+		}
+		return ContextOf(fields), true
+	default: // function<…>->R, range<…>: matched by kind only
+		return BuiltinType(s[:lt])
+	}
+}
+
+// matchAngle returns the index of the '>' matching the '<' at open, or -1.
+func matchAngle(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			depth++
+		case '>':
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// parseTypeFields parses a context<…> field list "a: T, b: U" into field types.
+// An empty list is an open context (nil fields) that matches any context.
+func parseTypeFields(s string, types map[string]*Type) (map[string]*Type, bool) {
+	if strings.TrimSpace(s) == "" {
+		return nil, true
+	}
+	fields := map[string]*Type{}
+	for _, part := range splitTopLevel(s, ',') {
+		colon := strings.IndexByte(part, ':')
+		if colon < 0 {
+			return nil, false
+		}
+		ft, ok := resolveTypeString(part[colon+1:], types)
+		if !ok {
+			return nil, false
+		}
+		fields[strings.TrimSpace(part[:colon])] = ft
+	}
+	return fields, true
+}
+
+// splitTopLevel splits s on sep, ignoring separators nested inside <…>.
+func splitTopLevel(s string, sep byte) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+		case sep:
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, s[start:])
+}
+
+// instanceOfType evaluates `v instance of` the resolved type t (name is the raw
+// type reference, for the unqualified-duration special case). Per the TCK, null
+// is not an instance of any type (including Any); Any otherwise matches any
+// non-null value; a bare "duration" matches either duration kind; everything else
+// is item-definition conformance.
+func instanceOfType(v value.Value, t *Type, name string) bool {
+	if value.IsNull(v) {
+		return false
+	}
+	if normalizeTypeName(stripGenericPrefix(name)) == "duration" {
 		k := v.Kind()
-		return k == value.KindDaysTimeDuration || k == value.KindYearsMonthsDuration, true
+		return k == value.KindDaysTimeDuration || k == value.KindYearsMonthsDuration
 	}
-	t, isBuiltin := BuiltinType(typeName)
-	if !isBuiltin {
-		return false, false
+	if t == nil { // Any
+		return true
 	}
-	return v.Kind() == t.Kind, true
+	return ConformsToType(v, t)
+}
+
+// stripGenericPrefix drops any generic parameter so a name like "duration" is
+// recognised even when written with one.
+func stripGenericPrefix(name string) string {
+	if i := strings.IndexByte(name, '<'); i >= 0 {
+		return name[:i]
+	}
+	return name
 }

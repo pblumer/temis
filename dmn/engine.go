@@ -134,7 +134,7 @@ func compileBKMs(m *model.Definitions, items map[string]*feel.Type) (map[string]
 		if !ok {
 			continue
 		}
-		bodyEnv := feel.NewEnv(fn.Params...)
+		bodyEnv := feel.NewEnv(fn.Params...).WithTypes(items)
 		body, err := boxed.Compile(b.EncapsulatedLogic.Body, bodyEnv, funcs)
 		if err != nil {
 			diags = append(diags, Diagnostic{
@@ -167,7 +167,7 @@ func bkmResultType(b *model.BKM, items map[string]*feel.Type) *feel.Type {
 // to compile, yields a CompiledDecision with a nil expr (not executable) plus a
 // diagnostic for the failure.
 func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string]*feel.Func, items map[string]*feel.Type) (*CompiledDecision, Diagnostics) {
-	env := feel.NewEnv(envNames(m, dec)...)
+	env := feel.NewEnv(envNames(m, dec)...).WithTypes(items)
 	constraints := buildConstraints(m, dec, items)
 	cd := &CompiledDecision{
 		id:          dec.ID,
