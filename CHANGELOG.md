@@ -60,6 +60,16 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Weg zu 98 % (WP-41.27, 97,5 % → 98,0 %). 🎯**
+  Ein gemischtes Bündel über die 98-%-Marke: die Temporal-Konstruktoren binden ihre benannten
+  Komponentenformen (`date(year:…, month:…, day:…)`, `time(hour:…, minute:…, second:…, offset:…)`,
+  `date and time(date:…, time:…)`) über eine alternative Signatur (`Builtin.AltParams`) neben `from:`;
+  Dauer-Literale erlauben fraktionale Sekunden (`duration("PT0.5S")`, `PT0.S`); Dauer × Zahl trunkiert
+  Richtung Null (`-2.5 * @"P1Y11M"` → `-P4Y9M`); `xsd:string`-Erwartungswerte werden nicht mehr
+  getrimmt (`upper case("xyZ ")` → `"XYZ "`); ein ungültiges `@`-Literal (`@"foo"`) wertet zu null aus
+  statt Compile-Fehler; `context merge(contexts: …)` und `context put(… , keys: […], …)` binden benannt;
+  und ein Boxed-Filter mit echt nicht-boolescher Bedingung ergibt null. +14 Cases
+  (1115–1117, 1120, 0100, 1103–1109, 0093, 1146/1147, 1151); Floor 98,0 %.
 - **DMN-TCK-Konformität: Named-Arg-Arity, decimal-Skala & Conditional-Semantik (WP-41.26, 97,4 % → 97,5 %).**
   Ein benannter Funktionsaufruf darf optionale Parameter weglassen (sie defaulten auf null) statt an der
   Arity zu scheitern (`is(value1: x)` → false); `decimal`/`floor`/`ceiling` floorn eine fraktionale Skala

@@ -367,11 +367,11 @@ func ParseDuration(s string) (Value, error) {
 		return nil, fmt.Errorf("invalid duration %q: empty time part", s)
 	}
 
-	dateComps, err := scanComponents(datePart, "YMD")
+	dateComps, _, err := scanComponents(datePart, "YMD")
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
-	timeComps, err := scanComponents(timePart, "HMS")
+	timeComps, subNanos, err := scanComponents(timePart, "HMS")
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
@@ -398,7 +398,8 @@ func ParseDuration(s string) (Value, error) {
 	total := time.Duration(dateComps['D'])*24*time.Hour +
 		time.Duration(timeComps['H'])*time.Hour +
 		time.Duration(timeComps['M'])*time.Minute +
-		time.Duration(timeComps['S'])*time.Second
+		time.Duration(timeComps['S'])*time.Second +
+		time.Duration(subNanos)*time.Nanosecond
 	if neg {
 		total = -total
 	}
@@ -406,10 +407,13 @@ func ParseDuration(s string) (Value, error) {
 }
 
 // scanComponents reads a sequence of "<digits><unit>" pairs, where units must
-// appear in the order given and each at most once. It returns the parsed values
-// keyed by unit byte.
-func scanComponents(s, units string) (map[byte]int64, error) {
+// appear in the order given and each at most once. It returns the integer values
+// keyed by unit byte, plus the sub-second remainder in nanoseconds from a
+// fractional seconds component (e.g. PT0.5S → 500_000_000 ns). Only the seconds
+// unit may carry a fraction (FEEL §10.3.4.2 lexical duration).
+func scanComponents(s, units string) (map[byte]int64, int64, error) {
 	res := map[byte]int64{}
+	var subNanos int64
 	ui := 0
 	for i := 0; i < len(s); {
 		j := i
@@ -417,25 +421,59 @@ func scanComponents(s, units string) (map[byte]int64, error) {
 			j++
 		}
 		if j == i {
-			return nil, fmt.Errorf("expected a number at %q", s[i:])
+			return nil, 0, fmt.Errorf("expected a number at %q", s[i:])
 		}
-		if j >= len(s) {
-			return nil, fmt.Errorf("number %q has no unit", s[i:j])
+		// Optional fractional part "<digits>.<digits>", permitted only on seconds.
+		// A trailing point with no digits (e.g. PT0.S) is accepted as a zero
+		// fraction, matching the reference implementations.
+		frac, hadDot := "", false
+		k := j
+		if k < len(s) && s[k] == '.' {
+			hadDot = true
+			f := k + 1
+			for f < len(s) && s[f] >= '0' && s[f] <= '9' {
+				f++
+			}
+			frac = s[k+1 : f]
+			k = f
 		}
-		unit := s[j]
+		if k >= len(s) {
+			return nil, 0, fmt.Errorf("number %q has no unit", s[i:k])
+		}
+		unit := s[k]
 		pos := strings.IndexByte(units[ui:], unit)
 		if pos < 0 {
-			return nil, fmt.Errorf("unexpected or out-of-order unit %q", string(unit))
+			return nil, 0, fmt.Errorf("unexpected or out-of-order unit %q", string(unit))
 		}
 		ui += pos + 1
 		n, err := strconv.ParseInt(s[i:j], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("number %q out of range", s[i:j])
+			return nil, 0, fmt.Errorf("number %q out of range", s[i:j])
 		}
 		res[unit] = n
-		i = j + 1
+		if hadDot {
+			if unit != 'S' {
+				return nil, 0, fmt.Errorf("only seconds may be fractional, got %q", string(unit))
+			}
+			subNanos = fracToNanos(frac)
+		}
+		i = k + 1
 	}
-	return res, nil
+	return res, subNanos, nil
+}
+
+// fracToNanos converts the fractional digits of a seconds value (the part after
+// the decimal point) to nanoseconds, padding or truncating to 9 digits.
+func fracToNanos(frac string) int64 {
+	const digits = 9
+	if len(frac) > digits {
+		frac = frac[:digits]
+	}
+	for len(frac) < digits {
+		frac += "0"
+	}
+	n, _ := strconv.ParseInt(frac, 10, 64)
+	return n
 }
 
 // --- arithmetic helpers ---

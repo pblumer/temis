@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3407 / 3495 Cases grün (97,5 %)** |
+| Compliance Level 2 + 3 | **3426 / 3495 Cases grün (98,0 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 97,4 % |
+| Ratchet-Floor im CI | 98,0 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,48 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Unary-Test-Membership & Punkt-Namen (WP-41.25, +4)
+## In dieser Etappe behoben — Weg zu 98 % (WP-41.27, +14)
+
+Ein gemischtes Bündel, das die 98-%-Marke überschreitet:
+
+- **Named-Argument-Konstruktoren für Temporale** (`date(year:…, month:…, day:…)`,
+  `time(hour:…, minute:…, second:…, offset:…)`, `date and time(date:…, time:…)`):
+  Die Konstruktoren tragen jetzt neben der `from:`-Signatur ihre DMN-Komponenten-
+  Namen als **alternative benannte Signatur** (`Builtin.AltParams`). Ein benannter
+  Aufruf bindet gegen die erste Signatur, deren Parameter alle gelieferten Namen
+  abdecken. 1115, 1116, 1117: +5.
+- **Fraktionale Sekunden in Dauer-Literalen** (`duration("PT0.5S")`, `PT0.000S`,
+  `PT0.S`): Der Scanner liest einen optionalen Dezimalteil — nur auf Sekunden
+  erlaubt — und rechnet ihn in Nanosekunden um; ein leerer Bruch (`PT0.S`) gilt als
+  Null. 1120: +2.
+- **Dauer × Zahl trunkiert Richtung Null**: `-2.5 * @"P1Y11M"` (23 Monate) = −57,5
+  → `-P4Y9M` (−57), nicht −58 (Half-Even). 0100: +2.
+- **String-Whitespace ist signifikant**: Der Runner trimmt Erwartungswerte vom Typ
+  `xsd:string` nicht mehr — `upper case("xyZ ")` → `"XYZ "` (mit Leerzeichen);
+  numerische/temporale Werte werden weiter getrimmt. 1103, 1105, 1106, 1109: +4.
+- **Ungültiges `@`-Literal → null**: `@"foo"` ist ein wohlgeformter Ausdruck, der zu
+  `null` auswertet (statt Compile-Fehler). 0093: +1.
+- **Named-Argument-Kontext-Funktionen**: `context merge(contexts: …)` und
+  `context put(context: …, keys: […], value: …)` (verschachtelter Pfad) binden
+  jetzt. 1147: +2, 1146: +1.
+- **Boxed-Filter mit nicht-boolescher Bedingung → null**: Liefert das Filter-Prädikat
+  einen echten Nicht-Boolean (z. B. einen String), ist das ganze Filter-Ergebnis
+  `null`; `false`/`null` schließen das Element weiterhin nur aus. 1151: +2.
+
+Netto **+14 Cases** (97,5 % → 98,0 %). 🎯
+
+## Früher behoben — Named-Arg-Arity, decimal-Skala & Conditional-Semantik (WP-41.26, +4)
+
+- **Named-Argument-Aufruf darf Parameter weglassen**: Fehlende benannte Parameter
+  defaulten auf `null` (`is(value1: x)` → `is(x, null)`); die Arity-Prüfung gilt nur
+  noch für positionale Aufrufe. 0103.
+- **`decimal`/`floor`/`ceiling` mit fraktionaler Skala**: die Skala wird gefloort. 1100.
+- **Conditional mit echt nicht-boolescher Bedingung → `null`**; `false`/`null` nehmen
+  weiter den Else-Zweig. 1150.
+
+Netto **+4 Cases** (97,4 % → 97,5 %).
+
+## Früher behoben — Unary-Test-Membership & Punkt-Namen (WP-41.25, +4)
 
 - **Decision-Table-Unary-Test als Membership**: Ein Zellen-Test, dessen Wert eine
   **Liste** ist (z. B. eine Variable, die eine Liste hält), ist jetzt ein

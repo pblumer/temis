@@ -300,11 +300,19 @@ func filterClosure(x, f CompiledExpr) CompiledExpr {
 			if err != nil {
 				return nil, err
 			}
-			if r == value.True {
+			switch {
+			case r == value.True:
 				out = append(out, e)
 				if err := s.st.checkItems(len(out)); err != nil {
 					return nil, err
 				}
+			case r == value.False || value.IsNull(r):
+				// false and null exclude the element (null keeps the common
+				// null-safe predicate form working, e.g. item.x > 3 when x is null).
+			default:
+				// A genuine non-boolean predicate result makes the filter
+				// undefined: the whole expression is null (DMN 10.3.2.5, TCK 1151).
+				return value.Null, nil
 			}
 		}
 		return value.NewList(out...), nil

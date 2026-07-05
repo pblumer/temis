@@ -210,9 +210,12 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *NullLit:
 		return constNull
 	case *AtLit:
+		// An @-literal whose content is not a valid date/time/duration is a
+		// well-formed expression that evaluates to null (TCK 0093 "invalid value
+		// has null value"), not a compile error.
 		v, err := parseTemporal(n.Value)
 		if err != nil {
-			return c.fail(n.Pos(), "invalid temporal literal @%q", n.Value)
+			return constNull
 		}
 		return func(*Scope) (value.Value, error) { return v, nil }
 	case *NameRef:
@@ -838,21 +841,50 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 	// defaults to null (so a call may omit optional parameters, e.g.
 	// is(value1: x) → is(x, null), TCK 0103). Arity is not otherwise checked:
 	// every name must resolve to a parameter, and the callee handles nulls.
-	if len(b.Params) == 0 {
+	// An overloaded builtin (AltParams) binds against the first signature whose
+	// parameter names cover every supplied argument name.
+	params := c.pickSignature(b, n.Args)
+	if params == nil {
 		return c.nullCall()
 	}
-	out := make([]CompiledExpr, len(b.Params))
+	out := make([]CompiledExpr, len(params))
 	for i := range out {
 		out[i] = constNull
 	}
 	for _, a := range n.Args {
-		idx := indexOf(b.Params, a.Name)
+		idx := indexOf(params, a.Name)
 		if idx < 0 {
 			return c.nullCall()
 		}
 		out[idx] = c.compile(a.Value)
 	}
 	return out
+}
+
+// pickSignature selects the named-argument signature (Params, then each of
+// AltParams) whose parameter names cover every supplied argument name. It
+// returns nil when no signature matches or the builtin declares no parameters.
+func (c *compiler) pickSignature(b *builtins.Builtin, args []Arg) []string {
+	covers := func(params []string) bool {
+		if len(params) == 0 {
+			return false
+		}
+		for _, a := range args {
+			if indexOf(params, a.Name) < 0 {
+				return false
+			}
+		}
+		return true
+	}
+	if covers(b.Params) {
+		return b.Params
+	}
+	for _, alt := range b.AltParams {
+		if covers(alt) {
+			return alt
+		}
+	}
+	return nil
 }
 
 func indexOf(ss []string, s string) int {

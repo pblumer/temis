@@ -217,8 +217,10 @@ func scaleDuration(dur Value, n Number, divide bool) Value {
 	}
 }
 
-// scaleInt64 computes round(base * n) or round(base / n) as an int64 under the
-// FEEL decimal context, rounding half-even to an integer.
+// scaleInt64 computes base * n or base / n and truncates it to an int64 in the
+// duration's integral unit (nanoseconds or months). Truncation is toward zero:
+// -2.5 * P1Y11M (23 months) = -57.5 months → -P4Y9M (-57), matching the TCK
+// oracle (0100) rather than half-even rounding, which would give -58.
 func scaleInt64(base int64, n Number, divide bool) (int64, bool) {
 	res := new(apd.Decimal)
 	var cond apd.Condition
@@ -231,8 +233,10 @@ func scaleInt64(base int64, n Number, divide bool) (int64, bool) {
 	if err != nil || cond.DivisionByZero() || cond.Overflow() {
 		return 0, false
 	}
+	truncCtx := numberContext
+	truncCtx.Rounding = apd.RoundDown
 	rounded := new(apd.Decimal)
-	if _, err := numberContext.RoundToIntegralValue(rounded, res); err != nil {
+	if _, err := truncCtx.RoundToIntegralValue(rounded, res); err != nil {
 		return 0, false
 	}
 	i, err := rounded.Int64()

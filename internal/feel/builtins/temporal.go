@@ -12,12 +12,13 @@ import (
 var nowFunc = time.Now
 
 func registerTemporal(r *Registry) {
-	// date(from) | date(year, month, day)
-	r.Register(fixed("date", []string{"from"}, 1, 3, dateFn))
-	// time(from) | time(hour, minute, second) | time(hour, minute, second, offset)
-	r.Register(fixed("time", []string{"from"}, 1, 4, timeFn))
-	// date and time(from) | date and time(date, time)
-	r.Register(fixed("date and time", []string{"from"}, 1, 2, dateAndTimeFn))
+	// date(from) | date(year, month, day). Both named forms bind: date(from:…)
+	// via the primary signature, date(year:…, month:…, day:…) via the alternate.
+	r.Register(overloaded("date", []string{"from"}, [][]string{{"year", "month", "day"}}, 1, 3, dateFn))
+	// time(from) | time(hour, minute, second) | time(hour, minute, second, offset).
+	r.Register(overloaded("time", []string{"from"}, [][]string{{"hour", "minute", "second", "offset"}}, 1, 4, timeFn))
+	// date and time(from) | date and time(date, time).
+	r.Register(overloaded("date and time", []string{"from"}, [][]string{{"date", "time"}}, 1, 2, dateAndTimeFn))
 	// duration(from): parse an ISO-8601 duration string (or pass a duration through).
 	r.Register(fixed("duration", []string{"from"}, 1, 1, durationFn))
 	// years and months duration(from, to): whole-month difference between dates.

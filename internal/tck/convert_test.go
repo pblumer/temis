@@ -22,6 +22,11 @@ func TestScalarValue(t *testing.T) {
 		{"xsd:date", "2024-01-02", "2024-01-02"},
 		{"xsd:dateTime", "2024-01-02T03:04:05", "2024-01-02T03:04:05"},
 		{"", "plain", "plain"},
+		// String whitespace is significant and preserved verbatim (TCK 1105:
+		// upper case("xyZ ") → "XYZ "); numeric text is still trimmed.
+		{"xsd:string", "XYZ ", "XYZ "},
+		{"xsd:string", " leading", " leading"},
+		{"xsd:decimal", "  42  ", "42"},
 	}
 	for _, c := range cases {
 		got := scalarValue(c.typ, c.text)
