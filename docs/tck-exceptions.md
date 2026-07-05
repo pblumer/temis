@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3272 / 3495 Cases grün (93,6 %)** |
+| Compliance Level 2 + 3 | **3302 / 3495 Cases grün (94,5 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 93,6 % |
+| Ratchet-Floor im CI | 94,4 % |
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +30,26 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `in`/Range mit null-Endpunkten (WP-41.16, +9)
+## In dieser Etappe behoben — Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, +30)
+
+Drei Fixes, die quer über viele Suiten kaskadieren:
+
+- **Ungültige Invocation → null** (statt nicht-ausführbar): Der Aufruf eines
+  **unbekannten Namens** (`non_existing_function()`) oder eines **Nicht-Funktions**-
+  Callees (`123()`, `"x"()`, `true()`, `null()`) ergibt `null` und hält die Decision
+  ausführbar — dieselbe Total-Funktions-Semantik wie WP-41.1. 1131: 8→0.
+- **Namen mit Zahl-Wort**: Eine Name-Referenz assembliert jetzt über Zahl-Fragmente
+  (`Extra days case 1`) und `-`+Zahl (`K-MatchesFunc-1`) hinweg, wenn das Orakel den
+  Namen kennt. Vorher scheiterte das Parsen an `2:37: expected ), got Number`. 0020: 0→7.
+- **`defaultOutputEntry` in Entscheidungstabellen** (DMN 8.2.11): Trifft **keine**
+  Regel, liefert die Tabelle den deklarierten Default-Output statt `null` — für
+  Single-Hit-Policies **und** Collect-mit-Aggregation. Das war die zweite Hälfte von
+  0020 (COLLECT/MAX mit Default `0`).
+
+Netto **+30 Cases** (93,6 % → 94,5 %); u. a. 1131 8→0, 0020 0→7, 0034-drg-scopes 10→…
+(Zahl-Wort-Namen), zahlreiche Streu-Cases.
+
+## Früher behoben — `in`/Range mit null-Endpunkten (WP-41.16, +9)
 
 - **`in` als 3-wertige Disjunktion**: Ein null-Testwert gegen eine Range oder ein
   **expliziter null-Endpunkt** macht den Membership-Test **null** (nicht `false`):

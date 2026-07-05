@@ -844,11 +844,12 @@ func TestBuiltinArityMismatchIsNull(t *testing.T) {
 }
 
 func TestBoxedFilterCompileError(t *testing.T) {
-	// A predicate that calls an unknown function fails to compile, exercising
-	// BoxedFilter's c.err path. (An unknown *variable* would instead resolve via
-	// the implicit element context, so a bad function name is used here.)
-	if _, err := BoxedFilter(constExpr(nums(1, 2)), "bogusfn(item) > 1", NewEnv(), nil); err == nil {
-		t.Error("BoxedFilter with an unknown function should be a compile error")
+	// A predicate with a syntax error fails to compile, exercising BoxedFilter's
+	// error path. (Unknown variables resolve via the implicit element context, and
+	// an unknown function call is now a total-function null — WP-41.17 — so neither
+	// is a compile error; a malformed expression still is.)
+	if _, err := BoxedFilter(constExpr(nums(1, 2)), "item > ", NewEnv(), nil); err == nil {
+		t.Error("BoxedFilter with a malformed predicate should be a compile error")
 	}
 }
 

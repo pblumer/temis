@@ -582,13 +582,17 @@ func (c *compiler) compileCall(n *CallExpr) CompiledExpr {
 		if _, ok := c.env.slot(name.Name); ok {
 			return c.compileValueCall(c.compile(name), n)
 		}
-		return c.fail(name.Pos(), "unknown function %q", name.Name)
+		// Invoking an unknown name is not a compile error: FEEL invocation is a
+		// total function, so a call whose callee cannot be a function evaluates to
+		// null and keeps the decision executable (WP-41.17; see nullCall / 1131).
+		return constNull
 	}
 	// The callee is an arbitrary expression that must evaluate to a function. A
-	// literal can never be one, so reject it at compile time.
+	// literal can never be one, so the call evaluates to null (a runtime error in
+	// TCK terms), rather than making the whole decision non-executable.
 	switch n.Fn.(type) {
 	case *NumberLit, *StringLit, *BoolLit, *NullLit, *AtLit:
-		return c.fail(n.Fn.Pos(), "callee is not a function")
+		return constNull
 	}
 	return c.compileValueCall(c.compile(n.Fn), n)
 }
