@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3357 / 3495 Cases grün (96,1 %)** |
+| Compliance Level 2 + 3 | **3373 / 3495 Cases grün (96,5 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 96,0 % |
+| Ratchet-Floor im CI | 96,5 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,38 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, +10)
+## In dieser Etappe behoben — Zahl-Vergleich mit der TCK-Präzision (WP-41.22, +16)
+
+**Grund (dokumentiert, kein „Bug"):** Die Engine rechnet gemäß DMN-Spec in
+**IEEE 754-2008 decimal128** (34 signifikante Stellen, ADR-0007). Für
+**transzendente/irrationale** Ergebnisse (`exp`, `log`, `sqrt`, `**` mit
+nicht-ganzzahligem Exponenten, Statistik-Funktionen, Zinseszins) liefert Temis
+mehr Stellen als die TCK-Erwartungswerte, deren Autoren auf **endliche** Präzision
+gerundet haben. Beispiel 0008/001: Temis `2778.693549432766768…`, TCK
+`2778.69354943277` — das ist **exakt unser Wert, gerundet auf 11 Dezimalstellen**.
+Der frühere Runner verlangte 34-stellige String-Identität und wertete solche
+*korrekten, nur präziseren* Ergebnisse als Fehler.
+
+**Fix (im Runner, nicht in der Engine):** Zwei Zahlen gelten als gleich, wenn das
+Ist-Ergebnis, **auf die Dezimalstellen-Zahl des Erwartungswerts gerundet**, dem
+Erwartungswert entspricht (`numClose`). Das ist **additiv** — es lockert nie eine
+exakte Arithmetik-Prüfung:
+- Ganzzahlige Erwartungswerte werden weiter **exakt** verglichen.
+- Eine Abweichung **an oder oberhalb** der letzten angegebenen Stelle scheitert
+  weiterhin (ein echter Rechenfehler bleibt ein Fehler).
+- Nicht-Zahlen werden nie als „nah" behandelt.
+
+Netto **+16 Cases** (96,1 % → 96,5 %); u. a. 0052 exp 12→15, 0009/0008-Zinseszins,
+0063 stddev, 0041.
+
+**Weiterhin offen (bewusst, dokumentiert):** Wenige Zinseszins-Fälle (0008/002,
+0008/003, 0041/003) weichen **oberhalb** der angegebenen Präzision ab, weil der
+**TCK-Referenzwert selbst mit geringerer (float64-)Genauigkeit** erzeugt wurde und
+jenseits der ~11.–13. Stelle von unserem spec-konformen decimal128 divergiert. Sie
+an die float64-Referenz anzugleichen hieße, die spec-vorgeschriebene Präzision
+absichtlich zu verschlechtern — das tun wir nicht.
+
+## Früher behoben — Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, +10)
 
 FEEL-Typ-Koerzierung (DMN §10.3.2.9.4) greift jetzt auch an **Funktions- und
 Service-Aufruf-Grenzen**, nicht nur an Decision-Outputs:
