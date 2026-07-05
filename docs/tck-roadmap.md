@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3426 / 3495 Cases (**98,0 %**) nach WP-41.27, Ratchet-Floor 98,0 %.
+**Stand:** 3430 / 3495 Cases (**98,1 %**) nach WP-41.28, Ratchet-Floor 98,1 %.
 **Endziel (WP-41): ≥ 95 % — ✅ erreicht.** Weitere Fixes heben den Ratchet-Floor.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
@@ -39,6 +39,7 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.25 ✅** | **Unary-Test-Membership (`? in liste`) + Punkt-Namen (`Person.Gender`)** | 0039, 0037 | **+4 → 97,4 %** |
 | **WP-41.26 ✅** | **Named-Arg-Arity (Parameter weglassbar), `decimal`-Fraktions-Skala, Conditional nicht-boolesch → null** | 0103, 1100, 1150 | **+4 → 97,5 %** |
 | **WP-41.27 ✅** | **Weg zu 98 %**: Named-Arg-Temporal-Konstruktoren (`AltParams`), fraktionale Dauer-Sekunden, Dauer × Zahl trunkiert, String-Whitespace signifikant, `@`-Literal → null, Named-Context-Funktionen, Boxed-Filter nicht-boolesch → null | 1115–1117, 1120, 0100, 1103–1109, 0093, 1146/1147, 1151 | **+14 → 98,0 % 🎯** |
+| **WP-41.28 ✅** | **Über 98 %**: Quantoren nicht-boolesch → null, `list replace(match:)` benannt, `string join` auf 1–2 Args beschränkt, doppelte Kontext-Schlüssel → null | 1153, 1155, 1140, 0057 | **+4 → 98,1 %** |
 
 Bündel 41.4–41.9 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
 schwierigen Brocken unten.

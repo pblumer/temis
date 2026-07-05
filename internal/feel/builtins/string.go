@@ -50,7 +50,7 @@ func registerString(r *Registry) {
 
 	// string join(list, delimiter?, prefix?, suffix?): concatenate the string
 	// elements of list, skipping nulls, separated by delimiter (default "").
-	r.Register(fixed("string join", []string{"list", "delimiter", "prefix", "suffix"}, 1, 4, stringJoin))
+	r.Register(fixed("string join", []string{"list", "delimiter"}, 1, 2, stringJoin))
 }
 
 // substringSide returns a builtin computing the substring before (before=true)
@@ -219,17 +219,13 @@ func stringJoin(args []value.Value) (value.Value, error) {
 		return value.Null, nil
 	}
 	elems := listOf(args[:1])
-	delim, prefix, suffix := "", "", ""
+	// string join(list) and string join(list, delimiter) are the only DMN forms;
+	// a non-string, non-null delimiter makes the call null.
+	delim := ""
 	if s, ok := optString(args, 1); ok {
 		delim = s
 	} else if len(args) > 1 && !value.IsNull(args[1]) {
 		return value.Null, nil
-	}
-	if s, ok := optString(args, 2); ok {
-		prefix = s
-	}
-	if s, ok := optString(args, 3); ok {
-		suffix = s
 	}
 	parts := make([]string, 0, len(elems))
 	for _, e := range elems {
@@ -242,7 +238,7 @@ func stringJoin(args []value.Value) (value.Value, error) {
 		}
 		parts = append(parts, s)
 	}
-	return value.Str(prefix + strings.Join(parts, delim) + suffix), nil
+	return value.Str(strings.Join(parts, delim)), nil
 }
 
 // optString reads args[idx] as a string when present and non-null.

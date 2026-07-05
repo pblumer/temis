@@ -81,19 +81,23 @@ func (c *compiler) compileQuantified(n *QuantifiedExpr) CompiledExpr {
 	some := n.Quant == "some"
 
 	return func(s *Scope) (value.Value, error) {
-		sawTrue, sawFalse, sawNull := false, false, false
+		sawTrue, sawFalse, sawNull, sawBad := false, false, false, false
 		err := iterate(s, iters, 0, func(sc *Scope) error {
 			v, err := cond(sc)
 			if err != nil {
 				return err
 			}
-			switch v {
-			case value.True:
+			switch {
+			case v == value.True:
 				sawTrue = true
-			case value.False:
+			case v == value.False:
 				sawFalse = true
-			default:
+			case value.IsNull(v):
 				sawNull = true
+			default:
+				// A genuine non-boolean satisfies-result poisons the quantifier
+				// (TCK 1153), overriding any true/false.
+				sawBad = true
 			}
 			return nil
 		})
@@ -102,6 +106,9 @@ func (c *compiler) compileQuantified(n *QuantifiedExpr) CompiledExpr {
 		}
 		if err != nil {
 			return nil, err
+		}
+		if sawBad {
+			return value.Null, nil
 		}
 		if some {
 			switch {
@@ -356,19 +363,23 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
-		sawTrue, sawFalse, sawNull := false, false, false
+		sawTrue, sawFalse, sawNull, sawBad := false, false, false, false
 		err = forEachDomain(s.st, cv, func(e value.Value) error {
 			v, err := pred(s.Extend(e))
 			if err != nil {
 				return err
 			}
-			switch v {
-			case value.True:
+			switch {
+			case v == value.True:
 				sawTrue = true
-			case value.False:
+			case v == value.False:
 				sawFalse = true
-			default:
+			case value.IsNull(v):
 				sawNull = true
+			default:
+				// A genuine non-boolean satisfies-result poisons the quantifier:
+				// the whole expression is null (TCK 1153), overriding any true/false.
+				sawBad = true
 			}
 			return nil
 		})
@@ -377,6 +388,9 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 		}
 		if err != nil {
 			return nil, err
+		}
+		if sawBad {
+			return value.Null, nil
 		}
 		if some {
 			switch {

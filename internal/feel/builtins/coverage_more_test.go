@@ -232,10 +232,9 @@ func TestStringEdgeBranches(t *testing.T) {
 		{name: "substring", args: []value.Value{str("foobar"), num("2"), num("99")}, want: "oobar"},
 		{name: "substring", args: []value.Value{str("foobar"), num("2"), value.Null}, want: "oobar"},
 
-		// string join: delimiter present but non-string (and non-null) → null;
-		// prefix/suffix supplied.
+		// string join: delimiter present but non-string (and non-null) → null.
 		{name: "string join", args: []value.Value{list(str("a"), str("b")), num("1")}, wantNull: true},
-		{name: "string join", args: []value.Value{list(str("a"), str("b")), str("-"), str("<"), str(">")}, want: "<a-b>"},
+		{name: "string join", args: []value.Value{list(str("a"), str("b")), str("-")}, want: "a-b"},
 		// string join: non-list first arg treated as the single element.
 		{name: "string join", args: []value.Value{str("a"), str("-")}, want: "a"},
 	})
