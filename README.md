@@ -106,6 +106,11 @@ also eine Untergrenze; bessere Hardware skaliert linear. Jede Zahl ist mit einem
 eingecheckten Benchmark reproduzierbar (`go test -bench=BenchmarkThroughput ./dmn/`),
 Methodik und ehrliche Einordnung in **[`docs/55-benchmarks.md`](docs/55-benchmarks.md)**.
 
+**1:1 gegen Drools** (`kie-dmn-core`, identische DMN-Dateien, gleiche VM): Temis
+ist pro Auswertung **~2–3× schneller** (ein Kern) und liefert **~1,4×** mehr
+Durchsatz (4 Kerne, beide Default-GC) — reproduzierbares Harness in
+**[`benchmarks/comparison/`](benchmarks/comparison/README.md)**.
+
 ## Status
 
 **Aktiv in Entwicklung.** Das Fundament der Engine steht; das MVP (lauffähige Library, die

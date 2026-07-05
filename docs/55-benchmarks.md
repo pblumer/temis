@@ -102,6 +102,24 @@ Go‑Dienste. Die reine Rechenarbeit pro Entscheidung ändert sich dabei nicht.
 
 ---
 
+### 3.3 Kopf-an-Kopf gegen Drools
+
+Ein 1:1-Vergleich gegen die **Drools-DMN-Engine** (`kie-dmn-core` 8.44.0.Final,
+JDK 21) auf **identischen DMN-Dateien**, derselben VM, beide out-of-the-box
+(Details, Harness und Reproduktion in
+[`benchmarks/comparison/`](../benchmarks/comparison/README.md)):
+
+| Modell | Temis | Drools | Temis schneller |
+|---|---:|---:|---:|
+| Latenz String-Tabelle (1 Kern) | ≈ 2,1 µs | ≈ 6,1 µs | **2,9×** |
+| Latenz numerische Tabelle (1 Kern) | ≈ 2,8 µs | ≈ 5,8 µs | **2,1×** |
+| Durchsatz String-Tabelle (4 Kerne) | ≈ 861 000/s | ≈ 577 000/s | **1,49×** |
+| Durchsatz numerische Tabelle (4 Kerne) | ≈ 750 000/s | ≈ 535 000/s | **1,40×** |
+
+Beide Engines liefern nachweislich dasselbe Ergebnis (Paritäts-Guard auf beiden
+Seiten). Pro Kern ist Temis ~2–3× schneller; im parallelen Default-Fall ~1,4×,
+und mit `GOGC=400` wächst der Durchsatzvorsprung auf ~2,3–2,8×.
+
 ## 4. Selbst nachstellen
 
 ```sh

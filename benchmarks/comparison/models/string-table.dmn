@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20191111/MODEL/" namespace="http://temis.example/bench/StringTable" name="StringTable" id="def_StringTable">
+  <inputData id="i_Season" name="Season"><variable name="Season" typeRef="string"/></inputData>
+  <inputData id="i_Region" name="Region"><variable name="Region" typeRef="string"/></inputData>
+  <decision id="d_Menu" name="Menu">
+    <variable name="Menu" typeRef="string"/>
+    <informationRequirement id="ir_Season"><requiredInput href="#i_Season"/></informationRequirement>
+    <informationRequirement id="ir_Region"><requiredInput href="#i_Region"/></informationRequirement>
+    <decisionTable id="dt_Menu" hitPolicy="UNIQUE">
+      <input id="in_Season"><inputExpression id="ie_Season" typeRef="string"><text>Season</text></inputExpression></input>
+      <input id="in_Region"><inputExpression id="ie_Region" typeRef="string"><text>Region</text></inputExpression></input>
+      <output id="out_Menu" name="Menu" typeRef="string"/>
+      <rule id="r0"><inputEntry id="r0_1"><text>"Winter"</text></inputEntry><inputEntry id="r0_2"><text>"R0"</text></inputEntry><outputEntry id="r0_o"><text>"m0"</text></outputEntry></rule>
+      <rule id="r1"><inputEntry id="r1_1"><text>"Spring"</text></inputEntry><inputEntry id="r1_2"><text>"R1"</text></inputEntry><outputEntry id="r1_o"><text>"m1"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry id="r2_1"><text>"Summer"</text></inputEntry><inputEntry id="r2_2"><text>"R2"</text></inputEntry><outputEntry id="r2_o"><text>"m2"</text></outputEntry></rule>
+      <rule id="r3"><inputEntry id="r3_1"><text>"Autumn"</text></inputEntry><inputEntry id="r3_2"><text>"R3"</text></inputEntry><outputEntry id="r3_o"><text>"m3"</text></outputEntry></rule>
+      <rule id="r4"><inputEntry id="r4_1"><text>"Winter"</text></inputEntry><inputEntry id="r4_2"><text>"R4"</text></inputEntry><outputEntry id="r4_o"><text>"m4"</text></outputEntry></rule>
+      <rule id="r5"><inputEntry id="r5_1"><text>"Spring"</text></inputEntry><inputEntry id="r5_2"><text>"R5"</text></inputEntry><outputEntry id="r5_o"><text>"m5"</text></outputEntry></rule>
+      <rule id="r6"><inputEntry id="r6_1"><text>"Summer"</text></inputEntry><inputEntry id="r6_2"><text>"R6"</text></inputEntry><outputEntry id="r6_o"><text>"m6"</text></outputEntry></rule>
+      <rule id="r7"><inputEntry id="r7_1"><text>"Autumn"</text></inputEntry><inputEntry id="r7_2"><text>"R7"</text></inputEntry><outputEntry id="r7_o"><text>"m7"</text></outputEntry></rule>
+      <rule id="r8"><inputEntry id="r8_1"><text>"Winter"</text></inputEntry><inputEntry id="r8_2"><text>"R8"</text></inputEntry><outputEntry id="r8_o"><text>"m8"</text></outputEntry></rule>
+      <rule id="r9"><inputEntry id="r9_1"><text>"Spring"</text></inputEntry><inputEntry id="r9_2"><text>"R9"</text></inputEntry><outputEntry id="r9_o"><text>"m9"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>
