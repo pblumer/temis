@@ -73,15 +73,15 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	}
 	diags := fromModelDiagnostics(modelDiags)
 
-	funcs, funcDiags := compileBKMs(m)
+	items := buildItemTypes(m)
+
+	funcs, funcDiags := compileBKMs(m, items)
 	diags = append(diags, funcDiags...)
 
 	// Register each decision service as an invocable function so a decision's FEEL
 	// can call it by name (DMN §10.4, TCK 0085). The closure resolves the compiled
 	// service lazily, since services are compiled after the decisions here.
-	registerServiceInvocables(m, defs, funcs, lim)
-
-	items := buildItemTypes(m)
+	registerServiceInvocables(m, defs, funcs, items, lim)
 
 	for _, dec := range m.Decisions {
 		if err := ctx.Err(); err != nil {
@@ -100,7 +100,7 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	}
 
 	diags = append(diags, wireRequirements(defs, m)...)
-	diags = append(diags, compileServices(defs, m)...)
+	diags = append(diags, compileServices(defs, m, items)...)
 	for _, cs := range defs.serviceOrder {
 		cs.limits = lim
 	}
@@ -114,15 +114,16 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 // compile, so a model may call itself (recursion) or a sibling (mutual
 // recursion). A body that fails to compile yields a diagnostic and an
 // uncallable (nil-body) function.
-func compileBKMs(m *model.Definitions) (map[string]*feel.Func, Diagnostics) {
+func compileBKMs(m *model.Definitions, items map[string]*feel.Type) (map[string]*feel.Func, Diagnostics) {
 	funcs := make(map[string]*feel.Func)
 	for _, b := range m.BKMs {
 		if b.Name == "" || b.EncapsulatedLogic == nil {
 			continue
 		}
-		fn := &feel.Func{Name: b.Name}
+		fn := &feel.Func{Name: b.Name, ResultType: bkmResultType(b, items)}
 		for _, p := range b.EncapsulatedLogic.Parameters {
 			fn.Params = append(fn.Params, p.Name)
+			fn.ParamTypes = append(fn.ParamTypes, resolveType(p.TypeRef, items))
 		}
 		funcs[b.Name] = fn
 	}
@@ -146,6 +147,19 @@ func compileBKMs(m *model.Definitions) (map[string]*feel.Func, Diagnostics) {
 		fn.Body = body
 	}
 	return funcs, diags
+}
+
+// bkmResultType resolves a BKM's declared return type for output coercion: the
+// bound variable's type if declared, otherwise the encapsulated body's own type
+// (a literal expression may declare one). Any (nil) imposes no coercion.
+func bkmResultType(b *model.BKM, items map[string]*feel.Type) *feel.Type {
+	if b.VariableTypeRef != "" {
+		return resolveType(b.VariableTypeRef, items)
+	}
+	if le, ok := b.EncapsulatedLogic.Body.(*model.LiteralExpression); ok && le.TypeRef != "" {
+		return resolveType(le.TypeRef, items)
+	}
+	return nil
 }
 
 // compileDecision compiles one decision's logic into a CompiledDecision. A

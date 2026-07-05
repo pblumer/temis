@@ -293,7 +293,7 @@ func mapFunctionDef(fn *dmnxml.FunctionDefinition) *FunctionDef {
 }
 
 func mapService(ds dmnxml.DecisionService) *DecisionService {
-	return &DecisionService{
+	out := &DecisionService{
 		ID:                    ds.ID,
 		Name:                  ds.Name,
 		OutputDecisions:       localRefs(ds.OutputDecisions),
@@ -301,6 +301,10 @@ func mapService(ds dmnxml.DecisionService) *DecisionService {
 		InputDecisions:        localRefs(ds.InputDecisions),
 		InputData:             localRefs(ds.InputData),
 	}
+	if ds.Variable != nil {
+		out.VariableTypeRef = ds.Variable.TypeRef
+	}
+	return out
 }
 
 // localRefs resolves a list of href references to their local identifiers,

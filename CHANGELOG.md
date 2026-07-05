@@ -60,6 +60,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, 95,8 % → 96,1 %).**
+  Die FEEL-Item-Definition-Koerzierung (DMN §10.3.2.9.4) greift jetzt auch an Funktions- und
+  Service-Aufruf-Grenzen, nicht nur an Decision-Outputs: ein Argument, das nicht zum deklarierten
+  Parametertyp passt (auch nach Singleton-Unwrap), macht den ganzen Aufruf `null` („Funktion nicht
+  invoziert"); der Rückgabewert wird auf den deklarierten Typ koerziert. Gilt für BKMs und für
+  Decision-Service-Aufrufe (neue `ParamTypes`/`ResultType` an der internen `feel.Func`); zusätzlich
+  koerziert `Service.Evaluate` seine Single-Output-Ausgabe auf den Service-Typ. Die Koerzierungs-Logik
+  wohnt jetzt geteilt in `internal/feel`. +10 Cases (0082 23→31, 0085 16→18); der Ratchet-Floor des
+  CI-Gates steigt auf 96,0 %.
 - **DMN-TCK-Konformität: Decision Services aus FEEL aufrufbar (WP-41.20, 95,6 % → 95,8 %).**
   Ein Decision Service kann jetzt aus dem FEEL-Ausdruck einer Decision heraus per Namen aufgerufen
   werden (`Svc("bar")`, `Svc(inputData_x: …, decision_y: …)`) — DMN §10.4. Die Parameter sind die
