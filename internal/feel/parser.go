@@ -290,7 +290,7 @@ func (p *parser) parseAdd() Expr {
 }
 
 func (p *parser) parseMul() Expr {
-	left := p.parseUnary()
+	left := p.parsePow()
 	for {
 		t := p.cur()
 		if t.Kind != Star && t.Kind != Slash {
@@ -301,12 +301,27 @@ func (p *parser) parseMul() Expr {
 		if t.Kind == Slash {
 			op = "/"
 		}
-		left = &BinaryExpr{baseNode: base(t), Op: op, X: left, Y: p.parseUnary()}
+		left = &BinaryExpr{baseNode: base(t), Op: op, X: left, Y: p.parsePow()}
 	}
 }
 
-// parseUnary handles prefix minus. Exponentiation binds tighter than unary minus
-// (docs/30-feel-spec.md §3), so a unary operand is a power expression.
+// parsePow parses exponentiation. Per the TCK (0100), `**` is left-associative
+// (`3 ** 4 ** 5` == `(3 ** 4) ** 5`) and binds looser than unary minus
+// (`-5 ** 2` == `(-5) ** 2` == 25), so both operands are unary expressions.
+func (p *parser) parsePow() Expr {
+	left := p.parseUnary()
+	for {
+		t := p.cur()
+		if t.Kind != Pow {
+			return left
+		}
+		p.advance()
+		left = &BinaryExpr{baseNode: base(t), Op: "**", X: left, Y: p.parseUnary()}
+	}
+}
+
+// parseUnary handles prefix minus. It binds tighter than exponentiation, so the
+// base of a power (and a `*`/`/` operand) is a unary expression.
 func (p *parser) parseUnary() Expr {
 	p.enter()
 	defer p.leave()
@@ -314,17 +329,7 @@ func (p *parser) parseUnary() Expr {
 		p.advance()
 		return &UnaryExpr{baseNode: base(t), Op: "-", X: p.parseUnary()}
 	}
-	return p.parsePow()
-}
-
-// parsePow is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2).
-func (p *parser) parsePow() Expr {
-	left := p.parsePostfix()
-	if t := p.cur(); t.Kind == Pow {
-		p.advance()
-		return &BinaryExpr{baseNode: base(t), Op: "**", X: left, Y: p.parseUnary()}
-	}
-	return left
+	return p.parsePostfix()
 }
 
 func (p *parser) parsePostfix() Expr {

@@ -81,6 +81,11 @@ func scaled(f func(value.Number, int32) (value.Number, bool)) Func {
 			}
 			scale = s
 		}
+		// The DMN round functions require the scale within the decimal128 exponent
+		// range [-6111, 6176]; anything outside yields null (TCK 1141–1144).
+		if scale < -6111 || scale > 6176 {
+			return value.Null, nil
+		}
 		return numOrNull(f(n, int32(scale))), nil
 	}
 }

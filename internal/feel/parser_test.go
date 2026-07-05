@@ -41,8 +41,8 @@ func TestPrecedence(t *testing.T) {
 		"1 + 2 * 3":     "(+ 1 (* 2 3))",
 		"1 * 2 + 3":     "(+ (* 1 2) 3)",
 		"(1 + 2) * 3":   "(* (+ 1 2) 3)",
-		"2 ** 3 ** 2":   "(** 2 (** 3 2))", // right-associative
-		"-2 ** 2":       "(- (** 2 2))",    // ** binds tighter than unary minus
+		"2 ** 3 ** 2":   "(** (** 2 3) 2)", // left-associative (TCK 0100)
+		"-2 ** 2":       "(** (- 2) 2)",    // unary minus binds tighter than ** (TCK 0100)
 		"-3 * 4":        "(* (- 3) 4)",
 		"a or b and c":  "(or a (and b c))",
 		"a and b or c":  "(or (and a b) c)",

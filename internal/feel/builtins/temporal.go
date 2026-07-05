@@ -98,6 +98,10 @@ func timeFn(args []value.Value) (value.Value, error) {
 			return value.Null, nil
 		case value.DateTime:
 			return value.TimeOf(v), nil
+		case value.Date:
+			// A plain date has no time-of-day: time(date) is midnight at UTC (TCK 1116).
+			z := value.NewDaysTimeDuration(0)
+			return value.NewTime(0, 0, 0, 0, &z), nil
 		default:
 			return value.Null, nil
 		}

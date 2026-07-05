@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3323 / 3495 Cases grün (95,1 %)** |
+| Compliance Level 2 + 3 | **3342 / 3495 Cases grün (95,6 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 95,0 % |
+| Ratchet-Floor im CI | 95,6 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,26 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, +21 → 95,1 %) 🎯
+## In dieser Etappe behoben — Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, +19)
+
+Numerische & temporale Randfälle nach dem 95 %-Meilenstein:
+
+- **Rundungs-Skala-Bereich** (1141–1144): `round up/down/half up/half down(n, scale)`
+  (und `decimal`/`floor`/`ceiling`) verlangen `scale ∈ [-6111, 6176]` (decimal128-
+  Exponent); außerhalb → `null`. Eine sehr große, aber gültige Skala lässt den Wert
+  unverändert (`round up(5.5, 6176)` = 5.5), statt den 34-stelligen Kontext zu
+  überlaufen. 4 Suiten je 13→16.
+- **`**`-Präzedenz** (0100): Exponentiation ist **links-assoziativ** (`3 ** 4 ** 5`
+  = `(3**4)**5` = 3486784401) und bindet **loser** als unäres Minus (`-5 ** 2`
+  = `(-5)**2` = 25) — beide per TCK gegen die frühere Intuition.
+- **Time-Rendering & `time(date)`** (1116): Ein Offset mit Sekunden-Anteil rendert
+  als `±HH:MM:SS` (`11:59:45+02:45:55`); `time(date)` ergibt Mitternacht UTC
+  (`00:00:00Z`).
+
+Netto **+19 Cases** (95,1 % → 95,6 %). Offen in 1116: die überladene Named-Arg-Form
+`time(hour:…, minute:…, offset:…)` (zweite Signatur, Arg-Zahl an Params gebunden).
+
+## Früher behoben — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, +21 → 95,1 %) 🎯
 
 Die Etappe, die das **95 %-Endziel** knackt. Vier Fixes:
 

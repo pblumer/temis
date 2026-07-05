@@ -39,7 +39,7 @@ func TestEvalArithmetic(t *testing.T) {
 		"10 / 4":      "2.5",
 		"2 ** 10":     "1024",
 		"-5 + 1":      "-4",
-		"2 ** 3 ** 2": "512", // right-assoc: 2**(3**2)
+		"2 ** 3 ** 2": "64", // left-assoc: (2**3)**2 (TCK 0100)
 	}
 	for src, want := range cases {
 		if got := evalStr(t, src, nil); got.String() != want {

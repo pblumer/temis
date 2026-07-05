@@ -113,6 +113,17 @@ func (n Number) FloorTo(scale int32) (Number, bool) { return n.quantize(scale, a
 func (n Number) CeilingTo(scale int32) (Number, bool) { return n.quantize(scale, apd.RoundCeiling) }
 
 func (n Number) quantize(scale int32, mode apd.Rounder) (Number, bool) {
+	// Quantizing to more fractional digits than n already carries cannot change
+	// its value, so short-circuit: this both avoids needless work and keeps a very
+	// large (but valid) scale from overflowing the 34-digit context — e.g.
+	// round up(5.5, 6176) is just 5.5 (TCK 1141–1144).
+	var fracDigits int32
+	if n.dec.Exponent < 0 {
+		fracDigits = -n.dec.Exponent
+	}
+	if scale >= fracDigits {
+		return n, true
+	}
 	ctx := numberContext // copy; never mutate the shared context
 	ctx.Rounding = mode
 	res := new(apd.Decimal)
