@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3373 / 3495 Cases grün (96,5 %)** |
+| Compliance Level 2 + 3 | **3388 / 3495 Cases grün (96,9 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 96,5 % |
+| Ratchet-Floor im CI | 96,9 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,25 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Zahl-Vergleich mit der TCK-Präzision (WP-41.22, +16)
+## In dieser Etappe behoben — `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, +15)
+
+`instance of` unterstützt jetzt das volle Typsystem statt nur Basis-Kinds:
+
+- **Parametrisierte Generics**: `list<T>`, `context<a: T, b: U>` (inkl. **verschachtelt**
+  `context<a: context<b: number>>` und leer `context<>`) werden geparst und
+  **strukturell** geprüft (Element-/Feld-Typen), nicht nur auf den Kind.
+- **Benutzerdefinierte Item-Typen** (`t255`, `tNumberList`, `t_context_013`, …) werden
+  aufgelöst — die Item-Definition-Typen (`buildItemTypes`) werden über ein neues
+  `types`-Feld an der `feel.Env` bis zu jedem Teilausdruck getragen (kein Threading
+  durch den ganzen boxed-Compiler nötig).
+- **`null instance of X` ist `false`** für **jeden** Typ (auch `Any`) — der Wert null
+  ist keine Instanz eines Typs (TCK null_001).
+- Die strukturelle Prüfung nutzt das geteilte `ConformsToType` (WP-41.21).
+
+`function<…>`-Typen matchen weiter per Kind (die Funktions-Signatur-Fälle bestehen
+bereits). Netto **+15 Cases** — 0070 vollständig **127→142**.
+
+## Früher behoben — Zahl-Vergleich mit der TCK-Präzision (WP-41.22, +16)
 
 **Grund (dokumentiert, kein „Bug"):** Die Engine rechnet gemäß DMN-Spec in
 **IEEE 754-2008 decimal128** (34 signifikante Stellen, ADR-0007). Für

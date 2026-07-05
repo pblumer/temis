@@ -138,6 +138,18 @@ func (s *Scope) at(i int) value.Value {
 type Env struct {
 	index map[string]int
 	order []string
+	// types resolves user-defined item-definition type names (e.g. tNumberList)
+	// for the `instance of` operator; nil when only built-in types are in scope.
+	// It is carried on the env so it reaches every compiled sub-expression without
+	// threading a separate parameter, and is shared (never mutated) by Derive/Append.
+	types map[string]*Type
+}
+
+// WithTypes returns e with the given user-type resolver attached (for `instance
+// of`). The map is shared, not copied; callers must not mutate it afterwards.
+func (e *Env) WithTypes(types map[string]*Type) *Env {
+	e.types = types
+	return e
 }
 
 // NewEnv returns an Env with the given variable names assigned slots in order.
@@ -178,7 +190,7 @@ func (e *Env) Has(name string) bool { _, ok := e.index[name]; return ok }
 // It is used to add the implicit unary-test input "?" to a decision env without
 // disturbing the existing slot indices.
 func (e *Env) Derive(extra ...string) *Env {
-	d := &Env{index: make(map[string]int, len(e.index)+len(extra))}
+	d := &Env{index: make(map[string]int, len(e.index)+len(extra)), types: e.types}
 	for _, n := range e.order {
 		d.define(n)
 	}
@@ -196,6 +208,7 @@ func (e *Env) Append(name string) *Env {
 	d := &Env{
 		index: make(map[string]int, len(e.index)+1),
 		order: append([]string(nil), e.order...),
+		types: e.types,
 	}
 	for k, v := range e.index {
 		d.index[k] = v

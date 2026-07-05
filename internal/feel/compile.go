@@ -422,7 +422,12 @@ func cmpSatisfies(op string, x, y value.Value) bool {
 // built-in (or Any); an unknown name (e.g. a user-defined item-definition type)
 // is a compile error until the type system binds them (WP-31).
 func (c *compiler) compileInstanceOf(n *InstanceOfExpr) CompiledExpr {
-	if _, ok := instanceOf(value.Null, n.Type); !ok {
+	var userTypes map[string]*Type
+	if c.env != nil {
+		userTypes = c.env.types
+	}
+	t, ok := resolveTypeString(n.Type, userTypes)
+	if !ok {
 		return c.fail(n.Pos(), "unknown type %q in instance of", n.Type)
 	}
 	x := c.compile(n.X)
@@ -432,8 +437,7 @@ func (c *compiler) compileInstanceOf(n *InstanceOfExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
-		res, _ := instanceOf(v, typeName)
-		return value.BoolOf(res), nil
+		return value.BoolOf(instanceOfType(v, t, typeName)), nil
 	}
 }
 

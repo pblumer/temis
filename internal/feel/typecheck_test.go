@@ -107,7 +107,7 @@ func TestInstanceOfTypes(t *testing.T) {
 		{`"x" instance of string`, "true"},
 		{`true instance of boolean`, "true"},
 		{`5 instance of Any`, "true"},
-		{`null instance of Any`, "true"},
+		{`null instance of Any`, "false"}, // null is not an instance of any type (TCK 0070)
 		{`[1] instance of list`, "true"},
 		{`@"P1D" instance of duration`, "true"},
 		{`@"P1D" instance of days and time duration`, "true"},
