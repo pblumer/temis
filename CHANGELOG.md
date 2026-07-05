@@ -60,6 +60,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Zahl-Vergleich mit der TCK-Präzision (WP-41.22, 96,1 % → 96,5 %).**
+  Die Engine rechnet spec-konform in decimal128 (34 Stellen, ADR-0007) und liefert für transzendente/
+  irrationale Ergebnisse (`exp`/`log`/`sqrt`/`**`/Statistik/Zinseszins) mehr Stellen als die auf endliche
+  Präzision gerundeten TCK-Erwartungswerte. Der TCK-Runner vergleicht zwei Zahlen jetzt, indem er das
+  Ist-Ergebnis auf die Dezimalstellen-Zahl des Erwartungswerts rundet — additiv (exakte Arithmetik und
+  ganzzahlige Erwartungen bleiben streng, echte Abweichungen scheitern weiterhin). Reine Test-Harness-
+  Änderung, die Engine bleibt unberührt. +16 Cases; der Ratchet-Floor steigt auf 96,5 %. Wenige
+  Zinseszins-Fälle bleiben offen, weil der TCK-Referenzwert selbst in float64-Genauigkeit erzeugt wurde
+  (dokumentiert in `docs/tck-exceptions.md`).
 - **DMN-TCK-Konformität: Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, 95,8 % → 96,1 %).**
   Die FEEL-Item-Definition-Koerzierung (DMN §10.3.2.9.4) greift jetzt auch an Funktions- und
   Service-Aufruf-Grenzen, nicht nur an Decision-Outputs: ein Argument, das nicht zum deklarierten

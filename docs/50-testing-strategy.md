@@ -146,11 +146,18 @@ und der gebauten `web/dist`. Kein Mock — was grün ist, funktioniert im Browse
   **pro Case** die Ziel-Decision (ein Compile-Fehler in einer Decision schlägt nur deren Cases
   fehl, nicht die ganze Suite). Der Runner selbst hat einen Mini-Fixture-Selbsttest
   (`internal/tck/testdata/tckdemo.dmn` + `tckdemo-test.xml`), damit er auch offline grün prüft.
+- **Zahl-Vergleich mit Oracle-Präzision:** Die Engine rechnet spec-konform in decimal128 (34
+  Stellen, ADR-0007); transzendente/irrationale Ergebnisse tragen mehr Stellen als die gerundeten
+  TCK-Erwartungswerte. Der Runner rundet daher das Ist-Ergebnis auf die Dezimalstellen-Zahl des
+  Erwartungswerts, bevor er vergleicht (`numClose`) — **additiv**: ganzzahlige/exakte Erwartungen
+  bleiben streng, echte Abweichungen scheitern weiter. Details + bewusst offene float64-Referenz-
+  Fälle in `docs/tck-exceptions.md`.
 - Gate: `internal/tck.TestOfficialTCKConformance` erzwingt einen **Ratchet-Floor**
   (`conformanceFloor`), der nur nach oben wandert; ohne `TCK_CORPUS` skippt der Test
   (offline grün). Lokal: `make tck-conformance`.
-- **Aktueller Stand:** 77,4 % (Level 2 + 3). **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren*
-  Cases. Stand, Kategorien und bewusste Auslassungen (z. B. externe Java-Funktionen) stehen in
+- **Aktueller Stand:** 96,5 % (Level 2 + 3). **1.0-Ziel (WP-41):** ≥ 95 % der *anwendbaren*
+  Cases — **erreicht**; weitere Fixes heben den Floor. Stand, Kategorien und bewusste, dokumentierte
+  Auslassungen (externe Java-Funktionen ohne JVM; float64-präzise TCK-Referenzwerte) stehen in
   `docs/tck-exceptions.md`.
 - CI bricht, wenn die TCK-Quote unter den Floor fällt (Regressionsschutz).
 
