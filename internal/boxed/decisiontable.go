@@ -258,6 +258,11 @@ func (ct *compiledTable) applyHitPolicy(s *feel.Scope, matched []int, tt *TableT
 // ruleOutput builds a matched rule's output: the bare value for a single output,
 // or a context keyed by output name for multiple outputs.
 func (ct *compiledTable) ruleOutput(s *feel.Scope, ri int, tt *TableTrace) (value.Value, error) {
+	// Single output without tracing (the common table shape): evaluate the one
+	// cell directly, skipping the per-rule cells slice ruleCells would allocate.
+	if len(ct.outputNames) == 1 && tt == nil {
+		return ct.rules[ri].outputs[0](s)
+	}
 	cells, err := ct.ruleCells(s, ri, tt)
 	if err != nil {
 		return nil, err
