@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3342 / 3495 Cases grün (95,6 %)** |
+| Compliance Level 2 + 3 | **3347 / 3495 Cases grün (95,8 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 95,6 % |
+| Ratchet-Floor im CI | 95,7 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,26 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, +19)
+## In dieser Etappe behoben — Decision Services als aufrufbare Funktionen (WP-41.20, +5)
+
+Ein Decision Service kann jetzt **aus dem FEEL einer Decision heraus per Namen
+aufgerufen** werden (`decisionService_004()`, `decisionService_006("bar")`,
+`decisionService_012(inputData_x: …, decision_y: …)`) — DMN §10.4, TCK 0085.
+
+- Jeder Service wird als aufrufbare Funktion registriert; die Parameter sind die
+  **Input-Data** gefolgt von den **Input-Decisions** (in Deklarationsreihenfolge),
+  positional oder benannt.
+- Der Aufruf bindet die Argumente an diese Namen, wertet die Output-Decision(s) mit
+  den Service-Inputs als Grenzen aus und liefert bei **einer** Output-Decision deren
+  Wert, sonst einen Kontext.
+- Technik: neues optionales `Native`-Feld an `feel.Func` (Escape-Hatch für vom
+  `dmn`-Layer gelieferte Callables); der Closure löst den kompilierten Service
+  **lazy** auf, da Services nach den Decisions kompiliert werden. 0085: 11→16.
+
+Netto **+5 Cases** (95,6 % → 95,8 %). Offen in 0085 (002_a/007/008): Argument-
+**Typ-/Arity-Prüfung** an der Aufruf-Grenze (eigene Etappe, s. u.).
+
+## Früher behoben — Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, +19)
 
 Numerische & temporale Randfälle nach dem 95 %-Meilenstein:
 

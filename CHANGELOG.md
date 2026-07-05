@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Decision Services aus FEEL aufrufbar (WP-41.20, 95,6 % → 95,8 %).**
+  Ein Decision Service kann jetzt aus dem FEEL-Ausdruck einer Decision heraus per Namen aufgerufen
+  werden (`Svc("bar")`, `Svc(inputData_x: …, decision_y: …)`) — DMN §10.4. Die Parameter sind die
+  Input-Data gefolgt von den Input-Decisions des Service (in Deklarationsreihenfolge, positional oder
+  benannt); eine einzelne Output-Decision liefert deren Wert, mehrere einen Kontext. Umgesetzt über ein
+  neues optionales `Native`-Feld an der internen `feel.Func`. +5 Cases (0085); der Ratchet-Floor des
+  CI-Gates steigt auf 95,7 %.
 - **DMN-TCK-Konformität: Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, 95,1 % → 95,6 %).**
   Numerische/temporale Randfälle: (1) die Rundungsfunktionen (`round …`, `decimal`, `floor`,
   `ceiling`) verlangen eine Skala in `[-6111, 6176]`, außerhalb → `null`, und eine große gültige Skala
