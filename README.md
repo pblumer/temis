@@ -13,6 +13,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
   <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
+  <a href="#dmn-tck-konformität"><img alt="DMN-TCK" src="https://img.shields.io/badge/DMN--TCK-95.1%25-brightgreen"></a>
   <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
   <img alt="Agents" src="https://img.shields.io/badge/Agent--First-MCP-F59E0B">
 </p>
@@ -59,6 +60,31 @@ res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
 fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
 ```
 
+## DMN-TCK-Konformität
+
+Temis wird gegen das **offizielle DMN Technology Compatibility Kit**
+([github.com/dmn-tck/tck](https://github.com/dmn-tck/tck)) geprüft — die vom DMN-Standard
+getragene Referenz-Testsuite. Über **Compliance Level 2 + 3** bestehen aktuell:
+
+<div align="center">
+
+### **3323 / 3495 Cases — 95,1 %** ✅
+
+</div>
+
+Das ist kein Selbstläufer-Wert, sondern **nachprüfbar und regressionsgeschützt**:
+
+- **Gepinnter Korpus:** Der TCK wird an Commit `0dbcaf9` bezogen (nicht vendored), damit
+  die Zahl reproduzierbar bleibt.
+- **Im CI verankert:** Die Lane `tck` (`.github/workflows/ci.yml`) klont den gepinnten
+  Korpus und lässt `internal/tck.TestOfficialTCKConformance` laufen.
+- **Ratchet-Floor:** Der Gate erzwingt einen Mindestwert (aktuell **95,0 %**), der nur nach
+  oben wandert — eine Regression bricht den Build.
+- **Selbst nachvollziehen:** `make tck-conformance` holt den Korpus und misst lokal.
+
+Die verbleibenden ~5 % sind kategorisiert und dokumentiert (u. a. externe Java-Funktionen
+ohne JVM, Decision-Service-Randfälle) — siehe **[`docs/tck-exceptions.md`](docs/tck-exceptions.md)**.
+
 ## Status
 
 **Aktiv in Entwicklung.** Das Fundament der Engine steht; das MVP (lauffähige Library, die
@@ -104,9 +130,10 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> Offen u. a.: **WP-41** (offizielle TCK-Konformität — Infrastruktur steht, aktuell **77,4 %**
-> der Level-2/3-Cases, Ziel ≥ 95 %; siehe `docs/tck-exceptions.md`) und das erste getaggte
-> Release. Voller Live-Status: `docs/20-roadmap.md`.
+> **WP-41** (offizielle TCK-Konformität) hat sein Ziel erreicht: **95,1 %** der Level-2/3-Cases,
+> CI-verankert mit Ratchet-Floor (siehe [Abschnitt oben](#dmn-tck-konformität) und
+> `docs/tck-exceptions.md`). Offen u. a. das erste getaggte Release. Voller Live-Status:
+> `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
 
