@@ -17,11 +17,16 @@ type Func func(args []value.Value) (value.Value, error)
 
 // Builtin is one registry entry. MaxArgs of -1 marks a variadic builtin.
 type Builtin struct {
-	Name    string
-	Params  []string
-	MinArgs int
-	MaxArgs int
-	Fn      Func
+	Name   string
+	Params []string
+	// AltParams holds additional named-argument signatures for overloaded
+	// builtins (e.g. time(from:…) vs time(hour:…, minute:…, second:…, offset:…)).
+	// A named call binds against the first signature — Params, then each of
+	// AltParams — whose parameter names cover every supplied argument name.
+	AltParams [][]string
+	MinArgs   int
+	MaxArgs   int
+	Fn        Func
 }
 
 // Variadic reports whether the builtin accepts an unbounded number of arguments.
@@ -140,6 +145,13 @@ func listOf(args []value.Value) []value.Value {
 // fixed builds a fixed-arity builtin.
 func fixed(name string, params []string, min, max int, fn Func) *Builtin {
 	return &Builtin{Name: name, Params: params, MinArgs: min, MaxArgs: max, Fn: fn}
+}
+
+// overloaded builds a builtin with more than one named-argument signature. The
+// primary form is params; alt lists further signatures (e.g. the component form
+// of a temporal constructor). Positional calls are governed by min/max as usual.
+func overloaded(name string, params []string, alt [][]string, min, max int, fn Func) *Builtin {
+	return &Builtin{Name: name, Params: params, AltParams: alt, MinArgs: min, MaxArgs: max, Fn: fn}
 }
 
 // variadic builds a variadic builtin requiring at least min arguments. It names

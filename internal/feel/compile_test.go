@@ -230,9 +230,10 @@ func TestCompileErrorMessageAndExtras(t *testing.T) {
 		t.Errorf(`5 between "a" and 10 = %s, want null`, got)
 	}
 
-	// invalid temporal literal is a compile error.
-	if _, err := CompileString(`@"not-temporal"`, NewEnv()); err == nil {
-		t.Error("invalid @-literal should fail to compile")
+	// an invalid temporal literal is a well-formed expression that evaluates to
+	// null (TCK 0093), not a compile error.
+	if got := evalStr(t, `@"not-temporal"`, nil); !value.IsNull(got) {
+		t.Errorf(`@"not-temporal" = %s, want null`, got)
 	}
 	// a syntax error surfaces as a *ParseError, not a *CompileError.
 	if _, err := CompileString("1 +", NewEnv()); err == nil {

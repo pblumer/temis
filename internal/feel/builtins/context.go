@@ -55,7 +55,9 @@ func registerContext(r *Registry) {
 	}))
 
 	// context put(context, key, value): a copy of context with key set to value.
-	r.Register(fixed("context put", []string{"context", "key", "value"}, 3, 3, func(args []value.Value) (value.Value, error) {
+	// The nested form names the path parameter "keys" (a list); both named
+	// spellings bind (DMN 1.4, TCK 1146).
+	r.Register(overloaded("context put", []string{"context", "key", "value"}, [][]string{{"context", "keys", "value"}}, 3, 3, func(args []value.Value) (value.Value, error) {
 		ctx, ok := args[0].(*value.Context)
 		if !ok {
 			return value.Null, nil
@@ -72,8 +74,10 @@ func registerContext(r *Registry) {
 		return cloneContext(ctx).Put(string(key), args[2]), nil
 	}))
 
-	// context merge(contexts): the contexts merged left to right; later entries win.
-	r.Register(variadic("context merge", 1, func(args []value.Value) (value.Value, error) {
+	// context merge(contexts): the contexts merged left to right; later entries
+	// win. The single parameter is named "contexts" so the named form binds
+	// (TCK 1147).
+	merge := variadic("context merge", 1, func(args []value.Value) (value.Value, error) {
 		ctxs := listOf(args)
 		out := value.NewContext()
 		for _, c := range ctxs {
@@ -87,7 +91,9 @@ func registerContext(r *Registry) {
 			}
 		}
 		return out, nil
-	}))
+	})
+	merge.Params = []string{"contexts"}
+	r.Register(merge)
 
 	// context(entries): build a context from a list of {key, value} entry contexts.
 	r.Register(fixed("context", []string{"entries"}, 1, 1, func(args []value.Value) (value.Value, error) {

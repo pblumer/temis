@@ -84,7 +84,7 @@ func (v tckValue) toValue() value.Value {
 	if v.Value != nil {
 		return v.Value.toValue()
 	}
-	return scalarValue(v.Type, strings.TrimSpace(v.Text))
+	return scalarValue(v.Type, v.Text)
 }
 
 // tckList decodes a TCK <list>. The corpus uses two element encodings: direct
@@ -123,8 +123,18 @@ func componentsToContext(comps []tckComponent) value.Value {
 // scalarValue converts a scalar TCK value (its xsi:type and text) to a FEEL
 // value. An empty, untyped value is null; an unparsable typed value is null too,
 // so a malformed expectation simply fails to match rather than panicking.
-func scalarValue(typ, text string) value.Value {
-	switch normType(typ) {
+//
+// Leading/trailing whitespace is significant for xsd:string (e.g. upper
+// case("xyZ ") → "XYZ "), so string text is used verbatim; every other type is
+// numeric/temporal/boolean where surrounding XML indentation is insignificant
+// and must be trimmed before parsing.
+func scalarValue(typ, raw string) value.Value {
+	kind := normType(typ)
+	text := raw
+	if kind != "string" {
+		text = strings.TrimSpace(raw)
+	}
+	switch kind {
 	case "string":
 		return value.Str(text)
 	case "boolean":
