@@ -85,6 +85,33 @@ Das ist kein Selbstläufer-Wert, sondern **nachprüfbar und regressionsgeschütz
 Die verbleibenden ~2 % sind kategorisiert und dokumentiert (u. a. externe Java-Funktionen
 ohne JVM, Decision-Service-Randfälle) — siehe **[`docs/tck-exceptions.md`](docs/tck-exceptions.md)**.
 
+## Performance
+
+Eine kompilierte Entscheidung ist unveränderlich und nebenläufigkeitssicher:
+einmal kompilieren, millionenfach auswerten.
+
+<div align="center">
+
+### **> 1,6 Mio Entscheidungen/s** auf einer 4-Kern-VM ⚡
+
+</div>
+
+| Szenario (4 vCPU, `GOGC=400`) | Durchsatz | Latenz (1 Kern, warm) |
+|---|---:|---:|
+| Decision-Table (String/Enum) | ≈ 1,62 Mio/s | ≈ 1,9 µs |
+| Decision-Table (numerisch, Intervalle) | ≈ 1,22 Mio/s | ≈ 2,9 µs |
+
+Gemessen auf einer bescheidenen, geteilten Cloud-VM (Intel® Xeon® @ 2,8 GHz) —
+also eine Untergrenze; bessere Hardware skaliert linear. Jede Zahl ist mit einem
+eingecheckten Benchmark reproduzierbar (`go test -bench=BenchmarkThroughput ./dmn/`),
+Methodik und ehrliche Einordnung in **[`docs/55-benchmarks.md`](docs/55-benchmarks.md)**.
+
+**1:1 gegen Drools** (`kie-dmn-core`, identische DMN-Dateien, gleiche VM, fünf
+Feature-Typen): pro Auswertung ist Temis in jedem Szenario schneller — **1,2×–3,0×**
+(ein Kern), am stärksten bei Decision-Tables. Reproduzierbares Harness mit
+vollen Zahlen und ehrlicher Einordnung in
+**[`benchmarks/comparison/`](benchmarks/comparison/README.md)**.
+
 ## Status
 
 **Aktiv in Entwicklung.** Das Fundament der Engine steht; das MVP (lauffähige Library, die

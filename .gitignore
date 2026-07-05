@@ -31,3 +31,7 @@ go.work.sum
 
 # Fetched (not vendored) official DMN TCK corpus for the conformance gate.
 .tck-corpus/
+
+# CPU/memory profiles and scratch profiling artifacts.
+*.prof
+scratch_prof/

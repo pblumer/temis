@@ -34,14 +34,46 @@ func (n Number) String() string { return n.dec.Text('f') }
 // Decimal returns the underlying decimal. Callers must not mutate it.
 func (n Number) Decimal() *apd.Decimal { return n.dec }
 
-// Cmp compares two numbers as -1, 0 or +1.
-func (n Number) Cmp(o Number) int { return n.dec.Cmp(o.dec) }
+// Cmp compares two numbers as -1, 0 or +1. Integer operands (the common case in
+// decision-table range and equality tests) compare natively as int64, skipping
+// the decimal alignment apd.Cmp performs; the result is identical.
+func (n Number) Cmp(o Number) int {
+	if a, ok := n.asInt64(); ok {
+		if b, ok := o.asInt64(); ok {
+			switch {
+			case a < b:
+				return -1
+			case a > b:
+				return 1
+			default:
+				return 0
+			}
+		}
+	}
+	return n.dec.Cmp(o.dec)
+}
 
 // IsZero reports whether the number is zero.
 func (n Number) IsZero() bool { return n.dec.IsZero() }
 
+// smallInts caches Numbers for the small non-negative integers, which dominate
+// real inputs (counts, indices, flags, 0/1) and decision-table constants. A
+// Number is immutable by contract — arithmetic always writes a fresh decimal and
+// never mutates an operand — so sharing a cached instance is safe. This removes
+// the per-conversion apd.Decimal allocation for the common case.
+var smallInts [256]Number
+
+func init() {
+	for i := range smallInts {
+		smallInts[i] = Number{dec: apd.New(int64(i), 0)}
+	}
+}
+
 // NumberFromInt64 returns a Number for i.
 func NumberFromInt64(i int64) Number {
+	if i >= 0 && i < int64(len(smallInts)) {
+		return smallInts[i]
+	}
 	return Number{dec: apd.New(i, 0)}
 }
 
@@ -80,16 +112,92 @@ func MustNumber(s string) Number {
 	return n
 }
 
-// arithmetic operations apply the FEEL context and report whether the result is
-// valid (false ⇒ the caller should yield null, e.g. division by zero).
+// asInt64 reports the number as an exact int64 when it is an integer whose value
+// fits int64, reading the decimal's fields directly so it never allocates. A FEEL
+// number is reduced, so an integer may carry a positive exponent (100 is stored
+// as coefficient 1, exponent 2); the coefficient must fit int64 and scaling by
+// 10^exponent must not overflow. It is the gate for the native-integer fast paths
+// below: whenever it returns ok for both operands, the native result is exactly
+// what the decimal context would compute, so the fast path is a pure speed-up.
+func (n Number) asInt64() (int64, bool) {
+	d := n.dec
+	if d.Form != apd.Finite || d.Exponent < 0 || !d.Coeff.IsInt64() {
+		return 0, false
+	}
+	v := d.Coeff.Int64() // magnitude; apd keeps the sign in d.Negative
+	for e := int32(0); e < d.Exponent; e++ {
+		if v > maxInt64Div10 {
+			return 0, false
+		}
+		v *= 10
+	}
+	if d.Negative {
+		v = -v
+	}
+	return v, true
+}
 
-func (n Number) add(o Number) (Number, bool) { return n.binop(o, numberContext.Add) }
-func (n Number) sub(o Number) (Number, bool) { return n.binop(o, numberContext.Sub) }
-func (n Number) mul(o Number) (Number, bool) { return n.binop(o, numberContext.Mul) }
+const (
+	maxInt64      = 1<<63 - 1
+	maxInt64Div10 = maxInt64 / 10
+)
+
+// The arithmetic operations apply the FEEL decimal context and report whether the
+// result is valid (false ⇒ the caller should yield null, e.g. division by zero).
+// Each first tries a native int64 path for integer operands — which dominate real
+// inputs (counts, sums, indices) — falling back to the decimal context on
+// non-integers or overflow. The native result is bit-for-bit the decimal result
+// (integer arithmetic is exact), so this only removes work, never changes values;
+// small results additionally hit the NumberFromInt64 cache and avoid allocation.
+
+func (n Number) add(o Number) (Number, bool) {
+	if a, ok := n.asInt64(); ok {
+		if b, ok := o.asInt64(); ok {
+			if r := a + b; (r > a) == (b > 0) { // no signed-overflow
+				return NumberFromInt64(r), true
+			}
+		}
+	}
+	return n.binop(o, numberContext.Add)
+}
+
+func (n Number) sub(o Number) (Number, bool) {
+	if a, ok := n.asInt64(); ok {
+		if b, ok := o.asInt64(); ok {
+			if r := a - b; (r < a) == (b > 0) { // no signed-overflow
+				return NumberFromInt64(r), true
+			}
+		}
+	}
+	return n.binop(o, numberContext.Sub)
+}
+
+func (n Number) mul(o Number) (Number, bool) {
+	if a, ok := n.asInt64(); ok {
+		if b, ok := o.asInt64(); ok {
+			if a == 0 || b == 0 {
+				return NumberFromInt64(0), true
+			}
+			if r := a * b; r/b == a { // no signed-overflow
+				return NumberFromInt64(r), true
+			}
+		}
+	}
+	return n.binop(o, numberContext.Mul)
+}
 
 func (n Number) div(o Number) (Number, bool) {
 	if o.dec.IsZero() {
 		return Number{}, false // FEEL: division by zero is null
+	}
+	// Only exact integer division short-circuits; an inexact quotient (e.g. 1/3)
+	// needs the decimal context to produce FEEL's rounded 34-digit result. Both
+	// operands come from asInt64, so neither is math.MinInt64 and a/b cannot
+	// overflow.
+	if a, ok := n.asInt64(); ok {
+		if b, ok := o.asInt64(); ok && b != 0 && a%b == 0 {
+			return NumberFromInt64(a / b), true
+		}
 	}
 	return n.binop(o, numberContext.Quo)
 }

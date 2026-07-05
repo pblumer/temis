@@ -1,0 +1,3 @@
+# Maven build output for the Drools JMH harness (rebuilt with `mvn package`).
+drools/target/
+drools/dependency-reduced-pom.xml
