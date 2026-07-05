@@ -311,6 +311,10 @@ func stddev(args []value.Value) (value.Value, error) {
 }
 
 func mode(args []value.Value) (value.Value, error) {
+	// mode(null) is null (the argument is not a list); mode of an empty list is [].
+	if len(args) == 1 && value.IsNull(args[0]) {
+		return value.Null, nil
+	}
 	elems := listOf(args)
 	if len(elems) == 0 {
 		return value.NewList(), nil

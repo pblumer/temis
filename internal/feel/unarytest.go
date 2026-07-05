@@ -95,14 +95,13 @@ func (p *parser) positiveUnaryTest() Expr {
 	}
 
 	e := p.parseExpr()
-	switch {
-	case isInterval(e):
-		return &InExpr{baseNode: baseAt(e.Pos()), X: inputRef(t), Tests: []Expr{e}}
-	case refersToInput(e):
+	if refersToInput(e) {
 		return e
-	default:
-		return &BinaryExpr{baseNode: baseAt(e.Pos()), Op: "=", X: inputRef(t), Y: e}
 	}
+	// Everything else is a membership test `? in e`: an interval tests containment,
+	// a list-valued test tests membership (e.g. a decision-table cell that is a
+	// variable holding a list, TCK 0039), and a scalar reduces to equality.
+	return &InExpr{baseNode: baseAt(e.Pos()), X: inputRef(t), Tests: []Expr{e}}
 }
 
 func alwaysTrue(t Token) Expr { return &BoolLit{baseNode: base(t), Value: true} }
@@ -112,11 +111,6 @@ func inputRef(t Token) *NameRef {
 }
 
 func baseAt(p Position) baseNode { return baseNode{P: p} }
-
-func isInterval(e Expr) bool {
-	_, ok := e.(*IntervalLit)
-	return ok
-}
 
 // refersToInput reports whether the expression mentions the implicit input
 // variable, in which case it is already a complete boolean test.

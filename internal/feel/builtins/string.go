@@ -279,7 +279,7 @@ func substring(args []value.Value) (value.Value, error) {
 	if !ok {
 		return value.Null, nil
 	}
-	start, ok := asInt(args[1])
+	start, ok := asIntFloor(args[1])
 	if !ok || start == 0 {
 		return value.Null, nil
 	}
@@ -298,7 +298,7 @@ func substring(args []value.Value) (value.Value, error) {
 
 	end := n
 	if len(args) >= 3 && !value.IsNull(args[2]) {
-		length, ok := asInt(args[2])
+		length, ok := asIntFloor(args[2])
 		if !ok || length < 0 {
 			return value.Null, nil
 		}

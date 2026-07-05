@@ -103,6 +103,17 @@ func asInt(v value.Value) (int, bool) {
 	return int(i), ok
 }
 
+// asIntFloor reads a possibly-fractional number as an int, flooring it. The FEEL
+// substring position and length may be non-integer and are truncated (TCK 1103).
+func asIntFloor(v value.Value) (int, bool) {
+	n, ok := v.(value.Number)
+	if !ok {
+		return 0, false
+	}
+	i, ok := n.Floor().Int64()
+	return int(i), ok
+}
+
 // asSecond reads a seconds component that may carry a fraction (e.g. 1.3),
 // returning the whole seconds and the remaining nanoseconds for the time()
 // constructors.
@@ -131,7 +142,10 @@ func fixed(name string, params []string, min, max int, fn Func) *Builtin {
 	return &Builtin{Name: name, Params: params, MinArgs: min, MaxArgs: max, Fn: fn}
 }
 
-// variadic builds a variadic builtin requiring at least min arguments.
+// variadic builds a variadic builtin requiring at least min arguments. It names
+// the first parameter "list" so the single-collection form accepts a named
+// argument (e.g. all(list: […]), sum(list: […])); positional and multi-argument
+// calls are unaffected (DMN §10.3.4, TCK 0059/0062).
 func variadic(name string, min int, fn Func) *Builtin {
-	return &Builtin{Name: name, MinArgs: min, MaxArgs: -1, Fn: fn}
+	return &Builtin{Name: name, Params: []string{"list"}, MinArgs: min, MaxArgs: -1, Fn: fn}
 }

@@ -13,7 +13,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
   <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
-  <a href="#dmn-tck-konformität"><img alt="DMN-TCK" src="https://img.shields.io/badge/DMN--TCK-96.9%25-brightgreen"></a>
+  <a href="#dmn-tck-konformität"><img alt="DMN-TCK" src="https://img.shields.io/badge/DMN--TCK-97.4%25-brightgreen"></a>
   <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
   <img alt="Agents" src="https://img.shields.io/badge/Agent--First-MCP-F59E0B">
 </p>
@@ -68,7 +68,7 @@ getragene Referenz-Testsuite. Über **Compliance Level 2 + 3** bestehen aktuell:
 
 <div align="center">
 
-### **3388 / 3495 Cases — 96,9 %** ✅
+### **3403 / 3495 Cases — 97,4 %** ✅
 
 </div>
 
@@ -78,7 +78,7 @@ Das ist kein Selbstläufer-Wert, sondern **nachprüfbar und regressionsgeschütz
   die Zahl reproduzierbar bleibt.
 - **Im CI verankert:** Die Lane `tck` (`.github/workflows/ci.yml`) klont den gepinnten
   Korpus und lässt `internal/tck.TestOfficialTCKConformance` laufen.
-- **Ratchet-Floor:** Der Gate erzwingt einen Mindestwert (aktuell **96,9 %**), der nur nach
+- **Ratchet-Floor:** Der Gate erzwingt einen Mindestwert (aktuell **97,3 %**), der nur nach
   oben wandert — eine Regression bricht den Build.
 - **Selbst nachvollziehen:** `make tck-conformance` holt den Korpus und misst lokal.
 
@@ -130,7 +130,7 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> **WP-41** (offizielle TCK-Konformität) hat sein Ziel erreicht: **96,9 %** der Level-2/3-Cases,
+> **WP-41** (offizielle TCK-Konformität) hat sein Ziel erreicht: **97,4 %** der Level-2/3-Cases,
 > CI-verankert mit Ratchet-Floor (siehe [Abschnitt oben](#dmn-tck-konformität) und
 > `docs/tck-exceptions.md`). Offen u. a. das erste getaggte Release. Voller Live-Status:
 > `docs/20-roadmap.md`.

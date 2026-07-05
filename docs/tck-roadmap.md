@@ -3,7 +3,7 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3388 / 3495 Cases (**96,9 %**) nach WP-41.23, Ratchet-Floor 96,9 %.
+**Stand:** 3403 / 3495 Cases (**97,4 %**) nach WP-41.25, Ratchet-Floor 97,3 %.
 **Endziel (WP-41): ≥ 95 % — ✅ erreicht.** Weitere Fixes heben den Ratchet-Floor.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
@@ -35,6 +35,8 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.21 ✅** | **Typ-Koerzierung an Aufruf-Grenzen** (BKM-/Service-Argumente & -Rückgabe; geteilte `ConformsToType`/`CoerceToType`) | 0082, 0085 | **+10 → 96,1 %** |
 | **WP-41.22 ✅** | **Zahl-Vergleich mit TCK-Präzision** (Runner rundet Ist-Ergebnis auf Erwartungswert-Stellen; decimal128 vs. gerundete Oracle-Werte) | 0052, 0009, 0008, 0063, 0041 | **+16 → 96,5 %** |
 | **WP-41.23 ✅** | **`instance of` mit Generics & User-Typen** (`list<T>`, `context<fields>`, verschachtelt; Item-Typen via `Env.types`; `null instance of X` → false) | 0070 | **+15 → 96,9 %** |
+| **WP-41.24 ✅** | **Aggregat-/Builtin-Randfälle** (named `list:`-Arg; `mode(null)`; `substring`-Fraktion; Built-ins als Funktionswerte) | 0059, 0062, 1103, 0092 | **+11 → 97,3 %** |
+| **WP-41.25 ✅** | **Unary-Test-Membership (`? in liste`) + Punkt-Namen (`Person.Gender`)** | 0039, 0037 | **+4 → 97,4 %** |
 
 Bündel 41.4–41.9 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
 schwierigen Brocken unten.

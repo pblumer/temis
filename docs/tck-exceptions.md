@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3388 / 3495 Cases grün (96,9 %)** |
+| Compliance Level 2 + 3 | **3403 / 3495 Cases grün (97,4 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 96,9 % |
+| Ratchet-Floor im CI | 97,3 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,39 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, +15)
+## In dieser Etappe behoben — Unary-Test-Membership & Punkt-Namen (WP-41.25, +4)
+
+- **Decision-Table-Unary-Test als Membership**: Ein Zellen-Test, dessen Wert eine
+  **Liste** ist (z. B. eine Variable, die eine Liste hält), ist jetzt ein
+  Membership-Test (`? in liste`) statt Gleichheit — ein Intervall testet Containment,
+  ein Skalar reduziert auf Gleichheit. Ein einheitliches `? in e` deckt alle drei ab.
+  0039 (Collect über Symptom-Listen): 0→2.
+- **FEEL-Namen mit Punkt** (`Person.Gender`): Wie schon für Bindestrich/Zahl-Wörter
+  assembliert der Parser eine Name-Referenz über einen `.` hinweg zu **einem** Namen,
+  sobald das Orakel ihn kennt — statt Pfad-Zugriff `Person`.`Gender`. Normaler
+  Pfad-Zugriff `a.b` (kein flacher Name „a.b") navigiert unverändert. Damit
+  kompilieren BKMs mit qualifizierten Formal-Parametern (0037 „implicit params"): 0→2.
+
+Netto **+4 Cases** (97,3 % → 97,4 %).
+
+## Früher behoben — Aggregat-/Builtin-Randfälle (WP-41.24, +11)
+
+Ein Bündel Funktions-Randfälle:
+
+- **Named `list:`-Argument** für die variadischen Aggregate (`all`, `any`, `sum`,
+  `count`, `mean`, `min`, `max`, `median`, `stddev`, `mode`, `product`): Der
+  Einzel-Kollektions-Aufruf akzeptiert jetzt `fn(list: […])` (der erste Parameter
+  heißt „list"). 0059, 0062 u. a. quer.
+- **`mode(null)` → null** (Argument ist keine Liste), `mode([])` → `[]`.
+- **`substring` mit fraktionaler Position/Länge**: `substring("foobar", 3, 3.8)`
+  → `"oba"` (Position und Länge werden gefloort). 1103.
+- **Built-ins als First-Class-Funktionswerte**: Ein bloßer Built-in-Name (`abs`,
+  `sqrt`, …) hebt sich zu einem Funktionswert, der an eine BKM oder Higher-Order-
+  Funktion übergeben werden kann (`bkm(abs, sqrt)`). 0092.
+
+Netto **+11 Cases** (96,9 % → 97,3 %).
+
+## Früher behoben — `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, +15)
 
 `instance of` unterstützt jetzt das volle Typsystem statt nur Basis-Kinds:
 
