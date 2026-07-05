@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, 95,1 % → 95,6 %).**
+  Numerische/temporale Randfälle: (1) die Rundungsfunktionen (`round …`, `decimal`, `floor`,
+  `ceiling`) verlangen eine Skala in `[-6111, 6176]`, außerhalb → `null`, und eine große gültige Skala
+  lässt den Wert unverändert statt zu überlaufen; (2) `**` ist links-assoziativ und bindet loser als
+  unäres Minus (`3 ** 4 ** 5` = `(3**4)**5`, `-5 ** 2` = 25, beide per TCK); (3) Zeit-Offsets mit
+  Sekunden-Anteil rendern als `±HH:MM:SS`, und `time(date)` ergibt `00:00:00Z`. +19 Cases
+  (1141–1144 je +3, 0100 +2, 1116 +3); der Ratchet-Floor des CI-Gates steigt auf 95,6 %.
 - **DMN-TCK-Konformität: 95 % erreicht — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, 94,5 % → 95,1 %).**
   Die Etappe, die das WP-41-Endziel (≥ 95 % der Cases) knackt. Vier Fixes: (1) `number()` validiert
   seine Separatoren (grouping/decimal müssen gültig, verschieden und Strings sein, sonst `null`);

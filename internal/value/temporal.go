@@ -117,11 +117,20 @@ func (z zone) suffix(t time.Time) string {
 	if z.name != "" {
 		return "@" + z.name
 	}
-	if off := t.Format("-07:00"); off == "+00:00" {
+	_, off := t.Zone() // seconds east of UTC
+	if off == 0 {
 		return "Z"
-	} else {
-		return off
 	}
+	sign := "+"
+	if off < 0 {
+		sign = "-"
+		off = -off
+	}
+	h, m, s := off/3600, (off%3600)/60, off%60
+	if s != 0 { // a sub-minute offset (e.g. +02:45:55) keeps its seconds field
+		return fmt.Sprintf("%s%02d:%02d:%02d", sign, h, m, s)
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, h, m)
 }
 
 // Time is a time-of-day, optionally with a zone. The date part of the backing
