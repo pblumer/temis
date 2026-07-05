@@ -60,6 +60,12 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Aggregat-/Builtin-Randfälle (WP-41.24, 96,9 % → 97,3 %).**
+  Ein Bündel Funktions-Randfälle: die variadischen Aggregate (`all`/`any`/`sum`/`count`/`mean`/`min`/
+  `max`/`median`/`stddev`/`mode`/`product`) akzeptieren jetzt das Einzel-Kollektions-Argument benannt
+  (`fn(list: […])`); `mode(null)` ist `null`; `substring` akzeptiert fraktionale Position/Länge (gefloort);
+  und ein bloßer Built-in-Name (`abs`, `sqrt`) hebt sich zu einem First-Class-Funktionswert, der an eine
+  BKM oder Higher-Order-Funktion übergeben werden kann. +11 Cases; der Ratchet-Floor steigt auf 97,2 %.
 - **DMN-TCK-Konformität: `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, 96,5 % → 96,9 %).**
   `instance of` prüft jetzt das volle Typsystem: parametrisierte Generics (`list<T>`, `context<a: T, …>`,
   verschachtelt und leer) werden geparst und strukturell verglichen, benutzerdefinierte Item-Typen

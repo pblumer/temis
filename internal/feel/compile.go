@@ -158,6 +158,36 @@ func (c *compiler) nullCall() []CompiledExpr { return nil }
 
 func constNull(*Scope) (value.Value, error) { return value.Null, nil }
 
+// builtinValue lifts a built-in into a first-class function value. It mirrors the
+// call-site arity handling (bindArgs): a wrong argument count yields null, and a
+// short fixed-arity call is padded with null so the built-in always sees a full
+// argument list.
+func builtinValue(b *builtins.Builtin) *value.Function {
+	return &value.Function{
+		Name:  b.Name,
+		Arity: b.MinArgs,
+		Call: func(args []value.Value) (value.Value, error) {
+			if len(args) < b.MinArgs {
+				return value.Null, nil
+			}
+			if !b.Variadic() {
+				if len(args) > b.MaxArgs {
+					return value.Null, nil
+				}
+				if len(args) < b.MaxArgs {
+					padded := make([]value.Value, b.MaxArgs)
+					copy(padded, args)
+					for i := len(args); i < b.MaxArgs; i++ {
+						padded[i] = value.Null
+					}
+					args = padded
+				}
+			}
+			return b.Fn(args)
+		},
+	}
+}
+
 // NullExpr is a CompiledExpr that always yields null. It fills omitted arguments
 // of a call so the callee always receives a full argument list.
 func NullExpr(s *Scope) (value.Value, error) { return constNull(s) }
@@ -197,6 +227,13 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 		// budget, so it can be passed to higher-order built-ins or stored.
 		if f, ok := c.funcs[n.Name]; ok {
 			return func(s *Scope) (value.Value, error) { return f.asValue(s), nil }
+		}
+		// A bare reference to a built-in name lifts it to a first-class function
+		// value too, so a built-in can be passed to a BKM or higher-order function
+		// (e.g. bkm(abs, sqrt), TCK 0092).
+		if b, ok := c.builtins.Lookup(n.Name); ok {
+			fn := builtinValue(b)
+			return func(*Scope) (value.Value, error) { return fn, nil }
 		}
 		// Not a static variable: inside a filter, resolve against the enclosing
 		// context elements at runtime (innermost first); otherwise it is an error.
