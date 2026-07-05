@@ -484,7 +484,7 @@ func (p *parser) takeNameRun() (string, []string) {
 		case p.names != nil && (isNameableKeyword(k) || k == Number):
 			run = append(run, p.toks[j])
 			j++
-		case p.names != nil && k == Minus && j+1 < len(p.toks) &&
+		case p.names != nil && isNameSymbol(k) && j+1 < len(p.toks) &&
 			isNameFragmentKind(p.toks[j+1].Kind):
 			run = append(run, p.toks[j], p.toks[j+1])
 			j += 2
@@ -499,8 +499,8 @@ func (p *parser) takeNameRun() (string, []string) {
 	}
 	if p.names != nil {
 		for k := 2; k <= len(run); k++ {
-			if run[k-1].Kind == Minus {
-				continue // a name cannot end on a hyphen
+			if isNameSymbol(run[k-1].Kind) {
+				continue // a name cannot end on a connector symbol
 			}
 			if p.names.Has(assembleName(run[:k])) {
 				take = k
@@ -512,12 +512,17 @@ func (p *parser) takeNameRun() (string, []string) {
 	p.pos += take
 	parts := make([]string, 0, take)
 	for _, t := range consumed {
-		if t.Kind != Minus {
+		if !isNameSymbol(t.Kind) {
 			parts = append(parts, t.Text)
 		}
 	}
 	return assembleName(consumed), parts
 }
+
+// isNameSymbol reports whether a token is an additional-name-symbol connector
+// that FEEL admits inside a name — a hyphen ("Date-Time") or a dot
+// ("Person.Gender") — disambiguated against the known-name set.
+func isNameSymbol(k Kind) bool { return k == Minus || k == Dot }
 
 // assembleName renders a name-token run as its FEEL name string: plain fragments
 // join with a single space, while a hyphen fragment binds its neighbours with no
@@ -528,7 +533,9 @@ func assembleName(toks []Token) string {
 		switch {
 		case t.Kind == Minus:
 			b.WriteString("-")
-		case i > 0 && toks[i-1].Kind != Minus:
+		case t.Kind == Dot:
+			b.WriteString(".")
+		case i > 0 && !isNameSymbol(toks[i-1].Kind):
 			b.WriteByte(' ')
 			b.WriteString(t.Text)
 		default:

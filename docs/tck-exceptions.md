@@ -17,9 +17,9 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3399 / 3495 Cases grün (97,3 %)** |
+| Compliance Level 2 + 3 | **3403 / 3495 Cases grün (97,4 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 97,2 % |
+| Ratchet-Floor im CI | 97,3 % |
 
 **🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
 weitere Fixes heben ihn.
@@ -33,7 +33,22 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Aggregat-/Builtin-Randfälle (WP-41.24, +11)
+## In dieser Etappe behoben — Unary-Test-Membership & Punkt-Namen (WP-41.25, +4)
+
+- **Decision-Table-Unary-Test als Membership**: Ein Zellen-Test, dessen Wert eine
+  **Liste** ist (z. B. eine Variable, die eine Liste hält), ist jetzt ein
+  Membership-Test (`? in liste`) statt Gleichheit — ein Intervall testet Containment,
+  ein Skalar reduziert auf Gleichheit. Ein einheitliches `? in e` deckt alle drei ab.
+  0039 (Collect über Symptom-Listen): 0→2.
+- **FEEL-Namen mit Punkt** (`Person.Gender`): Wie schon für Bindestrich/Zahl-Wörter
+  assembliert der Parser eine Name-Referenz über einen `.` hinweg zu **einem** Namen,
+  sobald das Orakel ihn kennt — statt Pfad-Zugriff `Person`.`Gender`. Normaler
+  Pfad-Zugriff `a.b` (kein flacher Name „a.b") navigiert unverändert. Damit
+  kompilieren BKMs mit qualifizierten Formal-Parametern (0037 „implicit params"): 0→2.
+
+Netto **+4 Cases** (97,3 % → 97,4 %).
+
+## Früher behoben — Aggregat-/Builtin-Randfälle (WP-41.24, +11)
 
 Ein Bündel Funktions-Randfälle:
 

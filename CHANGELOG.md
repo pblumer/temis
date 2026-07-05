@@ -60,6 +60,11 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: Unary-Test-Membership & Punkt-Namen (WP-41.25, 97,3 % → 97,4 %).**
+  Ein Decision-Table-Unary-Test, dessen Wert eine Liste ist, ist jetzt ein Membership-Test (`? in e`)
+  statt Gleichheit (ein Intervall testet Containment, ein Skalar reduziert auf Gleichheit); und FEEL-Namen
+  dürfen einen Punkt enthalten (`Person.Gender`), sodass BKMs mit qualifizierten Formal-Parametern
+  kompilieren — normaler Pfad-Zugriff `a.b` navigiert unverändert. +4 Cases (0039, 0037); Floor 97,3 %.
 - **DMN-TCK-Konformität: Aggregat-/Builtin-Randfälle (WP-41.24, 96,9 % → 97,3 %).**
   Ein Bündel Funktions-Randfälle: die variadischen Aggregate (`all`/`any`/`sum`/`count`/`mean`/`min`/
   `max`/`median`/`stddev`/`mode`/`product`) akzeptieren jetzt das Einzel-Kollektions-Argument benannt
