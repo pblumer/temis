@@ -94,8 +94,46 @@ func parseRangeEndpoint(s string) (value.Value, bool) {
 	if strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"") && len(s) >= 2 {
 		return value.Str(s[1 : len(s)-1]), true
 	}
+	if v, ok := parseConstructorEndpoint(s); ok {
+		return v, true
+	}
 	if n, err := value.ParseNumber(s); err == nil {
 		return n, true
+	}
+	return value.Null, false
+}
+
+// parseConstructorEndpoint resolves a temporal-constructor endpoint written as a
+// call over a quoted string — date("1970-01-01"), time("00:00:00"),
+// date and time("…T…") or duration("P1D") — which the TCK 1156 range() cases use
+// interchangeably with @"…" literals.
+func parseConstructorEndpoint(s string) (value.Value, bool) {
+	open := strings.IndexByte(s, '(')
+	if open < 0 || !strings.HasSuffix(s, ")") {
+		return value.Null, false
+	}
+	arg := strings.TrimSpace(s[open+1 : len(s)-1])
+	if len(arg) < 2 || arg[0] != '"' || arg[len(arg)-1] != '"' {
+		return value.Null, false
+	}
+	inner := arg[1 : len(arg)-1]
+	switch strings.TrimSpace(s[:open]) {
+	case "date":
+		if d, err := value.ParseDate(inner); err == nil {
+			return d, true
+		}
+	case "time":
+		if t, err := value.ParseTime(inner); err == nil {
+			return t, true
+		}
+	case "date and time":
+		if dt, err := value.ParseDateTime(inner); err == nil {
+			return dt, true
+		}
+	case "duration":
+		if d, err := value.ParseDuration(inner); err == nil {
+			return d, true
+		}
 	}
 	return value.Null, false
 }

@@ -17,9 +17,12 @@ sondern an einem gepinnten Commit bezogen und im CI ausgeführt:
 
 | Metrik | Wert |
 |---|---|
-| Compliance Level 2 + 3 | **3302 / 3495 Cases grün (94,5 %)** |
+| Compliance Level 2 + 3 | **3323 / 3495 Cases grün (95,1 %)** |
 | Suites | 146 (0 laden fehlerhaft) |
-| Ratchet-Floor im CI | 94,4 % |
+| Ratchet-Floor im CI | 95,0 % |
+
+**🎯 Das WP-41-Endziel (≥ 95 %) ist erreicht.** Der Floor bleibt ein Ratchet;
+weitere Fixes heben ihn.
 
 Das WP-41-Ziel ist **≥ 95 % der anwendbaren Cases**. Der Weg dahin ist als
 Kategorien unten dokumentiert; der Floor wird mit jedem Fix angehoben, sodass
@@ -30,7 +33,29 @@ Regressionen den Gate brechen.
 > Decision im Modell einen Compile-Fehler hat. Das ist die korrekte TCK-Semantik und
 > hat die real messbare Case-Zahl von 480 auf 3495 gehoben.
 
-## In dieser Etappe behoben — Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, +30)
+## In dieser Etappe behoben — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, +21 → 95,1 %) 🎯
+
+Die Etappe, die das **95 %-Endziel** knackt. Vier Fixes:
+
+- **`number(from, grouping, decimal)`-Validierung** (0058): Die Separatoren werden
+  geprüft — grouping ∈ {Leerzeichen, `,`, `.`, null}, decimal ∈ {`,`, `.`, null},
+  beide müssen verschieden sein; ein ungültiger, gleicher oder nicht-String-Separator
+  ergibt `null` (auch wenn `from` bereits eine Zahl ist). 0058: 17→21.
+- **`range()` mit Konstruktor-Endpunkten** (1156): `range("[date(\"…\")..date(\"…\")]")`
+  parst jetzt Konstruktor-Aufrufe (`date`, `time`, `date and time`, `duration`) als
+  Endpunkte, gleichwertig zu `@"…"`-Literalen. 1156: 52→56.
+- **Regex `$N` → `${N}` & `x`-Flag** (1109, 1111): Der Ersetzungs-String bildet FEEL-
+  `$N`-Gruppenreferenzen auf Gos `${N}` ab (`$1c` ist Gruppe 1 + Literal `c`, nicht
+  Gruppe „1c"). Das `x`-Flag (RE2 kennt es nicht) wird durch Entfernen der
+  insignifikanten Whitespace/`#`-Kommentare aus dem Muster umgesetzt.
+- **Unbekannte String-Escapes durchreichen** (1111, 1109): Ein nicht-FEEL-Escape wie
+  `\d`, `\.` oder `\s` in einem String-Literal wird **verbatim** (Backslash + Zeichen)
+  übernommen statt das Literal abzulehnen — so kompilieren Regex-Muster als FEEL-
+  Strings (Referenz-Engine-Verhalten). 1111: 22→31, 1109: 24→27.
+
+Netto **+21 Cases** (94,5 % → 95,1 %); 1111 +9, 0058 +4, 1156 +4, 1109 +3, u. a.
+
+## Früher behoben — Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, +30)
 
 Drei Fixes, die quer über viele Suiten kaskadieren:
 

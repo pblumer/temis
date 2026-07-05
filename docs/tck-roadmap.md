@@ -3,8 +3,8 @@
 > Teilpakete unter dem Umbrella **WP-41** (`docs/20-roadmap.md`). Referenziert
 > `docs/tck-exceptions.md` (aktueller Stand, offene Kategorien, Ausnahmen).
 
-**Stand:** 3302 / 3495 Cases (**94,5 %**) nach WP-41.17, Ratchet-Floor 94,4 %.
-**Nahziel:** > 90 % (≈ +276 Cases). **Endziel (WP-41):** ≥ 95 % der anwendbaren Cases.
+**Stand:** 3323 / 3495 Cases (**95,1 %**) nach WP-41.18, Ratchet-Floor 95,0 %.
+**Endziel (WP-41): ≥ 95 % — ✅ erreicht.** Weitere Fixes heben den Ratchet-Floor.
 
 Jedes Teilpaket ist ein eigener, getesteter PR mit Floor-Anhebung. Die Fehler
 sind langschwänzig über ~100 Suiten verteilt; die Reihenfolge priorisiert
@@ -29,6 +29,7 @@ Ertrag/Risiko: risikoarme, ertragreiche Funktions-Familien zuerst.
 | **WP-41.15 ✅** | **Bindestrich-Namen** (`Date-Time`, `Pre-/Post-bureau…`; Orakel + Env-Namen) **+ fraktionale `time`-Sekunden** | 0007, 0004, 0087, quer | **+43 → 93,4 %** |
 | **WP-41.16 ✅** | **`in`/Range mit null-Endpunkten** (3-wertiges `in`; Range-Gleichheit unbounded ↔ null) | 0072, 0068 | **+9 → 93,6 %** |
 | **WP-41.17 ✅** | **Invocation-Null + Zahl-Wort-Namen + `defaultOutputEntry`** | 1131, 0020, 0034, quer | **+30 → 94,5 %** |
+| **WP-41.18 ✅** | **`number()`-Validierung, `range()`-Konstruktoren, Regex `$N`/`x`-Flag, Escape-Durchreichung** | 0058, 1156, 1109, 1111 | **+21 → 95,1 % 🎯** |
 
 Bündel 41.4–41.9 adressieren ~330 Cases → **komfortabel über 90 %**, ohne die
 schwierigen Brocken unten.
