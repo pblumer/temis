@@ -389,12 +389,29 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 	type inTest struct {
 		cmp string       // comparison op when non-empty; otherwise a matchIn test
 		e   CompiledExpr // the operand (cmp) or the test value (matchIn)
+		// An interval test is matched inline against its bounds rather than by
+		// materialising a value.Range, so a decision-table interval cell (the common
+		// `[lo..hi]`) evaluates without a heap allocation. lo/hi are nil when the
+		// corresponding endpoint is unbounded.
+		interval           bool
+		lo, hi             CompiledExpr
+		loClosed, hiClosed bool
 	}
 	tests := make([]inTest, len(n.Tests))
 	for i, t := range n.Tests {
-		if ct, ok := t.(*CmpTest); ok {
-			tests[i] = inTest{cmp: ct.Op, e: c.compile(ct.Y)}
-		} else {
+		switch tt := t.(type) {
+		case *CmpTest:
+			tests[i] = inTest{cmp: tt.Op, e: c.compile(tt.Y)}
+		case *IntervalLit:
+			it := inTest{interval: true, loClosed: tt.LowClosed, hiClosed: tt.HighClosed}
+			if tt.Low != nil {
+				it.lo = c.compile(tt.Low)
+			}
+			if tt.High != nil {
+				it.hi = c.compile(tt.High)
+			}
+			tests[i] = it
+		default:
 			tests[i] = inTest{e: c.compile(t)}
 		}
 	}
@@ -408,6 +425,29 @@ func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 		// and only all-false yields false (FEEL 10.3.2.15).
 		sawNull := false
 		for _, t := range tests {
+			if t.interval {
+				// value.Range is passed to rangeContains3 as a concrete argument, so
+				// it stays on the stack — no interface boxing, unlike returning it as a
+				// value.Value from the interval closure would incur.
+				var l, h value.Value
+				if t.lo != nil {
+					if l, err = t.lo(s); err != nil {
+						return nil, err
+					}
+				}
+				if t.hi != nil {
+					if h, err = t.hi(s); err != nil {
+						return nil, err
+					}
+				}
+				switch rangeContains3(value.Range{LowClosed: t.loClosed, Low: l, High: h, HighClosed: t.hiClosed}, xv) {
+				case value.True:
+					return value.True, nil
+				case value.Null:
+					sawNull = true
+				}
+				continue
+			}
 			tv, err := t.e(s)
 			if err != nil {
 				return nil, err

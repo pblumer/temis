@@ -40,8 +40,24 @@ func (n Number) Cmp(o Number) int { return n.dec.Cmp(o.dec) }
 // IsZero reports whether the number is zero.
 func (n Number) IsZero() bool { return n.dec.IsZero() }
 
+// smallInts caches Numbers for the small non-negative integers, which dominate
+// real inputs (counts, indices, flags, 0/1) and decision-table constants. A
+// Number is immutable by contract — arithmetic always writes a fresh decimal and
+// never mutates an operand — so sharing a cached instance is safe. This removes
+// the per-conversion apd.Decimal allocation for the common case.
+var smallInts [256]Number
+
+func init() {
+	for i := range smallInts {
+		smallInts[i] = Number{dec: apd.New(int64(i), 0)}
+	}
+}
+
 // NumberFromInt64 returns a Number for i.
 func NumberFromInt64(i int64) Number {
+	if i >= 0 && i < int64(len(smallInts)) {
+		return smallInts[i]
+	}
 	return Number{dec: apd.New(i, 0)}
 }
 

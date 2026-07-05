@@ -23,10 +23,14 @@ func TestPerformanceBudget(t *testing.T) {
 
 	budgets := []budget{
 		// Warm evaluation is the critical path: low single-digit µs, stable allocs.
-		{"EvaluateMidTable", BenchmarkEvaluateMidTable, 60, 80_000},
-		{"EvaluateArithmetic", BenchmarkEvaluateArithmetic, 40, 60_000},
-		// A 10-deep DRG chain stays roughly linear (~13 allocs per decision).
-		{"EvaluateDRGChain10", BenchmarkEvaluateDRGChain10, 130, 150_000},
+		// A single decision that requires no other decision runs the allocation-lean
+		// fast path (no graph evaluator); decision-table interval cells and the
+		// implicit "?" input match without materialising ranges or per-column scopes.
+		{"EvaluateMidTable", BenchmarkEvaluateMidTable, 22, 40_000},
+		{"EvaluateArithmetic", BenchmarkEvaluateArithmetic, 24, 40_000},
+		// A 10-deep DRG chain stays roughly linear; the graph evaluator shares one
+		// execution state across all decisions rather than allocating one per decision.
+		{"EvaluateDRGChain10", BenchmarkEvaluateDRGChain10, 75, 80_000},
 		// Compilation is one-off and uncritical; the ceiling only catches blow-ups.
 		{"CompileMidTable", BenchmarkCompileMidTable, 5_000, 5_000_000},
 	}

@@ -146,26 +146,30 @@ func (ct *compiledTable) evaluate(s *feel.Scope) (value.Value, error) {
 		tt = &TableTrace{HitPolicy: string(ct.hitPolicy), Aggregation: string(ct.aggregation)}
 	}
 
-	// Evaluate each input column once and pre-build the scope its unary tests
-	// run in (the decision scope plus "?" bound to the column's input value).
-	colScopes := make([]*feel.Scope, len(ct.inputs))
+	// Evaluate each input column once; the unary tests run in the decision scope
+	// with "?" bound to the column's value. A single reusable scope carries "?",
+	// rebound per column (BindInput), so the table matches without allocating a
+	// scope per column.
+	colVals := make([]value.Value, len(ct.inputs))
 	for i, in := range ct.inputs {
 		v, err := in(s)
 		if err != nil {
 			return nil, err
 		}
-		colScopes[i] = s.Extend(v)
+		colVals[i] = v
 		if tt != nil {
 			tt.Inputs = append(tt.Inputs, InputTrace{Expression: ct.inputExprs[i], Value: v})
 		}
 	}
+	us := s.WithInput()
 
 	var matched []int
 	for ri, r := range ct.rules {
 		ok := true
 		var conds []ConditionTrace
 		for ci, test := range r.tests {
-			m, err := feel.Matches(test, colScopes[ci])
+			us.BindInput(colVals[ci])
+			m, err := feel.Matches(test, us)
 			if err != nil {
 				return nil, err
 			}
