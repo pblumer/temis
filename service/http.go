@@ -24,9 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/mcp"
 	"github.com/pblumer/temis/quality"
@@ -552,9 +549,11 @@ func (s *Server) Handler() http.Handler {
 	grpcPath, grpcHandler := s.grpcHandler()
 	mux.Handle(grpcPath, grpcHandler)
 
-	// h2c lets full gRPC and the bidi EvaluateBatch stream work over cleartext
-	// HTTP/2 (no TLS); HTTP/1.1 requests are still served normally.
-	return h2c.NewHandler(mux, &http2.Server{})
+	// The mux is returned bare: cleartext HTTP/2 (h2c) — needed for full gRPC and
+	// the bidi EvaluateBatch stream without TLS — is enabled at the server level
+	// via http.Server.Protocols (SetUnencryptedHTTP2), which supersedes the
+	// deprecated golang.org/x/net/http2/h2c wrapper. See cmd/temisd/main.go.
+	return mux
 }
 
 // --- request/response DTOs ---

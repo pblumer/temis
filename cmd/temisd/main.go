@@ -292,9 +292,19 @@ func main() {
 	// WriteTimeout are deliberately left unset (0): the same server carries h2c
 	// bidi gRPC streams (EvaluateBatch) whose reads and writes legitimately span
 	// long periods, and a wall-clock cap there would sever live streams.
+	// Enable cleartext HTTP/2 (h2c) alongside HTTP/1.1 and TLS-negotiated HTTP/2:
+	// the same server carries h2c bidi gRPC streams (EvaluateBatch) when no TLS is
+	// terminated in front. This replaces the deprecated golang.org/x/net/http2/h2c
+	// wrapper (SA1019) — the mux is now served bare and the transport is selected
+	// here via the Protocols field (Go 1.24+).
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.Handler(),
+		Protocols:         protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
