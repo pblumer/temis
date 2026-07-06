@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
 import { buildInputPills, type InputPills } from './inputpills'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout, type Orientation } from './layout'
@@ -13,14 +13,8 @@ import { mountFlowEditor } from './flow-editor'
 import type { FlowDetail, GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
-import { openBoxedContextOverlay } from './boxedcontext'
-import { openConditionalOverlay } from './conditional'
-import { openListOverlay } from './list'
-import { openRelationOverlay } from './relation'
-import { openFilterOverlay } from './filter'
-import { openIteratorOverlay } from './iterator'
-import { openInvocationOverlay } from './invocation'
 import { openBKMOverlay } from './bkm'
+import { openBoxed, BOXED_TYPES } from './boxededitors'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
 import { makeResizable } from './resizable'
@@ -261,23 +255,6 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  // createTable gives a table-less decision a fresh table: persist any pending
-  // structural edits first (so the decision exists server-side), create the
-  // table, switch to the saved revision and open it for editing.
-  const createTable = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Tabelle an …'
-    try {
-      const created = await createDecisionTable(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Tabelle angelegt ✓'
-      const { names } = namesFor(decisionId)
-      void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId), scope: names })
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
   // namesFor gathers the in-scope variable names for a decision's expression (the
   // other nodes' names) and the decision's own title, from the live graph.
   const namesFor = (decisionId: string): { names: string[]; title: string } => {
@@ -309,134 +286,43 @@ async function boot(root: HTMLElement): Promise<void> {
     void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
   }
 
-  // openContext opens a decision's boxed-context editor — editable in Design,
-  // read-only in Operate. names are the in-scope variables the entries may use.
-  const openContext = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openBoxedContextOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { typeOptions, readOnly: mode === 'operate' })
-  }
-
-  // createContext gives a logic-less decision a fresh boxed context: persist any
-  // pending structural edits first (so the decision exists server-side), create
-  // the context, switch to the saved revision and open it for editing.
-  const createContext = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Boxed Context an …'
-    try {
-      const created = await createBoxedContext(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Boxed Context angelegt ✓'
-      openContext(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+  // openLogic opens the editor for a decision's boxed logic of the given kind
+  // (WP-142, one entry point for all kinds). table and literal keep their special
+  // openers (mode-aware trace, fresh flag); every other boxed kind goes through the
+  // shared openBoxed dispatch, anchored at the decision — editable in Design,
+  // read-only in Operate.
+  const openLogic = (kind: string, modelId: string, decisionId: string): void => {
+    if (kind === 'literal') {
+      openLiteral(modelId, decisionId)
+      return
     }
-  }
-
-  // openConditional opens a decision's boxed-conditional (if/then/else) editor —
-  // editable in Design, read-only in Operate.
-  const openConditional = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openConditionalOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createConditional gives a logic-less decision a fresh boxed conditional:
-  // persist pending edits first, create it, switch to the saved revision and open.
-  const createConditional = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Conditional an …'
-    try {
-      const created = await createBoxedConditional(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Conditional angelegt ✓'
-      openConditional(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+    if (kind === 'table') {
+      openTable(modelId, decisionId)
+      return
     }
-  }
-
-  // openList opens a decision's boxed-list editor — editable in Design, read-only
-  // in Operate. names are the in-scope variables the items may reference.
-  const openList = (modelId: string, decisionId: string): void => {
     const { names } = namesFor(decisionId)
-    void openListOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+    openBoxed(kind, { modelId, anchor: { kind: 'decision', id: decisionId }, names, onSaved: (newId) => void reselect(newId), typeOptions, readOnly: mode === 'operate' })
   }
 
-  // createList gives a logic-less decision a fresh boxed list: persist pending
-  // edits first, create it, switch to the saved revision and open for editing.
-  const createList = async (decisionId: string): Promise<void> => {
+  // createLogic gives an undecided decision a fresh boxed logic of the given kind
+  // (WP-142): persist pending structural edits first (so the decision exists
+  // server-side), create it via the registry endpoint, switch to the saved
+  // revision and open it. Literal has no create endpoint — it is materialized on
+  // save via createLiteral.
+  const createLogic = async (kind: string, decisionId: string): Promise<void> => {
     if (!currentId) return
-    status.textContent = 'legt Liste an …'
-    try {
-      const created = await createBoxedList(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Liste angelegt ✓'
-      openList(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+    if (kind === 'literal') {
+      await createLiteral(decisionId)
+      return
     }
-  }
-
-  // openRelation opens a decision's boxed-relation grid editor — editable in
-  // Design, read-only in Operate. names are the in-scope variables the cells use.
-  const openRelation = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openRelationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createRelation gives a logic-less decision a fresh boxed relation: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createRelation = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Relation an …'
+    const bt = BOXED_TYPES.find((b) => b.kind === kind)
+    if (!bt?.create) return
+    status.textContent = bt.statusCreating
     try {
-      const created = await createBoxedRelation(await persistGraph(currentId, true), decisionId)
+      const created = await bt.create(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
-      status.textContent = 'Relation angelegt ✓'
-      openRelation(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
-  // openFilter opens a decision's boxed-filter editor — editable in Design,
-  // read-only in Operate. names are the in-scope variables the branches use.
-  const openFilter = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openFilterOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createFilter gives a logic-less decision a fresh boxed filter: persist pending
-  // edits first, create it, switch to the saved revision and open for editing.
-  const createFilter = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Filter an …'
-    try {
-      const created = await createBoxedFilter(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Filter angelegt ✓'
-      openFilter(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
-  // openIterator opens a decision's boxed-iteration (for/some/every) editor —
-  // editable in Design, read-only in Operate.
-  const openIterator = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openIteratorOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createIterator gives a logic-less decision a fresh boxed iteration: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createIterator = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Iteration an …'
-    try {
-      const created = await createBoxedIterator(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Iteration angelegt ✓'
-      openIterator(created.modelId, decisionId)
+      status.textContent = bt.statusCreated
+      openLogic(kind, created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -452,28 +338,6 @@ async function boot(root: HTMLElement): Promise<void> {
       const savedId = await persistGraph(currentId, true)
       if (savedId !== currentId) await reselect(savedId)
       void openBKMOverlay(savedId, bkmId, (newId) => void reselect(newId), typeOptions)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
-  // openInvocation opens a decision's boxed-invocation editor — editable in
-  // Design, read-only in Operate.
-  const openInvocation = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openInvocationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createInvocation gives a logic-less decision a fresh boxed invocation: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createInvocation = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Invocation an …'
-    try {
-      const created = await createBoxedInvocation(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Invocation angelegt ✓'
-      openInvocation(created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -1318,27 +1182,13 @@ async function boot(root: HTMLElement): Promise<void> {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => openTable(modelId, decisionId))
-      handle.onCreateTable((decisionId) => void createTable(decisionId))
-      handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
-      handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
-      handle.onOpenContext((decisionId) => openContext(modelId, decisionId))
-      handle.onCreateContext((decisionId) => void createContext(decisionId))
-      handle.onOpenConditional((decisionId) => openConditional(modelId, decisionId))
-      handle.onCreateConditional((decisionId) => void createConditional(decisionId))
-      handle.onOpenList((decisionId) => openList(modelId, decisionId))
-      handle.onCreateList((decisionId) => void createList(decisionId))
-      handle.onOpenRelation((decisionId) => openRelation(modelId, decisionId))
-      handle.onCreateRelation((decisionId) => void createRelation(decisionId))
-      handle.onOpenFilter((decisionId) => openFilter(modelId, decisionId))
-      handle.onCreateFilter((decisionId) => void createFilter(decisionId))
-      handle.onOpenIterator((decisionId) => openIterator(modelId, decisionId))
-      handle.onCreateIterator((decisionId) => void createIterator(decisionId))
-      handle.onOpenInvocation((decisionId) => openInvocation(modelId, decisionId))
-      handle.onCreateInvocation((decisionId) => void createInvocation(decisionId))
+      // One generic pair drives every boxed kind (WP-142): the canvas fires
+      // dmn.openLogic/dmn.createLogic with the kind, resolved through the registry.
+      handle.onOpenLogic((kind, decisionId) => openLogic(kind, modelId, decisionId))
+      handle.onCreateLogic((kind, decisionId) => void createLogic(kind, decisionId))
       handle.onOpenBKM((bkmId) => void openBKM(bkmId))
       handle.onBoxed(() => {
-        status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
+        status.textContent = 'Boxed-Ausdruck dieses Typs — im Modeler noch nicht editierbar.'
       })
       handle.onSelect((sel) => {
         if (sel) {

@@ -6,6 +6,7 @@ import type Canvas from 'diagram-js/lib/core/Canvas'
 import type ElementRegistry from 'diagram-js/lib/core/ElementRegistry'
 import type EventBus from 'diagram-js/lib/core/EventBus'
 import type { Element, Shape } from 'diagram-js/lib/model/Types'
+import { BOXED_TYPES, boxedTypeFor } from './boxededitors'
 
 // Inline SVG icons as data URIs — no icon font needed, crisp at any zoom.
 const svg = (inner: string): string =>
@@ -27,6 +28,19 @@ const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}
 const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
 const ICON_RENAME = svg(`<path d="M11.5 3.5l3 3L6 15H3v-3z" ${stroke}/><path d="M10 5l3 3" ${stroke}/>`)
 const ICON_INVOCATION = svg(`<rect x="2.5" y="4" width="13" height="10" rx="1.5" ${stroke}/><path d="M6.5 9h5M9 6.5v5" ${stroke}/>`)
+// ICONS maps a boxed kind to its context-pad icon, so the registry-driven
+// open/create entries pick the right glyph by kind (WP-142).
+const ICONS: Record<string, string> = {
+  table: ICON_TABLE,
+  literal: ICON_LITERAL,
+  context: ICON_CONTEXT,
+  conditional: ICON_CONDITIONAL,
+  list: ICON_LIST,
+  relation: ICON_RELATION,
+  filter: ICON_FILTER,
+  iterator: ICON_ITERATOR,
+  invocation: ICON_INVOCATION,
+}
 // Edge-shape icons: a right-angle L (eckig), a rounded bend (gerundet) and a
 // straight diagonal (direkt) — matching the routes the renderer draws.
 const ICON_EDGE_ORTHO = svg(`<path d="M4 3.5V13h10" ${stroke}/>`)
@@ -135,78 +149,17 @@ class DmnContextPadProvider {
       // A decided decision: open its logic with a single click on the icon —
       // the table view or the FEEL-expression editor (also reachable by
       // double-click). The handlers live in the app shell, so fire events.
-      const decided = (element as { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasInvocation?: boolean; hasLogic?: boolean })
-      if (decided.hasTable) {
-        entries['open-table'] = {
+      const decided = element as unknown as Record<string, unknown>
+      const bt = boxedTypeFor(decided)
+      if (bt) {
+        // The decision carries a known boxed kind: one edit entry, from the
+        // registry (WP-142). Fires dmn.openLogic with the kind.
+        entries['open-' + bt.kind] = {
           group: 'edit',
           className: 'cp-icon',
-          title: 'Decision Table anzeigen',
-          imageUrl: ICON_TABLE,
-          action: { click: () => this.eventBus.fire('dmn.openTable', { element }) },
-        }
-      } else if (decided.hasLiteral) {
-        entries['open-literal'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'FEEL-Ausdruck anzeigen',
-          imageUrl: ICON_LITERAL,
-          action: { click: () => this.eventBus.fire('dmn.openLiteral', { element }) },
-        }
-      } else if (decided.hasContext) {
-        entries['open-context'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Boxed Context bearbeiten',
-          imageUrl: ICON_CONTEXT,
-          action: { click: () => this.eventBus.fire('dmn.openContext', { element }) },
-        }
-      } else if (decided.hasConditional) {
-        entries['open-conditional'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Conditional (if/then/else) bearbeiten',
-          imageUrl: ICON_CONDITIONAL,
-          action: { click: () => this.eventBus.fire('dmn.openConditional', { element }) },
-        }
-      } else if (decided.hasList) {
-        entries['open-list'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Liste bearbeiten',
-          imageUrl: ICON_LIST,
-          action: { click: () => this.eventBus.fire('dmn.openList', { element }) },
-        }
-      } else if (decided.hasFilter) {
-        entries['open-filter'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Filter bearbeiten',
-          imageUrl: ICON_FILTER,
-          action: { click: () => this.eventBus.fire('dmn.openFilter', { element }) },
-        }
-      } else if (decided.hasRelation) {
-        entries['open-relation'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Relation bearbeiten',
-          imageUrl: ICON_RELATION,
-          action: { click: () => this.eventBus.fire('dmn.openRelation', { element }) },
-        }
-      } else if (decided.hasIterator) {
-        entries['open-iterator'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Iteration (for/some/every) bearbeiten',
-          imageUrl: ICON_ITERATOR,
-          action: { click: () => this.eventBus.fire('dmn.openIterator', { element }) },
-        }
-      } else if (decided.hasInvocation) {
-        entries['open-invocation'] = {
-          group: 'edit',
-          className: 'cp-icon',
-          title: 'Invocation (Funktions-/BKM-Aufruf) bearbeiten',
-          imageUrl: ICON_INVOCATION,
-          action: { click: () => this.eventBus.fire('dmn.openInvocation', { element }) },
+          title: bt.editTitle,
+          imageUrl: ICONS[bt.kind],
+          action: { click: () => this.eventBus.fire('dmn.openLogic', { element, kind: bt.kind }) },
         }
       } else if (decided.hasLogic) {
         // A decided decision whose logic is a boxed form the modeler doesn't edit
@@ -220,70 +173,16 @@ class DmnContextPadProvider {
           action: { click: () => this.eventBus.fire('dmn.boxedInfo', { element }) },
         }
       } else {
-        // A truly undecided decision (no logic at all) can get a fresh decision
-        // table, a literal expression or a boxed context. Handlers in the app shell.
-        entries['create-table'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Decision Table anlegen',
-          imageUrl: ICON_TABLE,
-          action: { click: () => this.eventBus.fire('dmn.createTable', { element }) },
-        }
-        entries['create-literal'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'FEEL-Ausdruck anlegen',
-          imageUrl: ICON_LITERAL,
-          action: { click: () => this.eventBus.fire('dmn.createLiteral', { element }) },
-        }
-        entries['create-context'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Boxed Context anlegen',
-          imageUrl: ICON_CONTEXT,
-          action: { click: () => this.eventBus.fire('dmn.createContext', { element }) },
-        }
-        entries['create-conditional'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Conditional (if/then/else) anlegen',
-          imageUrl: ICON_CONDITIONAL,
-          action: { click: () => this.eventBus.fire('dmn.createConditional', { element }) },
-        }
-        entries['create-list'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Liste anlegen',
-          imageUrl: ICON_LIST,
-          action: { click: () => this.eventBus.fire('dmn.createList', { element }) },
-        }
-        entries['create-relation'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Relation anlegen',
-          imageUrl: ICON_RELATION,
-          action: { click: () => this.eventBus.fire('dmn.createRelation', { element }) },
-        }
-        entries['create-filter'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Filter anlegen',
-          imageUrl: ICON_FILTER,
-          action: { click: () => this.eventBus.fire('dmn.createFilter', { element }) },
-        }
-        entries['create-iterator'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Iteration (for/some/every) anlegen',
-          imageUrl: ICON_ITERATOR,
-          action: { click: () => this.eventBus.fire('dmn.createIterator', { element }) },
-        }
-        entries['create-invocation'] = {
-          group: 'add',
-          className: 'cp-icon',
-          title: 'Invocation (Funktions-/BKM-Aufruf) anlegen',
-          imageUrl: ICON_INVOCATION,
-          action: { click: () => this.eventBus.fire('dmn.createInvocation', { element }) },
+        // A truly undecided decision (no logic yet): a create entry per boxed kind,
+        // generated from the registry (WP-142). Each fires dmn.createLogic.
+        for (const t of BOXED_TYPES) {
+          entries['create-' + t.kind] = {
+            group: 'add',
+            className: 'cp-icon',
+            title: t.createTitle,
+            imageUrl: ICONS[t.kind],
+            action: { click: () => this.eventBus.fire('dmn.createLogic', { element, kind: t.kind }) },
+          }
         }
       }
     }
