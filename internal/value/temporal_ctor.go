@@ -79,6 +79,32 @@ func Member(v Value, name string) (Value, bool) {
 		return dtDurationMember(x.d, name)
 	case YearsMonthsDuration:
 		return ymDurationMember(x.months, name)
+	case Range:
+		return rangeMember(x, name)
+	default:
+		return nil, false
+	}
+}
+
+// rangeMember exposes a FEEL range's endpoints and their inclusivity
+// (DMN §10.3.2.15.3): start, end, start included, end included. An unbounded
+// endpoint is null.
+func rangeMember(r Range, name string) (Value, bool) {
+	switch name {
+	case "start":
+		if r.Low == nil {
+			return Null, true
+		}
+		return r.Low, true
+	case "end":
+		if r.High == nil {
+			return Null, true
+		}
+		return r.High, true
+	case "start included":
+		return Bool(r.LowClosed), true
+	case "end included":
+		return Bool(r.HighClosed), true
 	default:
 		return nil, false
 	}

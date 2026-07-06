@@ -17,11 +17,16 @@ type Func func(args []value.Value) (value.Value, error)
 
 // Builtin is one registry entry. MaxArgs of -1 marks a variadic builtin.
 type Builtin struct {
-	Name    string
-	Params  []string
-	MinArgs int
-	MaxArgs int
-	Fn      Func
+	Name   string
+	Params []string
+	// AltParams holds additional named-argument signatures for overloaded
+	// builtins (e.g. time(from:…) vs time(hour:…, minute:…, second:…, offset:…)).
+	// A named call binds against the first signature — Params, then each of
+	// AltParams — whose parameter names cover every supplied argument name.
+	AltParams [][]string
+	MinArgs   int
+	MaxArgs   int
+	Fn        Func
 }
 
 // Variadic reports whether the builtin accepts an unbounded number of arguments.
@@ -70,6 +75,8 @@ func buildDefault() *Registry {
 	registerBoolean(r)
 	registerList(r)
 	registerListMore(r)
+	registerListReplaceAndIs(r)
+	registerRangeFn(r)
 	registerString(r)
 	registerConversion(r)
 	registerNumeric(r)
@@ -101,6 +108,29 @@ func asInt(v value.Value) (int, bool) {
 	return int(i), ok
 }
 
+// asIntFloor reads a possibly-fractional number as an int, flooring it. The FEEL
+// substring position and length may be non-integer and are truncated (TCK 1103).
+func asIntFloor(v value.Value) (int, bool) {
+	n, ok := v.(value.Number)
+	if !ok {
+		return 0, false
+	}
+	i, ok := n.Floor().Int64()
+	return int(i), ok
+}
+
+// asSecond reads a seconds component that may carry a fraction (e.g. 1.3),
+// returning the whole seconds and the remaining nanoseconds for the time()
+// constructors.
+func asSecond(v value.Value) (sec, nanos int, ok bool) {
+	n, isNum := v.(value.Number)
+	if !isNum {
+		return 0, 0, false
+	}
+	s, ns, ok := n.SecondsNanos()
+	return int(s), ns, ok
+}
+
 // listOf treats a single list argument as the list, otherwise the arguments
 // themselves form the list (so sum([1,2,3]) and sum(1,2,3) both work).
 func listOf(args []value.Value) []value.Value {
@@ -117,7 +147,17 @@ func fixed(name string, params []string, min, max int, fn Func) *Builtin {
 	return &Builtin{Name: name, Params: params, MinArgs: min, MaxArgs: max, Fn: fn}
 }
 
-// variadic builds a variadic builtin requiring at least min arguments.
+// overloaded builds a builtin with more than one named-argument signature. The
+// primary form is params; alt lists further signatures (e.g. the component form
+// of a temporal constructor). Positional calls are governed by min/max as usual.
+func overloaded(name string, params []string, alt [][]string, min, max int, fn Func) *Builtin {
+	return &Builtin{Name: name, Params: params, AltParams: alt, MinArgs: min, MaxArgs: max, Fn: fn}
+}
+
+// variadic builds a variadic builtin requiring at least min arguments. It names
+// the first parameter "list" so the single-collection form accepts a named
+// argument (e.g. all(list: […]), sum(list: […])); positional and multi-argument
+// calls are unaffected (DMN §10.3.4, TCK 0059/0062).
 func variadic(name string, min int, fn Func) *Builtin {
-	return &Builtin{Name: name, MinArgs: min, MaxArgs: -1, Fn: fn}
+	return &Builtin{Name: name, Params: []string{"list"}, MinArgs: min, MaxArgs: -1, Fn: fn}
 }

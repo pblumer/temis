@@ -1,16 +1,52 @@
 package builtins
 
-import "github.com/pblumer/temis/internal/value"
+import (
+	"strings"
+
+	"github.com/pblumer/temis/internal/value"
+)
 
 func registerConversion(r *Registry) {
-	// number(from): parse a string into a number; an existing number passes
-	// through; anything else yields null.
-	r.Register(fixed("number", []string{"from"}, 1, 1, func(args []value.Value) (value.Value, error) {
+	// number(from, grouping separator?, decimal separator?): parse a string into a
+	// number (DMN 1.5). The grouping separator (space, comma or period) is stripped
+	// and the decimal separator (period or comma) normalised to "." before parsing.
+	// An existing number passes through; anything unparseable yields null.
+	r.Register(fixed("number", []string{"from", "grouping separator", "decimal separator"}, 1, 3, func(args []value.Value) (value.Value, error) {
+		// The optional separators are validated first (DMN 10.3.4.1): grouping is a
+		// space, comma, period or null; decimal is a comma, period or null; the two
+		// must differ. Any violation makes the whole call null, even when `from` is
+		// already a number.
+		var grouping, decimal string
+		if len(args) >= 2 {
+			g, ok := numberSep(args[1], " ,.")
+			if !ok {
+				return value.Null, nil
+			}
+			grouping = g
+		}
+		if len(args) >= 3 {
+			d, ok := numberSep(args[2], ",.")
+			if !ok {
+				return value.Null, nil
+			}
+			decimal = d
+		}
+		if grouping != "" && grouping == decimal {
+			return value.Null, nil
+		}
+
 		switch v := args[0].(type) {
 		case value.Number:
 			return v, nil
 		case value.Str:
-			n, err := value.ParseNumber(string(v))
+			str := string(v)
+			if grouping != "" {
+				str = strings.ReplaceAll(str, grouping, "")
+			}
+			if decimal != "" && decimal != "." {
+				str = strings.ReplaceAll(str, decimal, ".")
+			}
+			n, err := value.ParseNumber(str)
 			if err != nil {
 				return value.Null, nil
 			}
@@ -30,4 +66,21 @@ func registerConversion(r *Registry) {
 
 	// The temporal conversions date/time/date and time/duration live in
 	// temporal.go (registerTemporal) alongside the other date/time builtins.
+}
+
+// numberSep validates one number() separator argument: null is allowed (returns
+// ""), a single character listed in allowed is accepted, and anything else — a
+// wrong character, a multi-character string, or a non-string value — fails.
+func numberSep(v value.Value, allowed string) (string, bool) {
+	if value.IsNull(v) {
+		return "", true
+	}
+	s, ok := v.(value.Str)
+	if !ok {
+		return "", false
+	}
+	if len(string(s)) != 1 || !strings.Contains(allowed, string(s)) {
+		return "", false
+	}
+	return string(s), true
 }

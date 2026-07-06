@@ -7,7 +7,26 @@ func registerNumeric(r *Registry) {
 	// (round to an integer), matching DMN 1.5's optional scale argument.
 	r.Register(fixed("floor", []string{"n", "scale"}, 1, 2, scaled(value.Number.FloorTo)))
 	r.Register(fixed("ceiling", []string{"n", "scale"}, 1, 2, scaled(value.Number.CeilingTo)))
-	r.Register(fixed("abs", []string{"n"}, 1, 1, numberMap(value.Number.Abs)))
+	// abs(n): absolute value of a number or a duration (DMN 1.4+ extends abs to
+	// both duration types).
+	r.Register(fixed("abs", []string{"n"}, 1, 1, func(args []value.Value) (value.Value, error) {
+		switch x := args[0].(type) {
+		case value.Number:
+			return x.Abs(), nil
+		case value.DaysTimeDuration:
+			if x.Duration() < 0 {
+				return value.Neg(x), nil
+			}
+			return x, nil
+		case value.YearsMonthsDuration:
+			if x.Months() < 0 {
+				return value.Neg(x), nil
+			}
+			return x, nil
+		default:
+			return value.Null, nil
+		}
+	}))
 
 	// decimal and the explicit rounding modes take a mandatory scale.
 	r.Register(fixed("decimal", []string{"n", "scale"}, 2, 2, scaled(value.Number.RoundHalfEven)))
@@ -34,16 +53,6 @@ func registerNumeric(r *Registry) {
 	r.Register(fixed("odd", []string{"number"}, 1, 1, parity(value.Number.Odd)))
 }
 
-func numberMap(f func(value.Number) value.Number) Func {
-	return func(args []value.Value) (value.Value, error) {
-		n, ok := asNumber(args[0])
-		if !ok {
-			return value.Null, nil
-		}
-		return f(n), nil
-	}
-}
-
 // numberCalc adapts a Number method that may fail (returning ok=false) into a
 // builtin, mapping failure to null.
 func numberCalc(f func(value.Number) (value.Number, bool)) Func {
@@ -66,11 +75,17 @@ func scaled(f func(value.Number, int32) (value.Number, bool)) Func {
 		}
 		scale := 0
 		if len(args) >= 2 {
-			s, ok := asInt(args[1])
+			// The scale may be non-integer and is floored (TCK 1100 decimal(1/3, 2.5)).
+			s, ok := asIntFloor(args[1])
 			if !ok {
 				return value.Null, nil
 			}
 			scale = s
+		}
+		// The DMN round functions require the scale within the decimal128 exponent
+		// range [-6111, 6176]; anything outside yields null (TCK 1141–1144).
+		if scale < -6111 || scale > 6176 {
+			return value.Null, nil
 		}
 		return numOrNull(f(n, int32(scale))), nil
 	}

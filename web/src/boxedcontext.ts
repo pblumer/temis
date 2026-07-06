@@ -1,10 +1,14 @@
-import { getContext, saveContext, type ContextView, type ContextEntryView } from './api'
+import { getContext, saveContext, type Anchor, type ContextView, type ContextEntryView } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
+import { openBoxed, joinAt } from './boxededitors'
 
 // A working row in the editor: a named entry's name, declared type and FEEL text.
-type Row = { name: string; typeRef: string; text: string }
+// childKind (with index) is set when the entry's value is a nested boxed
+// expression rather than a literal — that row shows a drill-in instead of a text
+// field, and text stays empty (WP-66 Phase 2).
+type Row = { name: string; typeRef: string; text: string; childKind?: string; index: number }
 
 // openBoxedContextOverlay edits a decision's boxed context (WP-66): an ordered
 // list of `name = FEEL` entries plus an optional result-cell expression, each
@@ -13,11 +17,11 @@ type Row = { name: string; typeRef: string; text: string }
 // nodes' names); later entries also see the earlier entry names. A context whose
 // entries nest other boxed expressions (cv.simple === false) opens read-only, so
 // the text editor never clobbers the nesting. onSaved gets the saved model's id.
-export async function openBoxedContextOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { typeOptions?: string[]; readOnly?: boolean }): Promise<void> {
+export async function openBoxedContextOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { typeOptions?: string[]; readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   const typeOptions = opts?.typeOptions ?? FEEL_TYPES
   let cv: ContextView | null = null
   try {
-    cv = await getContext(modelId, decisionId)
+    cv = await getContext(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -25,10 +29,36 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
   if (!cv) return
   void ensureFeel()
 
-  const readOnly = !!opts?.readOnly || cv.simple === false
-  const rows: Row[] = cv.entries.map((e: ContextEntryView) => ({ name: e.name, typeRef: e.typeRef ?? '', text: e.text }))
+  // explicitReadOnly is the caller's intent (e.g. Operate mode); a context is also
+  // rendered read-only when it nests boxed entries (cv.simple === false) — but its
+  // nested entries can still be drilled into and edited unless explicitly read-only.
+  const explicitReadOnly = !!opts?.readOnly
+  const readOnly = explicitReadOnly || cv.simple === false
+  const rows: Row[] = cv.entries.map((e: ContextEntryView, i: number) => ({ name: e.name, typeRef: e.typeRef ?? '', text: e.text, childKind: e.childKind, index: e.index ?? i }))
+  const anchor: Anchor = opts?.anchor ?? { kind: 'decision', id: decisionId }
   let resultText = cv.result ?? ''
   let resultType = cv.resultTypeRef ?? ''
+
+  // openChild drills into a nested boxed entry, opening the matching editor at the
+  // entry's locator (the parent path extended by entry.N). Saving the child yields
+  // a new revision, so it reselects and closes this (now-stale) parent overlay.
+  const openChild = (row: Row, i: number): void => {
+    if (!row.childKind) return
+    openBoxed(row.childKind, {
+      modelId,
+      anchor,
+      at: joinAt(opts?.at, 'entry.' + row.index),
+      // The nested value sees the same names as the entry itself: the base names
+      // plus the entries declared before it.
+      names: scopeFor(i),
+      onSaved: (id) => {
+        onSaved?.(id)
+        close()
+      },
+      typeOptions,
+      readOnly: explicitReadOnly,
+    })
+  }
 
   const close = (): void => {
     overlay.remove()
@@ -85,7 +115,8 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
       typeSel.addEventListener('change', () => {
         row.typeRef = typeSel.value
       })
-      const exprIn = el('input', { class: 'ctx-expr', value: row.text, placeholder: 'z. B. Points * 2', spellcheck: 'false' }) as HTMLInputElement
+      const boxed = !!row.childKind
+      const exprIn = el('input', { class: 'ctx-expr', value: row.text, placeholder: boxed ? '‹' + row.childKind + '›' : 'z. B. Points * 2', spellcheck: 'false' }) as HTMLInputElement
       exprIn.value = row.text
       exprIn.addEventListener('input', () => {
         row.text = exprIn.value
@@ -96,12 +127,20 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
         rows.splice(i, 1)
         render()
       })
-      if (readOnly) {
+      if (readOnly || boxed) {
         nameIn.disabled = typeSel.disabled = exprIn.disabled = del.disabled = true
       }
-      grid.append(nameIn, typeSel, exprIn, del)
+      // A nested boxed entry shows a drill-in (open the matching editor at entry.N)
+      // instead of the delete action; a literal entry keeps its delete + highlighter.
+      let action: HTMLElement = del
+      if (boxed) {
+        const drill = el('button', { class: 'tbtn ctx-drill', type: 'button', title: 'Verschachtelten Ausdruck bearbeiten' }, '✎ ' + row.childKind) as HTMLButtonElement
+        drill.addEventListener('click', () => openChild(row, i))
+        action = drill
+      }
+      grid.append(nameIn, typeSel, exprIn, action)
       // The entry expression sees the base names plus the earlier entries.
-      attachFeelField(exprIn, () => scopeFor(i), { readOnly })
+      if (!boxed) attachFeelField(exprIn, () => scopeFor(i), { readOnly })
     })
     check()
   }
@@ -116,6 +155,15 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
   const resultIn = el('input', { class: 'ctx-expr', value: resultText, placeholder: 'Ergebnis (optional), z. B. Bonus', spellcheck: 'false' }) as HTMLInputElement
   const resultTypeSel = typeSelect(resultType)
   const check = (): boolean => {
+    // A read-only context (Operate, or one nesting boxed entries) is not validated
+    // for saving — its fields aren't editable and a nested entry's placeholder must
+    // not read as an empty-expression error. Just guide the user to the drill-ins.
+    if (readOnly) {
+      const hasNested = rows.some((r) => r.childKind)
+      status.className = 'dt-status'
+      status.textContent = hasNested ? 'Verschachtelte Einträge über „✎" bearbeiten.' : ''
+      return true
+    }
     let firstErr = ''
     const nameEls = grid.querySelectorAll<HTMLInputElement>('.ctx-name')
     const exprEls = grid.querySelectorAll<HTMLInputElement>('.ctx-expr')
@@ -158,7 +206,7 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
 
   const addBtn = el('button', { class: 'tbtn', type: 'button' }, '+ Eintrag') as HTMLButtonElement
   addBtn.addEventListener('click', () => {
-    rows.push({ name: 'Eintrag ' + (rows.length + 1), typeRef: '', text: '' })
+    rows.push({ name: 'Eintrag ' + (rows.length + 1), typeRef: '', text: '', index: rows.length })
     render()
   })
 
@@ -173,7 +221,7 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
         entries: rows.map((r) => ({ name: r.name.trim(), text: r.text.trim(), typeRef: r.typeRef })),
         result: resultText,
         resultTypeRef: resultText ? resultType : '',
-      })
+      }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

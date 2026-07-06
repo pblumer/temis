@@ -20,8 +20,8 @@ func TestBoxedContextView(t *testing.T) {
 		t.Error("Score context should be simple (all literal entries)")
 	}
 	want := []dmn.ContextEntryView{
-		{Name: "Base", Text: "Points * 2", TypeRef: "number"},
-		{Name: "Bonus", Text: "Base + 10", TypeRef: "number"},
+		{Name: "Base", Text: "Points * 2", TypeRef: "number", Index: 0},
+		{Name: "Bonus", Text: "Base + 10", TypeRef: "number", Index: 1},
 	}
 	if !reflect.DeepEqual(v.Entries, want) {
 		t.Errorf("entries = %+v, want %+v", v.Entries, want)

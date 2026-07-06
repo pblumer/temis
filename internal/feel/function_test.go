@@ -129,13 +129,27 @@ func TestFuncCallArgumentErrors(t *testing.T) {
 	body, _ := CompileStringWith("a - b", NewEnv("a", "b"), funcs)
 	sub.Body = body
 
+	// FEEL: a user-function call with the wrong arity or unknown/mixed named
+	// parameters compiles and evaluates to null (total-function semantics), rather
+	// than failing to compile.
 	for _, src := range []string{
 		"sub(1, b: 2)", // mixed positional and named
 		"sub(1, 2, 3)", // too many arguments
 		"sub(c: 1)",    // unknown parameter
 	} {
-		if _, err := CompileStringWith(src, NewEnv(), funcs); err == nil {
-			t.Errorf("%q: expected a compile error", src)
+		env := NewEnv()
+		ce, err := CompileStringWith(src, env, funcs)
+		if err != nil {
+			t.Errorf("%q: Compile = %v, want no error", src, err)
+			continue
+		}
+		got, err := ce(env.NewScope(nil))
+		if err != nil {
+			t.Errorf("%q: eval error %v", src, err)
+			continue
+		}
+		if !value.IsNull(got) {
+			t.Errorf("%q = %s, want null", src, got)
 		}
 	}
 }

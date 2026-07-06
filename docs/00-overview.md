@@ -86,7 +86,7 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 | `20-roadmap.md` | MVP / Beta / 1.0 mit Akzeptanzkriterien & Arbeitspaketen |
 | `30-feel-spec.md` | FEEL-Implementierungsplan (Grammatik, Typen, Built-ins) |
 | `40-api-contract.md` | Go-API + HTTP/gRPC-Vertrag (stabil zu haltende Oberfläche) |
-| `50-testing-strategy.md` | Test-Pyramide, TCK-Anbindung, Benchmarks, Fuzzing |
+| `50-testing-strategy.md` | Testarchitektur-Handbuch: Schichten, CI-Landschaft, Fixtures, Fehlerklassen→Gate-Matrix |
 | `60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten (Konventionen, Definition of Done) |
 | `adr/ADR-XXXX-*.md` | Architecture Decision Records |
 

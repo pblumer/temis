@@ -21,6 +21,10 @@ func Add(a, b Value) Value {
 		if y, ok := b.(Number); ok {
 			return numOrNull(x.add(y))
 		}
+	case Str:
+		if y, ok := b.(Str); ok {
+			return x + y // FEEL: string + string concatenates
+		}
 	case DaysTimeDuration:
 		if y, ok := b.(DaysTimeDuration); ok {
 			return DaysTimeDuration{d: x.d + y.d}
@@ -56,20 +60,56 @@ func Sub(a, b Value) Value {
 		if y, ok := b.(YearsMonthsDuration); ok {
 			return YearsMonthsDuration{months: x.months - y.months}
 		}
-	case Date:
-		if y, ok := b.(Date); ok {
-			return DaysTimeDuration{d: x.t.Sub(y.t)}
-		}
 	case Time:
 		if y, ok := b.(Time); ok {
 			return DaysTimeDuration{d: x.t.Sub(y.t)}
 		}
-	case DateTime:
-		if y, ok := b.(DateTime); ok {
-			return DaysTimeDuration{d: x.t.Sub(y.t)}
+	case Date, DateTime:
+		if r, ok := subTemporal(a, b); ok {
+			return r
 		}
 	}
 	return shiftOrNull(a, b, -1)
+}
+
+// subTemporal implements FEEL subtraction of one date/date-and-time from another,
+// yielding the days-and-time duration between their instants. A plain date is the
+// UTC start of its day and mixes freely with either kind; two date-and-time values
+// must agree on whether they carry a timezone, otherwise the result is null (DMN
+// §10.3.2.3.5). It reports ok=false when b is not temporal (a duration), so the
+// caller falls through to temporal-minus-duration shifting.
+func subTemporal(a, b Value) (Value, bool) {
+	at, aok := instantOf(a)
+	bt, bok := instantOf(b)
+	if !aok || !bok {
+		return nil, false
+	}
+	if temporalZoned(a) != temporalZoned(b) {
+		return Null, true
+	}
+	return DaysTimeDuration{d: at.Sub(bt)}, true
+}
+
+// instantOf returns the backing instant of a date or date-and-time value.
+func instantOf(v Value) (time.Time, bool) {
+	switch x := v.(type) {
+	case Date:
+		return x.t, true
+	case DateTime:
+		return x.t, true
+	}
+	return time.Time{}, false
+}
+
+// temporalZoned reports whether a temporal value carries a timezone for the
+// purpose of subtraction. A date-and-time may be local (no zone); a plain date is
+// anchored to UTC and always counts as zoned, so subtracting a zoned from an
+// unzoned date-and-time (or vice versa) yields null.
+func temporalZoned(v Value) bool {
+	if dt, ok := v.(DateTime); ok {
+		return dt.z.zoned
+	}
+	return true
 }
 
 // Mul implements `*`: number*number and duration*number (either order).
@@ -177,8 +217,10 @@ func scaleDuration(dur Value, n Number, divide bool) Value {
 	}
 }
 
-// scaleInt64 computes round(base * n) or round(base / n) as an int64 under the
-// FEEL decimal context, rounding half-even to an integer.
+// scaleInt64 computes base * n or base / n and truncates it to an int64 in the
+// duration's integral unit (nanoseconds or months). Truncation is toward zero:
+// -2.5 * P1Y11M (23 months) = -57.5 months → -P4Y9M (-57), matching the TCK
+// oracle (0100) rather than half-even rounding, which would give -58.
 func scaleInt64(base int64, n Number, divide bool) (int64, bool) {
 	res := new(apd.Decimal)
 	var cond apd.Condition
@@ -191,8 +233,10 @@ func scaleInt64(base int64, n Number, divide bool) (int64, bool) {
 	if err != nil || cond.DivisionByZero() || cond.Overflow() {
 		return 0, false
 	}
+	truncCtx := numberContext
+	truncCtx.Rounding = apd.RoundDown
 	rounded := new(apd.Decimal)
-	if _, err := numberContext.RoundToIntegralValue(rounded, res); err != nil {
+	if _, err := truncCtx.RoundToIntegralValue(rounded, res); err != nil {
 		return 0, false
 	}
 	i, err := rounded.Int64()
@@ -207,11 +251,15 @@ func scaleInt64(base int64, n Number, divide bool) (int64, bool) {
 func shift(a, b Value, sign int) Value {
 	switch base := a.(type) {
 	case Date:
+		// DMN: date ± duration stays a date (the time component is dropped). The
+		// days-and-time case adds the full duration to the start-of-day instant and
+		// truncates back to the resulting calendar day.
 		switch d := b.(type) {
 		case YearsMonthsDuration:
 			return Date{t: addMonths(base.t, int64(sign)*d.months)}
 		case DaysTimeDuration:
-			return DateTime{t: base.t.Add(time.Duration(sign) * d.d)}
+			shifted := base.t.Add(time.Duration(sign) * d.d)
+			return Date{t: time.Date(shifted.Year(), shifted.Month(), shifted.Day(), 0, 0, 0, 0, time.UTC)}
 		}
 	case DateTime:
 		switch d := b.(type) {

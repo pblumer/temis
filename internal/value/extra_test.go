@@ -143,10 +143,11 @@ func TestNegAndExpEdges(t *testing.T) {
 	if !IsNull(Exp(Str("x"), MustNumber("2"))) || !IsNull(Exp(MustNumber("2"), Str("x"))) {
 		t.Error("** with non-number should be null")
 	}
-	// undefined combinations
-	if !IsNull(Add(Str("a"), Str("b"))) {
-		t.Error("string + string should be null")
+	// FEEL: string + string concatenates
+	if got := Add(Str("a"), Str("b")); got != Str("ab") {
+		t.Errorf(`"a" + "b" = %q, want "ab"`, got)
 	}
+	// undefined combinations
 	if !IsNull(Div(Str("a"), MustNumber("1"))) {
 		t.Error("string / number should be null")
 	}
@@ -161,6 +162,18 @@ func TestRangeEqualAndDurationCompare(t *testing.T) {
 	}
 	if Equal(r1, r3) != False {
 		t.Error("ranges with different bounds should be unequal")
+	}
+
+	// WP-41.16: an omitted (unbounded) endpoint is a Go-nil bound and must not
+	// compare equal to an explicit null endpoint — e.g. `(< 10)` ≠ `(null..10)`.
+	unbounded := Range{LowClosed: false, Low: nil, High: MustNumber("10"), HighClosed: false}
+	explicitNull := Range{LowClosed: false, Low: Null, High: MustNumber("10"), HighClosed: false}
+	unbounded2 := Range{LowClosed: false, Low: nil, High: MustNumber("10"), HighClosed: false}
+	if Equal(unbounded, explicitNull) != False {
+		t.Error("unbounded endpoint should not equal an explicit null endpoint")
+	}
+	if Equal(unbounded, unbounded2) != True {
+		t.Error("two unbounded endpoints should be equal")
 	}
 
 	a, _ := ParseDuration("PT2H")

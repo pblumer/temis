@@ -54,7 +54,7 @@ func CompileString(src string, env *Env) (CompiledExpr, error) {
 // parser's name oracle covers both the built-ins and the function names, so a
 // multi-word function name (e.g. a BKM named "Rate Table") assembles correctly.
 func CompileStringWith(src string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
-	expr, err := ParseWithNames(src, nameOracle(funcs))
+	expr, err := ParseWithNames(src, nameOracleWithEnv(env, funcs))
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +100,18 @@ func nameOracle(funcs map[string]*Func) NameSet {
 	return sets
 }
 
+// nameOracleWithEnv extends nameOracle with the in-scope variable names, so a
+// reference to a variable whose name embeds a keyword or a hyphen (e.g. the
+// decision output "Date-Time") assembles as that single name rather than being
+// parsed as a subtraction of two shorter names (WP-41.15).
+func nameOracleWithEnv(env *Env, funcs map[string]*Func) NameSet {
+	oracle := nameOracle(funcs)
+	if env == nil {
+		return oracle
+	}
+	return append(oracle.(unionNames), env)
+}
+
 type compiler struct {
 	env      *Env
 	builtins *builtins.Registry
@@ -136,7 +148,45 @@ func (c *compiler) fail(pos Position, format string, args ...any) CompiledExpr {
 	return constNull
 }
 
+// nullCall handles a function invocation that is syntactically well-formed but
+// semantically invalid — the wrong number of arguments, or unknown/mixed named
+// parameters. FEEL evaluates such a call to null and keeps the decision
+// executable (a total-function semantics), rather than making the whole decision
+// non-executable. bindArgs/bindNamedArgs return this (nil), which their callers
+// compile to a null-yielding expression; c.err is deliberately left unset.
+func (c *compiler) nullCall() []CompiledExpr { return nil }
+
 func constNull(*Scope) (value.Value, error) { return value.Null, nil }
+
+// builtinValue lifts a built-in into a first-class function value. It mirrors the
+// call-site arity handling (bindArgs): a wrong argument count yields null, and a
+// short fixed-arity call is padded with null so the built-in always sees a full
+// argument list.
+func builtinValue(b *builtins.Builtin) *value.Function {
+	return &value.Function{
+		Name:  b.Name,
+		Arity: b.MinArgs,
+		Call: func(args []value.Value) (value.Value, error) {
+			if len(args) < b.MinArgs {
+				return value.Null, nil
+			}
+			if !b.Variadic() {
+				if len(args) > b.MaxArgs {
+					return value.Null, nil
+				}
+				if len(args) < b.MaxArgs {
+					padded := make([]value.Value, b.MaxArgs)
+					copy(padded, args)
+					for i := len(args); i < b.MaxArgs; i++ {
+						padded[i] = value.Null
+					}
+					args = padded
+				}
+			}
+			return b.Fn(args)
+		},
+	}
+}
 
 // NullExpr is a CompiledExpr that always yields null. It fills omitted arguments
 // of a call so the callee always receives a full argument list.
@@ -160,9 +210,12 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 	case *NullLit:
 		return constNull
 	case *AtLit:
+		// An @-literal whose content is not a valid date/time/duration is a
+		// well-formed expression that evaluates to null (TCK 0093 "invalid value
+		// has null value"), not a compile error.
 		v, err := parseTemporal(n.Value)
 		if err != nil {
-			return c.fail(n.Pos(), "invalid temporal literal @%q", n.Value)
+			return constNull
 		}
 		return func(*Scope) (value.Value, error) { return v, nil }
 	case *NameRef:
@@ -177,6 +230,13 @@ func (c *compiler) compile(e Expr) CompiledExpr {
 		// budget, so it can be passed to higher-order built-ins or stored.
 		if f, ok := c.funcs[n.Name]; ok {
 			return func(s *Scope) (value.Value, error) { return f.asValue(s), nil }
+		}
+		// A bare reference to a built-in name lifts it to a first-class function
+		// value too, so a built-in can be passed to a BKM or higher-order function
+		// (e.g. bkm(abs, sqrt), TCK 0092).
+		if b, ok := c.builtins.Lookup(n.Name); ok {
+			fn := builtinValue(b)
+			return func(*Scope) (value.Value, error) { return fn, nil }
 		}
 		// Not a static variable: inside a filter, resolve against the enclosing
 		// context elements at runtime (innermost first); otherwise it is an error.
@@ -252,10 +312,10 @@ func (c *compiler) compileBinary(n *BinaryExpr) CompiledExpr {
 	case "**":
 		return valueBinop(x, y, value.Exp)
 	case "=":
-		return valueBinop(x, y, value.Equal)
+		return valueBinop(x, y, feelEqualOp)
 	case "!=":
 		return valueBinop(x, y, func(a, b value.Value) value.Value {
-			return value.BoolOf(value.Equal(a, b) == value.False)
+			return notBool(feelEqualOp(a, b))
 		})
 	case "<", "<=", ">", ">=":
 		return c.compileCompare(n.Op, x, y)
@@ -323,33 +383,131 @@ func (c *compiler) compileBetween(n *BetweenExpr) CompiledExpr {
 
 func (c *compiler) compileIn(n *InExpr) CompiledExpr {
 	x := c.compile(n.X)
-	tests := make([]CompiledExpr, len(n.Tests))
+	// Each right-hand test is either an operator comparison (CmpTest → compare the
+	// in-value against the operand) or a plain value/interval/list matched by
+	// matchIn. `x in t1, t2, …` is the disjunction of the tests (FEEL 10.3.2.15).
+	type inTest struct {
+		cmp string       // comparison op when non-empty; otherwise a matchIn test
+		e   CompiledExpr // the operand (cmp) or the test value (matchIn)
+		// An interval test is matched inline against its bounds rather than by
+		// materialising a value.Range, so a decision-table interval cell (the common
+		// `[lo..hi]`) evaluates without a heap allocation. lo/hi are nil when the
+		// corresponding endpoint is unbounded.
+		interval           bool
+		lo, hi             CompiledExpr
+		loClosed, hiClosed bool
+	}
+	tests := make([]inTest, len(n.Tests))
 	for i, t := range n.Tests {
-		tests[i] = c.compile(t)
+		switch tt := t.(type) {
+		case *CmpTest:
+			tests[i] = inTest{cmp: tt.Op, e: c.compile(tt.Y)}
+		case *IntervalLit:
+			it := inTest{interval: true, loClosed: tt.LowClosed, hiClosed: tt.HighClosed}
+			if tt.Low != nil {
+				it.lo = c.compile(tt.Low)
+			}
+			if tt.High != nil {
+				it.hi = c.compile(tt.High)
+			}
+			tests[i] = it
+		default:
+			tests[i] = inTest{e: c.compile(t)}
+		}
 	}
 	return func(s *Scope) (value.Value, error) {
 		xv, err := x(s)
 		if err != nil {
 			return nil, err
 		}
-		for _, tc := range tests {
-			tv, err := tc(s)
+		// FEEL `in` is a 3-valued disjunction: any true test wins; otherwise a null
+		// test (e.g. an indeterminate range comparison) makes the whole test null,
+		// and only all-false yields false (FEEL 10.3.2.15).
+		sawNull := false
+		for _, t := range tests {
+			if t.interval {
+				// value.Range is passed to rangeContains3 as a concrete argument, so
+				// it stays on the stack — no interface boxing, unlike returning it as a
+				// value.Value from the interval closure would incur.
+				var l, h value.Value
+				if t.lo != nil {
+					if l, err = t.lo(s); err != nil {
+						return nil, err
+					}
+				}
+				if t.hi != nil {
+					if h, err = t.hi(s); err != nil {
+						return nil, err
+					}
+				}
+				switch rangeContains3(value.Range{LowClosed: t.loClosed, Low: l, High: h, HighClosed: t.hiClosed}, xv) {
+				case value.True:
+					return value.True, nil
+				case value.Null:
+					sawNull = true
+				}
+				continue
+			}
+			tv, err := t.e(s)
 			if err != nil {
 				return nil, err
 			}
-			if matchIn(xv, tv) {
-				return value.True, nil
+			if t.cmp != "" {
+				if cmpSatisfies(t.cmp, xv, tv) {
+					return value.True, nil
+				}
+				continue
 			}
+			switch matchIn3(xv, tv) {
+			case value.True:
+				return value.True, nil
+			case value.Null:
+				sawNull = true
+			}
+		}
+		if sawNull {
+			return value.Null, nil
 		}
 		return value.False, nil
 	}
+}
+
+// cmpSatisfies reports whether `x <op> y` holds for an operator-prefixed unary
+// test on the right of `in`. Incomparable operands are not a match.
+func cmpSatisfies(op string, x, y value.Value) bool {
+	switch op {
+	case "=":
+		return value.Equal(x, y) == value.True
+	case "!=":
+		return value.Equal(x, y) == value.False
+	}
+	cmp, ok := value.Compare(x, y)
+	if !ok {
+		return false
+	}
+	switch op {
+	case "<":
+		return cmp < 0
+	case "<=":
+		return cmp <= 0
+	case ">":
+		return cmp > 0
+	case ">=":
+		return cmp >= 0
+	}
+	return false
 }
 
 // compileInstanceOf compiles `X instance of Type`. The type name must be a FEEL
 // built-in (or Any); an unknown name (e.g. a user-defined item-definition type)
 // is a compile error until the type system binds them (WP-31).
 func (c *compiler) compileInstanceOf(n *InstanceOfExpr) CompiledExpr {
-	if _, ok := instanceOf(value.Null, n.Type); !ok {
+	var userTypes map[string]*Type
+	if c.env != nil {
+		userTypes = c.env.types
+	}
+	t, ok := resolveTypeString(n.Type, userTypes)
+	if !ok {
 		return c.fail(n.Pos(), "unknown type %q in instance of", n.Type)
 	}
 	x := c.compile(n.X)
@@ -359,8 +517,7 @@ func (c *compiler) compileInstanceOf(n *InstanceOfExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
-		res, _ := instanceOf(v, typeName)
-		return value.BoolOf(res), nil
+		return value.BoolOf(instanceOfType(v, t, typeName)), nil
 	}
 }
 
@@ -368,20 +525,25 @@ func (c *compiler) compileIf(n *IfExpr) CompiledExpr {
 	return IfThenElse(c.compile(n.Cond), c.compile(n.Then), c.compile(n.Else))
 }
 
-// IfThenElse builds a FEEL conditional: then runs only when cond is exactly the
-// boolean true, otherwise els runs (so a null or non-boolean condition takes the
-// else branch). It is the shared runtime of the literal `if` and the boxed
-// <conditional> (WP-26).
+// IfThenElse builds a FEEL conditional: then runs on the boolean true; a genuine
+// non-boolean condition (e.g. a string) makes the whole conditional null (DMN
+// 10.3.2.5, TCK 1150); false and null take the else branch (the common null-safe
+// form). It is the shared runtime of the literal `if` and the boxed <conditional>
+// (WP-26).
 func IfThenElse(cond, then, els CompiledExpr) CompiledExpr {
 	return func(s *Scope) (value.Value, error) {
 		cv, err := cond(s)
 		if err != nil {
 			return nil, err
 		}
-		if cv == value.True {
+		switch {
+		case cv == value.True:
 			return then(s)
+		case cv == value.False || value.IsNull(cv):
+			return els(s)
+		default:
+			return value.Null, nil
 		}
-		return els(s)
 	}
 }
 
@@ -404,37 +566,65 @@ func (c *compiler) compileList(n *ListLit) CompiledExpr {
 }
 
 func (c *compiler) compileContext(n *ContextLit) CompiledExpr {
+	// Duplicate keys make a context literal invalid — it evaluates to null
+	// (DMN 10.3.2.6, TCK 0057), not last-wins.
+	seen := make(map[string]bool, len(n.Entries))
+	for _, entry := range n.Entries {
+		if seen[entry.Key] {
+			return constNull
+		}
+		seen[entry.Key] = true
+	}
 	keys := make([]string, len(n.Entries))
 	vals := make([]CompiledExpr, len(n.Entries))
+	// Each entry's value may reference the entries declared before it (FEEL context
+	// semantics), so compile entry i against an env extended with keys[0..i-1] and
+	// bind each evaluated value into the scope for the entries that follow.
+	env := c.env
 	for i, entry := range n.Entries {
 		keys[i] = entry.Key
-		vals[i] = c.compile(entry.Value)
+		c.withEnv(env, func() { vals[i] = c.compile(entry.Value) })
+		env = env.Append(entry.Key)
 	}
 	return func(s *Scope) (value.Value, error) {
 		ctx := value.NewContext()
+		scope := s
 		for i, ce := range vals {
-			v, err := ce(s)
+			v, err := ce(scope)
 			if err != nil {
 				return nil, err
 			}
 			ctx.Put(keys[i], v)
+			scope = scope.Extend(v)
 		}
 		return ctx, nil
 	}
 }
 
 func (c *compiler) compileInterval(n *IntervalLit) CompiledExpr {
-	lo := c.compile(n.Low)
-	hi := c.compile(n.High)
+	// An endpoint may be absent for a half-bounded range built from a comparison,
+	// e.g. (< 10) has no lower bound; it compiles to a nil (unbounded) Range bound.
+	var lo, hi CompiledExpr
+	if n.Low != nil {
+		lo = c.compile(n.Low)
+	}
+	if n.High != nil {
+		hi = c.compile(n.High)
+	}
 	lc, hc := n.LowClosed, n.HighClosed
 	return func(s *Scope) (value.Value, error) {
-		l, err := lo(s)
-		if err != nil {
-			return nil, err
+		var l, h value.Value
+		if lo != nil {
+			var err error
+			if l, err = lo(s); err != nil {
+				return nil, err
+			}
 		}
-		h, err := hi(s)
-		if err != nil {
-			return nil, err
+		if hi != nil {
+			var err error
+			if h, err = hi(s); err != nil {
+				return nil, err
+			}
 		}
 		return value.Range{LowClosed: lc, Low: l, High: h, HighClosed: hc}, nil
 	}
@@ -490,13 +680,17 @@ func (c *compiler) compileCall(n *CallExpr) CompiledExpr {
 		if _, ok := c.env.slot(name.Name); ok {
 			return c.compileValueCall(c.compile(name), n)
 		}
-		return c.fail(name.Pos(), "unknown function %q", name.Name)
+		// Invoking an unknown name is not a compile error: FEEL invocation is a
+		// total function, so a call whose callee cannot be a function evaluates to
+		// null and keeps the decision executable (WP-41.17; see nullCall / 1131).
+		return constNull
 	}
 	// The callee is an arbitrary expression that must evaluate to a function. A
-	// literal can never be one, so reject it at compile time.
+	// literal can never be one, so the call evaluates to null (a runtime error in
+	// TCK terms), rather than making the whole decision non-executable.
 	switch n.Fn.(type) {
 	case *NumberLit, *StringLit, *BoolLit, *NullLit, *AtLit:
-		return c.fail(n.Fn.Pos(), "callee is not a function")
+		return constNull
 	}
 	return c.compileValueCall(c.compile(n.Fn), n)
 }
@@ -627,12 +821,10 @@ func (c *compiler) bindNamedArgs(params []string, name string, n *CallExpr) []Co
 		}
 	}
 	if named && positional {
-		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", name)
-		return nil
+		return c.nullCall()
 	}
 	if len(n.Args) > len(params) {
-		c.fail(n.Pos(), "%q expects at most %d arguments, got %d", name, len(params), len(n.Args))
-		return nil
+		return c.nullCall()
 	}
 	out := make([]CompiledExpr, len(params))
 	for i := range out {
@@ -647,8 +839,7 @@ func (c *compiler) bindNamedArgs(params []string, name string, n *CallExpr) []Co
 	for _, a := range n.Args {
 		idx := indexOf(params, a.Name)
 		if idx < 0 {
-			c.fail(n.Pos(), "%q has no parameter %q", name, a.Name)
-			return nil
+			return c.nullCall()
 		}
 		out[idx] = c.compile(a.Value)
 	}
@@ -680,17 +871,14 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 		}
 	}
 	if named && positional {
-		c.fail(n.Pos(), "cannot mix positional and named arguments in call to %q", b.Name)
-		return nil
-	}
-
-	count := len(n.Args)
-	if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
-		c.fail(n.Pos(), "%q expects %s arguments, got %d", b.Name, arityText(b), count)
-		return nil
+		return c.nullCall()
 	}
 
 	if !named {
+		count := len(n.Args)
+		if count < b.MinArgs || (!b.Variadic() && count > b.MaxArgs) {
+			return c.nullCall()
+		}
 		out := make([]CompiledExpr, count)
 		for i, a := range n.Args {
 			out[i] = c.compile(a.Value)
@@ -698,25 +886,54 @@ func (c *compiler) bindArgs(b *builtins.Builtin, n *CallExpr) []CompiledExpr {
 		return out
 	}
 
-	// Named arguments: place each at its parameter index; omitted parameters
-	// default to null so optional trailing parameters work.
-	if len(b.Params) == 0 {
-		c.fail(n.Pos(), "%q does not accept named arguments", b.Name)
-		return nil
+	// Named arguments: place each at its parameter index; a missing parameter
+	// defaults to null (so a call may omit optional parameters, e.g.
+	// is(value1: x) → is(x, null), TCK 0103). Arity is not otherwise checked:
+	// every name must resolve to a parameter, and the callee handles nulls.
+	// An overloaded builtin (AltParams) binds against the first signature whose
+	// parameter names cover every supplied argument name.
+	params := c.pickSignature(b, n.Args)
+	if params == nil {
+		return c.nullCall()
 	}
-	out := make([]CompiledExpr, len(b.Params))
+	out := make([]CompiledExpr, len(params))
 	for i := range out {
 		out[i] = constNull
 	}
 	for _, a := range n.Args {
-		idx := indexOf(b.Params, a.Name)
+		idx := indexOf(params, a.Name)
 		if idx < 0 {
-			c.fail(n.Pos(), "%q has no parameter %q", b.Name, a.Name)
-			return nil
+			return c.nullCall()
 		}
 		out[idx] = c.compile(a.Value)
 	}
 	return out
+}
+
+// pickSignature selects the named-argument signature (Params, then each of
+// AltParams) whose parameter names cover every supplied argument name. It
+// returns nil when no signature matches or the builtin declares no parameters.
+func (c *compiler) pickSignature(b *builtins.Builtin, args []Arg) []string {
+	covers := func(params []string) bool {
+		if len(params) == 0 {
+			return false
+		}
+		for _, a := range args {
+			if indexOf(params, a.Name) < 0 {
+				return false
+			}
+		}
+		return true
+	}
+	if covers(b.Params) {
+		return b.Params
+	}
+	for _, alt := range b.AltParams {
+		if covers(alt) {
+			return alt
+		}
+	}
+	return nil
 }
 
 func indexOf(ss []string, s string) int {
@@ -726,16 +943,6 @@ func indexOf(ss []string, s string) int {
 		}
 	}
 	return -1
-}
-
-func arityText(b *builtins.Builtin) string {
-	if b.Variadic() {
-		return fmt.Sprintf("at least %d", b.MinArgs)
-	}
-	if b.MinArgs == b.MaxArgs {
-		return fmt.Sprintf("exactly %d", b.MinArgs)
-	}
-	return fmt.Sprintf("%d to %d", b.MinArgs, b.MaxArgs)
 }
 
 // valueBinop evaluates both operands and applies a value-level binary op.
@@ -750,6 +957,29 @@ func valueBinop(x, y CompiledExpr, op func(a, b value.Value) value.Value) Compil
 			return nil, err
 		}
 		return op(a, b), nil
+	}
+}
+
+// feelEqualOp is the `=` operator. It follows value.Equal, except that comparing
+// two non-null values of different types is undefined (null), not false
+// (DMN §10.3.2.7). The internal value.Equal predicate keeps its boolean result
+// for list membership, decision-table matching and the like.
+func feelEqualOp(a, b value.Value) value.Value {
+	if !value.IsNull(a) && !value.IsNull(b) && a.Kind() != b.Kind() {
+		return value.Null
+	}
+	return value.Equal(a, b)
+}
+
+// notBool negates a three-valued boolean, propagating null.
+func notBool(v value.Value) value.Value {
+	switch v {
+	case value.True:
+		return value.False
+	case value.False:
+		return value.True
+	default:
+		return value.Null
 	}
 }
 
@@ -791,13 +1021,55 @@ func boolVal(v value.Value) (bool, bool) {
 	return false, false
 }
 
-// matchIn reports whether x matches a single `in` test: containment for a range
-// test, equality otherwise.
-func matchIn(x, t value.Value) bool {
-	if r, ok := t.(value.Range); ok {
-		return rangeContains(r, x)
+// matchIn3 evaluates one `in` test with FEEL 3-valued logic: True on a match,
+// Null when the comparison is indeterminate (a null tested value against a range,
+// or an explicit null range endpoint), False otherwise. A list on the right is a
+// list of positive unary tests: x matches if it is contained in a range element
+// or equals any other element (e.g. 1 in [2,3,1] and 1 in [[2..4],[1..3]]).
+func matchIn3(x, t value.Value) value.Value {
+	switch tv := t.(type) {
+	case value.Range:
+		return rangeContains3(tv, x)
+	case value.List:
+		sawNull := false
+		for _, e := range tv.Elements {
+			if r, ok := e.(value.Range); ok {
+				switch rangeContains3(r, x) {
+				case value.True:
+					return value.True
+				case value.Null:
+					sawNull = true
+				}
+			} else if value.Equal(x, e) == value.True {
+				return value.True
+			}
+		}
+		if sawNull {
+			return value.Null
+		}
+		return value.False
+	default:
+		return value.Equal(x, t)
 	}
-	return value.Equal(x, t) == value.True
+}
+
+// rangeContains3 is 3-valued range membership: Null when the tested value is null
+// or a present endpoint is an explicit null (distinct from an omitted, unbounded
+// endpoint, which stays a Go-nil bound), otherwise True/False per rangeContains.
+func rangeContains3(r value.Range, x value.Value) value.Value {
+	if value.IsNull(x) {
+		return value.Null
+	}
+	if r.Low != nil && value.IsNull(r.Low) {
+		return value.Null
+	}
+	if r.High != nil && value.IsNull(r.High) {
+		return value.Null
+	}
+	if rangeContains(r, x) {
+		return value.True
+	}
+	return value.False
 }
 
 func rangeContains(r value.Range, x value.Value) bool {

@@ -1,5 +1,6 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
+import { buildInputPills, type InputPills } from './inputpills'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout, type Orientation } from './layout'
 import { renderGraph, type ModelerHandle } from './canvas'
@@ -88,6 +89,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
             <button id="orient" class="tbtn design-only" type="button" title="Anordnung umschalten: Eingaben unten (Pfeile nach oben) ↔ Eingaben oben (Pfeile nach unten)">↥ Bottom-up</button>
+            <button id="juice" class="tbtn" type="button" title="Effekte beim Auswerten: Datenfluss-Animation, Partikel & Combo ein-/ausschalten">⚡ Effekte</button>
           </span>
           <span id="typeEditor" class="type-editor design-only" style="display:none">
             <label for="datatype">Typ</label>
@@ -203,6 +205,16 @@ async function boot(root: HTMLElement): Promise<void> {
   // The model detail currently loaded (schema + decisions), shared with the
   // Import cockpit so it can build a matching test template and run cases.
   let currentModel: ModelDetail | null = null
+  // The on-canvas input pills (Operate) and the debounce timer that turns an edit
+  // into a whole-graph evaluation. Rebuilt whenever Operate opens for a model.
+  let inputPills: InputPills | null = null
+  let pillEvalTimer: number | undefined
+  // Juice (Stage 3): the evaluation-animation switch (off under reduced motion) and
+  // the combo streak — consecutive quick evaluations build a multiplier that the
+  // final decision celebrates. lastRunAt gates the streak window.
+  let juice = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  let runCombo = 0
+  let lastRunAt = 0
   const syncButtons = (): void => {
     undoBtn.disabled = !handle?.canUndo()
     redoBtn.disabled = !handle?.canRedo()
@@ -216,8 +228,18 @@ async function boot(root: HTMLElement): Promise<void> {
   // the live canvas graph (moved/renamed/retyped nodes AND nodes/edges added or
   // removed, ADR-0016) and returns the saved model's id. It is a no-op returning
   // modelId unchanged when there is nothing to save.
-  const persistGraph = async (modelId: string): Promise<string> => {
-    if (!handle || !dirty) return modelId
+  //
+  // force skips the `dirty` fast-path and always posts the live canvas. The
+  // element-must-exist flows below (create a decision's logic, open a BKM) use it:
+  // they need the target element to be present server-side, and `dirty` is only a
+  // best-effort hint — if it is stale (e.g. a freshly created node that never
+  // flipped it, or a revision swapped in underneath), the fast-path would skip the
+  // save and the follow-up create-* request would 400 for an id the server model
+  // does not carry ("cannot create a table for decision … (unknown …)"). Re-posting
+  // the identical canvas is cheap (content-addressed; grouped by name in the list),
+  // so forcing here trades a redundant revision for a guaranteed-present element.
+  const persistGraph = async (modelId: string, force = false): Promise<string> => {
+    if (!handle || (!dirty && !force)) return modelId
     const { nodes, edges } = handle.graph()
     const saved = await saveGraph(modelId, {
       nodes: nodes.map((n) => ({ ...n, dataType: n.type === 'inputData' ? (n.dataType ?? '') : undefined })),
@@ -246,7 +268,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Tabelle an …'
     try {
-      const created = await createDecisionTable(await persistGraph(currentId), decisionId)
+      const created = await createDecisionTable(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Tabelle angelegt ✓'
       const { names } = namesFor(decisionId)
@@ -301,7 +323,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Boxed Context an …'
     try {
-      const created = await createBoxedContext(await persistGraph(currentId), decisionId)
+      const created = await createBoxedContext(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Boxed Context angelegt ✓'
       openContext(created.modelId, decisionId)
@@ -323,7 +345,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Conditional an …'
     try {
-      const created = await createBoxedConditional(await persistGraph(currentId), decisionId)
+      const created = await createBoxedConditional(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Conditional angelegt ✓'
       openConditional(created.modelId, decisionId)
@@ -345,7 +367,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Liste an …'
     try {
-      const created = await createBoxedList(await persistGraph(currentId), decisionId)
+      const created = await createBoxedList(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Liste angelegt ✓'
       openList(created.modelId, decisionId)
@@ -367,7 +389,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Relation an …'
     try {
-      const created = await createBoxedRelation(await persistGraph(currentId), decisionId)
+      const created = await createBoxedRelation(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Relation angelegt ✓'
       openRelation(created.modelId, decisionId)
@@ -389,7 +411,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Filter an …'
     try {
-      const created = await createBoxedFilter(await persistGraph(currentId), decisionId)
+      const created = await createBoxedFilter(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Filter angelegt ✓'
       openFilter(created.modelId, decisionId)
@@ -411,7 +433,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Iteration an …'
     try {
-      const created = await createBoxedIterator(await persistGraph(currentId), decisionId)
+      const created = await createBoxedIterator(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Iteration angelegt ✓'
       openIterator(created.modelId, decisionId)
@@ -427,7 +449,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const openBKM = async (bkmId: string): Promise<void> => {
     if (!currentId) return
     try {
-      const savedId = await persistGraph(currentId)
+      const savedId = await persistGraph(currentId, true)
       if (savedId !== currentId) await reselect(savedId)
       void openBKMOverlay(savedId, bkmId, (newId) => void reselect(newId), typeOptions)
     } catch (e) {
@@ -448,7 +470,7 @@ async function boot(root: HTMLElement): Promise<void> {
     if (!currentId) return
     status.textContent = 'legt Invocation an …'
     try {
-      const created = await createBoxedInvocation(await persistGraph(currentId), decisionId)
+      const created = await createBoxedInvocation(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
       status.textContent = 'Invocation angelegt ✓'
       openInvocation(created.modelId, decisionId)
@@ -486,13 +508,26 @@ async function boot(root: HTMLElement): Promise<void> {
       syncButtons()
     }
   })
+
+  // The juice toggle turns the evaluation animation (dataflow, particles, combo) on
+  // or off. It starts off under reduced-motion, so the button reflects that.
+  const juiceBtn = root.querySelector<HTMLButtonElement>('#juice')
+  const syncJuiceBtn = (): void => {
+    juiceBtn?.classList.toggle('juice-off', !juice)
+    if (juiceBtn) juiceBtn.textContent = juice ? '⚡ Effekte' : '⚡ Effekte aus'
+  }
+  syncJuiceBtn()
+  juiceBtn?.addEventListener('click', () => {
+    juice = !juice
+    syncJuiceBtn()
+  })
   // createLiteral persists pending structural edits (so the decision exists), then
   // opens an empty literal editor for it; saving creates the expression.
   const createLiteral = async (decisionId: string): Promise<void> => {
     if (!currentId) return
     status.textContent = 'legt Ausdruck an …'
     try {
-      const baseId = await persistGraph(currentId)
+      const baseId = await persistGraph(currentId, true)
       await reselect(baseId)
       status.textContent = ''
       openLiteral(baseId, decisionId, true)
@@ -1069,9 +1104,13 @@ async function boot(root: HTMLElement): Promise<void> {
 
   // applyRun makes a run the active one and overlays its values + hit rules on
   // the diagram nodes (the green result pills).
-  const applyRun = (run: EvalRun): void => {
+  const applyRun = (run: EvalRun, opts?: { animate?: boolean; combo?: number }): void => {
     activeRun = run
     handle?.showResults(run.result.values, hitRulesOf(run.result))
+    // Light up the requirement edges with the values that travelled them, so the
+    // dependency dataflow is visible on the diagram itself — not just in the panel.
+    // A fresh evaluation animates the wave (opts); history navigation shows it calm.
+    handle?.illuminate(run.inputs, run.result.values, opts)
   }
 
   // The Operate cockpit: a keyboard-navigable run history above the diagram and
@@ -1085,6 +1124,9 @@ async function boot(root: HTMLElement): Promise<void> {
     getActive: () => activeRun,
     onActivate: (run) => {
       applyRun(run)
+      // Reflect the picked run's inputs in the on-node pills, so the diagram's
+      // editable inputs match the run whose results it is showing.
+      inputPills?.setValues(run.inputs)
       operate.render()
     },
   })
@@ -1148,8 +1190,41 @@ async function boot(root: HTMLElement): Promise<void> {
   // (newest first), highlight it, and refresh the Operate cockpit.
   const recordRun = (run: EvalRun): void => {
     runs.unshift(run)
-    applyRun(run)
+    // A run within the streak window bumps the combo; a longer pause resets it.
+    const now = performance.now()
+    runCombo = now - lastRunAt < 2600 ? runCombo + 1 : 1
+    lastRunAt = now
+    applyRun(run, { animate: juice, combo: runCombo })
     if (mode === 'operate') operate.render()
+  }
+
+  // runFromPills turns the current on-node input values into a live whole-graph
+  // evaluation, debounced so typing doesn't fire a request per keystroke. A half-
+  // typed invalid value just fails quietly; the next edit retries. Each successful
+  // run flows through recordRun, so the result pills and edge illumination update.
+  const runFromPills = (): void => {
+    if (!currentId || !inputPills) return
+    const inputs = inputPills.collect()
+    const id = currentId
+    window.clearTimeout(pillEvalTimer)
+    pillEvalTimer = window.setTimeout(() => {
+      void evaluateGraph(id, inputs, true, true)
+        .then((res) => recordRun({ inputs, result: res }))
+        .catch(() => {})
+    }, 400)
+  }
+
+  // mountInputPills builds an editable pill for each leaf input, mounted on its
+  // inputData node, so the whole graph's inputs can be filled on the diagram
+  // itself (Operate) instead of only in the side panel. Prefills from the active
+  // run. Without a loaded schema/handle it simply shows no pills.
+  const mountInputPills = (): void => {
+    if (!handle || !currentModel) return
+    const nodeIdByName = new Map<string, string>()
+    for (const n of handle.graph().nodes) if (n.type === 'inputData' && n.name) nodeIdByName.set(n.name, n.id)
+    inputPills = buildInputPills(currentModel, nodeIdByName, runFromPills)
+    if (activeRun) inputPills.setValues(activeRun.inputs)
+    handle.showInputPills(inputPills.items)
   }
 
   // openTable opens a decision's table — editable in Design, read-only with the
@@ -1185,10 +1260,16 @@ async function boot(root: HTMLElement): Promise<void> {
     if (m === 'operate') {
       operate.render()
       clioReplay.render()
+      // Fill the leaf inputs directly on the diagram (Operate); each edit re-runs
+      // the whole graph and re-illuminates it.
+      mountInputPills()
       // Focus the history so the run list is immediately keyboard-navigable.
       if (runs.length) operate.focusHistory()
-    } else if (m === 'import') {
-      importView.render()
+    } else {
+      // The input pills belong to Operate; leaving it takes them off the diagram.
+      handle?.clearInputPills()
+      inputPills = null
+      if (m === 'import') importView.render()
     }
   }
   modeDesignBtn.addEventListener('click', () => setMode('design'))
@@ -1298,7 +1379,10 @@ async function boot(root: HTMLElement): Promise<void> {
       } catch {
         evalHost.textContent = ''
       }
-      if (mode === 'operate') operate.render()
+      if (mode === 'operate') {
+        operate.render()
+        mountInputPills()
+      }
     } catch (e) {
       status.textContent = (e as Error).message
     }

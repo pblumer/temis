@@ -19,6 +19,7 @@ type evaluator struct {
 	decisions map[string]any  // evaluated decisions, by name, for the Result
 	boundary  map[string]bool // decision names the evaluator must not compute (service inputs)
 	limits    feel.Limits     // resource bounds enforced for this evaluation (WP-34)
+	state     *feel.EvalState // shared execution state: one per evaluation, not per decision
 	// rec, when set, collects a decision trace shared across the whole graph, so
 	// every decision table the evaluation touches records into one explanation
 	// (WP-51). nil disables tracing.
@@ -32,6 +33,7 @@ func newEvaluator(base map[string]value.Value, limits feel.Limits) *evaluator {
 		visiting:  make(map[*CompiledDecision]bool),
 		decisions: map[string]any{},
 		limits:    limits,
+		state:     feel.NewEvalState(limits),
 	}
 }
 
@@ -73,7 +75,7 @@ func (e *evaluator) eval(d *CompiledDecision) (value.Value, error) {
 		vals[req.name] = rv
 	}
 
-	scope := d.env.NewScopeWithLimits(vals, e.limits)
+	scope := d.env.NewScopeShared(vals, e.state)
 	if e.rec != nil {
 		scope = scope.WithTrace(e.rec)
 	}
@@ -81,6 +83,10 @@ func (e *evaluator) eval(d *CompiledDecision) (value.Value, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dmn: evaluate decision %q: %w", d.name, err)
 	}
+	// Coerce the result to the decision's declared output type (FEEL singleton-list
+	// coercion, then conformance-or-null); downstream decisions see the coerced
+	// value bound to this decision's variable.
+	out = coerceToType(out, d.outType)
 	e.visiting[d] = false
 	e.cache[d] = out
 	if d.name != "" {

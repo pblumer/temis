@@ -60,6 +60,253 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **DMN-TCK-Konformität: über 98 % (WP-41.28, 98,0 % → 98,1 %).**
+  Vier weitere Fixes: ein `some`/`every` mit echt nicht-boolescher `satisfies`-Klausel ergibt null
+  (dieselbe Regel wie beim Boxed-Filter, jetzt auch für Quantoren); `list replace(match: …)` bindet
+  die benannte Match-Funktions-Form; `string join` ist auf seine DMN-Formen mit 1–2 Argumenten
+  beschränkt (das nicht-standardisierte Prefix/Suffix entfällt, ein 3. Argument ergibt null); und
+  ein Kontext-Literal mit doppelten Schlüsseln (`{foo: 1, foo: 2}`) wertet zu null aus statt
+  Last-Wins. +4 Cases (1153, 1155, 1140, 0057); Floor 98,1 %.
+- **DMN-TCK-Konformität: Weg zu 98 % (WP-41.27, 97,5 % → 98,0 %). 🎯**
+  Ein gemischtes Bündel über die 98-%-Marke: die Temporal-Konstruktoren binden ihre benannten
+  Komponentenformen (`date(year:…, month:…, day:…)`, `time(hour:…, minute:…, second:…, offset:…)`,
+  `date and time(date:…, time:…)`) über eine alternative Signatur (`Builtin.AltParams`) neben `from:`;
+  Dauer-Literale erlauben fraktionale Sekunden (`duration("PT0.5S")`, `PT0.S`); Dauer × Zahl trunkiert
+  Richtung Null (`-2.5 * @"P1Y11M"` → `-P4Y9M`); `xsd:string`-Erwartungswerte werden nicht mehr
+  getrimmt (`upper case("xyZ ")` → `"XYZ "`); ein ungültiges `@`-Literal (`@"foo"`) wertet zu null aus
+  statt Compile-Fehler; `context merge(contexts: …)` und `context put(… , keys: […], …)` binden benannt;
+  und ein Boxed-Filter mit echt nicht-boolescher Bedingung ergibt null. +14 Cases
+  (1115–1117, 1120, 0100, 1103–1109, 0093, 1146/1147, 1151); Floor 98,0 %.
+- **DMN-TCK-Konformität: Named-Arg-Arity, decimal-Skala & Conditional-Semantik (WP-41.26, 97,4 % → 97,5 %).**
+  Ein benannter Funktionsaufruf darf optionale Parameter weglassen (sie defaulten auf null) statt an der
+  Arity zu scheitern (`is(value1: x)` → false); `decimal`/`floor`/`ceiling` floorn eine fraktionale Skala
+  (`decimal(1/3, 2.5)` → 0,33); und eine echte nicht-boolesche `if`-Bedingung ergibt null (false/null
+  nehmen weiter den Else-Zweig). +4 Cases (0103, 1100, 1150); Floor 97,4 %.
+- **DMN-TCK-Konformität: Unary-Test-Membership & Punkt-Namen (WP-41.25, 97,3 % → 97,4 %).**
+  Ein Decision-Table-Unary-Test, dessen Wert eine Liste ist, ist jetzt ein Membership-Test (`? in e`)
+  statt Gleichheit (ein Intervall testet Containment, ein Skalar reduziert auf Gleichheit); und FEEL-Namen
+  dürfen einen Punkt enthalten (`Person.Gender`), sodass BKMs mit qualifizierten Formal-Parametern
+  kompilieren — normaler Pfad-Zugriff `a.b` navigiert unverändert. +4 Cases (0039, 0037); Floor 97,3 %.
+- **DMN-TCK-Konformität: Aggregat-/Builtin-Randfälle (WP-41.24, 96,9 % → 97,3 %).**
+  Ein Bündel Funktions-Randfälle: die variadischen Aggregate (`all`/`any`/`sum`/`count`/`mean`/`min`/
+  `max`/`median`/`stddev`/`mode`/`product`) akzeptieren jetzt das Einzel-Kollektions-Argument benannt
+  (`fn(list: […])`); `mode(null)` ist `null`; `substring` akzeptiert fraktionale Position/Länge (gefloort);
+  und ein bloßer Built-in-Name (`abs`, `sqrt`) hebt sich zu einem First-Class-Funktionswert, der an eine
+  BKM oder Higher-Order-Funktion übergeben werden kann. +11 Cases; der Ratchet-Floor steigt auf 97,2 %.
+- **DMN-TCK-Konformität: `instance of` mit generischen & benutzerdefinierten Typen (WP-41.23, 96,5 % → 96,9 %).**
+  `instance of` prüft jetzt das volle Typsystem: parametrisierte Generics (`list<T>`, `context<a: T, …>`,
+  verschachtelt und leer) werden geparst und strukturell verglichen, benutzerdefinierte Item-Typen
+  (`t255`, `t_context_013`, …) werden aufgelöst (die Typen fließen über ein neues `types`-Feld an der
+  internen `feel.Env`), und `null instance of X` ist für jeden Typ `false`. +15 Cases (0070 vollständig
+  127→142); der Ratchet-Floor steigt auf 96,9 %.
+- **DMN-TCK-Konformität: Zahl-Vergleich mit der TCK-Präzision (WP-41.22, 96,1 % → 96,5 %).**
+  Die Engine rechnet spec-konform in decimal128 (34 Stellen, ADR-0007) und liefert für transzendente/
+  irrationale Ergebnisse (`exp`/`log`/`sqrt`/`**`/Statistik/Zinseszins) mehr Stellen als die auf endliche
+  Präzision gerundeten TCK-Erwartungswerte. Der TCK-Runner vergleicht zwei Zahlen jetzt, indem er das
+  Ist-Ergebnis auf die Dezimalstellen-Zahl des Erwartungswerts rundet — additiv (exakte Arithmetik und
+  ganzzahlige Erwartungen bleiben streng, echte Abweichungen scheitern weiterhin). Reine Test-Harness-
+  Änderung, die Engine bleibt unberührt. +16 Cases; der Ratchet-Floor steigt auf 96,5 %. Wenige
+  Zinseszins-Fälle bleiben offen, weil der TCK-Referenzwert selbst in float64-Genauigkeit erzeugt wurde
+  (dokumentiert in `docs/tck-exceptions.md`).
+- **DMN-TCK-Konformität: Typ-Koerzierung an Aufruf-Grenzen (WP-41.21, 95,8 % → 96,1 %).**
+  Die FEEL-Item-Definition-Koerzierung (DMN §10.3.2.9.4) greift jetzt auch an Funktions- und
+  Service-Aufruf-Grenzen, nicht nur an Decision-Outputs: ein Argument, das nicht zum deklarierten
+  Parametertyp passt (auch nach Singleton-Unwrap), macht den ganzen Aufruf `null` („Funktion nicht
+  invoziert"); der Rückgabewert wird auf den deklarierten Typ koerziert. Gilt für BKMs und für
+  Decision-Service-Aufrufe (neue `ParamTypes`/`ResultType` an der internen `feel.Func`); zusätzlich
+  koerziert `Service.Evaluate` seine Single-Output-Ausgabe auf den Service-Typ. Die Koerzierungs-Logik
+  wohnt jetzt geteilt in `internal/feel`. +10 Cases (0082 23→31, 0085 16→18); der Ratchet-Floor des
+  CI-Gates steigt auf 96,0 %.
+- **DMN-TCK-Konformität: Decision Services aus FEEL aufrufbar (WP-41.20, 95,6 % → 95,8 %).**
+  Ein Decision Service kann jetzt aus dem FEEL-Ausdruck einer Decision heraus per Namen aufgerufen
+  werden (`Svc("bar")`, `Svc(inputData_x: …, decision_y: …)`) — DMN §10.4. Die Parameter sind die
+  Input-Data gefolgt von den Input-Decisions des Service (in Deklarationsreihenfolge, positional oder
+  benannt); eine einzelne Output-Decision liefert deren Wert, mehrere einen Kontext. Umgesetzt über ein
+  neues optionales `Native`-Feld an der internen `feel.Func`. +5 Cases (0085); der Ratchet-Floor des
+  CI-Gates steigt auf 95,7 %.
+- **DMN-TCK-Konformität: Rundungs-Skala, `**`-Präzedenz & Time-Rendering (WP-41.19, 95,1 % → 95,6 %).**
+  Numerische/temporale Randfälle: (1) die Rundungsfunktionen (`round …`, `decimal`, `floor`,
+  `ceiling`) verlangen eine Skala in `[-6111, 6176]`, außerhalb → `null`, und eine große gültige Skala
+  lässt den Wert unverändert statt zu überlaufen; (2) `**` ist links-assoziativ und bindet loser als
+  unäres Minus (`3 ** 4 ** 5` = `(3**4)**5`, `-5 ** 2` = 25, beide per TCK); (3) Zeit-Offsets mit
+  Sekunden-Anteil rendern als `±HH:MM:SS`, und `time(date)` ergibt `00:00:00Z`. +19 Cases
+  (1141–1144 je +3, 0100 +2, 1116 +3); der Ratchet-Floor des CI-Gates steigt auf 95,6 %.
+- **DMN-TCK-Konformität: 95 % erreicht — number()-Validierung, range()-Konstruktoren & Regex (WP-41.18, 94,5 % → 95,1 %).**
+  Die Etappe, die das WP-41-Endziel (≥ 95 % der Cases) knackt. Vier Fixes: (1) `number()` validiert
+  seine Separatoren (grouping/decimal müssen gültig, verschieden und Strings sein, sonst `null`);
+  (2) `range()` parst Konstruktor-Endpunkte wie `date("…")`/`duration("…")` gleichwertig zu `@"…"`;
+  (3) `replace()` bildet FEEL-`$N`-Gruppenreferenzen auf Gos `${N}` ab und setzt das `x`-Flag durch
+  Whitespace-Strippen um (RE2 kennt `(?x)` nicht); (4) unbekannte String-Escapes (`\d`, `\.`, `\s`)
+  werden verbatim durchgereicht, sodass Regex-Muster als FEEL-String-Literale kompilieren. +21 Cases
+  (1111 +9, 0058 +4, 1156 +4, 1109 +3); der Ratchet-Floor des CI-Gates steigt auf 95,0 %.
+- **DMN-TCK-Konformität: Invocation-Null, Zahl-Wort-Namen & Default-Output (WP-41.17, 93,6 % → 94,5 %).**
+  Drei kaskadierende Fixes: (1) der Aufruf eines unbekannten Namens oder eines Nicht-Funktions-Werts
+  (`123()`, `"x"()`, `true()`) ergibt `null` statt die Decision nicht-ausführbar zu machen
+  (Total-Funktions-Semantik); (2) Name-Referenzen assemblieren über Zahl-Wörter (`Extra days case 1`)
+  und `-`+Zahl (`K-MatchesFunc-1`) hinweg, wenn das Orakel den Namen kennt; (3) Entscheidungstabellen
+  werten `defaultOutputEntry` aus — trifft keine Regel, liefert die Tabelle den Default-Output statt
+  `null` (Single-Hit-Policies und Collect-mit-Aggregation). +30 Cases (1131 8→0, 0020 0→7, 0034 u. a.);
+  der Ratchet-Floor des CI-Gates steigt auf 94,4 %.
+- **DMN-TCK-Konformität: `in`/Range mit null-Endpunkten (WP-41.16, 93,4 % → 93,6 %).**
+  Der `in`-Operator ist eine 3-wertige Disjunktion: ein null-Testwert gegen eine Range oder ein
+  expliziter null-Endpunkt ergibt `null` statt `false` (`null in [1..10]`, `5 in [null..10]` → `null`);
+  ein weggelassener (unbounded) Endpunkt bleibt unberührt. Range-Gleichheit unterscheidet jetzt
+  einen unbounded von einem expliziten null-Endpunkt (`(< 10)` ≠ `(null..10)`). +9 Cases (0072 5→0,
+  0068 4→0); der Ratchet-Floor des CI-Gates steigt auf 93,6 %.
+- **DMN-TCK-Konformität: Bindestrich-Namen & fraktionale `time`-Sekunden (WP-41.15, 92,1 % → 93,4 %).**
+  FEEL-Namen dürfen einen Bindestrich enthalten (`Date-Time`, `Pre-bureauRiskCategory`): Der
+  Parser assembliert eine Referenz über den `-` hinweg zu einem Namen, sobald das Namens-Orakel
+  ihn kennt — dafür fließen die Umgebungs-Variablennamen einer Decision ins Orakel ein. Ein bloßes
+  `a - b` ohne gleichnamige Variable bleibt Subtraktion. Zusätzlich akzeptiert die
+  `time(h, m, s, offset?)`-Konstruktorform eine fraktionale Sekunde (`time(12,59,1.3,-PT1H)` →
+  `12:59:01.3-01:00`). +43 Cases (0007 15→0, 0004-lending 7→0, 0087 7→0 u. a.); der Ratchet-Floor
+  des CI-Gates steigt auf 93,3 %.
+- **DMN-TCK-Konformität: Kontext-Eintrags-Referenzen & string join (WP-41.14, 92,0 % → 92,1 %).**
+  Ein Kontext-Eintrag kann jetzt die vor ihm deklarierten Einträge referenzieren
+  (`{a: 1+2, b: a+3}` → `{a:3, b:6}`); und `string join(null)` ergibt `null` statt `""`.
+  +4 Cases; der Ratchet-Floor des CI-Gates steigt auf 92,1 %.
+- **DMN-TCK-Konformität: FEEL-Kommentare (WP-41.13, 91,9 % → 92,0 %).** Der Lexer
+  überspringt jetzt `// …`-Zeilen- und `/* … */`-Block-Kommentare. +3 Cases (0073: 3→0);
+  der Ratchet-Floor des CI-Gates steigt auf 92,0 %.
+- **DMN-TCK-Konformität: `for`/Quantifier über Ranges (WP-41.12, 91,6 % → 91,9 %).**
+  `for i in a..b` (und `some`/`every`) enumeriert jetzt neben Zahlen-Ranges auch
+  Date-Ranges tageweise (auf-/absteigend); Ranges anderer Typen (String, date-and-time,
+  time, Dauer, unbounded) sind nicht iterierbar → das Ergebnis ist `null` statt einer
+  leeren Liste. +10 Cases (0084: 13→3, 0016: 5→2); Ratchet-Floor auf 91,9 %.
+- **DMN-TCK-Konformität: Unicode-String-Escapes (WP-41.11, 91,4 % → 91,6 %).** Der
+  String-Lexer dekodiert jetzt `\U`-Escapes (6-Hex-Codepoint) und kombiniert UTF-16-
+  Surrogatpaare (`\uD83D\uDCA9` → ein Codepoint), sodass `string length` Codepoints
+  korrekt zählt. +7 Cases (0083: 9→2); der Ratchet-Floor des CI-Gates steigt auf 91,6 %.
+- **DMN-TCK-Konformität: `is()` auf Temporalen (WP-41.10, 91,2 % → 91,4 %).** `is(v1, v2)`
+  vergleicht für `date`/`time`/`date and time` jetzt die Repräsentation statt des Instants:
+  `is(@"23:00:50", @"23:00:50Z")` → false (gleicher Instant, andere Darstellung). +9 Cases
+  (0103: 11→2); der Ratchet-Floor des CI-Gates steigt auf 91,4 %.
+- **DMN-TCK-Konformität: `range()`-Validierung (WP-41.9, 90,8 % → 91,2 %).** Die
+  `range(from)`-Builtin weist malformte Range-Strings jetzt als `null` ab: unbounded
+  Endpunkt mit geschlossener Klammer (`[1..]`), Typ-Mismatch (`[1.."b"]`, date/dateTime)
+  und umgekehrte Grenzen (`[3..1]`, `["z".."a"]`). +12 Cases (1156: 16→4); der
+  Ratchet-Floor des CI-Gates steigt auf 91,0 %.
+- **DMN-TCK-Konformität: Range-Literale aus Vergleichen (WP-41.8, 90,6 % → 90,8 %).**
+  `(< v)`, `(<= v)`, `(> v)`, `(>= v)`, `(= v)` parsen jetzt als halb-/geschlossene
+  Range-Literale (`(<10)` → `(..10)`; `(>=10)` → `[10..)`; `(=10)` → `[10..10]`), inkl.
+  unbounded Grenzen und Range-Membership (`5 in (>3)`). +7 Cases (0074 komplett grün);
+  der Ratchet-Floor des CI-Gates steigt auf 90,8 %.
+- **DMN-TCK-Konformität: Cross-Typ-Gleichheit → null (WP-41.7, 90,3 % → 90,6 %).** `=` und
+  `!=` zwischen zwei nicht-null-Werten unterschiedlichen Typs ergeben jetzt `null` statt
+  `false` (`100 = "100"`, `[] = 0`, `{} = []` → null; DMN §10.3.2.7). Chirurgisch nur an den
+  `=`/`!=`-Operatoren; das interne Gleichheits-Prädikat für Decision-Tables/`in`/`contains`
+  bleibt boolesch. +12 Cases; der Ratchet-Floor des CI-Gates steigt auf 90,6 %.
+- **DMN-TCK-Konformität: `instance of` Funktionstypen (WP-41.6, 90,0 % → 90,3 %).** Der
+  Parser akzeptiert jetzt Funktionstyp-Ausdrücke `function<…> -> ReturnType` in
+  `instance of` (`function` ist ein Keyword); Signatur wird verworfen, gematcht wird die
+  Funktions-Art. +10 Cases; der Ratchet-Floor des CI-Gates steigt auf 90,3 %.
+- **DMN-TCK-Konformität: Collection-Funktionen — 90 % erreicht (WP-41.5, 89,6 % → 90,0 %).**
+  Drei Builtins vervollständigt (+16 Cases): `context put` mit Pfad-Liste für
+  verschachtelte Updates (`context put({x:1,y:{a:0}}, ["y","a"], 2)` → `{x:1,y:{a:2}}`);
+  `context(entries)` akzeptiert einen einzelnen Entry unverpackt und liefert bei
+  Duplikat-Keys `null`; `list replace` mit Singleton-Koerzierung, Positions-Truncation
+  und null bei Match-Funktion falscher Arity/Nicht-Boolean-Ergebnis. Damit ist die
+  **90-%-Marke** der offiziellen DMN-TCK-Konformität erreicht; der Ratchet-Floor des
+  CI-Gates steigt auf 90,0 %.
+- **DMN-TCK-Konformität: `in`-Operator & `abs` (WP-41.4, 89,0 % → 89,6 %).** `X in (= Y)`
+  und `X in (!= Y)` — ein parenthesierter Operator-Unary-Test ohne Komma — parsen jetzt
+  (`10 in (=10)` → true); und `abs` liefert auch für beide Dauer-Typen den Betrag. +20
+  Cases; der Ratchet-Floor des CI-Gates steigt auf 89,5 %.
+- **DMN-TCK-Konformität: Property-Zugriff auf Temporale & Ranges (WP-41.3, 88,7 % → 89,0 %).**
+  FEEL-Member-Namen mit Leerzeichen (`x.time offset`, `[1..10].start included`) parsen
+  jetzt — der Parser assembliert den ganzen Namens-Lauf nach `.`. `value.Member`
+  exponiert zudem Range-Properties (`start`, `end`, `start included`, `end included`).
+  +9 Cases; der Ratchet-Floor des CI-Gates steigt auf 88,9 %.
+- **DMN-TCK-Konformität: Runner dekodiert item-verpackte Listen (WP-41.2, 85,6 % → 88,7 %).**
+  Der TCK-Runner las erwartete Listen bisher nur als `<list><value>…`; das offizielle
+  Korpus nutzt breit auch `<list><item><value>…` (inkl. verschachtelter Listen und
+  Kontext-Items), was als leere Liste fehlgelesen wurde und viele korrekte Engine-
+  Ergebnisse fälschlich als Fehlschlag zählte. Reiner Harness-Fix (keine Engine-
+  Änderung): +108 Cases; der Ratchet-Floor des CI-Gates steigt auf 88,5 %.
+- **DMN-TCK-Konformität: FEEL-Invocation-Fehlersemantik (WP-41.1, 82,1 % → 85,6 %).**
+  Ein syntaktisch gültiger Funktionsaufruf mit falscher Argument-Anzahl oder
+  unbekanntem·gemischtem benanntem Parameter ergibt jetzt zur Laufzeit `null` und
+  lässt die Decision ausführbar (FEEL-Total-Funktions-Semantik), statt sie als „nicht
+  ausführbar" abzubrechen (`round up()`, `modulo(4)`, `floor(n:1.5, scal:1)` → null).
+  Echte Fehler (unbekannte Funktion, Nicht-Funktions-Callee, Syntaxfehler) bleiben
+  unverändert. Der mit Abstand größte Konformitäts-Hebel: **+123 Cases** quer über
+  fast alle Builtin-Suiten; der Ratchet-Floor des CI-Gates steigt auf 85,5 %.
+- **DMN-TCK-Konformität: Typ-Koerzierung am Decision-Output (WP-41, 81,7 % → 82,1 %).**
+  Das Ergebnis einer Decision wird jetzt an den deklarierten `typeRef` ihrer Variable
+  angepasst (DMN §10.3.2.9.4), bevor es zurückgegeben und nachgelagerten Decisions
+  zugewiesen wird (+16 Cases, Suite `0082` von 28 auf 13 Fails): eine Singleton-Liste
+  wird zum Skalar entpackt (`["foo"]` bei Ziel `string` → `"foo"`), und ein Wert, der
+  nicht zum deklarierten Typ passt, wird `null`. Listen und Kontexte werden element-
+  bzw. feldweise geprüft; `null` ist Mitglied jedes Typs, ein fehlender `typeRef`
+  (`Any`) erzwingt nichts. Der Ratchet-Floor des CI-Gates steigt auf 82,0 %.
+- **DMN-TCK-Konformität: strikte Temporal-Lexik (WP-41, 81,2 % → 81,7 %).** Die
+  FEEL-Konstruktoren (`date`/`time`/`date and time`) und `@"…"`-Literale weisen
+  lexikalisch malformte Datums-/Zeit-Strings jetzt korrekt als `null` ab, statt sie
+  tolerant zu akzeptieren (+15 Cases über die Suiten `1115`/`1116`/`1117`): Jahre mit
+  weniger als 4 oder mehr als 9 Ziffern, 5+-stellige Jahre mit führender Null,
+  führendes `+`, einstellige Stunden (`T7:00:00`) und Zonen-Offsets jenseits ±18:00
+  (`+19:00`). Reale Zonen (≤ ±14:00) bleiben gültig. Der Ratchet-Floor des CI-Gates
+  steigt auf 81,5 %.
+- **DMN-TCK-Konformität: `date and time`-Konstruktor & Rendering (WP-41, 80,3 % → 81,2 %).**
+  Vier FEEL-Engine-Fixes am offiziellen DMN-TCK (Level 2+3, +32 Cases, `1117` von 35
+  auf 10 Fails): der Zwei-Argument-Konstruktor `date and time(date, time)` akzeptiert
+  als erstes Argument nun auch ein `date and time` (dessen Datums-Teil); ein
+  date-only-String promoviert zum Tagesbeginn (`date and time("2012-12-24")` →
+  `2012-12-24T00:00:00`); Sekundenbruchteile überleben Parse und Rendering
+  (`…:30.987@Europe/Paris`); und Jahre mit 1–9 Ziffern (bis `999999999`) parsen jetzt.
+  Der Ratchet-Floor des CI-Gates steigt auf 81,0 %; Details in `docs/tck-exceptions.md`.
+- **DMN-TCK-Konformität: Arithmetik & Temporal (WP-41, 77,4 % → 80,3 %).** Fünf
+  FEEL-Engine-Fixes, gemessen am offiziellen DMN-TCK (Level 2+3, +103 Cases):
+  negative (BCE-/astronomische) Jahre in Datums-/Zeit-Literalen inkl. IANA-Zonen
+  (`@"-2021-01-01T10:10:10@Australia/Melbourne"`); `date ± duration` bleibt ein
+  `date` (Zeit-Anteil abgeschnitten); gemischte `date`/`date and time`-Subtraktion
+  ergibt eine Dauer, mit korrektem `null` bei unterschiedlicher Zonen-Kennzeichnung;
+  ISO-`24:00:00` (Ende-des-Tages-Mitternacht); und `string + string`-Konkatenation.
+  Der Ratchet-Floor des CI-Gates steigt entsprechend auf 80,0 %. `0100-arithmetic`
+  fällt von 96 auf 5 Fails; Details in `docs/tck-exceptions.md`.
+- **Modeler: Der Graph pulsiert beim Auswerten (Stage 3 — „Juice").** Eine frische
+  Auswertung spielt die Illumination jetzt als tiefen-gestaffelte Welle: Die Leitungen
+  streamen (fließende Striche), jede Decision pulsiert mit einem Partikel-Burst, sobald ihre
+  Eingaben ankommen — die finale Decision am kräftigsten, in Magenta —, und aufeinanderfolgende
+  schnelle Läufe bauen einen **Combo**-Streak auf, den der Endknoten feiert. Eine transiente
+  Partikelschicht liegt über dem Diagramm (Screen-Space-Bursts an der Live-Position des Knotens,
+  ohne Pan/Zoom-Tracking); Stream und Puls sind reines SVG/CSS und bleiben unter Pan und Zoom
+  ausgerichtet. Alles ist per **⚡-Toolbar-Toggle** abschaltbar und unter `prefers-reduced-motion`
+  von vornherein aus — die statische Illumination (History-Navigation, ruhig) bleibt davon
+  unberührt. Reines Frontend, kein neuer Endpunkt. Dritter Schritt, den „Auswerten"-Bereich ins
+  Diagramm aufzulösen.
+- **Modeler: Eingaben direkt am Knoten (Operate) — der „Auswerten"-Bereich wandert ins
+  Diagramm.** In Operate trägt jeder Blatt-Eingabeknoten jetzt eine editierbare Pille direkt am
+  inputData-Knoten: eine Auswahl-Liste bei geschlossener Enumeration, sonst ein JSON-coercedes
+  Textfeld. Jede Änderung wertet (entprellt) den ganzen Graphen live aus und lässt Ergebnisse
+  und Kanten-Illumination sofort auf dem Diagramm nachziehen — man füllt die Eingaben am
+  Graphen selbst statt nur im Seitenpanel. Das Blättern durch die Lauf-Historie spiegelt die
+  Eingaben des aktiven Laufs in die Pillen. Panel und Pillen teilen sich eine Widget-Fabrik
+  (`inputform.ts`, aus dem Panel herausgelöst), sodass beide Oberflächen dieselben Typ-Regeln,
+  Enum-Dropdowns und JSON-Coercion verwenden. Reines Frontend über die bestehende
+  Whole-Graph-Auswertung; zweiter Schritt, den „Auswerten"-Bereich ins Diagramm aufzulösen.
+- **Modeler: Live-Graph — der Datenfluss leuchtet auf dem Diagramm auf.** Nach einer
+  Auswertung illuminieren sich jetzt die Anforderungskanten direkt im Diagramm: jede Kante,
+  die einen Wert trägt, färbt sich im Operate-Blau und lässt den Wert, der durch sie floss,
+  an ihrem Mittelpunkt schweben — die Abhängigkeit zwischen Eingaben und Decisions wird auf
+  dem Graphen selbst sichtbar, nicht nur im „Auswerten"-Panel. Die Kanten leuchten gestaffelt
+  nach Graphentiefe auf (Eingaben zuerst, finale Decision zuletzt), sodass die Entscheidung
+  sichtbar von den Blättern nach oben propagiert. Reines Frontend über die bestehende
+  Whole-Graph-Auswertung; spiegelt das Illuminate-Muster des Flow Studios (WP-98) in den
+  DMN-Modeler. Erster Schritt, den „Auswerten"-Bereich ins Diagramm aufzulösen.
+- **Offizielle DMN-TCK-Konformität — Messung & Gate (WP-41, in Arbeit):** Temis wird jetzt
+  gegen das offizielle DMN Technology Compatibility Kit (github.com/dmn-tck/tck) an einem
+  gepinnten Commit geprüft. Neu: CI-Lane `tck` + `make tck-conformance` +
+  `internal/tck.TestOfficialTCKConformance` mit **Ratchet-Floor** (skippt offline ohne
+  `TCK_CORPUS`). Der Runner bewertet jetzt **pro Case** die Ziel-Decision statt die ganze
+  Suite bei einem Compile-Fehler abzubrechen. Erste Engine-Fixes: Builtins `is`,
+  `list replace` (Positions- und Match-Funktions-Form), `number(from, grouping, decimal)`
+  der **vollständige `in`-Operator** (operator-präfixierte Unary-Tests, Komma-Test-Listen,
+  Listen-Mitgliedschaft inkl. Range-Elementen — TCK 0072, 224→21 Fails) sowie das
+  **`range(from)`-Builtin** (Range-String-Parsing inkl. unbeschränkter Enden und Temporal-
+  Endpunkte + `instance of range<T>`).
+  **Stand: 77,4 % der Level-2/3-Cases** (2704/3495); Kategorien & Ausnahmen in
+  `docs/tck-exceptions.md`, Ziel ≥ 95 %.
 - **Betriebs-Observability abgeschlossen (WP-113/114, ADR-0030):** opt-in Metriken-Export —
   `GET /debug/vars` (expvar) und `GET /metrics` (Prometheus-Textformat, stdlib-Encoder, kein
   Client) hinter dem `audit`-Scope, standardmäßig aus (`temisd -metrics`/`$TEMIS_METRICS`);
@@ -313,6 +560,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Changed
 
+- **Doppelklick wechselt durchgängig in den Inhalt, Umbenennen nur noch bewusst:**
+  Ein Doppelklick auf ein Element öffnet jetzt **immer** dessen Inhalt statt es zu
+  benennen — eine Decision ihre Logik (Tabelle/FEEL/Boxed-Ausdruck), ein Business
+  Knowledge Model seine gekapselte Funktion; eine noch undefinierte Decision (ohne
+  Logik) hat keinen Inhalt und öffnet nichts. **Umbenennen** läuft ausschließlich
+  über das **Bleistift-Symbol** im Context-Pad und die **F2-Taste** auf dem
+  selektierten Element. Damit kollidieren die beiden Gesten nie mehr (bisher
+  benannte der Doppelklick logiklose Decisions/BKMs inline). Betroffen sind
+  `web/src/dmn-label-editing.ts` (Doppelklick-Rename entfernt, F2-Handler ergänzt),
+  `web/src/canvas.ts` (Doppelklick auf BKM öffnet die Funktion) und der
+  Context-Pad-Hinweis. Headless (Chromium) verifiziert.
 - **Flow-Studio-Autolayout auf dagre (WP-97/98):** Die read-only Flow-Ansicht
   ordnet ihre Schritte jetzt mit **dagre** (`@dagrejs/dagre`) statt der
   handgeschriebenen Barycentre-Sweeps an. Ränge, Kreuzungs-Minimierung und

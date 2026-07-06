@@ -12,12 +12,13 @@ import (
 var nowFunc = time.Now
 
 func registerTemporal(r *Registry) {
-	// date(from) | date(year, month, day)
-	r.Register(fixed("date", []string{"from"}, 1, 3, dateFn))
-	// time(from) | time(hour, minute, second) | time(hour, minute, second, offset)
-	r.Register(fixed("time", []string{"from"}, 1, 4, timeFn))
-	// date and time(from) | date and time(date, time)
-	r.Register(fixed("date and time", []string{"from"}, 1, 2, dateAndTimeFn))
+	// date(from) | date(year, month, day). Both named forms bind: date(from:…)
+	// via the primary signature, date(year:…, month:…, day:…) via the alternate.
+	r.Register(overloaded("date", []string{"from"}, [][]string{{"year", "month", "day"}}, 1, 3, dateFn))
+	// time(from) | time(hour, minute, second) | time(hour, minute, second, offset).
+	r.Register(overloaded("time", []string{"from"}, [][]string{{"hour", "minute", "second", "offset"}}, 1, 4, timeFn))
+	// date and time(from) | date and time(date, time).
+	r.Register(overloaded("date and time", []string{"from"}, [][]string{{"date", "time"}}, 1, 2, dateAndTimeFn))
 	// duration(from): parse an ISO-8601 duration string (or pass a duration through).
 	r.Register(fixed("duration", []string{"from"}, 1, 1, durationFn))
 	// years and months duration(from, to): whole-month difference between dates.
@@ -78,6 +79,9 @@ func validYMD(y, m, d int) bool {
 	if m < 1 || m > 12 || d < 1 || d > 31 {
 		return false
 	}
+	if y < -999999999 || y > 999999999 { // FEEL year magnitude bound
+		return false
+	}
 	t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
 	return t.Year() == y && int(t.Month()) == m && t.Day() == d
 }
@@ -95,13 +99,19 @@ func timeFn(args []value.Value) (value.Value, error) {
 			return value.Null, nil
 		case value.DateTime:
 			return value.TimeOf(v), nil
+		case value.Date:
+			// A plain date has no time-of-day: time(date) is midnight at UTC (TCK 1116).
+			z := value.NewDaysTimeDuration(0)
+			return value.NewTime(0, 0, 0, 0, &z), nil
 		default:
 			return value.Null, nil
 		}
 	case 3, 4:
 		h, ok1 := asInt(args[0])
 		m, ok2 := asInt(args[1])
-		s, ok3 := asInt(args[2])
+		// The seconds component may be fractional (e.g. 1.3), yielding sub-second
+		// precision on the resulting time.
+		s, nanos, ok3 := asSecond(args[2])
 		if !ok1 || !ok2 || !ok3 || !validHMS(h, m, s) {
 			return value.Null, nil
 		}
@@ -113,7 +123,7 @@ func timeFn(args []value.Value) (value.Value, error) {
 			}
 			offset = &d
 		}
-		return value.NewTime(h, m, s, 0, offset), nil
+		return value.NewTime(h, m, s, nanos, offset), nil
 	default:
 		return value.Null, nil
 	}
@@ -129,16 +139,30 @@ func dateAndTimeFn(args []value.Value) (value.Value, error) {
 		switch v := args[0].(type) {
 		case value.DateTime:
 			return v, nil
+		case value.Date:
+			// a date becomes date-and-time at the start of its day
+			if dt, err := value.ParseDateTime(v.String() + "T00:00:00"); err == nil {
+				return dt, nil
+			}
+			return value.Null, nil
 		case value.Str:
 			if dt, err := value.ParseDateTime(string(v)); err == nil {
 				return dt, nil
+			}
+			// a date-only string yields date-and-time at the start of the day
+			if _, err := value.ParseDate(string(v)); err == nil {
+				if dt, err := value.ParseDateTime(string(v) + "T00:00:00"); err == nil {
+					return dt, nil
+				}
 			}
 			return value.Null, nil
 		default:
 			return value.Null, nil
 		}
 	case 2:
-		d, ok1 := args[0].(value.Date)
+		// The first argument may be a date or a date-and-time (its date part is
+		// taken); the second is the time to attach.
+		d, ok1 := dateValue(args[0])
 		t, ok2 := args[1].(value.Time)
 		if !ok1 || !ok2 {
 			return value.Null, nil

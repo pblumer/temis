@@ -205,23 +205,72 @@ func (p *parser) parseComparison() Expr {
 }
 
 // parseInTests parses the right-hand side of `in`: a parenthesised, comma
-// separated list of tests, or a single test expression. Operator-prefixed unary
-// tests (e.g. `in < 5`) are handled by the unary-test parser in WP-08.
+// separated list of positive unary tests, or a single test. Each test may be an
+// operator-prefixed comparison (`<= 10`, `= 10`), an interval, a list or a plain
+// value (compiled by compileIn against the in-value). A bare `(2..4)` stays a
+// single interval test; `(1, 5, 9)` is the comma-list form.
 func (p *parser) parseInTests() []Expr {
 	if p.cur().Kind == LParen {
-		p.advance()
-		var tests []Expr
-		for p.cur().Kind != RParen {
-			tests = append(tests, p.parseExpr())
-			if p.cur().Kind != Comma {
-				break
-			}
+		// Look past the "(" for the comma-list form; a single parenthesised test
+		// (e.g. an interval) is handled by the general expression parser, which
+		// consumes its own parentheses.
+		if p.isInTestList() {
 			p.advance()
+			var tests []Expr
+			for p.cur().Kind != RParen {
+				tests = append(tests, p.parseInTest())
+				if p.cur().Kind != Comma {
+					break
+				}
+				p.advance()
+			}
+			p.expect(RParen)
+			return tests
 		}
-		p.expect(RParen)
-		return tests
 	}
-	return []Expr{p.parseAdd()}
+	return []Expr{p.parseInTest()}
+}
+
+// parseInTest parses one positive unary test on the right of `in`. A leading
+// comparison operator yields a CmpTest against the in-value; otherwise it is a
+// plain expression (value, interval or list) matched by compileIn.
+func (p *parser) parseInTest() Expr {
+	if op, ok := comparisonOps[p.cur().Kind]; ok {
+		t := p.advance()
+		return &CmpTest{baseNode: base(t), Op: op, Y: p.parseAdd()}
+	}
+	return p.parseExpr()
+}
+
+// isInTestList reports whether the parenthesised `in` right-hand side is a
+// comma-separated test list rather than a single parenthesised test (such as an
+// interval `(2..4)`). It scans to the matching close paren for a top-level comma.
+func (p *parser) isInTestList() bool {
+	// A parenthesised RHS whose first token is a comparison operator is a test
+	// list even without a comma, e.g. `(= 10)` or `(!= 10)`; the general
+	// expression parser cannot consume a leading operator.
+	if _, ok := comparisonOps[p.peek(1).Kind]; ok {
+		return true
+	}
+	depth := 0
+	for i := 0; ; i++ {
+		k := p.peek(i).Kind
+		switch k {
+		case LParen, LBracket:
+			depth++
+		case RParen, RBracket:
+			if k == RParen && depth == 1 {
+				return false
+			}
+			depth--
+		case Comma:
+			if depth == 1 {
+				return true
+			}
+		case EOF:
+			return false
+		}
+	}
 }
 
 func (p *parser) parseAdd() Expr {
@@ -241,7 +290,7 @@ func (p *parser) parseAdd() Expr {
 }
 
 func (p *parser) parseMul() Expr {
-	left := p.parseUnary()
+	left := p.parsePow()
 	for {
 		t := p.cur()
 		if t.Kind != Star && t.Kind != Slash {
@@ -252,12 +301,27 @@ func (p *parser) parseMul() Expr {
 		if t.Kind == Slash {
 			op = "/"
 		}
-		left = &BinaryExpr{baseNode: base(t), Op: op, X: left, Y: p.parseUnary()}
+		left = &BinaryExpr{baseNode: base(t), Op: op, X: left, Y: p.parsePow()}
 	}
 }
 
-// parseUnary handles prefix minus. Exponentiation binds tighter than unary minus
-// (docs/30-feel-spec.md §3), so a unary operand is a power expression.
+// parsePow parses exponentiation. Per the TCK (0100), `**` is left-associative
+// (`3 ** 4 ** 5` == `(3 ** 4) ** 5`) and binds looser than unary minus
+// (`-5 ** 2` == `(-5) ** 2` == 25), so both operands are unary expressions.
+func (p *parser) parsePow() Expr {
+	left := p.parseUnary()
+	for {
+		t := p.cur()
+		if t.Kind != Pow {
+			return left
+		}
+		p.advance()
+		left = &BinaryExpr{baseNode: base(t), Op: "**", X: left, Y: p.parseUnary()}
+	}
+}
+
+// parseUnary handles prefix minus. It binds tighter than exponentiation, so the
+// base of a power (and a `*`/`/` operand) is a unary expression.
 func (p *parser) parseUnary() Expr {
 	p.enter()
 	defer p.leave()
@@ -265,17 +329,7 @@ func (p *parser) parseUnary() Expr {
 		p.advance()
 		return &UnaryExpr{baseNode: base(t), Op: "-", X: p.parseUnary()}
 	}
-	return p.parsePow()
-}
-
-// parsePow is right-associative: 2 ** 3 ** 2 == 2 ** (3 ** 2).
-func (p *parser) parsePow() Expr {
-	left := p.parsePostfix()
-	if t := p.cur(); t.Kind == Pow {
-		p.advance()
-		return &BinaryExpr{baseNode: base(t), Op: "**", X: left, Y: p.parseUnary()}
-	}
-	return left
+	return p.parsePostfix()
 }
 
 func (p *parser) parsePostfix() Expr {
@@ -284,8 +338,14 @@ func (p *parser) parsePostfix() Expr {
 		switch p.cur().Kind {
 		case Dot:
 			t := p.advance()
-			name := p.expect(Name)
-			x = &PathExpr{baseNode: base(t), X: x, Name: name.Text}
+			// FEEL member names may span several words (e.g. `time offset`,
+			// `start included`); assemble the run of Name tokens (keywords like
+			// `and`/`in` are distinct kinds and correctly stop the run).
+			if p.cur().Kind != Name {
+				p.expect(Name) // records the error
+				return x
+			}
+			x = &PathExpr{baseNode: base(t), X: x, Name: p.assembleNameString()}
 		case LBracket:
 			if p.noFilter {
 				return x
@@ -389,49 +449,100 @@ func (p *parser) nameRunLen(i int) int {
 // name (true/false/null are excluded so literals are never swallowed).
 func isNameableKeyword(k Kind) bool { return k >= And && k <= External }
 
+// isNameFragmentKind reports whether a token may continue a multi-word name run:
+// a plain name, a nameable keyword, or a number word (e.g. the trailing "1" in
+// "Extra days case 1" or "K-MatchesFunc-1"). Extension across these is always
+// gated by the name oracle in takeNameRun, so plain arithmetic is unaffected.
+func isNameFragmentKind(k Kind) bool {
+	return k == Name || isNameableKeyword(k) || k == Number
+}
+
 func (p *parser) parseName() Expr {
 	start := p.cur()
-	parts := p.takeNameRun()
-	return &NameRef{baseNode: base(start), Name: strings.Join(parts, " "), Parts: parts}
+	name, parts := p.takeNameRun()
+	return &NameRef{baseNode: base(start), Name: name, Parts: parts}
 }
 
 // takeNameRun consumes one (possibly multi-word) name starting at the cursor and
-// returns its fragments, advancing past them. It greedily merges plain Name
-// fragments; when a name oracle is set it also extends across nameable keywords
-// (e.g. the "and" in "days and time duration") while the joined run is a name
-// the oracle knows.
-func (p *parser) takeNameRun() []string {
-	start := p.cur()
-	run := []Token{start}
-	for j := p.pos + 1; j < len(p.toks); j++ {
+// returns its assembled name string plus its plain fragments, advancing past
+// them. It greedily merges plain Name fragments; when a name oracle is set it
+// also extends across nameable keywords (e.g. the "and" in "days and time
+// duration") and single hyphens joining two fragments (e.g. "Date-Time") while
+// the assembled run is a name the oracle knows. FEEL admits "-" inside a name,
+// disambiguated against the known-name set, so a bare "a - b" (no such name)
+// still parses as a subtraction.
+func (p *parser) takeNameRun() (string, []string) {
+	// Build the maximal candidate token run: plain name fragments, plus (with an
+	// oracle) nameable keywords and hyphens that bridge two fragments.
+	run := []Token{p.cur()}
+	for j := p.pos + 1; j < len(p.toks); {
 		k := p.toks[j].Kind
-		if k == Name || (p.names != nil && isNameableKeyword(k)) {
+		switch {
+		case k == Name:
 			run = append(run, p.toks[j])
-			continue
+			j++
+		case p.names != nil && (isNameableKeyword(k) || k == Number):
+			run = append(run, p.toks[j])
+			j++
+		case p.names != nil && isNameSymbol(k) && j+1 < len(p.toks) &&
+			isNameFragmentKind(p.toks[j+1].Kind):
+			run = append(run, p.toks[j], p.toks[j+1])
+			j += 2
+		default:
+			j = len(p.toks) // stop the scan
 		}
-		break
 	}
 
 	take := p.nameRunLen(p.pos) // plain-fragment greedy default
-	if p.names != nil {
-		joined := start.Text
-		for i := 1; i < len(run); i++ {
-			joined += " " + run[i].Text
-			if p.names.Has(joined) {
-				take = i + 1
-			}
-		}
-	}
 	if take < 1 {
 		take = 1
 	}
-
-	parts := make([]string, take)
-	for i := 0; i < take; i++ {
-		parts[i] = run[i].Text
+	if p.names != nil {
+		for k := 2; k <= len(run); k++ {
+			if isNameSymbol(run[k-1].Kind) {
+				continue // a name cannot end on a connector symbol
+			}
+			if p.names.Has(assembleName(run[:k])) {
+				take = k
+			}
+		}
 	}
+
+	consumed := run[:take]
 	p.pos += take
-	return parts
+	parts := make([]string, 0, take)
+	for _, t := range consumed {
+		if !isNameSymbol(t.Kind) {
+			parts = append(parts, t.Text)
+		}
+	}
+	return assembleName(consumed), parts
+}
+
+// isNameSymbol reports whether a token is an additional-name-symbol connector
+// that FEEL admits inside a name — a hyphen ("Date-Time") or a dot
+// ("Person.Gender") — disambiguated against the known-name set.
+func isNameSymbol(k Kind) bool { return k == Minus || k == Dot }
+
+// assembleName renders a name-token run as its FEEL name string: plain fragments
+// join with a single space, while a hyphen fragment binds its neighbours with no
+// surrounding space (so "Date", "-", "Time" becomes "Date-Time").
+func assembleName(toks []Token) string {
+	var b strings.Builder
+	for i, t := range toks {
+		switch {
+		case t.Kind == Minus:
+			b.WriteString("-")
+		case t.Kind == Dot:
+			b.WriteString(".")
+		case i > 0 && !isNameSymbol(toks[i-1].Kind):
+			b.WriteByte(' ')
+			b.WriteString(t.Text)
+		default:
+			b.WriteString(t.Text)
+		}
+	}
+	return b.String()
 }
 
 // assembleNameString consumes a greedy run of plain Name fragments and returns
@@ -451,10 +562,25 @@ func (p *parser) assembleNameString() string {
 // parseTypeName parses a type reference: a name run, optionally followed by a
 // balanced <...> generic captured verbatim. The full type grammar lands in WP-31.
 func (p *parser) parseTypeName() string {
+	// A function type: `function<P, …> -> ReturnType`. The parameter list and
+	// return type are consumed but discarded — instance-of matches on the function
+	// kind only (FEEL has no runtime signature).
+	if p.cur().Kind == Function {
+		p.advance()
+		if p.cur().Kind == Lt {
+			p.captureGeneric()
+		}
+		if p.cur().Kind == Minus && p.peek(1).Kind == Gt {
+			p.advance() // -
+			p.advance() // >
+			p.parseTypeName()
+		}
+		return "function"
+	}
 	if p.cur().Kind != Name {
 		p.fail("expected a type name, got %s", describe(p.cur()))
 	}
-	name := strings.Join(p.takeNameRun(), " ")
+	name, _ := p.takeNameRun()
 	if p.cur().Kind == Lt {
 		name += p.captureGeneric()
 	}
@@ -486,6 +612,28 @@ func (p *parser) captureGeneric() string {
 
 func (p *parser) parseParenOrInterval() Expr {
 	t := p.expect(LParen)
+	// A range built from a single comparison endpoint: (< v), (<= v), (> v),
+	// (>= v), (= v). ('!=' has no single-range meaning and is left to fail.)
+	switch op := p.cur().Kind; op {
+	case Lt, Lte, Gt, Gte, Eq:
+		p.advance()
+		v := p.parseEndpoint()
+		p.expect(RParen)
+		lit := &IntervalLit{baseNode: base(t)}
+		switch op {
+		case Lt:
+			lit.High = v // (..v)
+		case Lte:
+			lit.High, lit.HighClosed = v, true // (..v]
+		case Gt:
+			lit.Low = v // (v..)
+		case Gte:
+			lit.Low, lit.LowClosed = v, true // [v..)
+		case Eq:
+			lit.Low, lit.High, lit.LowClosed, lit.HighClosed = v, v, true, true // [v..v]
+		}
+		return lit
+	}
 	e := p.parseExpr()
 	if p.cur().Kind == DotDot {
 		p.advance()

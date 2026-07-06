@@ -110,6 +110,47 @@ func BenchmarkEvaluateMidTable(b *testing.B) {
 	}
 }
 
+// stringTableModel builds a decision table that matches two string inputs
+// (Season, Region) by equality — the most common real-world DMN table shape —
+// with the given number of rules, returning a string.
+func stringTableModel(rules int) []byte {
+	seasons := []string{"Winter", "Spring", "Summer", "Autumn"}
+	var b strings.Builder
+	b.WriteString(`<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/" namespace="http://temis.example/str" name="Str" id="def_s">`)
+	for _, n := range []string{"Season", "Region"} {
+		fmt.Fprintf(&b, `<inputData id="i_%s" name="%s"><variable name="%s" typeRef="string"/></inputData>`, n, n, n)
+	}
+	b.WriteString(`<decision id="d_menu" name="Menu"><variable name="Menu" typeRef="string"/>`)
+	for _, n := range []string{"Season", "Region"} {
+		fmt.Fprintf(&b, `<informationRequirement><requiredInput href="#i_%s"/></informationRequirement>`, n)
+	}
+	b.WriteString(`<decisionTable hitPolicy="UNIQUE">`)
+	for _, n := range []string{"Season", "Region"} {
+		fmt.Fprintf(&b, `<input id="in_%s"><inputExpression typeRef="string"><text>%s</text></inputExpression></input>`, n, n)
+	}
+	b.WriteString(`<output name="Menu" typeRef="string"/>`)
+	for i := 0; i < rules; i++ {
+		fmt.Fprintf(&b, `<rule><inputEntry><text>"%s"</text></inputEntry>`+
+			`<inputEntry><text>"R%d"</text></inputEntry>`+
+			`<outputEntry><text>"m%d"</text></outputEntry></rule>`, seasons[i%len(seasons)], i, i)
+	}
+	b.WriteString(`</decisionTable></decision></definitions>`)
+	return []byte(b.String())
+}
+
+func BenchmarkEvaluateStringTable(b *testing.B) {
+	dec := mustCompileDecision(b, stringTableModel(10), "Menu")
+	ctx := context.Background()
+	in := dmn.Input{"Season": "Winter", "Region": "R8"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := dec.Evaluate(ctx, in); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkEvaluateArithmetic(b *testing.B) {
 	dec := mustCompileDecision(b, []byte(arithmeticModel), "R")
 	ctx := context.Background()

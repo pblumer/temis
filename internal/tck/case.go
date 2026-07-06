@@ -18,6 +18,8 @@ type testCases struct {
 
 type testCase struct {
 	ID      string       `xml:"id,attr"`
+	Type    string       `xml:"type,attr"`
+	Invoked string       `xml:"invocableName,attr"`
 	Inputs  []inputNode  `xml:"inputNode"`
 	Results []resultNode `xml:"resultNode"`
 }
@@ -82,17 +84,25 @@ func (v tckValue) toValue() value.Value {
 	if v.Value != nil {
 		return v.Value.toValue()
 	}
-	return scalarValue(v.Type, strings.TrimSpace(v.Text))
+	return scalarValue(v.Type, v.Text)
 }
 
+// tckList decodes a TCK <list>. The corpus uses two element encodings: direct
+// <value> children, and <item> wrappers (each holding a value, a nested list or
+// context components). Both are accepted so nested and context-valued lists decode
+// correctly rather than collapsing to empty.
 type tckList struct {
-	Values []tckValue `xml:"value"`
+	Values []tckValue     `xml:"value"`
+	Items  []valueContent `xml:"item"`
 }
 
 func (l *tckList) toValue() value.Value {
-	elems := make([]value.Value, len(l.Values))
+	elems := make([]value.Value, 0, len(l.Values)+len(l.Items))
 	for i := range l.Values {
-		elems[i] = l.Values[i].toValue()
+		elems = append(elems, l.Values[i].toValue())
+	}
+	for i := range l.Items {
+		elems = append(elems, l.Items[i].toValue())
 	}
 	return value.NewList(elems...)
 }
@@ -113,8 +123,18 @@ func componentsToContext(comps []tckComponent) value.Value {
 // scalarValue converts a scalar TCK value (its xsi:type and text) to a FEEL
 // value. An empty, untyped value is null; an unparsable typed value is null too,
 // so a malformed expectation simply fails to match rather than panicking.
-func scalarValue(typ, text string) value.Value {
-	switch normType(typ) {
+//
+// Leading/trailing whitespace is significant for xsd:string (e.g. upper
+// case("xyZ ") → "XYZ "), so string text is used verbatim; every other type is
+// numeric/temporal/boolean where surrounding XML indentation is insignificant
+// and must be trimmed before parsing.
+func scalarValue(typ, raw string) value.Value {
+	kind := normType(typ)
+	text := raw
+	if kind != "string" {
+		text = strings.TrimSpace(raw)
+	}
+	switch kind {
 	case "string":
 		return value.Str(text)
 	case "boolean":

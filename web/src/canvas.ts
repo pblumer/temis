@@ -126,7 +126,7 @@ export type ModelerHandle = {
   // context pad) to give an undecided decision a boxed invocation.
   onCreateInvocation: (cb: (decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
-  // the context pad) to edit its function.
+  // the context pad or by double-clicking the BKM) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
   // onBoxed fires with a decision's id when the user tries to open a decision
   // whose logic is a boxed expression the modeler cannot edit yet (WP-66), so the
@@ -151,6 +151,27 @@ export type ModelerHandle = {
   // also shows which rule(s) fired — the Operate view's hit-rule highlight. An
   // empty values map clears the overlays.
   showResults: (values: Record<string, unknown>, hitRules?: Record<string, number[]>) => void
+  // illuminate lights up the requirement edges after an evaluation: every edge
+  // that carried a value is coloured in the Operate accent and floats the value
+  // that travelled it at its midpoint — the dependency dataflow made visible on
+  // the diagram itself. Edges are revealed as a wave by graph depth (inputs →
+  // output). inputs are the run's leaf inputs, values each decision's result
+  // (both keyed by name). Re-applying replaces the previous illumination; edges
+  // whose source has no value (e.g. a knowledge requirement) stay unlit. With
+  // opts.animate the illumination plays as a depth-staggered wave: the wires stream,
+  // each decision fires with a particle burst as its inputs arrive, and — when
+  // opts.combo extends a streak — the final decision shows the combo. Without it the
+  // illumination is static (history navigation, reduced motion).
+  illuminate: (inputs: Record<string, unknown>, values: Record<string, unknown>, opts?: { animate?: boolean; combo?: number }) => void
+  // clearFlow removes any edge illumination and floating value labels.
+  clearFlow: () => void
+  // showInputPills places an editable input control on each given inputData node
+  // (Operate): the model's leaf inputs are filled directly on the diagram. items
+  // pair a node id with the ready-built control element; nodes no longer present
+  // are skipped. Replaces any previously shown input pills.
+  showInputPills: (items: { nodeId: string; html: HTMLElement }[]) => void
+  // clearInputPills removes the on-node input controls.
+  clearInputPills: () => void
 }
 
 // A Canvas with the viewbox getter/setter we need (not in the bundled types).
@@ -270,10 +291,154 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     canvas.addShape(shape)
     byId[n.id] = shape
   }
+  // depthOf is a node's distance from the leaf inputs (longest incoming path), so
+  // an evaluation can illuminate the edges as a wave — inputs first, the final
+  // decision last. The seen guard keeps a (non-DMN) cycle from recursing forever.
+  const incoming = new Map<string, string[]>()
+  for (const e of laid.edges) {
+    const list = incoming.get(e.target) ?? []
+    list.push(e.source)
+    incoming.set(e.target, list)
+  }
+  const depthOf = (id: string, seen: Set<string> = new Set()): number => {
+    if (seen.has(id)) return 0
+    const next = new Set(seen).add(id)
+    const ins = incoming.get(id) ?? []
+    return ins.length ? Math.max(0, ...ins.map((s) => depthOf(s, next))) + 1 : 0
+  }
+
+  // For each requirement edge, remember where to float its "flowing value" label
+  // (the midpoint of its waypoints, as an offset from the source node — shape
+  // overlays position relative to the element) and its reveal delay by depth.
+  const STAGGER_MS = 90
+  type EdgeAnchor = { id: string; sourceId: string; left: number; top: number; delay: number }
+  const edgeAnchors: EdgeAnchor[] = []
   for (const e of laid.edges) {
     if (!byId[e.source] || !byId[e.target]) continue
     const conn = factory.createConnection({ id: e.id, type: 'dmn:' + e.type, source: byId[e.source], target: byId[e.target], waypoints: e.waypoints } as never)
     canvas.addConnection(conn)
+    const wp = e.waypoints
+    if (wp && wp.length) {
+      const src = byId[e.source]
+      const mid = { x: (wp[0].x + wp[wp.length - 1].x) / 2, y: (wp[0].y + wp[wp.length - 1].y) / 2 }
+      edgeAnchors.push({ id: e.id, sourceId: e.source, left: mid.x - (src.x ?? 0), top: mid.y - (src.y ?? 0), delay: depthOf(e.target) * STAGGER_MS })
+    }
+  }
+  const marker = canvas as unknown as { addMarker: (id: string, m: string) => void; removeMarker: (id: string, m: string) => void }
+
+  // maxDepth is the deepest node's distance from the inputs — the final decision(s),
+  // fired last and celebrated hardest in the illumination wave.
+  let maxDepth = 0
+  for (const id of Object.keys(byId)) maxDepth = Math.max(maxDepth, depthOf(id))
+
+  // Juice layer (WP: Stage 3): a transient particle canvas over the diagram. Bursts
+  // are drawn in screen space at a node's live position (getAbsoluteBBox), so they
+  // need no pan/zoom tracking — each is a ~0.6s fire-and-forget at the moment a node
+  // fires. The layer sits over the diagram but ignores pointer events, and only ever
+  // runs its rAF loop while something is alive on it (idle-free when calm).
+  const fx = document.createElement('canvas')
+  fx.className = 'fx-layer'
+  container.appendChild(fx)
+  const fxc = fx.getContext('2d')
+  const absBBox = (el: Shape): { x: number; y: number; width: number; height: number } =>
+    (canvas as unknown as { getAbsoluteBBox: (e: unknown) => { x: number; y: number; width: number; height: number } }).getAbsoluteBBox(el)
+  type Particle = { x: number; y: number; vx: number; vy: number; life: number; r: number; color: string }
+  type Ring = { x: number; y: number; r: number; life: number; color: string }
+  type FloatText = { x: number; y: number; text: string; color: string; life: number }
+  let particles: Particle[] = []
+  let rings: Ring[] = []
+  let texts: FloatText[] = []
+  let fxRaf = 0
+  const juiceTimers: number[] = []
+  const clearJuiceTimers = (): void => {
+    for (const t of juiceTimers) clearTimeout(t)
+    juiceTimers.length = 0
+  }
+  const sizeFx = (): void => {
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    fx.width = Math.max(1, container.clientWidth * dpr)
+    fx.height = Math.max(1, container.clientHeight * dpr)
+    fx.style.width = container.clientWidth + 'px'
+    fx.style.height = container.clientHeight + 'px'
+    if (fxc) fxc.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+  sizeFx()
+  const ro = new ResizeObserver(() => sizeFx())
+  ro.observe(container)
+  const frame = (): void => {
+    if (!fxc) return
+    fxc.clearRect(0, 0, fx.width, fx.height)
+    particles = particles.filter((p) => p.life > 0)
+    for (const p of particles) {
+      p.x += p.vx
+      p.y += p.vy
+      p.vy += 0.12
+      p.vx *= 0.98
+      p.life -= 0.02
+      fxc.globalAlpha = Math.max(0, p.life)
+      fxc.fillStyle = p.color
+      fxc.beginPath()
+      fxc.arc(p.x, p.y, p.r, 0, 7)
+      fxc.fill()
+    }
+    rings = rings.filter((r) => r.life > 0)
+    for (const r of rings) {
+      r.r += 2.2
+      r.life -= 0.035
+      fxc.globalAlpha = Math.max(0, r.life) * 0.6
+      fxc.strokeStyle = r.color
+      fxc.lineWidth = 2
+      fxc.beginPath()
+      fxc.arc(r.x, r.y, r.r, 0, 7)
+      fxc.stroke()
+    }
+    texts = texts.filter((t) => t.life > 0)
+    fxc.font = '700 15px ui-monospace, monospace'
+    fxc.textAlign = 'center'
+    for (const t of texts) {
+      t.y -= 0.7
+      t.life -= 0.018
+      fxc.globalAlpha = Math.max(0, t.life)
+      fxc.fillStyle = t.color
+      fxc.fillText(t.text, t.x, t.y)
+    }
+    fxc.globalAlpha = 1
+    fxRaf = particles.length || rings.length || texts.length ? requestAnimationFrame(frame) : 0
+  }
+  const startFx = (): void => {
+    if (!fxRaf) fxRaf = requestAnimationFrame(frame)
+  }
+  const burst = (x: number, y: number, color: string, n: number): void => {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2
+      const sp = 1.3 + Math.random() * 4.2
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1, life: 1, r: 1.3 + Math.random() * 2.3, color })
+    }
+    rings.push({ x, y, r: 5, life: 1, color })
+    startFx()
+  }
+  const floatText = (x: number, y: number, text: string, color: string): void => {
+    texts.push({ x, y, text, color, life: 1 })
+    startFx()
+  }
+  // Tear the juice layer down with the diagram, so a model switch doesn't leak a
+  // ResizeObserver, a running rAF loop or pending fire timers.
+  eventBus.on('diagram.destroy', () => {
+    ro.disconnect()
+    if (fxRaf) cancelAnimationFrame(fxRaf)
+    clearJuiceTimers()
+    fx.remove()
+  })
+
+  // flowValueOf is the value that travels an edge: its source's own value — a leaf
+  // input's entered value, or an upstream decision's computed result. Undefined for
+  // a source that carries no data value (e.g. a BKM behind a knowledge requirement).
+  const flowValueOf = (elId: string, inputs: Record<string, unknown>, values: Record<string, unknown>): unknown => {
+    const s = byId[elId] as (Shape & { name?: string; type?: string }) | undefined
+    if (!s || !s.name) return undefined
+    if (s.type === 'dmn:inputData') return inputs[s.name]
+    if (s.type === 'dmn:decision') return values[s.name]
+    return undefined
   }
 
   fitViewport(canvas)
@@ -298,7 +463,15 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   let openBoxedCb = (_decisionId: string): void => {}
   eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasInvocation?: boolean } }) => {
     const el = e.element
-    if (!el || el.type !== 'dmn:decision') return
+    if (!el) return
+    // Double-click always switches to an element's content — never renames
+    // (renaming is the pencil icon or F2, see dmn-label-editing). A BKM opens its
+    // encapsulated function; a decision opens whichever logic it carries.
+    if (el.type === 'dmn:businessKnowledgeModel') {
+      openBKMCb(el.id)
+      return
+    }
+    if (el.type !== 'dmn:decision') return
     if (el.hasTable) openTableCb(el.id)
     else if (el.hasLiteral) openLiteralCb(el.id)
     else if (el.hasContext) openContextCb(el.id)
@@ -308,9 +481,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     else if (el.hasFilter) openFilterCb(el.id)
     else if (el.hasIterator) openIteratorCb(el.id)
     else if (el.hasInvocation) openInvocationCb(el.id)
-    // Any other boxed-expression decision has none of these; double-click
-    // inline-renames it (see dmn-label-editing). The "not editable" hint comes
-    // from the context pad's boxed-info icon instead, so it doesn't clash.
+    // A truly undecided decision (no logic yet) has no content to open; its logic
+    // is created from the context pad. The boxed-info hint for an uneditable
+    // boxed expression likewise stays on the context pad, so nothing clashes.
   })
   // The context pad's boxed-info icon fires this for a boxed-expression decision.
   eventBus.on('dmn.boxedInfo', (e: { element?: Shape }) => {
@@ -584,6 +757,63 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
           badge.title = s.name + ' = ' + text
         }
         overlays.add(s.id, 'eval-result', { position: { bottom: -4, left: 6 }, html: badge })
+      }
+    },
+    clearFlow: () => {
+      overlays.remove({ type: 'flow-edge' })
+      for (const ea of edgeAnchors) marker.removeMarker(ea.id, 'flow-active')
+    },
+    showInputPills: (items) => {
+      overlays.remove({ type: 'input-pill' })
+      for (const it of items) {
+        if (!elementRegistry.get(it.nodeId)) continue
+        overlays.add(it.nodeId, 'input-pill', { position: { bottom: -8, left: 0 }, html: it.html })
+      }
+    },
+    clearInputPills: () => overlays.remove({ type: 'input-pill' }),
+    illuminate: (inputs, values, opts) => {
+      const animate = !!opts?.animate
+      overlays.remove({ type: 'flow-edge' })
+      clearJuiceTimers()
+      for (const ea of edgeAnchors) {
+        marker.removeMarker(ea.id, 'flow-active')
+        marker.removeMarker(ea.id, 'flow-stream')
+      }
+      for (const el of elementRegistry.getAll()) marker.removeMarker(el.id, 'node-fire')
+      for (const ea of edgeAnchors) {
+        const val = flowValueOf(ea.sourceId, inputs, values)
+        if (val === undefined) continue
+        marker.addMarker(ea.id, 'flow-active')
+        if (animate) marker.addMarker(ea.id, 'flow-stream')
+        const text = fmtResult(val)
+        const lbl = document.createElement('div')
+        lbl.className = 'flow-edge-val flow-edge-op'
+        lbl.style.animationDelay = (animate ? ea.delay : 0) + 'ms'
+        lbl.textContent = text
+        lbl.title = text
+        overlays.add(ea.sourceId, 'flow-edge', { position: { left: ea.left, top: ea.top }, html: lbl })
+      }
+      if (!animate) return
+      // Fire each decision as its inputs arrive: a depth-staggered wave, each node
+      // pulsing with a particle burst. The deepest (final) decision fires hardest,
+      // in magenta, and shows the combo when the run extends a streak.
+      const combo = opts?.combo ?? 1
+      for (const el of elementRegistry.getAll()) {
+        const s = el as Shape & { name?: string; type?: string }
+        if (s.type !== 'dmn:decision' || !s.name || !(s.name in values)) continue
+        const depth = depthOf(s.id)
+        const isFinal = depth >= maxDepth
+        const color = isFinal ? '#d6249f' : '#1d4ed8'
+        const t = window.setTimeout(() => {
+          marker.addMarker(s.id, 'node-fire')
+          window.setTimeout(() => marker.removeMarker(s.id, 'node-fire'), 480)
+          const bb = absBBox(s)
+          const cx = bb.x + bb.width / 2
+          const cy = bb.y + bb.height / 2
+          burst(cx, cy, color, isFinal ? 30 : 20)
+          if (isFinal && combo >= 2) floatText(cx, cy - bb.height / 2 - 6, 'COMBO ×' + combo, '#d6249f')
+        }, depth * STAGGER_MS + 120)
+        juiceTimers.push(t)
       }
     },
   }

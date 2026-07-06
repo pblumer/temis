@@ -309,3 +309,33 @@ func TestDishFixtureEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestDefaultOutputEntry covers WP-41.17: when no rule matches, a table applies
+// its declared default output entry (DMN 8.2.11) instead of null — for single-hit
+// policies and for collect with aggregation.
+func TestDefaultOutputEntry(t *testing.T) {
+	// UNIQUE with a default: no rule matches x=5 → default 0.
+	uniq := mkTable(model.HitUnique, model.AggNone, []string{"x"}, []string{"out"},
+		r{[]string{">= 30"}, []string{"5"}})
+	uniq.Outputs[0].DefaultOutput = "0"
+	if got := evalT(t, uniq, x("5")); got.String() != "0" {
+		t.Errorf("UNIQUE no-match with default = %s, want 0", got.String())
+	}
+	// Same table, a matching input still returns the rule output.
+	if got := evalT(t, uniq, x("40")); got.String() != "5" {
+		t.Errorf("UNIQUE match = %s, want 5", got.String())
+	}
+	// COLLECT+MAX with a default: no rule matches → default 0 (not null).
+	coll := mkTable(model.HitCollect, model.AggMax, []string{"x"}, []string{"out"},
+		r{[]string{">= 30"}, []string{"3"}})
+	coll.Outputs[0].DefaultOutput = "0"
+	if got := evalT(t, coll, x("5")); got.String() != "0" {
+		t.Errorf("COLLECT+MAX no-match with default = %s, want 0", got.String())
+	}
+	// Without a default, a no-match UNIQUE table is still null.
+	plain := mkTable(model.HitUnique, model.AggNone, []string{"x"}, []string{"out"},
+		r{[]string{">= 30"}, []string{"5"}})
+	if got := evalT(t, plain, x("5")); !value.IsNull(got) {
+		t.Errorf("UNIQUE no-match without default = %s, want null", got.String())
+	}
+}

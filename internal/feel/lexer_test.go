@@ -59,6 +59,9 @@ func TestStrings(t *testing.T) {
 		{`"tab\tend"`, "tab\tend"},
 		{`"slash\/"`, "slash/"},
 		{`"unicA"`, "unicA"},
+		{`"\u0041"`, "A"},                // 4-hex \u escape
+		{`"\U01F40E"`, "\U0001F40E"},     // 6-hex \U escape → horse
+		{`"\uD83D\uDCA9"`, "\U0001F4A9"}, // UTF-16 surrogate pair → poo
 		{`""`, ""},
 	}
 	for _, c := range cases {
@@ -74,7 +77,10 @@ func TestStrings(t *testing.T) {
 }
 
 func TestStringErrors(t *testing.T) {
-	for _, src := range []string{`"unterminated`, `"bad\xescape"`, `"\u00ZZ"`} {
+	// An unterminated literal, a bad \u hex escape and a trailing backslash are
+	// still errors; an unrecognised escape like \x is now passed through verbatim
+	// (WP-41.18, regex patterns as string literals), not rejected.
+	for _, src := range []string{`"unterminated`, `"\u00ZZ"`, `"trailing\`} {
 		toks := Tokenize(src)
 		if toks[0].Kind != Error {
 			t.Errorf("Tokenize(%q)[0].Kind = %v, want Error", src, toks[0].Kind)
@@ -82,6 +88,19 @@ func TestStringErrors(t *testing.T) {
 		if toks[0].Value == "" {
 			t.Errorf("Tokenize(%q): error token has no message", src)
 		}
+	}
+}
+
+// TestUnknownEscapePassthrough covers WP-41.18: an unrecognised string escape is
+// kept verbatim (backslash + char), so regex patterns like "\d{3}" tokenize as a
+// well-formed string literal instead of a lexer error.
+func TestUnknownEscapePassthrough(t *testing.T) {
+	toks := Tokenize(`"\d{3}\.\s"`)
+	if toks[0].Kind != String {
+		t.Fatalf(`Tokenize("\d{3}\.\s")[0].Kind = %v, want String`, toks[0].Kind)
+	}
+	if got, want := toks[0].Value, `\d{3}\.\s`; got != want {
+		t.Errorf("value = %q, want %q", got, want)
 	}
 }
 
@@ -193,4 +212,26 @@ func equalKinds(a, b []Kind) bool {
 		}
 	}
 	return true
+}
+
+func TestComments(t *testing.T) {
+	// Line and block comments are skipped between tokens.
+	cases := map[string]int{
+		"1 + /* mid */ 2": 3,
+		"/* intro */ 3":   1,
+		"4 // trailing\n": 1,
+	}
+	for src, want := range cases {
+		toks := Tokenize(src)
+		// count non-EOF tokens
+		n := 0
+		for _, tk := range toks {
+			if tk.Kind != EOF {
+				n++
+			}
+		}
+		if n != want {
+			t.Errorf("Tokenize(%q) produced %d tokens, want %d", src, n, want)
+		}
+	}
 }

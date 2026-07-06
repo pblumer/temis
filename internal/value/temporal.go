@@ -2,10 +2,42 @@ package value
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// FEEL/ISO-8601 lexical rules for temporal strings. The engine parses leniently
+// for arithmetic, but the constructor functions and `@"…"` literals must reject
+// malformed input with null, so these gate the Parse* entry points.
+//
+//   - Year: optional leading '-' only (no '+'); 4 digits may lead with 0, but 5+
+//     digits must not; magnitude ≤ 999999999 is checked separately.
+//   - Month/day/clock fields are fixed-width; hour 00–23 ('24:00:00' is handled as
+//     a special end-of-day form by parseClock).
+var (
+	dateLexRe  = regexp.MustCompile(`^(-?(?:0[0-9]{3}|[1-9][0-9]{3,}))-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$`)
+	clockLexRe = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?$`)
+)
+
+const maxTemporalYear = 999999999
+
+// validDateLex reports whether s is a lexically valid FEEL date (no zone).
+func validDateLex(s string) bool {
+	m := dateLexRe.FindStringSubmatch(s)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.Atoi(m[1])
+	return err == nil && n >= -maxTemporalYear && n <= maxTemporalYear
+}
+
+// validClockLex reports whether s is a lexically valid FEEL time-of-day (no zone),
+// accepting the ISO end-of-day form "24:00:00".
+func validClockLex(s string) bool {
+	return s == "24:00:00" || clockLexRe.MatchString(s)
+}
 
 // --- Date ---
 
@@ -28,13 +60,46 @@ func NewDate(year int, month time.Month, day int) Date {
 	return Date{t: time.Date(year, month, day, 0, 0, 0, 0, time.UTC)}
 }
 
-// ParseDate parses an ISO date "YYYY-MM-DD".
+// ParseDate parses an ISO date "YYYY-MM-DD", including negative (BCE) years.
 func ParseDate(s string) (Date, error) {
-	t, err := time.Parse("2006-01-02", s)
+	if !validDateLex(s) {
+		return Date{}, fmt.Errorf("invalid date %q", s)
+	}
+	t, err := parseSignedTime("2006-01-02", s, time.UTC)
 	if err != nil {
 		return Date{}, fmt.Errorf("invalid date %q: %w", s, err)
 	}
 	return Date{t: t.UTC()}, nil
+}
+
+// parseSignedTime parses body with the given layout and location, handling year
+// fields that Go's reference layout cannot: FEEL/ISO-8601 permit a leading '-'
+// (negative astronomical/BCE years) and years of 1–9 digits, but the "2006" verb
+// consumes exactly four digits. We split the year off, parse the remainder with a
+// canonical placeholder year, then reconstruct the instant with the real year so
+// the value round-trips (Format renders any width and sign back).
+func parseSignedTime(layout, body string, loc *time.Location) (time.Time, error) {
+	neg := strings.HasPrefix(body, "-")
+	if neg {
+		body = body[1:]
+	}
+	sep := strings.IndexByte(body, '-')
+	if sep <= 0 {
+		return time.Time{}, fmt.Errorf("missing year in %q", body)
+	}
+	year, err := strconv.Atoi(body[:sep])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid year in %q: %w", body, err)
+	}
+	if neg {
+		year = -year
+	}
+	t, err := time.ParseInLocation(layout, "0000"+body[sep:], loc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Date(year, t.Month(), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location()), nil
 }
 
 // --- Time and DateTime share zone handling ---
@@ -52,11 +117,20 @@ func (z zone) suffix(t time.Time) string {
 	if z.name != "" {
 		return "@" + z.name
 	}
-	if off := t.Format("-07:00"); off == "+00:00" {
+	_, off := t.Zone() // seconds east of UTC
+	if off == 0 {
 		return "Z"
-	} else {
-		return off
 	}
+	sign := "+"
+	if off < 0 {
+		sign = "-"
+		off = -off
+	}
+	h, m, s := off/3600, (off%3600)/60, off%60
+	if s != 0 { // a sub-minute offset (e.g. +02:45:55) keeps its seconds field
+		return fmt.Sprintf("%s%02d:%02d:%02d", sign, h, m, s)
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, h, m)
 }
 
 // Time is a time-of-day, optionally with a zone. The date part of the backing
@@ -70,7 +144,8 @@ type Time struct {
 func (Time) Kind() Kind { return KindTime }
 func (Time) isValue()   {}
 func (t Time) String() string {
-	return t.t.Format("15:04:05") + t.z.suffix(t.t)
+	// The fractional part is elided when zero (see DateTime.String).
+	return t.t.Format("15:04:05.999999999") + t.z.suffix(t.t)
 }
 
 // DateTime is a date and time, optionally with a zone.
@@ -83,7 +158,9 @@ type DateTime struct {
 func (DateTime) Kind() Kind { return KindDateTime }
 func (DateTime) isValue()   {}
 func (dt DateTime) String() string {
-	return dt.t.Format("2006-01-02T15:04:05") + dt.z.suffix(dt.t)
+	// The ".999999999" fraction is elided (dot and all) when the sub-second part
+	// is zero, so whole seconds still render as "…:05".
+	return dt.t.Format("2006-01-02T15:04:05.999999999") + dt.z.suffix(dt.t)
 }
 
 // Time returns the underlying instant.
@@ -104,6 +181,9 @@ func ParseTime(s string) (Time, error) {
 	if err != nil {
 		return Time{}, fmt.Errorf("invalid time %q: %w", s, err)
 	}
+	if !validClockLex(body) {
+		return Time{}, fmt.Errorf("invalid time %q", s)
+	}
 	t, err := parseClock(refDay+"T"+body, loc)
 	if err != nil {
 		return Time{}, fmt.Errorf("invalid time %q: %w", s, err)
@@ -121,6 +201,10 @@ func ParseDateTime(s string) (DateTime, error) {
 	if err != nil {
 		return DateTime{}, fmt.Errorf("invalid date and time %q: %w", s, err)
 	}
+	// body is the zoneless "date T clock"; validate each half lexically.
+	if j := strings.IndexByte(body, 'T'); j < 0 || !validDateLex(body[:j]) || !validClockLex(body[j+1:]) {
+		return DateTime{}, fmt.Errorf("invalid date and time %q", s)
+	}
 	t, err := parseClock(body, loc)
 	if err != nil {
 		return DateTime{}, fmt.Errorf("invalid date and time %q: %w", s, err)
@@ -131,8 +215,17 @@ func ParseDateTime(s string) (DateTime, error) {
 // parseClock parses a "YYYY-MM-DDTHH:MM:SS(.fff)?" body in the given location,
 // trying with and without fractional seconds.
 func parseClock(body string, loc *time.Location) (time.Time, error) {
+	// ISO 8601 permits "24:00:00" as the end-of-day midnight (equivalent to
+	// 00:00:00 of the following day); Go's parser rejects hour 24, so normalize it.
+	addDay := strings.Contains(body, "T24:00:00")
+	if addDay {
+		body = strings.Replace(body, "T24:00:00", "T00:00:00", 1)
+	}
 	for _, layout := range []string{"2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05"} {
-		if t, err := time.ParseInLocation(layout, body, loc); err == nil {
+		if t, err := parseSignedTime(layout, body, loc); err == nil {
+			if addDay {
+				t = t.AddDate(0, 0, 1)
+			}
 			return t, nil
 		}
 	}
@@ -177,12 +270,20 @@ func findOffset(s string) (string, int) {
 	return "", -1
 }
 
+// maxOffsetSecs bounds a fixed zone offset. XSD/FEEL cap timezone offsets at
+// ±14:00; we allow up to ±18:00 (covering every real offset) so only clearly
+// out-of-range values like ±19:00 are rejected as invalid.
+const maxOffsetSecs = 18 * 60 * 60
+
 func parseOffset(off string) (*time.Location, error) {
 	t, err := time.Parse("-07:00", off)
 	if err != nil {
 		return nil, fmt.Errorf("invalid offset %q: %w", off, err)
 	}
 	_, secs := t.Zone()
+	if secs < -maxOffsetSecs || secs > maxOffsetSecs {
+		return nil, fmt.Errorf("offset %q out of range", off)
+	}
 	return time.FixedZone(off, secs), nil
 }
 
@@ -266,11 +367,11 @@ func ParseDuration(s string) (Value, error) {
 		return nil, fmt.Errorf("invalid duration %q: empty time part", s)
 	}
 
-	dateComps, err := scanComponents(datePart, "YMD")
+	dateComps, _, err := scanComponents(datePart, "YMD")
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
-	timeComps, err := scanComponents(timePart, "HMS")
+	timeComps, subNanos, err := scanComponents(timePart, "HMS")
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
@@ -297,7 +398,8 @@ func ParseDuration(s string) (Value, error) {
 	total := time.Duration(dateComps['D'])*24*time.Hour +
 		time.Duration(timeComps['H'])*time.Hour +
 		time.Duration(timeComps['M'])*time.Minute +
-		time.Duration(timeComps['S'])*time.Second
+		time.Duration(timeComps['S'])*time.Second +
+		time.Duration(subNanos)*time.Nanosecond
 	if neg {
 		total = -total
 	}
@@ -305,10 +407,13 @@ func ParseDuration(s string) (Value, error) {
 }
 
 // scanComponents reads a sequence of "<digits><unit>" pairs, where units must
-// appear in the order given and each at most once. It returns the parsed values
-// keyed by unit byte.
-func scanComponents(s, units string) (map[byte]int64, error) {
+// appear in the order given and each at most once. It returns the integer values
+// keyed by unit byte, plus the sub-second remainder in nanoseconds from a
+// fractional seconds component (e.g. PT0.5S → 500_000_000 ns). Only the seconds
+// unit may carry a fraction (FEEL §10.3.4.2 lexical duration).
+func scanComponents(s, units string) (map[byte]int64, int64, error) {
 	res := map[byte]int64{}
+	var subNanos int64
 	ui := 0
 	for i := 0; i < len(s); {
 		j := i
@@ -316,25 +421,59 @@ func scanComponents(s, units string) (map[byte]int64, error) {
 			j++
 		}
 		if j == i {
-			return nil, fmt.Errorf("expected a number at %q", s[i:])
+			return nil, 0, fmt.Errorf("expected a number at %q", s[i:])
 		}
-		if j >= len(s) {
-			return nil, fmt.Errorf("number %q has no unit", s[i:j])
+		// Optional fractional part "<digits>.<digits>", permitted only on seconds.
+		// A trailing point with no digits (e.g. PT0.S) is accepted as a zero
+		// fraction, matching the reference implementations.
+		frac, hadDot := "", false
+		k := j
+		if k < len(s) && s[k] == '.' {
+			hadDot = true
+			f := k + 1
+			for f < len(s) && s[f] >= '0' && s[f] <= '9' {
+				f++
+			}
+			frac = s[k+1 : f]
+			k = f
 		}
-		unit := s[j]
+		if k >= len(s) {
+			return nil, 0, fmt.Errorf("number %q has no unit", s[i:k])
+		}
+		unit := s[k]
 		pos := strings.IndexByte(units[ui:], unit)
 		if pos < 0 {
-			return nil, fmt.Errorf("unexpected or out-of-order unit %q", string(unit))
+			return nil, 0, fmt.Errorf("unexpected or out-of-order unit %q", string(unit))
 		}
 		ui += pos + 1
 		n, err := strconv.ParseInt(s[i:j], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("number %q out of range", s[i:j])
+			return nil, 0, fmt.Errorf("number %q out of range", s[i:j])
 		}
 		res[unit] = n
-		i = j + 1
+		if hadDot {
+			if unit != 'S' {
+				return nil, 0, fmt.Errorf("only seconds may be fractional, got %q", string(unit))
+			}
+			subNanos = fracToNanos(frac)
+		}
+		i = k + 1
 	}
-	return res, nil
+	return res, subNanos, nil
+}
+
+// fracToNanos converts the fractional digits of a seconds value (the part after
+// the decimal point) to nanoseconds, padding or truncating to 9 digits.
+func fracToNanos(frac string) int64 {
+	const digits = 9
+	if len(frac) > digits {
+		frac = frac[:digits]
+	}
+	for len(frac) < digits {
+		frac += "0"
+	}
+	n, _ := strconv.ParseInt(frac, 10, 64)
+	return n
 }
 
 // --- arithmetic helpers ---

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/bewertung"
+             name="Bewertung" id="def_bewertung">
+  <inputData id="id_punkte" name="Punkte">
+    <variable name="Punkte" typeRef="number"/>
+  </inputData>
+
+  <!-- A business knowledge model whose encapsulated body is a boxed decision
+       table (not a literal). The simple BKM editor once showed this read-only;
+       the modeler now opens the matching table editor on it (WP-66). -->
+  <businessKnowledgeModel id="id_bewertung" name="Bewertung">
+    <variable name="Bewertung" typeRef="string"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="punkte" typeRef="number"/>
+      <decisionTable hitPolicy="FIRST">
+        <input id="in_punkte" label="punkte">
+          <inputExpression typeRef="number"><text>punkte</text></inputExpression>
+        </input>
+        <output id="out_note" name="note" typeRef="string"/>
+        <rule>
+          <inputEntry><text>&gt;= 80</text></inputEntry>
+          <outputEntry><text>"sehr gut"</text></outputEntry>
+        </rule>
+        <rule>
+          <inputEntry><text>[50..80)</text></inputEntry>
+          <outputEntry><text>"gut"</text></outputEntry>
+        </rule>
+        <rule>
+          <inputEntry><text>&lt; 50</text></inputEntry>
+          <outputEntry><text>"ungenügend"</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="id_entscheidung" name="Entscheidung_1">
+    <variable name="Entscheidung_1" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#id_punkte"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_bewertung"/>
+    </knowledgeRequirement>
+    <literalExpression><text>Bewertung(Punkte)</text></literalExpression>
+  </decision>
+</definitions>

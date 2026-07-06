@@ -297,14 +297,15 @@ func TestAddMonthsNegativeUnderflow(t *testing.T) {
 	}
 }
 
-// TestDatePlusDaysTimeDuration covers shift's Date + DaysTimeDuration branch,
-// which promotes a Date to a DateTime.
+// TestDatePlusDaysTimeDuration covers shift's Date + DaysTimeDuration branch.
+// Per DMN, date ± duration stays a date: the duration is applied and the result
+// is truncated back to the calendar day (PT6H stays inside 2024-01-01).
 func TestDatePlusDaysTimeDuration(t *testing.T) {
 	d := NewDate(2024, time.January, 1)
 	dur, _ := ParseDuration("PT6H")
 	got := Add(d, dur)
-	if got.Kind() != KindDateTime || got.String() != "2024-01-01T06:00:00" {
-		t.Errorf("date + PT6H = %q (%s), want 2024-01-01T06:00:00", got.String(), got.Kind())
+	if got.Kind() != KindDate || got.String() != "2024-01-01" {
+		t.Errorf("date + PT6H = %q (%s), want 2024-01-01 (date)", got.String(), got.Kind())
 	}
 }
 

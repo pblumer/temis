@@ -138,6 +138,18 @@ func (s *Scope) at(i int) value.Value {
 type Env struct {
 	index map[string]int
 	order []string
+	// types resolves user-defined item-definition type names (e.g. tNumberList)
+	// for the `instance of` operator; nil when only built-in types are in scope.
+	// It is carried on the env so it reaches every compiled sub-expression without
+	// threading a separate parameter, and is shared (never mutated) by Derive/Append.
+	types map[string]*Type
+}
+
+// WithTypes returns e with the given user-type resolver attached (for `instance
+// of`). The map is shared, not copied; callers must not mutate it afterwards.
+func (e *Env) WithTypes(types map[string]*Type) *Env {
+	e.types = types
+	return e
 }
 
 // NewEnv returns an Env with the given variable names assigned slots in order.
@@ -169,11 +181,16 @@ func (e *Env) slot(name string) (int, bool) {
 // Names returns the variable names in slot order.
 func (e *Env) Names() []string { return e.order }
 
+// Has reports whether name is a bound variable. It lets an Env act as a parser
+// NameSet oracle so a variable whose name embeds a keyword or a hyphen (e.g.
+// "Date-Time") assembles as one name instead of a subtraction (WP-41.15).
+func (e *Env) Has(name string) bool { _, ok := e.index[name]; return ok }
+
 // Derive returns a new Env with extra names appended after the existing slots.
 // It is used to add the implicit unary-test input "?" to a decision env without
 // disturbing the existing slot indices.
 func (e *Env) Derive(extra ...string) *Env {
-	d := &Env{index: make(map[string]int, len(e.index)+len(extra))}
+	d := &Env{index: make(map[string]int, len(e.index)+len(extra)), types: e.types}
 	for _, n := range e.order {
 		d.define(n)
 	}
@@ -191,6 +208,7 @@ func (e *Env) Append(name string) *Env {
 	d := &Env{
 		index: make(map[string]int, len(e.index)+1),
 		order: append([]string(nil), e.order...),
+		types: e.types,
 	}
 	for k, v := range e.index {
 		d.index[k] = v
@@ -210,6 +228,27 @@ func (s *Scope) Extend(extra ...value.Value) *Scope {
 	return &Scope{vars: vars, trace: s.trace, st: s.st}
 }
 
+// WithInput returns a scope with one extra trailing slot holding a decision-table
+// unary test's implicit input ("?"), which the unary-test env (Env.Derive with
+// InputVar) places last. The slot starts null; BindInput rebinds it. The scope is
+// freshly allocated and confined to a single evaluation, so a decision table
+// reuses one such scope across all input columns — rebinding the slot per column
+// via BindInput — instead of allocating a scope per column. Rebinding in place is
+// safe precisely because the scope is not shared: it is created here and only the
+// evaluating goroutine reads it, synchronously, between rebinds.
+func (s *Scope) WithInput() *Scope {
+	vars := make([]value.Value, len(s.vars)+1)
+	copy(vars, s.vars)
+	vars[len(s.vars)] = value.Null
+	return &Scope{vars: vars, trace: s.trace, st: s.st}
+}
+
+// BindInput rebinds the implicit-input slot of a scope returned by WithInput to v.
+// It overwrites the trailing slot in place; use only on a WithInput scope.
+func (s *Scope) BindInput(v value.Value) {
+	s.vars[len(s.vars)-1] = v
+}
+
 // NewScope builds a runtime Scope from named input values, placing each into its
 // env slot. Names absent from values (or with a nil value) become null. This is
 // the single map→slots boundary; everything past it is index-based.
@@ -220,6 +259,29 @@ func (e *Env) NewScope(values map[string]value.Value) *Scope {
 // NewScopeWithLimits is NewScope with explicit resource limits enforced for the
 // evaluation rooted at the returned scope (ADR-0008, WP-34).
 func (e *Env) NewScopeWithLimits(values map[string]value.Value, lim Limits) *Scope {
+	return e.NewScopeShared(values, NewEvalState(lim))
+}
+
+// EvalState is the mutable per-evaluation execution state (the resource
+// counters). It is exported as an alias so a graph evaluator can build one with
+// NewEvalState and share it across every decision's scope via NewScopeShared,
+// allocating it once per evaluation instead of once per decision and bounding the
+// budgets over the whole evaluation (which is what "per-evaluation limits" means).
+type EvalState = evalState
+
+// NewEvalState builds shared per-evaluation execution state enforcing lim.
+func NewEvalState(lim Limits) *EvalState {
+	return &evalState{
+		maxDepth: lim.MaxCallDepth,
+		maxIter:  lim.MaxIterations,
+		maxItems: lim.MaxListSize,
+	}
+}
+
+// NewScopeShared builds a runtime Scope like NewScopeWithLimits but carries the
+// caller-supplied execution state st instead of allocating a fresh one, so all
+// scopes of a single evaluation share one state (and one allocation).
+func (e *Env) NewScopeShared(values map[string]value.Value, st *EvalState) *Scope {
 	vars := make([]value.Value, len(e.order))
 	for i, n := range e.order {
 		if v, ok := values[n]; ok && v != nil {
@@ -228,9 +290,5 @@ func (e *Env) NewScopeWithLimits(values map[string]value.Value, lim Limits) *Sco
 			vars[i] = value.Null
 		}
 	}
-	return &Scope{vars: vars, st: &evalState{
-		maxDepth: lim.MaxCallDepth,
-		maxIter:  lim.MaxIterations,
-		maxItems: lim.MaxListSize,
-	}}
+	return &Scope{vars: vars, st: st}
 }

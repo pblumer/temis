@@ -3,6 +3,7 @@ package feel
 import (
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -58,14 +59,31 @@ func (l *Lexer) Next() Token {
 	}
 }
 
+// skipSpace consumes whitespace and FEEL comments (`// …` to end of line and
+// `/* … */` block comments) between tokens.
 func (l *Lexer) skipSpace() {
 	for {
 		r := l.peek()
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || (r != eof && unicode.IsSpace(r)) {
+		switch {
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || (r != eof && unicode.IsSpace(r)):
 			l.advance()
-			continue
+		case r == '/' && l.peekAt(1) == '/':
+			for l.peek() != '\n' && l.peek() != eof {
+				l.advance()
+			}
+		case r == '/' && l.peekAt(1) == '*':
+			l.advance() // /
+			l.advance() // *
+			for l.peek() != eof && (l.peek() != '*' || l.peekAt(1) != '/') {
+				l.advance()
+			}
+			if l.peek() != eof {
+				l.advance() // *
+				l.advance() // /
+			}
+		default:
+			return
 		}
-		return
 	}
 }
 
@@ -183,24 +201,53 @@ func (l *Lexer) scanEscape(b *strings.Builder) bool {
 	case 't':
 		b.WriteByte('\t')
 	case 'u':
-		return l.scanUnicodeEscape(b)
+		return l.scanHexEscape(b, 4)
+	case 'U':
+		return l.scanHexEscape(b, 6)
+	case eof:
+		return false // a trailing backslash: unterminated
 	default:
-		return false
+		// Not a FEEL string escape, but the DMN-TCK writes regex patterns as string
+		// literals (e.g. "\d{3}", "\." or "\s"), so keep the backslash and the
+		// character verbatim rather than rejecting the whole literal — matching the
+		// reference engines' lenient behaviour (WP-41.18).
+		b.WriteByte('\\')
+		b.WriteRune(e)
 	}
 	return true
 }
 
-func (l *Lexer) scanUnicodeEscape(b *strings.Builder) bool {
-	var cp rune
-	for i := 0; i < 4; i++ {
-		d, ok := hexValue(l.advance())
+// scanHexEscape reads n hex digits after \u (4) or \U (6) and writes the
+// codepoint. A 4-digit high surrogate is combined with a following \uXXXX low
+// surrogate into a single codepoint (UTF-16 surrogate pair).
+func (l *Lexer) scanHexEscape(b *strings.Builder, n int) bool {
+	cp, ok := l.readHex(n)
+	if !ok {
+		return false
+	}
+	if n == 4 && cp >= 0xD800 && cp <= 0xDBFF && l.peek() == '\\' && l.peekAt(1) == 'u' {
+		l.advance() // backslash
+		l.advance() // u
+		lo, ok := l.readHex(4)
 		if !ok {
 			return false
 		}
-		cp = cp<<4 | d
+		cp = utf16.DecodeRune(cp, lo)
 	}
 	b.WriteRune(cp)
 	return true
+}
+
+func (l *Lexer) readHex(n int) (rune, bool) {
+	var cp rune
+	for i := 0; i < n; i++ {
+		d, ok := hexValue(l.advance())
+		if !ok {
+			return 0, false
+		}
+		cp = cp<<4 | d
+	}
+	return cp, true
 }
 
 func (l *Lexer) scanName(line, col int) Token {

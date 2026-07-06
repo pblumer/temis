@@ -24,9 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/mcp"
 	"github.com/pblumer/temis/quality"
@@ -446,6 +443,11 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/decisions/{decision}/create-invocation", ScopeModelsWrite, s.handleCreateInvocation},
 		{"GET", "/v1/models/{id}/bkm/{bkm}", ScopeModelsRead, s.handleGetBKM},
 		{"POST", "/v1/models/{id}/bkm/{bkm}", ScopeModelsWrite, s.handleSaveBKM},
+		// Anchored boxed logic (ADR-0016, WP-66): read/write the boxed expression of
+		// a decision or a BKM body by {anchorKind}/{anchorId}/{kind}, so the per-kind
+		// editors can edit a BKM's boxed body — not just a decision's logic.
+		{"GET", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsRead, s.handleGetLogic},
+		{"POST", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsWrite, s.handleSaveLogic},
 		{"POST", "/v1/models/{id}/save", ScopeModelsWrite, s.handleSaveModel},
 		// Evaluation.
 		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
@@ -552,9 +554,11 @@ func (s *Server) Handler() http.Handler {
 	grpcPath, grpcHandler := s.grpcHandler()
 	mux.Handle(grpcPath, grpcHandler)
 
-	// h2c lets full gRPC and the bidi EvaluateBatch stream work over cleartext
-	// HTTP/2 (no TLS); HTTP/1.1 requests are still served normally.
-	return h2c.NewHandler(mux, &http2.Server{})
+	// The mux is returned bare: cleartext HTTP/2 (h2c) — needed for full gRPC and
+	// the bidi EvaluateBatch stream without TLS — is enabled at the server level
+	// via http.Server.Protocols (SetUnencryptedHTTP2), which supersedes the
+	// deprecated golang.org/x/net/http2/h2c wrapper. See cmd/temisd/main.go.
+	return mux
 }
 
 // --- request/response DTOs ---

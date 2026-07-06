@@ -2,6 +2,7 @@ import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
 import { ensureFeel, validateExpr, validateName } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
+import { openBoxed } from './boxededitors'
 
 // openBKMOverlay edits a business knowledge model's encapsulated function (ADR-
 // 0016): its formal parameters (name + type, add/remove) and a literal FEEL body,
@@ -22,6 +23,15 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   // (e.g. one just dropped on the canvas) has no parameters — the server sends
   // params as null there, so default to an empty list.
   const params: BKMParam[] = (view.params ?? []).map((p) => ({ ...p }))
+
+  // A boxed (non-literal) body opens in the matching boxed editor, anchored at the
+  // BKM so it writes back to the encapsulated body (WP-66). The function's formal
+  // parameters are the body's in-scope names. Only a literal or empty body uses
+  // the simple parameter + FEEL editor below; an unknown boxed kind falls through
+  // to the read-only note.
+  if (!view.simple && openBoxedBody(modelId, bkmId, view.bodyKind ?? '', params.map((p) => p.name.trim()).filter((n) => n !== ''), onSaved, typeOptions)) {
+    return
+  }
 
   const close = (): void => {
     overlay.remove()
@@ -52,7 +62,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   const status = el('span', { class: 'dt-status' })
 
   if (!view.simple) {
-    body.append(el('p', { class: 'eval-empty' }, 'Diese BKM hat einen Boxed-Expression-Body — hier (noch) schreibgeschützt.'))
+    body.append(el('p', { class: 'eval-empty' }, 'Diese BKM hat einen Boxed-Expression-Body dieses Typs — hier (noch) schreibgeschützt.'))
     overlay.append(el('div', { class: 'dt-modal lit-modal' }, header, body, el('div', { class: 'dt-toolbar' }, status)))
     document.body.append(overlay)
     return
@@ -164,4 +174,13 @@ function el(tag: string, attrs: Record<string, string> = {}, ...children: (strin
   }
   node.append(...children)
   return node
+}
+
+// openBoxedBody opens the boxed editor matching kind on a BKM's encapsulated body,
+// anchored so edits write back to the body (WP-66). names are the function's
+// formal parameters (the body's in-scope variables). It returns false for a kind
+// with no editor (e.g. a nested function), so the caller can fall back to a
+// read-only note.
+function openBoxedBody(modelId: string, bkmId: string, kind: string, names: string[], onSaved?: (newModelId: string) => void, typeOptions: string[] = FEEL_TYPES): boolean {
+  return openBoxed(kind, { modelId, anchor: { kind: 'bkm', id: bkmId }, names, onSaved, typeOptions })
 }

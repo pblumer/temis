@@ -92,11 +92,28 @@ type TableEdit struct {
 // An empty input entry is stored as "-" (the DMN "any" match). It errors when the
 // decision has no decision-table logic.
 func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, error) {
+	return applyTableEditAt(src, "decision", decisionID, nil, edit)
+}
+
+// applyTableEditAt is ApplyTableEdit generalised over the logic location (a
+// decision or BKM body, and a nested path within it, per exprSlotAt): it patches
+// the decision table found at anchor+steps.
+func applyTableEditAt(src []byte, anchorKind, anchorID string, steps []dmnxml.Step, edit TableEdit) ([]byte, error) {
 	def, err := dmnxml.Decode(src)
 	if err != nil {
 		return nil, err
 	}
+	inputs, outputs, rules := buildTableParts(edit)
+	if !def.UpdateTableAt(anchorKind, anchorID, steps, hitPolicyXML(edit.HitPolicy), aggregationFor(edit), inputs, outputs, rules, edit.ReplaceColumns) {
+		return nil, fmt.Errorf("dmn: %s %q has no decision table at that location", anchorKind, anchorID)
+	}
+	return dmnxml.Encode(def)
+}
 
+// buildTableParts turns a TableEdit into the XML input/output columns (only when
+// ReplaceColumns is set) and the rule rows, aligning each rule's entries with the
+// column counts so an added/removed column leaves a consistent table.
+func buildTableParts(edit TableEdit) ([]dmnxml.Input, []dmnxml.Output, []dmnxml.Rule) {
 	var inputs []dmnxml.Input
 	var outputs []dmnxml.Output
 	if edit.ReplaceColumns {
@@ -114,9 +131,6 @@ func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, erro
 			})
 		}
 	}
-
-	// Align each rule's entries with the column counts (when columns are known),
-	// so an added/removed column leaves a consistent table.
 	nIn, nOut := -1, -1
 	if edit.ReplaceColumns {
 		nIn, nOut = len(inputs), len(outputs)
@@ -129,11 +143,7 @@ func ApplyTableEdit(src []byte, decisionID string, edit TableEdit) ([]byte, erro
 			Annotations:   dropTrailingEmpty(trimEntries(r.Annotations)),
 		}
 	}
-
-	if !def.UpdateDecisionTable(decisionID, hitPolicyXML(edit.HitPolicy), aggregationFor(edit), inputs, outputs, rules, edit.ReplaceColumns) {
-		return nil, fmt.Errorf("dmn: decision %q has no decision table", decisionID)
-	}
-	return dmnxml.Encode(def)
+	return inputs, outputs, rules
 }
 
 // fit pads or truncates entries to n elements (filling with pad); n < 0 leaves

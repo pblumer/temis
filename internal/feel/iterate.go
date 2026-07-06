@@ -1,9 +1,17 @@
 package feel
 
 import (
+	"errors"
+	"time"
+
 	"github.com/pblumer/temis/internal/feel/builtins"
 	"github.com/pblumer/temis/internal/value"
 )
+
+// errNonIterableDomain marks a for/quantifier domain that is a range of a type
+// that cannot be enumerated (a string, date-and-time, time, duration or unbounded
+// range). The comprehension yields null rather than an empty list.
+var errNonIterableDomain = errors.New("feel: non-iterable range domain")
 
 // itemVar is the implicit name bound to the current element inside a filter
 // predicate (e.g. nums[item > 2]). Context elements additionally expose their
@@ -52,6 +60,9 @@ func (c *compiler) compileForExpr(n *ForExpr) CompiledExpr {
 			out = append(out, v)
 			return sc.st.checkItems(len(out))
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -70,24 +81,34 @@ func (c *compiler) compileQuantified(n *QuantifiedExpr) CompiledExpr {
 	some := n.Quant == "some"
 
 	return func(s *Scope) (value.Value, error) {
-		sawTrue, sawFalse, sawNull := false, false, false
+		sawTrue, sawFalse, sawNull, sawBad := false, false, false, false
 		err := iterate(s, iters, 0, func(sc *Scope) error {
 			v, err := cond(sc)
 			if err != nil {
 				return err
 			}
-			switch v {
-			case value.True:
+			switch {
+			case v == value.True:
 				sawTrue = true
-			case value.False:
+			case v == value.False:
 				sawFalse = true
-			default:
+			case value.IsNull(v):
 				sawNull = true
+			default:
+				// A genuine non-boolean satisfies-result poisons the quantifier
+				// (TCK 1153), overriding any true/false.
+				sawBad = true
 			}
 			return nil
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
+		}
+		if sawBad {
+			return value.Null, nil
 		}
 		if some {
 			switch {
@@ -156,17 +177,36 @@ func forEachDomain(st *evalState, v value.Value, fn func(value.Value) error) err
 	}
 }
 
-// forEachRange streams an integer numeric range one value at a time, charging an
-// iteration step per value. A non-integer or unbounded range yields nothing.
+// forEachRange streams an iterable range one value at a time, charging an
+// iteration step per value. FEEL enumerates integer number ranges and date ranges
+// (both ascending and descending, both ends inclusive); any other range type
+// (string, date-and-time, time, duration, or unbounded) is non-iterable and makes
+// the comprehension null (errNonIterableDomain).
 func forEachRange(st *evalState, r value.Range, fn func(value.Value) error) error {
-	lo, ok := integerOf(r.Low)
-	if !ok {
-		return nil
+	switch lo := r.Low.(type) {
+	case value.Number:
+		loI, ok1 := lo.Int64()
+		hi, ok2 := r.High.(value.Number)
+		if !ok1 || !ok2 {
+			return errNonIterableDomain
+		}
+		hiI, ok3 := hi.Int64()
+		if !ok3 {
+			return errNonIterableDomain
+		}
+		return forEachIntStep(st, loI, hiI, fn)
+	case value.Date:
+		hi, ok := r.High.(value.Date)
+		if !ok {
+			return errNonIterableDomain
+		}
+		return forEachDay(st, lo.Time(), hi.Time(), fn)
+	default:
+		return errNonIterableDomain
 	}
-	hi, ok := integerOf(r.High)
-	if !ok {
-		return nil
-	}
+}
+
+func forEachIntStep(st *evalState, lo, hi int64, fn func(value.Value) error) error {
 	step := int64(1)
 	if lo > hi {
 		step = -1
@@ -179,6 +219,25 @@ func forEachRange(st *evalState, r value.Range, fn func(value.Value) error) erro
 			return err
 		}
 		if i == hi {
+			break
+		}
+	}
+	return nil
+}
+
+func forEachDay(st *evalState, lo, hi time.Time, fn func(value.Value) error) error {
+	days := 1
+	if lo.After(hi) {
+		days = -1
+	}
+	for d := lo; ; d = d.AddDate(0, 0, days) {
+		if err := st.step(); err != nil {
+			return err
+		}
+		if err := fn(value.NewDate(d.Year(), d.Month(), d.Day())); err != nil {
+			return err
+		}
+		if d.Equal(hi) {
 			break
 		}
 	}
@@ -248,11 +307,19 @@ func filterClosure(x, f CompiledExpr) CompiledExpr {
 			if err != nil {
 				return nil, err
 			}
-			if r == value.True {
+			switch {
+			case r == value.True:
 				out = append(out, e)
 				if err := s.st.checkItems(len(out)); err != nil {
 					return nil, err
 				}
+			case r == value.False || value.IsNull(r):
+				// false and null exclude the element (null keeps the common
+				// null-safe predicate form working, e.g. item.x > 3 when x is null).
+			default:
+				// A genuine non-boolean predicate result makes the filter
+				// undefined: the whole expression is null (DMN 10.3.2.5, TCK 1151).
+				return value.Null, nil
 			}
 		}
 		return value.NewList(out...), nil
@@ -296,24 +363,34 @@ func QuantifyOne(some bool, coll, pred CompiledExpr) CompiledExpr {
 		if err != nil {
 			return nil, err
 		}
-		sawTrue, sawFalse, sawNull := false, false, false
+		sawTrue, sawFalse, sawNull, sawBad := false, false, false, false
 		err = forEachDomain(s.st, cv, func(e value.Value) error {
 			v, err := pred(s.Extend(e))
 			if err != nil {
 				return err
 			}
-			switch v {
-			case value.True:
+			switch {
+			case v == value.True:
 				sawTrue = true
-			case value.False:
+			case v == value.False:
 				sawFalse = true
-			default:
+			case value.IsNull(v):
 				sawNull = true
+			default:
+				// A genuine non-boolean satisfies-result poisons the quantifier:
+				// the whole expression is null (TCK 1153), overriding any true/false.
+				sawBad = true
 			}
 			return nil
 		})
+		if errors.Is(err, errNonIterableDomain) {
+			return value.Null, nil
+		}
 		if err != nil {
 			return nil, err
+		}
+		if sawBad {
+			return value.Null, nil
 		}
 		if some {
 			switch {

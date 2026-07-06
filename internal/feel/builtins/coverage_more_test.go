@@ -34,12 +34,11 @@ func TestVariadicMethod(t *testing.T) {
 	}
 }
 
-func TestAsIntNonInteger(t *testing.T) {
-	// scaled() goes through asInt on its scale argument; a non-integer number
-	// (fractional) makes Int64 fail, exercising asInt's ok=false branch.
+func TestScaledFractionalScale(t *testing.T) {
+	// scaled() floors a non-integer scale argument (TCK 1100 decimal(1/3, 2.5)).
 	run(t, []tc{
-		{name: "decimal", args: []value.Value{num("3.14"), num("1.5")}, wantNull: true},
-		{name: "floor", args: []value.Value{num("3.14"), num("2.5")}, wantNull: true},
+		{name: "decimal", args: []value.Value{num("3.146"), num("1.5")}, want: "3.1"},
+		{name: "floor", args: []value.Value{num("3.14"), num("2.5")}, want: "3.14"},
 	})
 }
 
@@ -201,9 +200,9 @@ func TestStringEdgeBranches(t *testing.T) {
 	run(t, []tc{
 		// compileRegex: unknown flag → null; the 'x','s','m' flags are accepted.
 		{name: "matches", args: []value.Value{str("a"), str("a"), str("q")}, wantNull: true},
-		// the 'x' flag is accepted by compileRegex but Go's RE2 rejects (?x), so
-		// it yields null; still exercises the case 'x' branch.
-		{name: "matches", args: []value.Value{str("ab"), str("a b"), str("x")}, wantNull: true},
+		// the 'x' (extended) flag strips insignificant whitespace from the pattern,
+		// so "a b" becomes "ab" and matches "ab" (WP-41.18).
+		{name: "matches", args: []value.Value{str("ab"), str("a b"), str("x")}, want: "true"},
 		{name: "matches", args: []value.Value{str("a\nb"), str("a.b"), str("s")}, want: "true"},
 		{name: "matches", args: []value.Value{str("a\nb"), str("^b$"), str("m")}, want: "true"},
 		// matches: non-string pattern → null
@@ -233,10 +232,9 @@ func TestStringEdgeBranches(t *testing.T) {
 		{name: "substring", args: []value.Value{str("foobar"), num("2"), num("99")}, want: "oobar"},
 		{name: "substring", args: []value.Value{str("foobar"), num("2"), value.Null}, want: "oobar"},
 
-		// string join: delimiter present but non-string (and non-null) → null;
-		// prefix/suffix supplied.
+		// string join: delimiter present but non-string (and non-null) → null.
 		{name: "string join", args: []value.Value{list(str("a"), str("b")), num("1")}, wantNull: true},
-		{name: "string join", args: []value.Value{list(str("a"), str("b")), str("-"), str("<"), str(">")}, want: "<a-b>"},
+		{name: "string join", args: []value.Value{list(str("a"), str("b")), str("-")}, want: "a-b"},
 		// string join: non-list first arg treated as the single element.
 		{name: "string join", args: []value.Value{str("a"), str("-")}, want: "a"},
 	})

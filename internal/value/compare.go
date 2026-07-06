@@ -74,7 +74,19 @@ func rangeEqual(a, b Range) Value {
 	if a.LowClosed != b.LowClosed || a.HighClosed != b.HighClosed {
 		return False
 	}
-	return BoolOf(Equal(a.Low, b.Low) == True && Equal(a.High, b.High) == True)
+	return BoolOf(endpointEqual(a.Low, b.Low) && endpointEqual(a.High, b.High))
+}
+
+// endpointEqual compares two range endpoints. An omitted (unbounded) endpoint is
+// a Go-nil bound and equals only another unbounded endpoint — it is distinct from
+// an explicit null bound (e.g. `(< 10)` ≠ `(null..10)`, DMN-TCK 0068). Two present
+// endpoints compare by value.
+func endpointEqual(a, b Value) bool {
+	an, bn := a == nil, b == nil
+	if an || bn {
+		return an && bn
+	}
+	return Equal(a, b) == True
 }
 
 // Compare orders two values for the relational operators (<, <=, >, >=). It

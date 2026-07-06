@@ -1,6 +1,7 @@
 package feel
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -317,22 +318,15 @@ func TestForEachDomainNullAndScalar(t *testing.T) {
 }
 
 func TestForEachRangeNonInteger(t *testing.T) {
-	// A range whose bounds are not integers (or open) yields nothing.
+	// An unbounded range is not iterable; forEachRange reports the non-iterable
+	// domain (which makes a comprehension null) rather than yielding nothing.
 	open := value.Range{LowClosed: true, Low: value.Null, High: value.NumberFromInt64(3), HighClosed: true}
-	count := 0
-	if err := forEachRange(nil, open, func(value.Value) error { count++; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Errorf("open-low range produced %d, want 0", count)
+	if err := forEachRange(nil, open, func(value.Value) error { return nil }); !errors.Is(err, errNonIterableDomain) {
+		t.Errorf("open-low range err = %v, want errNonIterableDomain", err)
 	}
 	openHi := value.Range{LowClosed: true, Low: value.NumberFromInt64(1), High: value.Null, HighClosed: true}
-	count = 0
-	if err := forEachRange(nil, openHi, func(value.Value) error { count++; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Errorf("open-high range produced %d, want 0", count)
+	if err := forEachRange(nil, openHi, func(value.Value) error { return nil }); !errors.Is(err, errNonIterableDomain) {
+		t.Errorf("open-high range err = %v, want errNonIterableDomain", err)
 	}
 }
 
@@ -830,30 +824,32 @@ func TestRefersToInputContainerForms(t *testing.T) {
 	}
 }
 
-func TestArityTextExactAndRange(t *testing.T) {
-	// A fixed-arity builtin (exact) and a variadic one (at least) report different
-	// arity texts via their too-few-args compile errors.
-	if _, err := CompileString("string length()", NewEnv()); err == nil {
-		t.Error("string length() should be an arity error")
-	}
-	if _, err := CompileString("substring()", NewEnv()); err == nil {
-		t.Error("substring() should be an arity error")
-	}
-}
-
-func TestNamedArgsToNoParamBuiltin(t *testing.T) {
-	// A builtin with no declared parameter names rejects named arguments.
-	if _, err := CompileString(`count(x: [1, 2])`, NewEnv()); err == nil {
-		t.Error("named args on a no-param builtin should be a compile error")
+func TestBuiltinArityMismatchIsNull(t *testing.T) {
+	// A builtin invoked with the wrong arity or with named args it does not accept
+	// compiles (FEEL total-function semantics) and evaluates to null rather than
+	// making the decision non-executable.
+	for _, src := range []string{
+		"string length()",  // fixed-arity, too few
+		"substring()",      // variadic, too few
+		`count(x: [1, 2])`, // named args on a no-param builtin
+	} {
+		if _, err := CompileString(src, NewEnv()); err != nil {
+			t.Errorf("Compile(%q) = %v, want no error", src, err)
+			continue
+		}
+		if got := evalStr(t, src, nil); !value.IsNull(got) {
+			t.Errorf("eval(%q) = %s, want null", src, got)
+		}
 	}
 }
 
 func TestBoxedFilterCompileError(t *testing.T) {
-	// A predicate that calls an unknown function fails to compile, exercising
-	// BoxedFilter's c.err path. (An unknown *variable* would instead resolve via
-	// the implicit element context, so a bad function name is used here.)
-	if _, err := BoxedFilter(constExpr(nums(1, 2)), "bogusfn(item) > 1", NewEnv(), nil); err == nil {
-		t.Error("BoxedFilter with an unknown function should be a compile error")
+	// A predicate with a syntax error fails to compile, exercising BoxedFilter's
+	// error path. (Unknown variables resolve via the implicit element context, and
+	// an unknown function call is now a total-function null — WP-41.17 — so neither
+	// is a compile error; a malformed expression still is.)
+	if _, err := BoxedFilter(constExpr(nums(1, 2)), "item > ", NewEnv(), nil); err == nil {
+		t.Error("BoxedFilter with a malformed predicate should be a compile error")
 	}
 }
 

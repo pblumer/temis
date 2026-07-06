@@ -25,6 +25,11 @@ type BKMView struct {
 	BodyText    string     `json:"bodyText"`
 	BodyTypeRef string     `json:"bodyTypeRef,omitempty"`
 	Simple      bool       `json:"simple"`
+	// BodyKind names the boxed kind of a non-simple body (table, context, list,
+	// relation, invocation, iterator, conditional, filter, function), so the
+	// modeler can open the matching boxed editor on it (WP-66). It is empty for a
+	// simple (literal or empty) body.
+	BodyKind string `json:"bodyKind,omitempty"`
 }
 
 // BKMFunction returns a business knowledge model's encapsulated-logic view. ok is
@@ -52,7 +57,10 @@ func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool) {
 		case nil:
 			// no body yet — still a simple (empty) function
 		default:
-			v.Simple = false // boxed body; not editable in the simple editor
+			// A boxed body (table/context/…): not editable in the simple editor, but
+			// the modeler opens the matching boxed editor on it via BodyKind (WP-66).
+			v.Simple = false
+			v.BodyKind = exprKind(fn.Body)
 		}
 	}
 	return v, true

@@ -39,7 +39,7 @@ func TestEvalArithmetic(t *testing.T) {
 		"10 / 4":      "2.5",
 		"2 ** 10":     "1024",
 		"-5 + 1":      "-4",
-		"2 ** 3 ** 2": "512", // right-assoc: 2**(3**2)
+		"2 ** 3 ** 2": "64", // left-assoc: (2**3)**2 (TCK 0100)
 	}
 	for src, want := range cases {
 		if got := evalStr(t, src, nil); got.String() != want {
@@ -174,7 +174,6 @@ func TestCompileErrors(t *testing.T) {
 		line, col int
 	}{
 		{"x + 1", 1, 1},                     // unknown variable
-		{"f(1)", 1, 1},                      // unknown function, at the name position
 		{"function(x) x + y", 1, 17},        // function body references unknown variable
 		{"some x in xs satisfies x", 1, 11}, // unknown domain variable "xs"
 	}
@@ -231,9 +230,10 @@ func TestCompileErrorMessageAndExtras(t *testing.T) {
 		t.Errorf(`5 between "a" and 10 = %s, want null`, got)
 	}
 
-	// invalid temporal literal is a compile error.
-	if _, err := CompileString(`@"not-temporal"`, NewEnv()); err == nil {
-		t.Error("invalid @-literal should fail to compile")
+	// an invalid temporal literal is a well-formed expression that evaluates to
+	// null (TCK 0093), not a compile error.
+	if got := evalStr(t, `@"not-temporal"`, nil); !value.IsNull(got) {
+		t.Errorf(`@"not-temporal" = %s, want null`, got)
 	}
 	// a syntax error surfaces as a *ParseError, not a *CompileError.
 	if _, err := CompileString("1 +", NewEnv()); err == nil {
@@ -274,6 +274,72 @@ func BenchmarkEval(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, err := ce(scope); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// TestCrossTypeEqualityIsNull covers FEEL's rule that = / != between two
+// non-null values of different types is null, not false (DMN §10.3.2.7); same-type
+// and null comparisons keep their boolean result.
+func TestCrossTypeEqualityIsNull(t *testing.T) {
+	cases := map[string]string{
+		`100 = "100"`:                       "null",
+		`false = 0`:                         "null",
+		`[] = 0`:                            "null",
+		`{} = []`:                           "null",
+		`duration("P1Y") = duration("P1D")`: "null",
+		`100 != "100"`:                      "null",
+		// same-type and null comparisons are unaffected
+		`100 = 100`:   "true",
+		`100 != 200`:  "true",
+		`null = null`: "true",
+		`1 = null`:    "false",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
+		}
+	}
+}
+
+// TestRangeFromComparison covers range literals built from a single comparison
+// endpoint: (< v), (<= v), (> v), (>= v), (= v), including half-bounded ranges.
+func TestRangeFromComparison(t *testing.T) {
+	cases := map[string]string{
+		`(< 10).start included`:  "false",
+		`(< 10).start`:           "null", // unbounded low
+		`(< 10).end`:             "10",
+		`(< 10).end included`:    "false",
+		`(<= 10).end included`:   "true",
+		`(> 10).start`:           "10",
+		`(> 10).start included`:  "false",
+		`(>= 10).start included`: "true",
+		`(>= 10).end`:            "null", // unbounded high
+		`(= 10).start`:           "10",
+		`(= 10).end included`:    "true",
+		// membership against a half-bounded range
+		`5 in (> 3)`:  "true",
+		`5 in (< 3)`:  "false",
+		`2 in (>= 2)`: "true",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
+		}
+	}
+}
+
+// TestContextEntryReferences covers FEEL context semantics where an entry may
+// reference the entries declared before it.
+func TestContextEntryReferences(t *testing.T) {
+	cases := map[string]string{
+		`{a: 1 + 2, b: a + 3}`:            "{a: 3, b: 6}",
+		`{a: 1 + 2, b: 3, c: {d: a + b}}`: "{a: 3, b: 3, c: {d: 6}}",
+		`{a: 2, b: a * a, c: b + a}`:      "{a: 2, b: 4, c: 6}",
+	}
+	for src, want := range cases {
+		if got := evalStr(t, src, nil); got.String() != want {
+			t.Errorf("%q = %s, want %s", src, got, want)
 		}
 	}
 }
