@@ -27,6 +27,7 @@ import { dmnLayouterModule } from './dmn-layouter'
 import { dmnPaletteModule } from './dmn-palette'
 import { dmnSnappingModule } from './dmn-snapping'
 import { layout, type Laid, type Orientation } from './layout'
+import { boxedTypeFor } from './boxededitors'
 import type { Graph, GraphNode, GraphEdge } from './api'
 
 // What the toolbar needs to know about the current selection to offer the type
@@ -70,61 +71,13 @@ export type ModelerHandle = {
   // graph returns the live decision requirements graph (nodes + edges) for a
   // structural save — reflecting nodes/edges added or removed on the canvas.
   graph: () => GraphState
-  // onOpenTable fires with a decision's id when the user double-clicks a decision
-  // whose logic is a decision table (to open its table view).
-  onOpenTable: (cb: (decisionId: string) => void) => void
-  // onCreateTable fires with a decision's id when the user asks (via the context
-  // pad) to give a table-less decision a fresh decision table.
-  onCreateTable: (cb: (decisionId: string) => void) => void
-  // onOpenLiteral fires with a decision's id when the user double-clicks a
-  // decision whose logic is a literal FEEL expression (to open the expression
-  // editor).
-  onOpenLiteral: (cb: (decisionId: string) => void) => void
-  // onCreateLiteral fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a literal expression.
-  onCreateLiteral: (cb: (decisionId: string) => void) => void
-  // onOpenContext fires with a decision's id when the user opens a decision whose
-  // logic is a boxed context (double-click or the context pad), to edit it.
-  onOpenContext: (cb: (decisionId: string) => void) => void
-  // onCreateContext fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a boxed context.
-  onCreateContext: (cb: (decisionId: string) => void) => void
-  // onOpenConditional fires with a decision's id when the user opens a decision
-  // whose logic is a boxed conditional (double-click or the context pad).
-  onOpenConditional: (cb: (decisionId: string) => void) => void
-  // onCreateConditional fires with a decision's id when the user asks (via the
-  // context pad) to give an undecided decision a boxed conditional.
-  onCreateConditional: (cb: (decisionId: string) => void) => void
-  // onOpenList fires with a decision's id when the user opens a decision whose
-  // logic is a boxed list (double-click or the context pad), to edit it.
-  onOpenList: (cb: (decisionId: string) => void) => void
-  // onCreateList fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a boxed list.
-  onCreateList: (cb: (decisionId: string) => void) => void
-  // onOpenRelation fires with a decision's id when the user opens a decision whose
-  // logic is a boxed relation (double-click or the context pad), to edit it.
-  onOpenRelation: (cb: (decisionId: string) => void) => void
-  // onCreateRelation fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a boxed relation.
-  onCreateRelation: (cb: (decisionId: string) => void) => void
-  // onOpenFilter fires with a decision's id when the user opens a decision whose
-  // logic is a boxed filter (double-click or the context pad), to edit it.
-  onOpenFilter: (cb: (decisionId: string) => void) => void
-  // onCreateFilter fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a boxed filter.
-  onCreateFilter: (cb: (decisionId: string) => void) => void
-  // onOpenIterator fires with a decision's id when the user opens a decision whose
-  // logic is a boxed iteration (for/some/every), to edit it.
-  onOpenIterator: (cb: (decisionId: string) => void) => void
-  // onCreateIterator fires with a decision's id when the user asks (via the context
-  // pad) to give an undecided decision a boxed iteration.
-  onCreateIterator: (cb: (decisionId: string) => void) => void
-  // onOpenInvocation fires with a decision's id when the user opens a decision
-  // whose logic is a boxed invocation (a function/BKM call), to edit it.
-  onOpenInvocation: (cb: (decisionId: string) => void) => void
-  // onCreateInvocation fires with a decision's id when the user asks (via the
-  // context pad) to give an undecided decision a boxed invocation.
-  onCreateInvocation: (cb: (decisionId: string) => void) => void
+  // onOpenLogic fires with (kind, decisionId) when the user opens a decision whose
+  // logic is a boxed kind — double-click or the context pad's edit entry. The kind
+  // is resolved from the node's has* flag via the boxed-type registry (WP-142).
+  onOpenLogic: (cb: (kind: string, decisionId: string) => void) => void
+  // onCreateLogic fires with (kind, decisionId) when the user asks (via the context
+  // pad) to give an undecided decision a fresh boxed logic of that kind.
+  onCreateLogic: (cb: (kind: string, decisionId: string) => void) => void
   // onOpenBKM fires with a business knowledge model's id when the user asks (via
   // the context pad or by double-clicking the BKM) to edit its function.
   onOpenBKM: (cb: (bkmId: string) => void) => void
@@ -451,111 +404,42 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // Double-clicking a decision that has a decision table opens its table view.
   // Such shapes are not inline-renamed (see dmn-label-editing), so the gestures
   // don't collide.
-  let openTableCb = (_decisionId: string): void => {}
-  let openLiteralCb = (_decisionId: string): void => {}
-  let openContextCb = (_decisionId: string): void => {}
-  let openConditionalCb = (_decisionId: string): void => {}
-  let openListCb = (_decisionId: string): void => {}
-  let openRelationCb = (_decisionId: string): void => {}
-  let openFilterCb = (_decisionId: string): void => {}
-  let openIteratorCb = (_decisionId: string): void => {}
-  let openInvocationCb = (_decisionId: string): void => {}
+  // One generic pair of callbacks drives every boxed kind (WP-142). The kind is
+  // resolved from the node's has* flag via the boxed-type registry.
+  let openLogicCb = (_kind: string, _decisionId: string): void => {}
+  let createLogicCb = (_kind: string, _decisionId: string): void => {}
   let openBoxedCb = (_decisionId: string): void => {}
-  eventBus.on('element.dblclick', (e: { element?: Shape & { hasTable?: boolean; hasLiteral?: boolean; hasContext?: boolean; hasConditional?: boolean; hasList?: boolean; hasRelation?: boolean; hasFilter?: boolean; hasIterator?: boolean; hasInvocation?: boolean } }) => {
+  let openBKMCb = (_bkmId: string): void => {}
+
+  eventBus.on('element.dblclick', (e: { element?: Shape }) => {
     const el = e.element
     if (!el) return
     // Double-click always switches to an element's content — never renames
     // (renaming is the pencil icon or F2, see dmn-label-editing). A BKM opens its
-    // encapsulated function; a decision opens whichever logic it carries.
+    // encapsulated function; a decision opens whichever boxed kind it carries.
     if (el.type === 'dmn:businessKnowledgeModel') {
       openBKMCb(el.id)
       return
     }
     if (el.type !== 'dmn:decision') return
-    if (el.hasTable) openTableCb(el.id)
-    else if (el.hasLiteral) openLiteralCb(el.id)
-    else if (el.hasContext) openContextCb(el.id)
-    else if (el.hasConditional) openConditionalCb(el.id)
-    else if (el.hasList) openListCb(el.id)
-    else if (el.hasRelation) openRelationCb(el.id)
-    else if (el.hasFilter) openFilterCb(el.id)
-    else if (el.hasIterator) openIteratorCb(el.id)
-    else if (el.hasInvocation) openInvocationCb(el.id)
+    const bt = boxedTypeFor(el as unknown as Record<string, unknown>)
+    if (bt) openLogicCb(bt.kind, el.id)
     // A truly undecided decision (no logic yet) has no content to open; its logic
-    // is created from the context pad. The boxed-info hint for an uneditable
-    // boxed expression likewise stays on the context pad, so nothing clashes.
+    // is created from the context pad. The boxed-info hint for an uneditable boxed
+    // expression likewise stays on the context pad, so nothing clashes.
   })
   // The context pad's boxed-info icon fires this for a boxed-expression decision.
   eventBus.on('dmn.boxedInfo', (e: { element?: Shape }) => {
     if (e.element) openBoxedCb(e.element.id)
   })
-  // The context pad's open icons fire these so the logic opens with a single
-  // click (the same handlers as the double-click above).
-  eventBus.on('dmn.openTable', (e: { element?: Shape }) => {
-    if (e.element) openTableCb(e.element.id)
+  // The context pad's open/create icons fire these with the boxed kind so the logic
+  // opens/creates with a single click (the same paths as double-click above).
+  eventBus.on('dmn.openLogic', (e: { element?: Shape; kind?: string }) => {
+    if (e.element && e.kind) openLogicCb(e.kind, e.element.id)
   })
-  eventBus.on('dmn.openLiteral', (e: { element?: Shape }) => {
-    if (e.element) openLiteralCb(e.element.id)
+  eventBus.on('dmn.createLogic', (e: { element?: Shape; kind?: string }) => {
+    if (e.element && e.kind) createLogicCb(e.kind, e.element.id)
   })
-  eventBus.on('dmn.openContext', (e: { element?: Shape }) => {
-    if (e.element) openContextCb(e.element.id)
-  })
-  eventBus.on('dmn.openConditional', (e: { element?: Shape }) => {
-    if (e.element) openConditionalCb(e.element.id)
-  })
-  eventBus.on('dmn.openList', (e: { element?: Shape }) => {
-    if (e.element) openListCb(e.element.id)
-  })
-  eventBus.on('dmn.openRelation', (e: { element?: Shape }) => {
-    if (e.element) openRelationCb(e.element.id)
-  })
-  eventBus.on('dmn.openFilter', (e: { element?: Shape }) => {
-    if (e.element) openFilterCb(e.element.id)
-  })
-  eventBus.on('dmn.openIterator', (e: { element?: Shape }) => {
-    if (e.element) openIteratorCb(e.element.id)
-  })
-  eventBus.on('dmn.openInvocation', (e: { element?: Shape }) => {
-    if (e.element) openInvocationCb(e.element.id)
-  })
-
-  let createTableCb = (_decisionId: string): void => {}
-  let createLiteralCb = (_decisionId: string): void => {}
-  let createContextCb = (_decisionId: string): void => {}
-  let createConditionalCb = (_decisionId: string): void => {}
-  let createListCb = (_decisionId: string): void => {}
-  let createRelationCb = (_decisionId: string): void => {}
-  let createFilterCb = (_decisionId: string): void => {}
-  let createIteratorCb = (_decisionId: string): void => {}
-  let createInvocationCb = (_decisionId: string): void => {}
-  eventBus.on('dmn.createTable', (e: { element?: Shape }) => {
-    if (e.element) createTableCb(e.element.id)
-  })
-  eventBus.on('dmn.createLiteral', (e: { element?: Shape }) => {
-    if (e.element) createLiteralCb(e.element.id)
-  })
-  eventBus.on('dmn.createContext', (e: { element?: Shape }) => {
-    if (e.element) createContextCb(e.element.id)
-  })
-  eventBus.on('dmn.createList', (e: { element?: Shape }) => {
-    if (e.element) createListCb(e.element.id)
-  })
-  eventBus.on('dmn.createRelation', (e: { element?: Shape }) => {
-    if (e.element) createRelationCb(e.element.id)
-  })
-  eventBus.on('dmn.createFilter', (e: { element?: Shape }) => {
-    if (e.element) createFilterCb(e.element.id)
-  })
-  eventBus.on('dmn.createIterator', (e: { element?: Shape }) => {
-    if (e.element) createIteratorCb(e.element.id)
-  })
-  eventBus.on('dmn.createInvocation', (e: { element?: Shape }) => {
-    if (e.element) createInvocationCb(e.element.id)
-  })
-  eventBus.on('dmn.createConditional', (e: { element?: Shape }) => {
-    if (e.element) createConditionalCb(e.element.id)
-  })
-  let openBKMCb = (_bkmId: string): void => {}
   eventBus.on('dmn.openBKM', (e: { element?: Shape }) => {
     if (e.element) openBKMCb(e.element.id)
   })
@@ -608,59 +492,11 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       }
       return { nodes, edges }
     },
-    onOpenTable: (cb) => {
-      openTableCb = cb
+    onOpenLogic: (cb) => {
+      openLogicCb = cb
     },
-    onCreateTable: (cb) => {
-      createTableCb = cb
-    },
-    onOpenLiteral: (cb) => {
-      openLiteralCb = cb
-    },
-    onCreateLiteral: (cb) => {
-      createLiteralCb = cb
-    },
-    onOpenContext: (cb) => {
-      openContextCb = cb
-    },
-    onCreateContext: (cb) => {
-      createContextCb = cb
-    },
-    onOpenConditional: (cb) => {
-      openConditionalCb = cb
-    },
-    onCreateConditional: (cb) => {
-      createConditionalCb = cb
-    },
-    onOpenList: (cb) => {
-      openListCb = cb
-    },
-    onCreateList: (cb) => {
-      createListCb = cb
-    },
-    onOpenRelation: (cb) => {
-      openRelationCb = cb
-    },
-    onCreateRelation: (cb) => {
-      createRelationCb = cb
-    },
-    onOpenFilter: (cb) => {
-      openFilterCb = cb
-    },
-    onCreateFilter: (cb) => {
-      createFilterCb = cb
-    },
-    onOpenIterator: (cb) => {
-      openIteratorCb = cb
-    },
-    onCreateIterator: (cb) => {
-      createIteratorCb = cb
-    },
-    onOpenInvocation: (cb) => {
-      openInvocationCb = cb
-    },
-    onCreateInvocation: (cb) => {
-      createInvocationCb = cb
+    onCreateLogic: (cb) => {
+      createLogicCb = cb
     },
     onOpenBKM: (cb) => {
       openBKMCb = cb
