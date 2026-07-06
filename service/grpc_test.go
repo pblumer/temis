@@ -17,7 +17,7 @@ import (
 )
 
 // h2cClient returns an HTTP client that speaks cleartext HTTP/2, so the gRPC
-// protocol (and the bidi EvaluateBatch stream) reach the h2c-wrapped handler.
+// protocol (and the bidi EvaluateBatch stream) reach the handler over h2c.
 func h2cClient() *http.Client {
 	return &http.Client{
 		Transport: &http2.Transport{
@@ -31,7 +31,14 @@ func h2cClient() *http.Client {
 
 func newGRPCClient(t *testing.T, opts ...Option) dmnv1connect.DmnEngineClient {
 	t.Helper()
-	srv := httptest.NewServer(NewServer(nil, opts...).Handler())
+	// Serve cleartext HTTP/2 (h2c) so the gRPC client below can reach the bare
+	// mux: the handler no longer wraps itself in h2c, the transport is chosen on
+	// the server via Protocols (mirrors cmd/temisd/main.go).
+	srv := httptest.NewUnstartedServer(NewServer(nil, opts...).Handler())
+	srv.Config.Protocols = new(http.Protocols)
+	srv.Config.Protocols.SetHTTP1(true)
+	srv.Config.Protocols.SetUnencryptedHTTP2(true)
+	srv.Start()
 	t.Cleanup(srv.Close)
 	return dmnv1connect.NewDmnEngineClient(h2cClient(), srv.URL, connect.WithGRPC())
 }
