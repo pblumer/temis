@@ -1,6 +1,6 @@
 # Business Case: Benutzer-Onboarding & Email-Konto-Provisionierung
 
-> **Status:** Iteration 1 (verifiziert gegen die `dmn`-Engine) · **Modell:** [`onboarding-email.dmn`](./onboarding-email.dmn)
+> **Status:** Iteration 2 (verifiziert gegen die `dmn`-Engine und live über MCP) · **Modell:** [`onboarding-email.dmn`](./onboarding-email.dmn)
 > **Methode:** Roundtrip-Engineering — Mensch im Modeler, Agent über MCP, ein geteilter Modell-Cache.
 
 Dieses Dokument beschreibt einen konkreten, ausführbaren Business Case für temis:
@@ -61,9 +61,13 @@ Anbindung an ein reales Verzeichnis (AD/Entra/Keycloak).
 | `Rolle` | string | `Fuehrungskraft`, `Manager`, `Mitarbeiter`, `Praktikant`, `Extern`, `Dienstkonto` |
 | `Abteilung` | string | `Vertrieb`, `IT`, `HR`, `Finanzen`, `Marketing`, `Geschaeftsleitung` |
 | `Vertragsart` | string | `Unbefristet`, `Befristet`, `Werkstudent`, `Extern` |
+| `Vorname` / `Nachname` | string | freier Text (für die Adressgenerierung, Iteration 2) |
+| `BelegteAdressen` | list&lt;string&gt; | bereits vergebene Adressen (optional; für die Kollisionsregel) |
 
-> Werte bewusst umlautfrei (`Fuehrungskraft`, `Geschaeftsleitung`), damit die
-> Eingaben aus Fremdsystemen stabil vergleichbar bleiben.
+> Rollen/Abteilungen/Vertragsarten bewusst umlautfrei (`Fuehrungskraft`,
+> `Geschaeftsleitung`), damit die Eingaben aus Fremdsystemen stabil vergleichbar
+> bleiben. Vor-/Nachname dürfen Umlaute haben — das BKM `Normalisiere` wandelt sie
+> für die Adresse um.
 
 ### 3.2 Regeln
 
@@ -99,12 +103,21 @@ Anbindung an ein reales Verzeichnis (AD/Entra/Keycloak).
 | Vertragsart = Extern | true |
 | *(sonst)* | false |
 
+**`Primaeradresse`** (Literal, Iteration 2) → string — mit **BKM** `Normalisiere(text)`
+(Kleinschreibung + Umlaute `ä→ae, ö→oe, ü→ue, ß→ss`, Leerzeichen entfernt). Basis:
+`vorname.nachname@firma.de`; **Kollisionsregel:** steht diese schon in `BelegteAdressen`,
+Fallback auf `initial.nachname@firma.de`. FEEL-Verkettung über `string join([...], "")`
+(nicht `+`, sonst `TYPE_ERROR`).
+
 ### 3.3 Ergebnis: `Email-Provisionierung`
 
-Top-Decision als Boxed Context — bündelt alles zu einem Satz:
+Top-Decision als **getypter** Boxed Context (Iteration 1: benanntes ItemDefinition
+`EmailProvisionierung`) — bündelt alles zu einem Satz:
 
 ```feel
+// variable typeRef = EmailProvisionierung
 {
+  primaerAdresse:       Primaeradresse,
   postfachTyp:          Postfachtyp,
   kontingentGB:         Postfachkontingent(Rolle),
   verteiler:            Verteiler,
@@ -116,15 +129,19 @@ Top-Decision als Boxed Context — bündelt alles zu einem Satz:
 
 ## 4. Verifikation
 
-Kompiliert und ausgewertet gegen `package dmn` (deterministisch, ohne Raten):
+Kompiliert und ausgewertet gegen `package dmn` (deterministisch, ohne Raten) und
+zusätzlich live über MCP (`evaluate`):
 
-| Rolle / Abteilung / Vertragsart | postfachTyp | kontingentGB | verteiler | freigabeErforderlich |
-|---|---|---|---|---|
-| Mitarbeiter / IT / Unbefristet | Standard | 50 | `it@`, `alle@` | false |
-| Fuehrungskraft / Geschaeftsleitung / Unbefristet | Premium | 100 | `gl@`, `alle@` | **true** |
-| Extern / Vertrieb / Extern | Gast | 25 | `vertrieb@`, `alle@` | **true** |
-| Dienstkonto / IT / Befristet | Funktionspostfach | 10 | `it@`, `alle@` | false |
-| Praktikant / Marketing / Werkstudent | Standard | 25 | `marketing@`, `alle@` | false |
+| Rolle / Abt. / Vertrag · Person | primaerAdresse | postfachTyp | kontingentGB | verteiler | freigabe |
+|---|---|---|---|---|---|
+| Führungskraft / GL / Unbefr. · Anna Müller | `anna.mueller@` | Premium | 100 | `gl@`, `alle@` | **true** |
+| Mitarbeiter / IT / Unbefr. · Jörg Weiß | `joerg.weiss@` | Standard | 50 | `it@`, `alle@` | false |
+| Mitarbeiter / IT / Unbefr. · Anna Müller *(`anna.mueller@` belegt)* | `a.mueller@` | Standard | 50 | `it@`, `alle@` | false |
+| Extern / Vertrieb / Extern · — | — | Gast | 25 | `vertrieb@`, `alle@` | **true** |
+| Dienstkonto / IT / Befristet · — | — | Funktionspostfach | 10 | `it@`, `alle@` | false |
+
+> Umlaute werden normalisiert (`Müller→mueller`, `Weiß→weiss`); ist `vorname.nachname@`
+> bereits in `BelegteAdressen`, greift der Alias-Fallback `initial.nachname@`.
 
 ---
 
@@ -169,9 +186,10 @@ Beide arbeiten auf **einem** Modell-Cache (co-located `temisd`, ADR-0021):
 
 ## 7. Ausbaustufen
 
-- **Strukturierter Ergebnistyp.** `Email-Provisionierung` als benanntes ItemDefinition
-  (`save_type` mit `components`) statt offenem Context → getypte, prüfbare Ausgabe.
-- **Primäradresse & Alias-Generierung.** `vorname.nachname@firma.de`, Kollisionsregeln.
+- ✅ **Strukturierter Ergebnistyp** *(Iteration 1 — umgesetzt)*. `Email-Provisionierung`
+  als benanntes ItemDefinition `EmailProvisionierung` statt offenem Context → getypte Ausgabe.
+- ✅ **Primäradresse & Alias-Generierung** *(Iteration 2 — umgesetzt)*.
+  `vorname.nachname@firma.de` inkl. Umlaut-Normalisierung und Kollisionsregel.
 - **Lifecycle.** Mover (Abteilungswechsel → Verteiler-Umzug) und Leaver
   (Sperre, Weiterleitung, Aufbewahrung) als eigener Decision-Flow (ADR-0026).
 - **Lizenz & Kosten.** Postfachtyp → Lizenzstufe & Kostenstelle.
