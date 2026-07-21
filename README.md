@@ -624,7 +624,8 @@ auswerten), **`load_model`** (DMN-XML kompilieren + content-addressed cachen, id
 **`describe_decision`** (Decision + erwartete Inputs beschreiben), **`evaluate`**
 (auswerten per `modelId` oder stateless per `xml`) sowie die Typ-Werkzeuge
 **`list_types`**/**`save_type`**/**`delete_type`** (eigene Item-Definitionen lesen,
-einfache Typen anlegen/ändern und entfernen — jede Änderung liefert eine neue modelId).
+Typen anlegen/ändern und entfernen — einfache wie strukturierte, letztere über
+`components`; jede Änderung liefert eine neue modelId).
 Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Eintrag:
 
 ```jsonc

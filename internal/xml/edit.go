@@ -115,6 +115,28 @@ func (d *Definitions) UpsertItemDefinition(name, typeRef string, isCollection bo
 	return true
 }
 
+// UpsertStructDefinition creates or updates a structured item definition by name:
+// its fields (item components) and collection flag. Unlike UpsertItemDefinition it
+// may overwrite an existing definition of either kind, since the struct editor
+// owns structured types. It refuses (returns false) for an empty name or when no
+// components are given (a struct with no fields is meaningless — remove it instead).
+func (d *Definitions) UpsertStructDefinition(name string, comps []ItemDef, isCollection bool) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || len(comps) == 0 {
+		return false
+	}
+	def := ItemDef{Name: name, IsCollection: isCollection, Components: comps}
+	for i := range d.ItemDefs {
+		if d.ItemDefs[i].Name == name {
+			def.ID = d.ItemDefs[i].ID
+			d.ItemDefs[i] = def
+			return true
+		}
+	}
+	d.ItemDefs = append(d.ItemDefs, def)
+	return true
+}
+
 // RemoveItemDefinition removes the item definition with the given name, reporting
 // whether one was found. References to it elsewhere are left untouched.
 func (d *Definitions) RemoveItemDefinition(name string) bool {

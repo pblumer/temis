@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Strukturierte Typen im Modeler bearbeiten + über MCP.** Die Typen-Verwaltung des
+  Modelers zeigte strukturierte Typen bisher nur schreibgeschützt („struct"). Jetzt gibt es
+  einen **Feld-Editor**: eine „Struktur"-Umschaltung mit Feldzeilen (Name + Typ + Collection,
+  hinzufügen/entfernen), und strukturierte Typen sind in der Liste **bearbeitbar** (nicht mehr
+  read-only). Verschachtelung über Referenz auf einen anderen benannten Typ. Dieselbe Fähigkeit
+  über MCP: `save_type` nimmt jetzt `components` entgegen; `dmn.SetItemDefinition` schreibt eine
+  strukturierte Item-Definition (eine Ebene) statt sie abzulehnen.
 - **MCP: Typ-Werkzeuge `list_types`, `save_type`, `delete_type`.** Ein Agent kann die
   eigenen Item-Definitionen eines gecachten Modells lesen (`list_types`, Scope
   `models:read`) sowie einen einfachen Typ (Basistyp + optional Collection + Allowed-Values)
