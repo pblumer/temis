@@ -78,6 +78,52 @@ export async function listModels(): Promise<ModelSummary[]> {
   return body.models ?? []
 }
 
+// --- Model releases (ADR-0037) ---
+
+// Release is one immutable publication: a version tag over a content-addressed
+// revision, with the time it was cut and optional notes.
+export type Release = { version: string; modelId: string; publishedAt: string; notes?: string }
+// ModelReleases holds a named model's releases (newest-first) and its moving
+// channel → version pointers (latest, stable, …).
+export type ModelReleases = { name: string; releases: Release[]; channels?: Record<string, string> }
+
+// listReleases returns every model's releases and channels (GET /v1/releases),
+// so the sidebar can show published versions in place of the raw revision flood.
+export async function listReleases(): Promise<ModelReleases[]> {
+  const r = await fetch('/v1/releases')
+  if (!r.ok) throw new Error('Releases laden fehlgeschlagen (HTTP ' + r.status + ')')
+  const body = (await r.json()) as { models?: ModelReleases[] }
+  return body.models ?? []
+}
+
+// publishRelease tags a loaded revision as (name, version) (POST /v1/releases).
+// name defaults server-side to the model's display name when omitted.
+export async function publishRelease(
+  modelId: string,
+  version: string,
+  opts: { name?: string; notes?: string } = {},
+): Promise<ModelReleases> {
+  const r = await fetch('/v1/releases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelId, version, name: opts.name, notes: opts.notes }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Veröffentlichen fehlgeschlagen'))
+  return (await r.json()) as ModelReleases
+}
+
+// setChannel points a moving channel at an already-published version
+// (POST /v1/releases/{name}/channels).
+export async function setChannel(name: string, channel: string, version: string): Promise<ModelReleases> {
+  const r = await fetch('/v1/releases/' + encodeURIComponent(name) + '/channels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, version }),
+  })
+  if (!r.ok) throw new Error(await problemMessage(r, 'Kanal setzen fehlgeschlagen'))
+  return (await r.json()) as ModelReleases
+}
+
 // ClioStatus mirrors the clio block of the service statusResponse (ADR-0030): the
 // audit sink's configuration and observed health. It never carries a secret.
 export type ClioStatus = {

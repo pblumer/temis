@@ -867,6 +867,130 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/releases:
+    post:
+      summary: Publish a model revision as a named release (ADR-0037)
+      description: >-
+        Tags a content-addressed revision as (name, version) — a named, immutable
+        pointer, like a git tag, with no duplicated content. The "latest" channel
+        moves to the highest version automatically. The model must be loaded; a
+        release is immutable, so re-using a (name, version) is a 409. When name is
+        omitted the model's display name is used, so the modeler can publish the
+        open model by id alone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishReleaseRequest" }
+      responses:
+        "201":
+          description: The model's releases and channels after publishing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "400":
+          description: Malformed name or version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: A release with that version already exists
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    get:
+      summary: List every model's releases and channels (ADR-0037)
+      description: >-
+        Returns, name-sorted, each named model's releases (newest-first) and its
+        moving channels — the catalog a UI shows in place of the raw revision
+        history.
+      responses:
+        "200":
+          description: The release catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReleasesListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/releases/{name}:
+    get:
+      summary: Get one model's releases and channels (ADR-0037)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The model's releases and channels
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No releases for that model
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/releases/{name}/channels:
+    post:
+      summary: Point a moving channel at a published version (ADR-0037)
+      description: >-
+        Sets a channel (e.g. stable, prod) to an already-published version.
+        Consumers may pin a channel (moving) or a concrete version (immutable).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetChannelRequest" }
+      responses:
+        "200":
+          description: The model's releases and channels after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "400":
+          description: Malformed channel
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such release or version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/gc:
+    post:
+      summary: Prune unreferenced model drafts (ADR-0037, WP-143)
+      description: >-
+        Deliberate, admin-scoped garbage collection of the append-only draft
+        history: removes every content-addressed revision that is NOT a release,
+        NOT referenced by a registered flow, and NOT the newest cached revision of
+        its named model. Releases and referenced revisions are always kept. Opt-in
+        (never automatic), so the default append-only behaviour is unchanged.
+      responses:
+        "200":
+          description: The pruned model ids and the remaining count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GCResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/flows:
     post:
       summary: Register a decision-flow descriptor (WP-91, ADR-0026)
@@ -1546,6 +1670,71 @@ components:
         output:
           type: object
           additionalProperties: { type: string }
+    PublishReleaseRequest:
+      type: object
+      required: [modelId, version]
+      properties:
+        modelId:
+          type: string
+          description: The content-addressed revision to tag (a release reference is also accepted and resolved first).
+          example: "sha256:1a2b…"
+        name:
+          type: string
+          description: The model name to publish under; defaults to the model's display name when omitted.
+        version:
+          type: string
+          description: A well-formed version — SemVer (2.1.0, 2.1.0-rc.1) or the simpler v3 form.
+          example: "2.1.0"
+        notes:
+          type: string
+          description: Optional human release notes.
+    SetChannelRequest:
+      type: object
+      required: [channel, version]
+      properties:
+        channel:
+          type: string
+          description: Channel name (lowercase letters, digits, dashes), e.g. stable or prod.
+          example: "stable"
+        version:
+          type: string
+          description: An already-published version to point the channel at.
+          example: "2.0.0"
+    Release:
+      type: object
+      properties:
+        version: { type: string }
+        modelId: { type: string }
+        publishedAt: { type: string, format: date-time }
+        notes: { type: string }
+    ModelReleases:
+      type: object
+      properties:
+        name: { type: string }
+        releases:
+          type: array
+          description: The model's releases, newest (highest version) first.
+          items: { $ref: "#/components/schemas/Release" }
+        channels:
+          type: object
+          additionalProperties: { type: string }
+          description: Moving channel → version pointers (e.g. latest, stable).
+    ReleasesListResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelReleases" }
+        count: { type: integer }
+    GCResponse:
+      type: object
+      properties:
+        deleted:
+          type: array
+          description: The model ids that were pruned.
+          items: { type: string }
+        deletedCount: { type: integer }
+        remaining: { type: integer, description: Model revisions kept after the pass. }
     FlowResponse:
       type: object
       properties:

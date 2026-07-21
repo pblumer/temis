@@ -97,6 +97,24 @@ Regel 6): GitHub-Adapter über reine Standardbibliothek.
 
 ---
 
+## Etappe Modell-Releases — „veröffentlichte Stände statt Versionsflut" (ADR-0037)
+
+**Ziel:** Die Flut content-adressierter Revisionen (jeder Save = neue `modelId`, ADR-0011/0027)
+in den Griff bekommen, indem **Releases** eingeführt werden: benannte, unveränderliche Zeiger
+`(name, version) → modelId` (git-tag-artig, kein Inhaltsduplikat), plus bewegliche **Kanäle**
+(`latest`/`stable`). Ein geteilter **Resolver** `name@version|channel|sha256` bedient alle
+model-id-nehmenden Oberflächen (evaluate, xml, graph, Flow-Steps ADR-0026, MCP). Reine stdlib,
+opt-in, Engine-Kern unberührt. Für den Git-Pfad (ADR-0022) bleibt der Git-Tag der Release.
+
+| WP | Titel | Abhängt von | Akzeptanzkriterium |
+|---|---|---|---|
+| WP-140 ✅ | Release-Store + Resolver + HTTP-API | WP-36 | **done** — `service/releases.go`: `releaseStore` (JSON-Manifest `releases.json` neben dem Modell-Store, atomarer Temp+Rename-Write, Boot-Load, In-Memory ohne Store-Dir), `publish` (unveränderliche `(name,version)`, 409 bei Konflikt, `latest` folgt der höchsten Version), `setChannel`, **`resolve`** (`name@version`/`name@channel`/bare `name`→latest; raw `sha256` = Passthrough) + SemVer-Vergleich (`v3`/`2.1.0`/`-rc.1`). In `s.lookup` verdrahtet → **jede** model-id-Oberfläche (HTTP-evaluate/xml/graph, Flow-Steps, MCP) nimmt eine Release-Referenz. HTTP (`service/releases_http.go`): `POST/GET /v1/releases`, `GET /v1/releases/{name}`, `POST /v1/releases/{name}/channels` (Scopes models:write/read, OpenAPI-Sync grün). Dangling-Release beim Boot → Warnung, nicht gelöscht (Symmetrie zu ADR-0032). Tests: Version-Vergleich, publish/Konflikt/resolve/Kanäle/Persistenz/korruptes Manifest, HTTP inkl. evaluate über `Name@stable` und Release-Überleben nach „Neustart"; `make verify` grün. |
+| WP-141 ✅ | Modeler-UI: „Veröffentlichen" + release-zentrierte Sidebar | WP-140 | **done** — Toolbar-Button **„📦 Veröffentlichen"** öffnet einen Versions-Dialog (vorbefüllt mit der nächsten Patch-Version, FEEL-frei live gegen das Versionsmuster validiert) und ruft `POST /v1/releases` auf dem geladenen Modell. Die **Sidebar** führt bei veröffentlichten Modellen mit einem grünen **Release-Badge** (neueste Version) statt der rohen Revisionszahl; ein Kopf, der über das letzte Release hinaus editiert wurde, trägt ein bernsteinfarbenes **„Entwurf"**-Flag. Unter der Zeile: klickbare **Release-Chips** (Version + Kanal, laden genau diese Revision) — was ein Konsument pinnt (`name@version`/`name@channel`), steht vorn, die rohen Entwürfe bleiben unter „Verlauf (n)". API-Client (`web/src/api.ts`: `listReleases`/`publishRelease`/`setChannel` + Typen), `main.ts` (Boot-/Reselect-Load des Katalogs, Publish-Handler, `renderGroup`-Erweiterung), CSS. Playwright-e2e (`web/e2e/release.spec.ts`): Modell anlegen → veröffentlichen → Badge/Chip/Kanal in der Sidebar, kein Entwurf-Flag; volle e2e-Suite (53) grün, Typecheck grün, `dist` reproduzierbar neu gebaut (wasm unangetastet). |
+| WP-142 ✅ | Flow-/Command-Referenzen einfrieren (Lockfile) | WP-140 | **done** — `Server.freezeFlowRefs` (`service/flow.go`) pinnt beim Registrieren jeden Step, dessen `model` eine Release-Referenz ist (`name@version`/`name@channel`/bare `name`), auf die **konkrete `modelId`**, die sie *jetzt* auflöst — ein späterer Kanal-Move ändert nie mehr, was ein registrierter Flow auswertet (Re-Audit ADR-0023 bleibt deterministisch). Verdrahtet in `handleCreateFlow` **und** `loadFlows` (Disk); raw-id/unauflösbare Refs bleiben unangetastet (Letztere lösen weiter zur Eval-Zeit über `lookup` auf), unveränderte Deskriptoren werden byte-gleich zurückgegeben (idempotent). Test: Flow mit Step `Dish@1.0.0` → gespeicherter Step trägt die sha256-id. Da der Resolver in `s.lookup` sitzt, ziehen der clio-Command-Consumer (ADR-0033) und MCP dieselbe Auflösung. `make verify` grün. |
+| WP-143 ✅ | Opt-in GC/Retention | WP-140 | **done** — `POST /v1/models/gc` (admin, `service/gc.go`): bewusster, nie automatischer Prune der append-only-Draft-Historie (ADR-0027). Behalten wird, was (a) ein Release ist (`releaseStore.releasedIDs`), (b) von einem registrierten Flow referenziert wird (aufgelöst), oder (c) die **neueste gecachte Revision** je Namen (der Arbeits-Head) — alles andere (ältere, unveröffentlichte, unreferenzierte Drafts) fällt aus Cache **und** Platten-Store (`diskStore.listIDs`). Antwort: gelöschte ids + Restzahl. Default bleibt append-only (opt-in). Test: 3 Revisionen, älteste als Release, jüngste = Head → nur die mittlere gelöscht; Release/Head bleiben abrufbar, `Dish@1.0.0` weiter auswertbar. `make verify` grün. |
+
+---
+
 ## Etappe Entscheidungs-Logbuch — „revisionssicher protokollieren & nachrechnen" (ADR-0023)
 
 **Ziel:** Jede Entscheidung wird als manipulationssicheres, hash-verkettetes CloudEvent in
