@@ -181,6 +181,9 @@ var toolScopes = map[string]string{
 	"get_model_xml":     "models:read",
 	"load_model":        "models:read",
 	"describe_decision": "models:read",
+	"list_types":        "models:read",
+	"save_type":         "models:write",
+	"delete_type":       "models:write",
 	"evaluate":          "evaluate",
 	"load_flow":         "flow",
 	"describe_flow":     "flow",
@@ -342,6 +345,41 @@ var tools = []toolSpec{
 		}, "modelId", "decision"),
 	},
 	{
+		Name: "list_types",
+		Description: "List a cached model's named item definitions (its custom FEEL types): " +
+			"each type's name, base typeRef, whether it is a collection, its allowed-values " +
+			"constraint, and — for structured types — its components. Use it before referring " +
+			"to a type by name.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId (sha256:… hash) of a cached model, from list_models or load_model."),
+		}, "modelId"),
+	},
+	{
+		Name: "save_type",
+		Description: "Create or update a SIMPLE custom type (item definition) on a cached model — " +
+			"a base FEEL type with an optional collection flag and an optional allowed-values " +
+			"constraint — and return the recompiled model's new modelId (the change is a new, " +
+			"content-addressed revision, and it appears in the modeler's type manager). " +
+			"Structured (component) types cannot be edited here; build those via load_model with " +
+			"the full XML.",
+		InputSchema: obj(map[string]any{
+			"modelId":       str("The modelId of the cached model to add the type to."),
+			"name":          str("The type's name, e.g. \"Ampel\"."),
+			"typeRef":       str("The base FEEL type, e.g. \"string\", \"number\", \"boolean\". Empty means Any."),
+			"isCollection":  map[string]any{"type": "boolean", "description": "When true, the type is a collection (list) of typeRef."},
+			"allowedValues": str("Optional FEEL allowed-values constraint, e.g. \"\\\"rot\\\",\\\"gelb\\\",\\\"gruen\\\"\" for an enum or \"[1..10]\" for a range."),
+		}, "modelId", "name"),
+	},
+	{
+		Name: "delete_type",
+		Description: "Remove a named item definition (custom type) from a cached model and return " +
+			"the recompiled model's new modelId. References to the type elsewhere are left as-is.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId of the cached model to remove the type from."),
+			"name":    str("The name of the type to remove."),
+		}, "modelId", "name"),
+	},
+	{
 		Name: "evaluate",
 		Description: "Evaluate a decision and return its outputs deterministically. " +
 			"Supply either modelId (for a cached model) or xml (compiled on the fly). " +
@@ -387,6 +425,12 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		return s.toolLoadModel(ctx, p.Arguments)
 	case "describe_decision":
 		return s.toolDescribeDecision(p.Arguments)
+	case "list_types":
+		return s.toolListTypes(p.Arguments)
+	case "save_type":
+		return s.toolSaveType(ctx, p.Arguments)
+	case "delete_type":
+		return s.toolDeleteType(ctx, p.Arguments)
 	case "evaluate":
 		return s.toolEvaluate(ctx, p.Arguments)
 	case "load_flow":
@@ -496,6 +540,101 @@ func (s *Server) toolDescribeDecision(raw json.RawMessage) (any, *rpcError) {
 		"decisionId":      dec.ID(),
 		"inputs":          dec.InputSchema(),
 		"reachableInputs": reachable,
+	})
+}
+
+func (s *Server) toolListTypes(raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	defs, _, ok := s.store.Lookup(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	return toolText(map[string]any{"modelId": a.ModelID, "types": defs.ItemDefinitions()})
+}
+
+// toolSaveType patches the model's XML with the type, recompiles it and returns
+// the new content-addressed modelId — mirroring the HTTP POST /types endpoint, so
+// an agent can add a type to a model the same way the modeler does, without
+// reloading the whole XML.
+func (s *Server) toolSaveType(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID       string `json:"modelId"`
+		Name          string `json:"name"`
+		TypeRef       string `json:"typeRef"`
+		IsCollection  bool   `json:"isCollection"`
+		AllowedValues string `json:"allowedValues"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	if a.Name == "" {
+		return toolError("missing required argument: name"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	patched, err := dmn.SetItemDefinition(xml, dmn.ItemType{
+		Name:          a.Name,
+		TypeRef:       a.TypeRef,
+		IsCollection:  a.IsCollection,
+		AllowedValues: a.AllowedValues,
+	})
+	if err != nil {
+		return toolError("could not save type: " + err.Error()), nil
+	}
+	return s.compileToResponse(ctx, patched, "type change")
+}
+
+func (s *Server) toolDeleteType(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+		Name    string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	if a.Name == "" {
+		return toolError("missing required argument: name"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	patched, err := dmn.RemoveItemDefinition(xml, a.Name)
+	if err != nil {
+		return toolError("could not delete type: " + err.Error()), nil
+	}
+	return s.compileToResponse(ctx, patched, "type removal")
+}
+
+// compileToResponse compiles patched XML into the shared cache and returns the
+// standard model response (new modelId + decisions/inputs/diagnostics), the common
+// tail of the type-editing tools.
+func (s *Server) compileToResponse(ctx context.Context, patched []byte, what string) (any, *rpcError) {
+	id, _, index, diags, err := s.store.Compile(ctx, patched)
+	if err != nil {
+		return toolError("could not compile model after " + what + ": " + err.Error()), nil
+	}
+	return toolText(modelResponse{
+		ModelID:     id,
+		Decisions:   index.Decisions,
+		Inputs:      index.Inputs,
+		Diagnostics: toDiagnosticDTOs(diags),
 	})
 }
 

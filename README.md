@@ -614,8 +614,10 @@ go run ./cmd/temis-mcp        # spricht MCP über stdin/stdout (Logs auf stderr)
 Kern-Tools: **`list_models`** (Cache auflisten — je Modell mit Name, Decisions und Inputs),
 **`get_model_xml`** (das rohe DMN/FEEL eines gecachten Modells zurücklesen, nicht nur
 auswerten), **`load_model`** (DMN-XML kompilieren + content-addressed cachen, idempotent),
-**`describe_decision`** (Decision + erwartete Inputs beschreiben) und **`evaluate`**
-(auswerten per `modelId` oder stateless per `xml`).
+**`describe_decision`** (Decision + erwartete Inputs beschreiben), **`evaluate`**
+(auswerten per `modelId` oder stateless per `xml`) sowie die Typ-Werkzeuge
+**`list_types`**/**`save_type`**/**`delete_type`** (eigene Item-Definitionen lesen,
+einfache Typen anlegen/ändern und entfernen — jede Änderung liefert eine neue modelId).
 Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Eintrag:
 
 ```jsonc
@@ -650,7 +652,8 @@ go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
 
 In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
 (ADR-0028): jedes Tool verlangt seinen Scope (`evaluate`→`evaluate`,
-`list_models`/`get_model_xml`/`load_model`/`describe_decision`→`models:read`, `git_*`→`git`,
+`list_models`/`get_model_xml`/`load_model`/`describe_decision`/`list_types`→`models:read`,
+`save_type`/`delete_type`→`models:write`, `git_*`→`git`,
 `*_flow`→`flow`), gültiger Key ohne Scope → `403`. Das eigenständige `temis-mcp`
 bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
 `-token` nur über HTTP).
