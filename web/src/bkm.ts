@@ -50,7 +50,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   const typeSel = el('select', { class: 'dt-type-sel lit-type', title: 'Ergebnistyp' }) as HTMLSelectElement
   const cur = view.bodyTypeRef ?? ''
   for (const t of cur && !typeOptions.includes(cur) ? [...typeOptions, cur] : typeOptions) {
-    const o = el('option', { value: t }, t || '— Typ —') as HTMLOptionElement
+    const o = el('option', { value: t }, t || '— beliebig —') as HTMLOptionElement
     o.selected = cur === t
     typeSel.append(o)
   }
@@ -98,7 +98,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
         checkBody()
       })
       const type = el('select', { class: 'bkm-ptype' }) as HTMLSelectElement
-      for (const t of p.typeRef && !typeOptions.includes(p.typeRef) ? [...typeOptions, p.typeRef] : typeOptions) type.append(option(t, t || '— Typ —', (p.typeRef ?? '') === t))
+      for (const t of p.typeRef && !typeOptions.includes(p.typeRef) ? [...typeOptions, p.typeRef] : typeOptions) type.append(option(t, t || '— beliebig —', (p.typeRef ?? '') === t))
       type.addEventListener('change', () => {
         p.typeRef = type.value
       })

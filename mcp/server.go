@@ -244,6 +244,26 @@ type storedModel struct {
 
 // --- initialize handshake ---
 
+// serverInstructions is returned as the MCP initialize result's "instructions"
+// field, which clients surface to the agent on connect. It is the co-modeling
+// contract: temis is a verification tool a human (in the Modeler) and an agent
+// (over these tools) build decisions with, hand in hand, on one shared cache. The
+// null traps at the end are the mistakes this contract exists to prevent; the
+// repo skill .claude/skills/temis-decision-modeling has the worked examples.
+const serverInstructions = `temis is a deterministic DMN/FEEL decision engine. You (the agent) and a human co-model decisions: you via these MCP tools, the human via the temis Modeler (GUI), on ONE shared content-addressed model cache. Work hand in hand:
+
+- Find the human's model with list_models. Each has a name (as shown in the Modeler), but the name is NOT unique: every save is a new revision with its own modelId. To target the exact current model, ask the human to copy its modelId from the Modeler's toolbar chip.
+- Read a model's real DMN/FEEL back with get_model_xml before you change it — inspect, don't guess.
+- Diagnose with evaluate + explain:true; the trace shows which rules fired and why (temis is deterministic). Use strict:true to turn a silent null / no-match into precise input errors (TYPE_MISMATCH, UNKNOWN_INPUT, MISSING_INPUT).
+- Only SAVED models are visible here. If results look stale, ask the human to Save in the Modeler, then re-check.
+- To change a model, prefer editing the XML you read back (this preserves the diagram layout and other nodes) and load_model it under the SAME name → it appears in the Modeler as a new version (the human presses the refresh button to see it). Use the DMN 2023 namespace (https://www.omg.org/spec/DMN/20230324/MODEL/) to avoid a namespace warning. Verify with evaluate before handing back, and tell the human which modelId is the corrected version.
+- For durable, reviewed models use git (git_load_model / git_propose) instead of the in-memory cache.
+
+Common null traps to check first:
+1. A decision-table INPUT cell is a UNARY TEST compared against that column's input expression — not a standalone boolean. A computed/boolean expression there (count(x) > 0, if...then...else) becomes "inputValue = (that expression)", which almost never holds, so the rule never fires and hit policy U returns null (or the catch-all "-" rule wins). Fix: put the value in the column's input expression (e.g. count(list)) and only the comparison in the cell (> 0); or make the decision a literal expression.
+2. Calling a BKM that has no encapsulated logic returns null (for x in list return BKM(x) -> [null, null, ...]). Give the BKM a formal parameter and a FEEL body.
+3. typeRef is the FEEL result type (string/number/boolean/list/date/...); empty means Any, not "no value".`
+
 func (s *Server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	var p struct {
 		ProtocolVersion string `json:"protocolVersion"`
@@ -259,6 +279,7 @@ func (s *Server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 		"protocolVersion": version,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
 		"serverInfo":      map[string]any{"name": serverName, "version": s.version},
+		"instructions":    serverInstructions,
 	}, nil
 }
 

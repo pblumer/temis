@@ -60,6 +60,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Agent-Zusammenarbeit: Co-Modeling-Vertrag als MCP-`instructions` + Repo-Skill.** Der
+  MCP-Server liefert beim `initialize` jetzt ein `instructions`-Feld, das jedem verbundenen
+  Agenten den Vertrag für gemeinsames Modellieren mit einem Menschen mitgibt (Agent via MCP,
+  Mensch via Modeler, geteilter Cache): Modell per `modelId`/Toolbar-Chip finden (Name nicht
+  eindeutig), `get_model_xml` vor dem Ändern lesen, mit `evaluate`/`explain` diagnostizieren,
+  als neue Version zurückgeben — inklusive der häufigsten `null`-Fallen (Unary-Test in
+  Tabellen-Eingabezellen, leeres BKM, `typeRef`=leer→Any). Die ausführliche Fassung liegt als
+  Skill unter `.claude/skills/temis-decision-modeling/` (mit ausgearbeiteten Vorher/Nachher-
+  Beispielen in `references/dmn-feel-traps.md`).
 - **MCP: Modellname in `list_models` und neues Tool `get_model_xml`.** `list_models`
   liefert je Modell zusätzlich den Anzeigenamen (den DMN-`definitions`-Namen, wie im Modeler),
   sodass ein Agent ein ihm bekanntes Modell wiederfindet — der Name ist kein eindeutiger
