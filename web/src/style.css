@@ -47,7 +47,7 @@ body {
   cursor: pointer;
 }
 .sidebar .icon-btn:hover { background: #e7effd; }
-.sidebar-hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); }
+.sidebar-hint { flex: 0 0 auto; color: var(--muted); font-size: 11.5px; line-height: 1.5; padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); background: #f1f5f9; }
 .editor { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px 24px 24px; overflow: auto; }
 
 /* Draggable dividers (src/resizable.ts): a thin grab strip between two columns
@@ -1773,10 +1773,27 @@ select.pill-field { cursor: pointer; }
 .hl-op  { color: #64748b; }
 
 /* Zugriff-Sektion (WP-107, ADR-0028/0035): Login + Admin-Panels in der Sidebar. */
+/* The Zugriff zone sits at the very bottom of the sidebar and can grow tall
+   (identity + API keys + public decisions). It is a self-contained panel: a top
+   border and a slightly deeper background set it apart from the model list, and
+   its body scrolls within a capped height so a long admin panel never overflows
+   onto the footer hint below it. */
+.side-group-access {
+  flex: 0 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: #e8eef7;
+}
 .side-group-access[hidden] { display: none; }
-.access-host { padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 14px; }
+.side-group-access .sidebar-section { padding-top: 8px; padding-bottom: 8px; }
+.access-host { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 0; overflow-y: auto; max-height: 40vh; }
 .side-group-access[data-collapsed="true"] .access-host { display: none; }
+/* Divide the sub-panels (identity · API keys · public decisions) with a rule so
+   each reads as its own block instead of one crowded run. */
 .access-block { display: flex; flex-direction: column; gap: 8px; }
+.access-host > .access-block { padding: 14px 0; }
+.access-host > .access-block:first-child { padding-top: 4px; }
+.access-host > .access-block + .access-block { border-top: 1px solid var(--line); }
 .access-heading { font: 600 11px/1 ui-sans-serif, system-ui; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .access-note { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0; }
 .access-hint { color: var(--muted); font-size: 10.5px; font-style: italic; margin: 2px 0 0; }
