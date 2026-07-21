@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, listTypes, getStatus, evaluateGraph, listReleases, publishRelease, type ModelSummary, type ModelReleases, type Status } from './api'
 import { buildInputPills, type InputPills } from './inputpills'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout, type Orientation } from './layout'
@@ -86,6 +86,7 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
             <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
             <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+            <button id="publish" class="tbtn" type="button" title="Aktuellen Stand als Release veröffentlichen (ADR-0037)">📦 Veröffentlichen</button>
           </span>
           <span class="zoom-group">
             <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
@@ -148,9 +149,10 @@ async function boot(root: HTMLElement): Promise<void> {
   const evalHost = root.querySelector<HTMLElement>('#eval')
   const clioReplayHost = root.querySelector<HTMLElement>('#clioReplay')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
+  const publishBtn = root.querySelector<HTMLButtonElement>('#publish')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modelIdChip || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modelIdChip || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !publishBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
 
   // The left sidebar sits at a fixed width by default; its divider lets the user
   // drag it wider/narrower (persisted per browser), so long model/flow names get
@@ -202,6 +204,18 @@ async function boot(root: HTMLElement): Promise<void> {
   let orientation: Orientation = 'bottomUp'
   // The model currently loaded in the editor (a specific revision's id).
   let currentId = ''
+  // releasesByName maps a model name to its published releases + channels (ADR-0037),
+  // so the sidebar can surface curated versions instead of the raw revision flood.
+  // Loaded at boot and refreshed after publishing or any reselect.
+  let releasesByName = new Map<string, ModelReleases>()
+  const refreshReleases = async (): Promise<void> => {
+    try {
+      const all = await listReleases()
+      releasesByName = new Map(all.map((mr) => [mr.name, mr]))
+    } catch {
+      releasesByName = new Map() // releases are optional — never block the modeler
+    }
+  }
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
@@ -361,6 +375,46 @@ async function boot(root: HTMLElement): Promise<void> {
     if (currentId) void openTypeManager(currentId, (newId) => reselect(newId))
   })
 
+  // Publish the current revision as a named release (ADR-0037): every save is a
+  // draft; publishing tags one as a stable version consumers pin (name@version),
+  // so the sidebar shows curated releases instead of the raw revision flood.
+  const suggestNextVersion = (name: string): string => {
+    const latest = releasesByName.get(name)?.channels?.latest
+    if (!latest) return '1.0.0'
+    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(latest)
+    return m ? `${m[1]}.${m[2]}.${Number(m[3]) + 1}` : latest
+  }
+  publishBtn.addEventListener('click', () => {
+    void (async () => {
+      if (!currentId) {
+        status.textContent = 'Kein Modell geöffnet.'
+        return
+      }
+      const name = models.find((m) => m.modelId === currentId)?.name ?? ''
+      if (!name) {
+        status.textContent = 'Bitte dem Modell zuerst einen Namen geben (Umbenennen), dann veröffentlichen.'
+        return
+      }
+      const version = await promptDialog({
+        title: 'Release veröffentlichen',
+        label: `Version für „${name}"`,
+        value: suggestNextVersion(name),
+        placeholder: 'z. B. 2.1.0',
+        okLabel: 'Veröffentlichen',
+        hint: (v) => (v && !/^v?\d+(\.\d+){0,2}(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(v) ? 'Version wie 2.1.0, 2.1.0-rc.1 oder v3.' : null),
+      })
+      if (!version) return
+      status.textContent = 'veröffentlicht …'
+      try {
+        await publishRelease(currentId, version, { name })
+        await reselect(currentId)
+        status.textContent = `veröffentlicht: ${name} ${version} ✓`
+      } catch (e) {
+        status.textContent = (e as Error).message
+      }
+    })()
+  })
+
   // Zoom controls.
   root.querySelector('#zoomOut')?.addEventListener('click', () => handle?.zoom('out'))
   root.querySelector('#zoomFit')?.addEventListener('click', () => handle?.zoom('fit'))
@@ -417,6 +471,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // or an upload created/changed a cached model).
   const reselect = async (modelId: string): Promise<void> => {
     models = await listModels()
+    await refreshReleases()
     await showModel(models.some((m) => m.modelId === modelId) ? modelId : (models[0]?.modelId ?? ''))
   }
 
@@ -579,6 +634,7 @@ async function boot(root: HTMLElement): Promise<void> {
     status.textContent = (e as Error).message
     return
   }
+  await refreshReleases()
   // Note: an empty server is NOT an early return — boot continues so every action
   // (new model/flow/folder, search, flows catalog) is wired. renderModelList
   // renders the "no models" empty state, and the initial selection below is
@@ -807,9 +863,27 @@ async function boot(root: HTMLElement): Promise<void> {
     const total = group.revisions.length
     if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
 
+    // Releases (ADR-0037) reframe the row: when a model is published, the row
+    // leads with its latest release version, not the raw revision count, and a
+    // head that has moved past the last release is flagged as an unpublished draft.
+    const rel = releasesByName.get(group.name)
+    const publishedVersion = rel?.releases.find((r) => r.modelId === current.modelId)?.version
+
     const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
     row.append(highlightName(group.name, terms))
-    if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
+    if (rel && rel.releases.length) {
+      const latest = rel.channels?.latest ?? rel.releases[0].version
+      const badge = el('span', 'model-release-badge', latest)
+      badge.title = `veröffentlicht — neueste Version ${latest}`
+      row.append(badge)
+      if (!publishedVersion) {
+        const draft = el('span', 'model-draft-badge', 'Entwurf')
+        draft.title = 'Der aktuelle Stand ist noch nicht veröffentlicht.'
+        row.append(draft)
+      }
+    } else if (total > 1) {
+      row.append(el('span', 'model-rev', 'v' + total))
+    }
 
     // Per-model actions (rename / delete the whole named model incl. history),
     // revealed on row hover. stopPropagation keeps a click off the row's select.
@@ -855,6 +929,28 @@ async function boot(root: HTMLElement): Promise<void> {
     row.addEventListener('dragstart', (e) => e.dataTransfer?.setData('text/plain', group.name))
     row.addEventListener('click', () => void showModel(current.modelId))
     container.append(row)
+
+    // Release chips (ADR-0037): the curated versions and their moving channels,
+    // each a click away from loading that exact revision. This is what a consumer
+    // pins (name@version / name@channel) — kept front-and-centre so the raw
+    // drafts can stay tucked under the history toggle below.
+    if (rel && rel.releases.length) {
+      const chips = el('div', 'model-releases')
+      const channelOf = (version: string): string[] => Object.entries(rel.channels ?? {}).filter(([, v]) => v === version).map(([c]) => c)
+      for (const r of rel.releases) {
+        const chip = el('button', 'release-chip' + (r.modelId === currentId ? ' is-current' : '')) as HTMLButtonElement
+        chip.type = 'button'
+        chip.append(el('span', 'release-ver', r.version))
+        for (const c of channelOf(r.version)) chip.append(el('span', 'release-channel', c))
+        chip.title = r.notes ? `${r.version} — ${r.notes}` : `Release ${r.version} laden`
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation()
+          void showModel(r.modelId)
+        })
+        chips.append(chip)
+      }
+      container.append(chips)
+    }
 
     if (older.length) {
       const open = expanded.has(group.name)
