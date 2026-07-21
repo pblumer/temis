@@ -121,6 +121,14 @@ type Server struct {
 	storeDir string
 	store    *diskStore
 
+	// releases is the model-release catalog (ADR-0037): named, immutable pointers
+	// (name, version) → modelId over content-addressed revisions, plus moving
+	// channels. Always non-nil (in-memory); when a model store dir is configured it
+	// is persisted as releases.json next to the models so releases survive a
+	// restart. The shared resolver runs in lookup, so every model-id-taking surface
+	// accepts a release reference (name@version, name@channel, bare name).
+	releases *releaseStore
+
 	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
 	// this server's mux so it shares this server's model cache — one process, one
 	// address space. Nil leaves /mcp unmounted.
@@ -419,6 +427,17 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			s.loadPersisted(context.Background())
 		}
 	}
+	// Open the release catalog (ADR-0037). It shares the model store's directory
+	// for persistence; with no store dir it stays in-memory. A corrupt manifest is
+	// logged and the catalog starts empty rather than blocking startup. Releases
+	// whose model id is not resolvable are logged as a warning but kept (they
+	// recover once the model reloads) — same spirit as the flow registry (ADR-0032).
+	rs, err := newReleaseStore(s.storeDir)
+	if err != nil {
+		log.Printf("temis: %v", err)
+	}
+	s.releases = rs
+	s.warnDanglingReleases()
 	// Finally load declared flows from disk (ADR-0032), after the models they
 	// reference are in the cache so validation is meaningful. Read-only: the
 	// directory is the source of truth, never written back.
@@ -441,6 +460,23 @@ func (s *Server) loadPersisted(ctx context.Context) {
 	for _, xml := range xmls {
 		if _, err := s.compileAndStore(ctx, xml); err != nil {
 			continue
+		}
+	}
+}
+
+// warnDanglingReleases logs a warning for any release whose model id is not
+// resolvable in the cache or store at startup (ADR-0037). It never fails startup
+// or drops the release — the referenced revision may reload later — mirroring the
+// flow registry's tolerance of not-yet-loaded models (ADR-0032).
+func (s *Server) warnDanglingReleases() {
+	if s.releases == nil {
+		return
+	}
+	for name, mr := range s.releases.snapshot() {
+		for _, r := range mr.Releases {
+			if _, ok := s.lookup(r.ModelID); !ok {
+				log.Printf("temis: release %s@%s references unresolved model %s (kept; will recover if the model reloads)", name, r.Version, r.ModelID)
+			}
 		}
 	}
 }
@@ -520,6 +556,19 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/evaluate-graph", ScopeEvaluate, s.handleEvaluateGraph},
 		{"POST", "/v1/models/{id}/evaluate-graph-batch", ScopeEvaluate, s.handleEvaluateGraphBatch},
 		{"POST", "/v1/evaluate", ScopeEvaluate, s.handleEvaluateStateless},
+		// Model releases (ADR-0037): named, immutable publications over
+		// content-addressed revisions, plus moving channels (latest/stable/…).
+		// Publishing/re-pointing a channel mutates the catalog (models:write);
+		// reading needs models:read. A top-level resource so a human name — not a
+		// content hash — keys it.
+		{"POST", "/v1/releases", ScopeModelsWrite, s.handlePublishRelease},
+		{"GET", "/v1/releases", ScopeModelsRead, s.handleListReleases},
+		{"GET", "/v1/releases/{name}", ScopeModelsRead, s.handleGetReleases},
+		{"POST", "/v1/releases/{name}/channels", ScopeModelsWrite, s.handleSetChannel},
+		// Draft garbage collection (ADR-0037, WP-143): an explicit, admin-scoped
+		// prune of unreferenced drafts — keeps releases, flow-referenced revisions
+		// and each named model's newest cached revision, removes the rest.
+		{"POST", "/v1/models/gc", ScopeAdmin, s.handleGCModels},
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
 		{"POST", "/v1/flows", ScopeFlow, s.handleCreateFlow},
@@ -1668,6 +1717,16 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {
+	// A release reference (name@version, name@channel or a bare name → its latest
+	// channel) resolves to a concrete content-addressed model id first, so every
+	// model-id-taking surface — evaluate, xml, graph, flow steps, MCP — accepts a
+	// stable release name (ADR-0037). A raw model id skips this entirely (resolve
+	// returns ok=false for a valid sha256), so existing lookups are byte-identical.
+	if s.releases != nil {
+		if mid, ok := s.releases.resolve(id); ok {
+			id = mid
+		}
+	}
 	if sm, ok := s.cache.get(id); ok {
 		return sm, true
 	}
