@@ -103,7 +103,15 @@ func (a mcpStore) List() []mcp.ModelInfo {
 	models := a.s.cache.snapshot()
 	out := make([]mcp.ModelInfo, 0, len(models))
 	for _, sm := range models {
-		out = append(out, mcp.ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+		out = append(out, mcp.ModelInfo{ID: sm.id, Name: sm.name, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
 	}
 	return out
+}
+
+func (a mcpStore) ModelXML(id string) ([]byte, bool) {
+	sm, ok := a.s.lookup(id)
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), sm.xml...), true
 }

@@ -324,6 +324,27 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
 .toolbar .type-editor select { max-width: 170px; }
 .toolbar .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
+/* Copyable content-addressed model-id chip: monospace pill; click copies the
+   full sha256: id (the string the HTTP/MCP surfaces expect). */
+.toolbar .model-id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  background: #f8fafc;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.toolbar .model-id-chip::before { content: "⧉"; font-size: 12px; opacity: 0.7; }
+.toolbar .model-id-chip:hover { color: var(--fg, #1f2937); border-color: #cbd5e1; background: #f1f4f9; }
+.toolbar .model-id-chip.is-copied { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.toolbar .model-id-chip.is-copied::before { content: "✓"; opacity: 1; }
+.toolbar .model-id-chip[hidden] { display: none; }
 /* clio connection indicator (ADR-0030): a compact pill with a coloured dot. */
 .toolbar .conn-badge {
   display: inline-flex;

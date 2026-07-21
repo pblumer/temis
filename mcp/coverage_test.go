@@ -42,12 +42,53 @@ func TestToolListModels(t *testing.T) {
 	if !contains(toStrings(first["decisions"]), "Dish") {
 		t.Errorf("listed model decisions = %v, want Dish", first["decisions"])
 	}
+	// list_models surfaces the model's display name (the DMN definitions name).
+	if first["name"] != "Dish" {
+		t.Errorf("listed model name = %v, want Dish", first["name"])
+	}
+}
+
+// TestToolGetModelXML covers get_model_xml: it reads a cached model's raw XML back
+// (byte-identical to what was loaded, with its name), and errors for a missing or
+// unknown modelId.
+func TestToolGetModelXML(t *testing.T) {
+	s := newServer()
+	src := dishXML(t)
+	xml, _ := json.Marshal(src)
+	id, _ := run(t, s, call(1, "load_model", `{"xml":`+string(xml)+`}`))[0].payload(t)["modelId"].(string)
+	if id == "" {
+		t.Fatal("load_model returned no modelId")
+	}
+
+	got := run(t, s, call(2, "get_model_xml", `{"modelId":"`+id+`"}`))[0].payload(t)
+	if got["xml"] != src {
+		t.Errorf("get_model_xml returned XML that does not match the loaded source")
+	}
+	if got["name"] != "Dish" {
+		t.Errorf("get_model_xml name = %v, want Dish", got["name"])
+	}
+	if got["modelId"] != id {
+		t.Errorf("get_model_xml modelId = %v, want %v", got["modelId"], id)
+	}
+
+	// Missing modelId → error.
+	if cr := run(t, s, call(3, "get_model_xml", `{}`))[0].call(t); !cr.IsError ||
+		!strings.Contains(cr.Content[0].Text, "missing required argument") {
+		t.Errorf("get_model_xml without modelId should error, got %+v", cr)
+	}
+
+	// Unknown modelId → error.
+	if cr := run(t, s, call(4, "get_model_xml", `{"modelId":"sha256:deadbeef"}`))[0].call(t); !cr.IsError ||
+		!strings.Contains(cr.Content[0].Text, "no model with id") {
+		t.Errorf("get_model_xml with unknown id should error, got %+v", cr)
+	}
 }
 
 // fakeStore is a minimal Store used to prove WithStore swaps the cache and that
 // list_models reads through whatever Store the server holds.
 type fakeStore struct {
 	infos     []ModelInfo
+	xml       map[string][]byte
 	compileFn func() (string, *dmn.Definitions, dmn.ModelIndex, dmn.Diagnostics, error)
 	lookupFn  func(id string) (*dmn.Definitions, dmn.ModelIndex, bool)
 }
@@ -67,6 +108,11 @@ func (f *fakeStore) Lookup(id string) (*dmn.Definitions, dmn.ModelIndex, bool) {
 }
 
 func (f *fakeStore) List() []ModelInfo { return f.infos }
+
+func (f *fakeStore) ModelXML(id string) ([]byte, bool) {
+	xml, ok := f.xml[id]
+	return xml, ok
+}
 
 // TestWithStore checks WithStore replaces the default store (and that a nil
 // store is ignored, leaving the default in place).
@@ -172,7 +218,7 @@ func TestToolsCallInvalidParams(t *testing.T) {
 // of every tool by passing arguments of the wrong JSON shape.
 func TestToolInvalidArguments(t *testing.T) {
 	tools := []string{
-		"load_model", "describe_decision", "evaluate",
+		"load_model", "get_model_xml", "describe_decision", "evaluate",
 		"git_list_models", "git_load_model", "git_propose",
 	}
 	for _, name := range tools {
