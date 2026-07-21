@@ -355,10 +355,16 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// OAuth reaper (ADR-0038): prune aged-out codes/refresh grants/expired issued
+	// keys on a timer. A no-op unless OAuth is enabled; stopped on shutdown.
+	reapCtx, reapCancel := context.WithCancel(context.Background())
+	defer reapCancel()
+	go srv.RunOAuthReaper(reapCtx)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
+		reapCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)

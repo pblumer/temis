@@ -76,3 +76,8 @@ bewusst **kein** JWT: keine neue Signier-/JWKS-Infrastruktur, Widerruf gratis.
 - **−** OAuth setzt einen persistenten Keystore (`-keys-dir`) voraus; Sessions
   und Grant-Stores sind in-memory (ein Neustart meldet Menschen ab, die bereits
   ausgestellten Tokens überleben als Keys).
+- **Anhäufung begrenzt:** Jeder `/token`-Aufruf prägt einen persistierten Key und
+  legt einen Refresh-Grant an. Ein Hintergrund-**Reaper** (`RunOAuthReaper`,
+  stündlich, an den Shutdown gebunden) entfernt abgelaufene Auth-Codes, abgelaufene
+  Refresh-Grants (TTL 30 d) und abgelaufene Access-Token-Keys aus Keystore/`keys.json`,
+  sodass ein Dauerbetrieb keine toten Credentials anhäuft.

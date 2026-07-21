@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/mcp"
@@ -244,6 +245,62 @@ func TestOAuthRejectsBadRedirect(t *testing.T) {
 	}
 	if resp.Header.Get("Location") != "" {
 		t.Error("must not emit a Location for a disallowed redirect_uri")
+	}
+}
+
+func TestOAuthReaper(t *testing.T) {
+	ks := newKeystore()
+	o := newOAuthServer(oauthConfig{issuer: "https://temis.test"}, ks, newSessionStore(time.Hour))
+	now := time.Unix(1_700_000_000, 0)
+	o.now = func() time.Time { return now }
+	ks.now = func() time.Time { return now }
+
+	// One short-lived issued token key, one long-lived key, one never-expiring
+	// unmanaged key; plus a pending code and a refresh grant.
+	shortKid, _, err := ks.createKey([]Scope{ScopeEvaluate}, "oauth:test", now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	longKid, _, err := ks.createKey([]Scope{ScopeEvaluate}, "oauth:test", now.Add(48*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ks.add(&Key{Kid: "static", Scopes: []Scope{ScopeAdmin}}); err != nil {
+		t.Fatal(err)
+	}
+	o.codes["c1"] = &authCode{expires: now.Add(authCodeTTL)}
+	o.refresh["r1"] = &refreshGrant{expires: now.Add(defaultRefreshTTL)}
+
+	// Nothing has aged out yet.
+	if c, r, k := o.reap(now); c+r+k != 0 {
+		t.Fatalf("premature reap: codes=%d refresh=%d keys=%d", c, r, k)
+	}
+
+	// Advance two hours: the short-lived key and the code expire; the refresh grant
+	// and the long-lived + static keys survive.
+	now = now.Add(2 * time.Hour)
+	c, r, k := o.reap(now)
+	if c != 1 || r != 0 || k != 1 {
+		t.Fatalf("reap = codes:%d refresh:%d keys:%d, want 1/0/1", c, r, k)
+	}
+	if _, ok := ks.keys[shortKid]; ok {
+		t.Error("expired access-token key was not reaped")
+	}
+	if _, ok := ks.keys[longKid]; !ok {
+		t.Error("unexpired key must survive")
+	}
+	if _, ok := ks.keys["static"]; !ok {
+		t.Error("unmanaged never-expiring key must survive")
+	}
+
+	// Far future: the long-lived key and the refresh grant age out too.
+	now = now.Add(defaultRefreshTTL + time.Hour)
+	c, r, k = o.reap(now)
+	if r != 1 || k != 1 {
+		t.Fatalf("late reap = codes:%d refresh:%d keys:%d, want refresh 1 keys 1", c, r, k)
+	}
+	if _, ok := ks.keys["static"]; !ok {
+		t.Error("unmanaged key must still survive")
 	}
 }
 

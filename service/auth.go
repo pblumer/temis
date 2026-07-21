@@ -538,6 +538,33 @@ func (ks *keystore) revokeKey(kid string) error {
 	return nil
 }
 
+// reapExpiredManaged removes managed keys whose expiry has passed and persists
+// the pruned set once. Unmanaged keys (static/bootstrap/legacy) and keys that
+// never expire (zero ExpiresAt) are kept. It returns how many were removed. This
+// keeps the OAuth-issued short-lived access tokens (ADR-0038) from piling up in
+// the keystore and on disk; an already-expired key never authenticates, so
+// removing it changes no authorization outcome.
+func (ks *keystore) reapExpiredManaged(now time.Time) int {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	var expired []string
+	for kid, k := range ks.keys {
+		if k.managed && !k.ExpiresAt.IsZero() && now.After(k.ExpiresAt) {
+			expired = append(expired, kid)
+		}
+	}
+	if len(expired) == 0 {
+		return 0
+	}
+	for _, kid := range expired {
+		delete(ks.keys, kid)
+	}
+	// Best-effort persist: memory is already pruned, so a failed flush only means
+	// disk catches up on the next successful save (or reload+reap after a restart).
+	_ = ks.saveManagedLocked()
+	return len(expired)
+}
+
 // listKeys returns a secret-free snapshot of every key (managed and unmanaged),
 // sorted by kid for a stable order.
 func (ks *keystore) listKeys() []KeyView {

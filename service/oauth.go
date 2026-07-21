@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -33,6 +35,12 @@ const (
 	// authCodeTTL is the brief window in which a freshly issued authorization code
 	// may be exchanged for a token. Codes are single-use regardless.
 	authCodeTTL = 60 * time.Second
+	// defaultRefreshTTL bounds a refresh token's life so an idle grant does not
+	// linger forever; a client refreshing within the window keeps a live chain.
+	defaultRefreshTTL = 30 * 24 * time.Hour
+	// oauthReapInterval is how often the background reaper prunes aged-out OAuth
+	// state (codes, refresh grants, expired issued keys).
+	oauthReapInterval = time.Hour
 )
 
 // defaultOAuthScopes is the least-privilege set issued to a connector token: it
@@ -52,6 +60,7 @@ type oauthConfig struct {
 	grantScopes   []Scope       // the scopes a token may be issued with
 	redirectHosts []string      // allowed redirect_uri hosts
 	accessTTL     time.Duration // issued-token lifetime
+	refreshTTL    time.Duration // refresh-grant lifetime
 	secure        bool          // server terminates TLS → mark cookies Secure
 }
 
@@ -75,6 +84,7 @@ type refreshGrant struct {
 	scopes   []Scope
 	subject  string
 	resource string
+	expires  time.Time
 }
 
 // oauthClient is a dynamically registered client (RFC 7591). temis registers
@@ -102,6 +112,9 @@ type oauthServer struct {
 func newOAuthServer(cfg oauthConfig, ks *keystore, sessions *sessionStore) *oauthServer {
 	if cfg.accessTTL <= 0 {
 		cfg.accessTTL = defaultAccessTTL
+	}
+	if cfg.refreshTTL <= 0 {
+		cfg.refreshTTL = defaultRefreshTTL
 	}
 	if len(cfg.grantScopes) == 0 {
 		cfg.grantScopes = defaultOAuthScopes
@@ -414,6 +427,10 @@ func (o *oauthServer) tokenFromRefresh(w http.ResponseWriter, r *http.Request) {
 		oauthJSONError(w, http.StatusBadRequest, "invalid_grant", "unknown or spent refresh token")
 		return
 	}
+	if !rg.expires.IsZero() && o.now().After(rg.expires) {
+		oauthJSONError(w, http.StatusBadRequest, "invalid_grant", "expired refresh token")
+		return
+	}
 	if cid := r.PostForm.Get("client_id"); cid != "" && cid != rg.clientID {
 		oauthJSONError(w, http.StatusBadRequest, "invalid_grant", "client_id mismatch")
 		return
@@ -435,7 +452,7 @@ func (o *oauthServer) issueToken(w http.ResponseWriter, clientID, subject string
 		return
 	}
 	o.mu.Lock()
-	o.refresh[rt] = &refreshGrant{clientID: clientID, scopes: scopes, subject: subject, resource: resource}
+	o.refresh[rt] = &refreshGrant{clientID: clientID, scopes: scopes, subject: subject, resource: resource, expires: o.now().Add(o.cfg.refreshTTL)}
 	o.mu.Unlock()
 	writeOAuthJSON(w, http.StatusOK, map[string]any{
 		"access_token":  kid + "." + secret,
@@ -444,6 +461,30 @@ func (o *oauthServer) issueToken(w http.ResponseWriter, clientID, subject string
 		"refresh_token": rt,
 		"scope":         strings.Join(scopeStrings(scopes), " "),
 	})
+}
+
+// reap prunes state that has aged out: authorization codes past their (short)
+// expiry, refresh grants past theirs, and expired issued access-token keys in the
+// keystore. It returns the counts removed. Called periodically by the server's
+// reaper so a long-running deployment does not accumulate dead credentials
+// (ADR-0038). Safe to call concurrently with the request handlers.
+func (o *oauthServer) reap(now time.Time) (codes, refresh, keys int) {
+	o.mu.Lock()
+	for c, ac := range o.codes {
+		if now.After(ac.expires) {
+			delete(o.codes, c)
+			codes++
+		}
+	}
+	for rt, rg := range o.refresh {
+		if !rg.expires.IsZero() && now.After(rg.expires) {
+			delete(o.refresh, rt)
+			refresh++
+		}
+	}
+	o.mu.Unlock()
+	keys = o.ks.reapExpiredManaged(now)
+	return codes, refresh, keys
 }
 
 // --- helpers --------------------------------------------------------------
@@ -604,6 +645,29 @@ func redirectError(w http.ResponseWriter, redirectURI, state, code, desc string)
 	// A ResponseWriter with no request handle: emit a minimal redirect ourselves.
 	w.Header().Set("Location", u.String())
 	w.WriteHeader(http.StatusFound)
+}
+
+// RunOAuthReaper periodically prunes aged-out OAuth state — expired authorization
+// codes, expired refresh grants and expired issued access-token keys — so a
+// long-running server does not accumulate dead credentials (ADR-0038). It is a
+// no-op when OAuth is disabled and returns when ctx is cancelled; run it in a
+// goroutine (temisd wires it to the shutdown signal).
+func (s *Server) RunOAuthReaper(ctx context.Context) {
+	if s.oauth == nil {
+		return
+	}
+	t := time.NewTicker(oauthReapInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if codes, refresh, keys := s.oauth.reap(time.Now()); codes+refresh+keys > 0 {
+				log.Printf("temis: OAuth reaper pruned %d code(s), %d refresh grant(s), %d expired token key(s)", codes, refresh, keys)
+			}
+		}
+	}
 }
 
 // --- server-rendered pages ------------------------------------------------
