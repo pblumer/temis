@@ -39,3 +39,5 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0032 | Flow-Registry — beim Start geladene Verzeichnis-Quelle statt flüchtigem POST-Store | accepted |
 | 0033 | Clio-Command-Consumer — Entscheidungen per Event auslösen, Ergebnis zurück ins Logbuch (opt-in) | accepted |
 | 0034 | Quality-Report: welcher Datensatz welche Regel verletzt (geteiltes `package quality`, CLI/HTTP/Web) | accepted |
+| 0035 | Public Decisions — anonyme Auswertung trotz aktivierter Auth (nur `evaluate`, pro Modell + global) | accepted |
+| 0036 | OIDC/Keycloak-Authenticator (Zielbild, zweiter `Authenticator` neben `kid.secret`) | proposed |

@@ -59,14 +59,26 @@ func (s *Server) MCPAuth() mcp.Auth {
 	if !s.auth.enabled() {
 		return nil
 	}
-	return mcpAuth{s.auth}
+	return mcpAuth{ks: s.auth, publicEvaluate: s.publicEvaluate}
 }
 
 // mcpAuth adapts the service keystore to mcp.Auth: it authenticates the bearer
 // and checks the tool's scope, mapping the outcome to mcp's verdict enum.
-type mcpAuth struct{ ks Authenticator }
+type mcpAuth struct {
+	ks Authenticator
+	// publicEvaluate mirrors the server's global public-evaluation switch
+	// (ADR-0035): when set, the evaluate tool (scope "evaluate") is served without a
+	// key. Per-model public (WithPublicModels) is not honoured here — the mcp.Auth
+	// gate sees only the scope, not the tool arguments' model id.
+	publicEvaluate bool
+}
 
 func (a mcpAuth) Authorize(bearer, scope string) mcp.AuthResult {
+	// Public evaluation (ADR-0035, global switch): the evaluate tool is open to
+	// anonymous callers when the operator enabled it.
+	if a.publicEvaluate && Scope(scope) == ScopeEvaluate {
+		return mcp.AuthAllowed
+	}
 	key, ok := a.ks.authenticate(bearer)
 	if !ok {
 		return mcp.AuthUnauthenticated

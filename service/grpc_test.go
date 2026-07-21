@@ -216,3 +216,28 @@ func TestGRPCScopeAuthorization(t *testing.T) {
 		t.Fatalf("Compile with no key: code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 }
+
+// TestGRPCPublicEvaluate verifies the global public-evaluation switch (ADR-0035):
+// with keys configured, Evaluate is reachable without a credential while Compile
+// (models:write) still requires one.
+func TestGRPCPublicEvaluate(t *testing.T) {
+	path := writeKeysFile(t, []scopedKey{{"boss", "a", []Scope{ScopeAdmin}}})
+	client := newGRPCClient(t, WithKeysFile(path), WithPublicEvaluate(true))
+	ctx := context.Background()
+	xml := dishXML(t)
+
+	// Anonymous stateless Evaluate (inline XML) → served.
+	ev := connect.NewRequest(&dmnv1.EvaluateRequest{
+		Model:    &dmnv1.EvaluateRequest_Xml{Xml: xml},
+		Decision: "Dish",
+		Input:    mustStruct(t, map[string]any{"Season": "Winter", "Guest Count": 4}),
+	})
+	if _, err := client.Evaluate(ctx, ev); err != nil {
+		t.Fatalf("anonymous Evaluate under public-evaluate: %v", err)
+	}
+	// Compile stays gated for anonymous callers.
+	comp := connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
+	if _, err := client.Compile(ctx, comp); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("anonymous Compile under public-evaluate: code = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}

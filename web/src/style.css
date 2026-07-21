@@ -1718,3 +1718,49 @@ select.pill-field { cursor: pointer; }
 .hl-str { color: #b45309; }
 .hl-num { color: #0e7490; }
 .hl-op  { color: #64748b; }
+
+/* Zugriff-Sektion (WP-107, ADR-0028/0035): Login + Admin-Panels in der Sidebar. */
+.side-group-access[hidden] { display: none; }
+.access-host { padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 14px; }
+.side-group-access[data-collapsed="true"] .access-host { display: none; }
+.access-block { display: flex; flex-direction: column; gap: 8px; }
+.access-heading { font: 600 11px/1 ui-sans-serif, system-ui; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.access-note { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0; }
+.access-hint { color: var(--muted); font-size: 10.5px; font-style: italic; margin: 2px 0 0; }
+.access-err { color: #b91c1c; font-size: 11.5px; margin: 0; }
+.access-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; color: var(--fg); background: #fff;
+}
+.access-input:focus { outline: none; border-color: var(--accent); }
+.access-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--fg); border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.access-btn:hover { background: #e7effd; }
+.access-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.access-btn-primary:hover { filter: brightness(1.05); background: var(--accent); }
+.access-btn-danger { color: #b91c1c; border-color: #f0c9c9; }
+.access-btn-danger:hover { background: #fdeaea; }
+.access-btn-sm { padding: 3px 8px; font-size: 11px; }
+.access-actions { display: flex; gap: 6px; }
+.access-identity { display: flex; align-items: center; gap: 6px; }
+.access-who { font: 600 12px/1 ui-monospace, monospace; color: var(--fg); }
+.access-badge { font: 600 9.5px/1 ui-sans-serif, system-ui; text-transform: uppercase; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 999px; }
+.access-scopes { font: 500 10.5px/1.4 ui-monospace, monospace; color: var(--muted); margin: 0; word-break: break-word; }
+.access-list { display: flex; flex-direction: column; gap: 8px; }
+.access-key { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+.access-key.is-revoked { opacity: 0.55; }
+.access-key-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.access-kid { font: 600 11.5px/1 ui-monospace, monospace; color: var(--fg); }
+.access-key-meta { font-size: 10px; color: var(--muted); text-align: right; }
+.access-key-scopes { font: 500 10.5px/1.4 ui-monospace, monospace; color: var(--muted); word-break: break-word; }
+.access-key-actions { display: flex; gap: 6px; margin-top: 2px; }
+.access-create { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.access-scope-grid { display: flex; flex-direction: column; gap: 4px; }
+.access-scope { font-size: 11.5px; color: var(--fg); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.access-secret { border: 1px solid var(--accent); background: #f0fdf4; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.access-secret-value { font: 600 11px/1.4 ui-monospace, monospace; color: var(--fg); word-break: break-all; background: #fff; border-radius: 4px; padding: 6px; }
+.access-public-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.access-public-list li { font-size: 11px; }
+.access-public-list code { font: 600 10.5px/1.3 ui-monospace, monospace; color: var(--fg); word-break: break-all; }
