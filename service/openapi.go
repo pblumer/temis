@@ -71,6 +71,19 @@ func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFu
 			next(w, r)
 			return
 		}
+		// Public decisions (ADR-0035): an evaluation the operator has opened stays
+		// reachable without a key while auth guards everything else. Only the evaluate
+		// scope can be opened this way. A caller that still presents a valid key keeps
+		// its authorship (clioauthkid); a missing or invalid credential is served
+		// anonymously rather than rejected — the route is public on purpose.
+		if scope == ScopeEvaluate && s.evaluateIsPublic(r.PathValue("id")) {
+			if key, ok := s.auth.authenticate(bearerToken(r.Header.Get("Authorization"))); ok {
+				next(w, r.WithContext(withAuthKid(r.Context(), key.Kid)))
+				return
+			}
+			next(w, r)
+			return
+		}
 		key, ok := s.auth.authenticate(bearerToken(r.Header.Get("Authorization")))
 		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="temis"`)

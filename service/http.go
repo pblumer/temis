@@ -56,6 +56,23 @@ type Server struct {
 	// there so they survive a restart. Empty leaves key management disabled (404).
 	keyStoreDir string
 
+	// publicEvaluate, when true, opens the evaluate scope to anonymous callers even
+	// while scoped keys guard everything else (ADR-0035, option B): every evaluation
+	// surface — the HTTP evaluate routes, gRPC Evaluate/EvaluateBatch and the MCP
+	// evaluate tool — is reachable without a token, while models:write, admin,
+	// assist, git and flow keep requiring one. Off by default. Set via
+	// WithPublicEvaluate / -public-evaluate / TEMIS_PUBLIC_EVALUATE.
+	publicEvaluate bool
+
+	// publicModels is the set of models whose evaluation is open to anonymous
+	// callers even when auth is configured (ADR-0035, option A). An entry matches a
+	// model by its content-addressed modelId (sha256:…) or by its display name, so a
+	// re-saved model stays public by name. It applies to the id-addressed HTTP
+	// evaluate routes only; the stateless POST /v1/evaluate is covered by
+	// publicEvaluate. Empty/nil = no per-model public evaluation. Set via
+	// WithPublicModels / -public-models / TEMIS_PUBLIC_MODELS.
+	publicModels map[string]bool
+
 	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
 	// NewServer. It authenticates kid.secret bearers and drives requireScope.
 	// When it reports !enabled() the /v1 surface is open (the historical default).
@@ -185,6 +202,41 @@ func WithBootstrapAdminKey(secret string) Option {
 // bootstrap admin key so the API is not open to the first caller.
 func WithKeyStore(dir string) Option {
 	return func(s *Server) { s.keyStoreDir = dir }
+}
+
+// WithPublicEvaluate opens the evaluate scope to anonymous callers even when
+// scoped keys are configured (ADR-0035, option B): every evaluation surface —
+// the HTTP evaluate routes (including the stateless POST /v1/evaluate), gRPC
+// Evaluate/EvaluateBatch and the MCP evaluate tool — becomes reachable without a
+// token, while models:write, admin, assist, git and flow keep requiring a key.
+// Off by default. Rate limiting (WithRateLimit) still applies to anonymous
+// callers. Prefer WithPublicModels to open only specific decisions.
+func WithPublicEvaluate(enabled bool) Option {
+	return func(s *Server) { s.publicEvaluate = enabled }
+}
+
+// WithPublicModels marks specific models as publicly evaluable even when scoped
+// keys are configured (ADR-0035, option A): an anonymous caller may evaluate
+// them, while every other route still requires a key. Each id matches a model by
+// its content-addressed modelId (sha256:…) or by its display name — so a
+// re-saved model, which gets a new modelId, stays public when listed by name. It
+// applies to the id-addressed HTTP evaluate routes (/v1/models/{id}/evaluate,
+// …/evaluate-graph, …/evaluate-graph-batch); the stateless POST /v1/evaluate
+// (model in the body, no id) is covered only by WithPublicEvaluate. Empty ids
+// contribute nothing.
+func WithPublicModels(ids ...string) Option {
+	return func(s *Server) {
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if s.publicModels == nil {
+				s.publicModels = map[string]bool{}
+			}
+			s.publicModels[id] = true
+		}
+	}
 }
 
 // WithVersion sets the build version reported by GET /v1/status (ADR-0030). An

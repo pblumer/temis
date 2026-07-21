@@ -51,6 +51,10 @@ func main() {
 		"JSON file of scoped kid.secret API keys guarding /v1, /mcp and gRPC (default $TEMIS_KEYS_FILE; empty = none)")
 	keysDir := flag.String("keys-dir", os.Getenv("TEMIS_KEYS_DIR"),
 		"directory for the persistent managed keystore + lifecycle API (POST /v1/keys …); keys survive a restart; empty = key management off (default $TEMIS_KEYS_DIR)")
+	publicEvaluate := flag.Bool("public-evaluate", envBool("TEMIS_PUBLIC_EVALUATE", false),
+		"open the evaluate scope to anonymous callers even when keys are configured: every evaluation (HTTP/gRPC/MCP) needs no token, while write/admin/assist/git/flow still do (env TEMIS_PUBLIC_EVALUATE)")
+	publicModels := flag.String("public-models", os.Getenv("TEMIS_PUBLIC_MODELS"),
+		"comma-separated modelIds or model names whose evaluation is open to anonymous callers even when keys are configured (public decisions); empty = none (default $TEMIS_PUBLIC_MODELS)")
 	listModels := flag.Bool("list-models", envBool("TEMIS_LIST_MODELS", true),
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private (env TEMIS_LIST_MODELS)")
 	cacheSize := flag.Int("cache-size", envInt("TEMIS_CACHE_SIZE", 0),
@@ -133,6 +137,12 @@ func main() {
 		service.WithKeyStore(*keysDir),
 		service.WithModelListing(*listModels),
 		service.WithVersion(ver),
+	}
+	if *publicEvaluate {
+		opts = append(opts, service.WithPublicEvaluate(true))
+	}
+	if *publicModels != "" {
+		opts = append(opts, service.WithPublicModels(strings.Split(*publicModels, ",")...))
 	}
 	if *clioActiveProbe {
 		opts = append(opts, service.WithClioActiveProbe(true))
@@ -223,6 +233,13 @@ func main() {
 		}
 	case *token != "":
 		log.Printf("temisd: /v1, /mcp and gRPC require the DEPRECATED legacy admin token — migrate to -keys-file (ADR-0028)")
+	}
+	// Public decisions (ADR-0035): surface the exception loudly — it deliberately
+	// serves evaluations without a key while auth guards everything else.
+	if *publicEvaluate {
+		log.Printf("temisd: PUBLIC evaluation ENABLED — every evaluation is open to anonymous callers (write/admin/assist/git/flow still require a key)")
+	} else if *publicModels != "" {
+		log.Printf("temisd: PUBLIC evaluation enabled for specific models: %s (anonymous callers may evaluate them; everything else requires a key)", *publicModels)
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")

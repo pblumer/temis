@@ -226,6 +226,8 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_KEYS_DIR` | *(leer)* | Verzeichnis für den persistenten Keystore + Lifecycle-API (`POST /v1/keys …`); Keys überleben Neustart (leer = Key-Verwaltung aus; WP-103) |
 | `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
 | `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
+| `TEMIS_PUBLIC_EVALUATE` | `false` | Öffnet den `evaluate`-Scope für anonyme Aufrufer trotz konfigurierter Keys — jede Auswertung (HTTP/gRPC/MCP) braucht keinen Token, `write`/`admin`/`assist`/`git`/`flow` weiterhin schon (ADR-0035) |
+| `TEMIS_PUBLIC_MODELS` | *(leer)* | Komma-Liste von `modelId`s **oder** Modellnamen, deren Auswertung anonym offen ist (public decisions) — alles andere bleibt hinter Key (leer = keine; ADR-0035) |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
 | `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
@@ -449,6 +451,30 @@ go run ./cmd/temisd -addr :8080 -token gehenix   # DEPRECATED, deckt alles als a
 curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
+```
+
+**Public decisions (ADR-0035):** Sonst ist Auth binär — sobald ein Key existiert, verlangt
+*jede* Route einen Token. Für „diese Entscheidung darf jeder auswerten, alles andere bleibt
+zu" öffnet man gezielt nur den `evaluate`-Scope, ohne die schreibenden/kostenverursachenden
+Routen (`models:write`/`admin`/`assist`) freizugeben:
+
+- **Pro Modell** — `-public-models "<modelId|Name>,…"` (oder `TEMIS_PUBLIC_MODELS`): nur die
+  gelisteten Modelle sind anonym auswertbar. Ein Eintrag matcht per content-adressierter
+  `modelId` **oder** per Anzeigename (so bleibt ein neu gespeichertes Modell per Name public).
+  Gilt für die id-adressierten Routen (`/v1/models/{id}/evaluate`, `…/evaluate-graph`).
+- **Global** — `-public-evaluate` (oder `TEMIS_PUBLIC_EVALUATE=true`): der ganze `evaluate`-Scope
+  ist anonym offen, inkl. dem stateless `POST /v1/evaluate`, über HTTP, gRPC und MCP.
+
+Beides ist opt-in und wird beim Start laut geloggt. Rate-Limiting (`-rate-limit`) greift auch
+für anonyme Aufrufer; ein trotzdem mitgeschickter gültiger Key stempelt weiterhin seine
+Authorship (`clioauthkid`) ins Audit-Log.
+
+```sh
+# Nur das Modell "Dish" ist öffentlich auswertbar, alles andere braucht einen Key:
+go run ./cmd/temisd -keys-file keys.json -public-models Dish
+curl --data '{"decision":"Dish","input":{"Season":"Winter","Guest Count":4}}' \
+     -H 'Content-Type: application/json' \
+     localhost:8080/v1/models/<modelId>/evaluate      # ohne Authorization-Header → 200
 ```
 
 **Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
