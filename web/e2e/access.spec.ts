@@ -22,9 +22,12 @@ test('access section renders against an open server', async ({ page }) => {
   await expect(group.locator('.access-heading', { hasText: 'Public Decisions' })).toBeVisible()
   await expect(group.getByText(/Keine öffentlichen Decisions/)).toBeVisible()
 
-  // API-Keys panel is present; the lifecycle API is dormant here (no -keys-dir).
+  // API-Keys panel offers the trust-on-first-use bootstrap on an open server.
   await expect(group.locator('.access-heading', { hasText: 'API-Keys' })).toBeVisible()
-  await expect(group.getByText(/Key-Verwaltung ist deaktiviert/)).toBeVisible()
+  await expect(group.getByText(/Dieser Server ist offen/)).toBeVisible()
+  const secureBtn = group.getByRole('button', { name: /Admin-Key anlegen & absichern/ })
+  await expect(secureBtn).toBeVisible()
+  await expect(secureBtn).toBeEnabled()
 
   // The section collapses via its header toggle.
   await group.locator('#accessToggle').click()
