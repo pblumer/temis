@@ -111,9 +111,10 @@ export type CreatedKey = {
   expiresAt?: string
 }
 
-// PublicConfig mirrors service.AccessPublicConfig: the effective public-decision
-// configuration (ADR-0035), read-only.
-export type PublicConfig = { evaluate: boolean; models: string[] }
+// PublicConfig mirrors service.AccessPublicConfig (ADR-0035): the global evaluate
+// switch (startup config), the immutable static allowlist (-public-models) and the
+// runtime-toggleable managed set. persistent = managed toggles survive a restart.
+export type PublicConfig = { evaluate: boolean; static: string[]; managed: string[]; persistent: boolean }
 
 // keyMgmtDisabled is thrown when the lifecycle API is dormant (no -keys-dir): the
 // server answers 404 and the UI shows a hint rather than an error.
@@ -158,6 +159,27 @@ export async function getPublicConfig(): Promise<PublicConfig> {
   if (!r.ok) throw new Error('public config: ' + r.status)
   return (await r.json()) as PublicConfig
 }
+
+// setPublicModel opens (public=true) or closes (false) one model's anonymous
+// evaluation at runtime and returns the updated configuration. The model is a
+// modelId or a display name. Removing a static entry is a 409 (deployment config).
+export async function setPublicModel(model: string, isPublic: boolean): Promise<PublicConfig> {
+  const r = await fetch('/v1/access/public/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, public: isPublic }),
+  })
+  if (!r.ok) throw new Error((await r.text()) || 'toggle failed: ' + r.status)
+  const cfg = (await r.json()) as PublicConfig
+  // Broadcast so every public-decision view (the toolbar toggle and the Zugriff
+  // panel) stays in sync without polling — whichever widget made the change, the
+  // others repaint from the fresh config.
+  document.dispatchEvent(new CustomEvent<PublicConfig>('temis:public-changed', { detail: cfg }))
+  return cfg
+}
+
+// PUBLIC_CHANGED is the event name carrying a fresh PublicConfig after any toggle.
+export const PUBLIC_CHANGED = 'temis:public-changed'
 
 // SCOPES is the closed scope vocabulary (service.knownScopes, ADR-0028 §2), for
 // the create-key form's checkboxes.

@@ -20,7 +20,7 @@ test('access section renders against an open server', async ({ page }) => {
 
   // Public Decisions panel is present and, with nothing configured, says so.
   await expect(group.locator('.access-heading', { hasText: 'Public Decisions' })).toBeVisible()
-  await expect(group.getByText(/Keine öffentlichen Decisions/)).toBeVisible()
+  await expect(group.getByText(/Keine öffentlich auswertbaren Modelle/)).toBeVisible()
 
   // API-Keys panel offers the trust-on-first-use bootstrap on an open server.
   await expect(group.locator('.access-heading', { hasText: 'API-Keys' })).toBeVisible()
@@ -32,4 +32,28 @@ test('access section renders against an open server', async ({ page }) => {
   // The section collapses via its header toggle.
   await group.locator('#accessToggle').click()
   await expect(group).toHaveAttribute('data-collapsed', 'true')
+})
+
+// Per-model public toggle (WP-107, ADR-0035): the toolbar switch opens/closes the
+// open model for anonymous evaluation. On the open e2e server the admin view is
+// active, so the toggle appears for the loaded model and flips on click. The
+// change is in-memory (no -keys-dir) but the round-trip through the API is real.
+test('per-model public toggle flips the model state', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('#modelList .model-item').first()).toBeVisible()
+
+  const toggle = page.locator('#publicToggle')
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toHaveText(/Privat/)
+
+  await toggle.click()
+  await expect(toggle).toHaveText(/Öffentlich/)
+  await expect(toggle).toHaveClass(/is-public/)
+
+  // The Zugriff → Public Decisions panel stays in sync (live event, no reload).
+  await expect(page.locator('#groupAccess .access-public-row').first()).toBeVisible()
+
+  // Toggling back closes it again (round-trips through the real API each time).
+  await toggle.click()
+  await expect(toggle).toHaveText(/Privat/)
 })

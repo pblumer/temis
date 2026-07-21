@@ -13,14 +13,17 @@ import {
   getPublicConfig,
   KeyMgmtDisabled,
   listKeys,
+  PUBLIC_CHANGED,
   revokeKey,
   rotateKey,
   SCOPES,
   setBearer,
+  setPublicModel,
   whoami,
   type AccessIdentity,
   type CreatedKey,
   type KeyView,
+  type PublicConfig,
 } from './session'
 
 // mountAccess renders the section into host and toggles the surrounding group's
@@ -47,6 +50,82 @@ export async function mountAccess(group: HTMLElement, host: HTMLElement): Promis
   host.append(renderIdentity(id))
   if (id.isAdmin) {
     host.append(renderKeysPanel(!id.authEnabled), renderPublicPanel())
+  }
+}
+
+// createPublicToggle wires a toolbar button that opens or closes the currently
+// open model for anonymous evaluation (ADR-0035, WP-107) — the per-model
+// "Öffentlich"-Schalter. It is admin-only (hidden otherwise) and toggles by the
+// model's display name so a re-saved revision stays public. A model made public
+// at server start (-public-models) shows as fixed and cannot be toggled off.
+export function createPublicToggle(btn: HTMLButtonElement): { update: (modelId: string, modelName?: string) => void } {
+  let cfg: PublicConfig | null = null
+  let admin = false
+  let ready: Promise<void> | null = null
+  let cur: { id: string; name: string } | null = null
+
+  const ensure = (): Promise<void> => {
+    if (!ready) {
+      ready = (async () => {
+        try {
+          admin = (await whoami()).isAdmin
+          if (admin) cfg = await getPublicConfig()
+        } catch {
+          admin = false
+        }
+      })()
+    }
+    return ready
+  }
+
+  const state = (): { pub: boolean; fixed: boolean } => {
+    if (!cfg || !cur) return { pub: false, fixed: false }
+    const hit = (list?: string[]): boolean => !!list?.some((m) => m === cur!.id || (cur!.name !== '' && m === cur!.name))
+    const inStatic = hit(cfg.static)
+    return { pub: inStatic || hit(cfg.managed), fixed: inStatic }
+  }
+
+  const paint = (): void => {
+    if (!admin || !cur) {
+      btn.hidden = true
+      return
+    }
+    const { pub, fixed } = state()
+    btn.hidden = false
+    btn.disabled = fixed
+    btn.textContent = pub ? '🌐 Öffentlich' : '🔒 Privat'
+    btn.classList.toggle('is-public', pub)
+    btn.title = fixed
+      ? 'Öffentlich per Serverstart (-public-models) — nicht zur Laufzeit änderbar'
+      : pub
+        ? 'Anonym auswertbar — klicken zum Schließen'
+        : 'Nur mit Key auswertbar — klicken, um diese Decision öffentlich zu machen'
+  }
+
+  btn.addEventListener('click', async () => {
+    if (!cfg || !cur) return
+    const { pub, fixed } = state()
+    if (fixed) return
+    btn.disabled = true
+    try {
+      cfg = await setPublicModel(cur.name || cur.id, !pub)
+    } catch {
+      /* leave state unchanged; re-enable below */
+    }
+    paint()
+  })
+
+  // Stay in sync when the Zugriff panel (or another tab widget) changes a model.
+  document.addEventListener(PUBLIC_CHANGED, (e) => {
+    cfg = (e as CustomEvent<PublicConfig>).detail
+    paint()
+  })
+
+  return {
+    update: (modelId, modelName = '') => {
+      cur = modelId ? { id: modelId, name: modelName } : null
+      void ensure().then(paint)
+    },
   }
 }
 
@@ -291,39 +370,95 @@ function showSecret(container: HTMLElement, key: CreatedKey, title: string, relo
   container.prepend(box)
 }
 
-// renderPublicPanel shows the effective public-decision configuration (ADR-0035),
-// read-only: which evaluations are open to anonymous callers.
+// renderPublicPanel shows and edits the public-decision configuration (ADR-0035):
+// which decisions anonymous callers may evaluate. The global switch and static
+// (-public-models) entries are read-only; managed entries can be toggled at
+// runtime and (with -keys-dir) persist across restarts.
 function renderPublicPanel(): HTMLElement {
   const panel = div('access-block')
   panel.append(heading('Public Decisions'))
   const body = div('access-list')
-  panel.append(body)
+  const status = p('access-err', '')
+  status.hidden = true
+  panel.append(body, status)
+
+  const render = (cfg: PublicConfig): void => {
+    body.innerHTML = ''
+    if (cfg.evaluate) {
+      body.append(p('access-note', '🌐 Globaler Schalter aktiv: jede Auswertung ist anonym offen (write/admin bleiben geschützt).'))
+    }
+    const rows = div('access-list')
+    for (const m of cfg.static ?? []) rows.append(publicRow(m, true, cfg, render, status))
+    for (const m of cfg.managed ?? []) rows.append(publicRow(m, false, cfg, render, status))
+    if (!(cfg.static?.length || cfg.managed?.length)) {
+      rows.append(p('access-note', 'Keine öffentlich auswertbaren Modelle.'))
+    }
+    body.append(rows)
+
+    // Add control: open a model (by modelId or display name) to anonymous evaluation.
+    const add = document.createElement('input')
+    add.className = 'access-input'
+    add.placeholder = 'Modell öffentlich machen — modelId oder Name'
+    const addBtn = button('access-btn', '+ Öffentlich machen')
+    const doAdd = async (): Promise<void> => {
+      const v = add.value.trim()
+      if (!v) return
+      status.hidden = true
+      try {
+        render(await setPublicModel(v, true))
+      } catch (e) {
+        status.textContent = (e as Error).message
+        status.hidden = false
+      }
+    }
+    addBtn.addEventListener('click', doAdd)
+    add.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') void doAdd()
+    })
+    body.append(add, addBtn)
+    body.append(
+      p(
+        'access-hint',
+        cfg.persistent
+          ? 'Änderungen wirken sofort und überstehen einen Neustart (persistiert).'
+          : 'Änderungen wirken sofort, sind aber nur im Speicher — für Persistenz den Server mit -keys-dir starten.',
+      ),
+    )
+  }
+
   void (async () => {
     try {
-      const cfg = await getPublicConfig()
-      if (cfg.evaluate) {
-        body.append(p('access-note', '🌐 Globaler Schalter aktiv: jede Auswertung ist anonym offen (write/admin bleiben geschützt).'))
-      }
-      if (cfg.models?.length) {
-        body.append(p('access-note', 'Öffentlich auswertbare Modelle (per modelId oder Name):'))
-        const ul = document.createElement('ul')
-        ul.className = 'access-public-list'
-        for (const m of cfg.models) {
-          const li = document.createElement('li')
-          li.innerHTML = `<code>${escapeHtml(m)}</code>`
-          ul.append(li)
-        }
-        body.append(ul)
-      }
-      if (!cfg.evaluate && !cfg.models?.length) {
-        body.append(p('access-note', 'Keine öffentlichen Decisions — jede Auswertung braucht einen Key.'))
-      }
-      body.append(p('access-hint', 'Konfiguration beim Serverstart (-public-evaluate / -public-models); hier read-only.'))
+      render(await getPublicConfig())
     } catch (e) {
       body.append(p('access-err', (e as Error).message))
     }
   })()
+  // Repaint when the toolbar toggle (or another widget) changes a model's state.
+  document.addEventListener(PUBLIC_CHANGED, (e) => render((e as CustomEvent<PublicConfig>).detail))
   return panel
+}
+
+// publicRow is one public entry: the model + a remove button. Static entries
+// (deployment config) are shown as fixed and cannot be removed at runtime.
+function publicRow(model: string, isStatic: boolean, cfg: PublicConfig, render: (c: PublicConfig) => void, status: HTMLElement): HTMLElement {
+  const row = div('access-public-row')
+  row.innerHTML = `<code class="access-public-model">${escapeHtml(model)}</code>` + (isStatic ? '<span class="access-key-meta">fix</span>' : '')
+  if (!isStatic) {
+    const rm = button('access-btn access-btn-sm access-btn-danger', '✕')
+    rm.title = 'Nicht mehr öffentlich'
+    rm.addEventListener('click', async () => {
+      status.hidden = true
+      try {
+        render(await setPublicModel(model, false))
+      } catch (e) {
+        status.textContent = (e as Error).message
+        status.hidden = false
+      }
+    })
+    row.append(rm)
+  }
+  void cfg
+  return row
 }
 
 // --- tiny DOM helpers (kept local; the section is self-contained) ---

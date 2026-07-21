@@ -15,8 +15,9 @@ package service
 // contract change — the frontend only ever reads Scopes/IsAdmin.
 
 import (
+	"errors"
 	"net/http"
-	"sort"
+	"strings"
 )
 
 // AccessIdentity describes the calling credential for the access UI. Subject is
@@ -53,27 +54,66 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 }
 
 // AccessPublicConfig is the server's effective public-decision configuration
-// (ADR-0035), read-only for the admin access UI. The toggles are startup config
-// today (env/flags); the panel surfaces their state so an admin can see which
-// decisions are open to anonymous callers.
+// (ADR-0035) for the admin access UI. Evaluate (the global switch) stays startup
+// config; the per-model allowlist is split into immutable Static entries
+// (-public-models) and runtime-toggleable Managed ones. Persistent reports whether
+// managed toggles survive a restart (an access-control dir is configured).
 type AccessPublicConfig struct {
-	Evaluate bool     `json:"evaluate"` // WithPublicEvaluate: the whole evaluate scope is anonymous
-	Models   []string `json:"models"`   // WithPublicModels: modelIds/names open to anonymous evaluation
+	Evaluate   bool     `json:"evaluate"`   // WithPublicEvaluate: the whole evaluate scope is anonymous
+	Static     []string `json:"static"`     // -public-models: immutable at runtime
+	Managed    []string `json:"managed"`    // runtime-toggled modelIds/names
+	Persistent bool     `json:"persistent"` // managed toggles survive a restart (-keys-dir set)
+}
+
+// writeAccessPublic writes the current public-decision configuration (200). It is
+// the shared response for the read and the toggle handlers.
+func (s *Server) writeAccessPublic(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, AccessPublicConfig{
+		Evaluate:   s.publicEvaluate,
+		Static:     s.publicModels.staticList(),
+		Managed:    s.publicModels.managedList(),
+		Persistent: s.publicModels.persistent(),
+	})
 }
 
 // handleAccessPublic returns the effective public-decision configuration. It is
 // admin-scoped (registered under requireScope in Handler).
 func (s *Server) handleAccessPublic(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, AccessPublicConfig{Evaluate: s.publicEvaluate, Models: s.publicModelsList()})
+	s.writeAccessPublic(w)
 }
 
-// publicModelsList returns the configured public model ids/names, sorted for a
-// stable UI order.
-func (s *Server) publicModelsList() []string {
-	out := make([]string, 0, len(s.publicModels))
-	for id := range s.publicModels {
-		out = append(out, id)
+// setPublicModelRequest toggles one model's public state at runtime.
+type setPublicModelRequest struct {
+	Model  string `json:"model"`  // a modelId (sha256:…) or a display name
+	Public bool   `json:"public"` // true = open to anonymous evaluation, false = close
+}
+
+// handleSetPublicModel opens or closes a single model's public evaluation at
+// runtime (admin-scoped), persisting the managed set when a store is configured.
+// Removing a static (-public-models) entry is a 409 — it is deployment config.
+func (s *Server) handleSetPublicModel(w http.ResponseWriter, r *http.Request) {
+	var req setPublicModelRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
 	}
-	sort.Strings(out)
-	return out
+	if strings.TrimSpace(req.Model) == "" {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "model is required")
+		return
+	}
+	var err error
+	if req.Public {
+		err = s.publicModels.add(req.Model)
+	} else {
+		err = s.publicModels.remove(req.Model)
+	}
+	if err != nil {
+		if errors.Is(err, errPublicStatic) {
+			writeProblem(w, http.StatusConflict, "PUBLIC_STATIC", err.Error())
+			return
+		}
+		writeProblem(w, http.StatusInternalServerError, "PUBLIC_STORE", err.Error())
+		return
+	}
+	s.writeAccessPublic(w)
 }

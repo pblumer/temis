@@ -496,6 +496,13 @@ curl --data '{"decision":"Dish","input":{"Season":"Winter","Guest Count":4}}' \
      localhost:8080/v1/models/<modelId>/evaluate      # ohne Authorization-Header → 200
 ```
 
+**Zur Laufzeit umschalten (WP-107):** Neben der Startup-Config lässt sich der Pro-Modell-Schalter
+**ohne Redeploy** umlegen — im Modeler über den **„🔒 Privat / 🌐 Öffentlich"-Toggle** in der
+Toolbar (pro geöffnetem Modell, nur für `admin`) oder das Zugriff-Panel, bzw. per API
+`POST /v1/access/public/models` `{"model":"<id|Name>","public":true|false}` (Scope `admin`). Mit
+`-keys-dir` werden Laufzeit-Umschaltungen in `public.json` **persistiert** (überstehen Neustart);
+ohne bleiben sie im Speicher. `-public-models`-Einträge sind fix (nur per Neustart änderbar).
+
 **Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
 ist *observierbar*, überwacht sich aber nicht selbst. `GET /v1/status` zeigt den Zustand
 der **Umsysteme** (clio/LLM/Git) und die Last der Engine — für clio `writesOk`/
