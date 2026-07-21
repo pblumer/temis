@@ -153,3 +153,43 @@ func TestItemDefinitionErrors(t *testing.T) {
 		t.Error("expected error removing an unknown type")
 	}
 }
+
+// TestSetStructuredType covers creating and editing a structured type through
+// SetItemDefinition's Components path (the struct editor's backend): a new struct
+// round-trips its fields, and re-saving replaces them.
+func TestSetStructuredType(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+	out, err := dmn.SetItemDefinition(src, dmn.ItemType{
+		Name: "Person",
+		Components: []dmn.ItemType{
+			{Name: "name", TypeRef: "string"},
+			{Name: "alter", TypeRef: "number"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetItemDefinition (struct): %v", err)
+	}
+	types := itemTypes(t, out)
+	p := types["Person"]
+	if !p.Structured || len(p.Components) != 2 {
+		t.Fatalf("Person should be structured with 2 fields, got %+v", p)
+	}
+
+	// Re-saving with a different field set replaces the components.
+	out, err = dmn.SetItemDefinition(out, dmn.ItemType{
+		Name:       "Person",
+		Components: []dmn.ItemType{{Name: "email", TypeRef: "string", IsCollection: true}},
+	})
+	if err != nil {
+		t.Fatalf("SetItemDefinition (struct re-save): %v", err)
+	}
+	p = itemTypes(t, out)["Person"]
+	if len(p.Components) != 1 || p.Components[0].Name != "email" || !p.Components[0].IsCollection {
+		t.Fatalf("re-saved Person components = %+v, want one collection field 'email'", p.Components)
+	}
+
+	// A struct field with an empty name is rejected.
+	if _, err := dmn.SetItemDefinition(src, dmn.ItemType{Name: "Bad", Components: []dmn.ItemType{{Name: " "}}}); err == nil {
+		t.Error("expected error for a struct field with an empty name")
+	}
+}

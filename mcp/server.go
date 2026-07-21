@@ -356,18 +356,28 @@ var tools = []toolSpec{
 	},
 	{
 		Name: "save_type",
-		Description: "Create or update a SIMPLE custom type (item definition) on a cached model — " +
-			"a base FEEL type with an optional collection flag and an optional allowed-values " +
-			"constraint — and return the recompiled model's new modelId (the change is a new, " +
-			"content-addressed revision, and it appears in the modeler's type manager). " +
-			"Structured (component) types cannot be edited here; build those via load_model with " +
-			"the full XML.",
+		Description: "Create or update a custom type (item definition) on a cached model and " +
+			"return the recompiled model's new modelId (a new content-addressed revision that " +
+			"appears in the modeler's type manager). Pass either a SIMPLE type — a base FEEL " +
+			"type with an optional collection flag and allowed-values constraint — or a " +
+			"STRUCTURED type by giving `components` (its fields: name + typeRef + optional " +
+			"collection; nest by referencing another named type). When `components` is set, " +
+			"typeRef and allowedValues are ignored.",
 		InputSchema: obj(map[string]any{
 			"modelId":       str("The modelId of the cached model to add the type to."),
-			"name":          str("The type's name, e.g. \"Ampel\"."),
-			"typeRef":       str("The base FEEL type, e.g. \"string\", \"number\", \"boolean\". Empty means Any."),
-			"isCollection":  map[string]any{"type": "boolean", "description": "When true, the type is a collection (list) of typeRef."},
-			"allowedValues": str("Optional FEEL allowed-values constraint, e.g. \"\\\"rot\\\",\\\"gelb\\\",\\\"gruen\\\"\" for an enum or \"[1..10]\" for a range."),
+			"name":          str("The type's name, e.g. \"Ampel\" or \"Person\"."),
+			"typeRef":       str("Simple type only: the base FEEL type, e.g. \"string\", \"number\". Empty means Any."),
+			"isCollection":  map[string]any{"type": "boolean", "description": "When true, the type is a collection (list)."},
+			"allowedValues": str("Simple type only: FEEL allowed-values, e.g. \"\\\"rot\\\",\\\"gelb\\\"\" (enum) or \"[1..10]\" (range)."),
+			"components": map[string]any{
+				"type":        "array",
+				"description": "Structured type only: the fields. Each is {name, typeRef, isCollection?}. typeRef may be a built-in FEEL type or another named type.",
+				"items": obj(map[string]any{
+					"name":         str("The field name."),
+					"typeRef":      str("The field's FEEL type (built-in or a named type)."),
+					"isCollection": map[string]any{"type": "boolean", "description": "When true, the field is a collection."},
+				}, "name"),
+			},
 		}, "modelId", "name"),
 	},
 	{
@@ -571,6 +581,11 @@ func (s *Server) toolSaveType(ctx context.Context, raw json.RawMessage) (any, *r
 		TypeRef       string `json:"typeRef"`
 		IsCollection  bool   `json:"isCollection"`
 		AllowedValues string `json:"allowedValues"`
+		Components    []struct {
+			Name         string `json:"name"`
+			TypeRef      string `json:"typeRef"`
+			IsCollection bool   `json:"isCollection"`
+		} `json:"components"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return toolError("invalid arguments: " + err.Error()), nil
@@ -585,11 +600,16 @@ func (s *Server) toolSaveType(ctx context.Context, raw json.RawMessage) (any, *r
 	if !ok {
 		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
 	}
+	var comps []dmn.ItemType
+	for _, c := range a.Components {
+		comps = append(comps, dmn.ItemType{Name: c.Name, TypeRef: c.TypeRef, IsCollection: c.IsCollection})
+	}
 	patched, err := dmn.SetItemDefinition(xml, dmn.ItemType{
 		Name:          a.Name,
 		TypeRef:       a.TypeRef,
 		IsCollection:  a.IsCollection,
 		AllowedValues: a.AllowedValues,
+		Components:    comps,
 	})
 	if err != nil {
 		return toolError("could not save type: " + err.Error()), nil

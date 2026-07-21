@@ -126,8 +126,27 @@ func TestToolTypes(t *testing.T) {
 		t.Fatalf("expected no types after delete, got %v", types2)
 	}
 
-	// A structured type cannot be edited via save_type.
-	if cr := run(t, s, call(7, "save_type", `{"modelId":"`+id+`","name":""}`))[0].call(t); !cr.IsError {
+	// save_type with components creates a structured type.
+	structSaved := run(t, s, call(7, "save_type", `{"modelId":"`+id+`","name":"Person","components":[{"name":"name","typeRef":"string"},{"name":"alter","typeRef":"number"}]}`))[0].payload(t)
+	structID, _ := structSaved["modelId"].(string)
+	if structID == "" {
+		t.Fatal("save_type (struct) returned no modelId")
+	}
+	stypes := run(t, s, call(8, "list_types", `{"modelId":"`+structID+`"}`))[0].payload(t)["types"]
+	sarr, _ := stypes.([]any)
+	if len(sarr) != 1 {
+		t.Fatalf("expected one struct type, got %v", stypes)
+	}
+	person, _ := sarr[0].(map[string]any)
+	if person["structured"] != true {
+		t.Errorf("Person should be structured, got %v", person)
+	}
+	if comps, _ := person["components"].([]any); len(comps) != 2 {
+		t.Errorf("Person should have 2 components, got %v", person["components"])
+	}
+
+	// An empty name still errors.
+	if cr := run(t, s, call(9, "save_type", `{"modelId":"`+id+`","name":""}`))[0].call(t); !cr.IsError {
 		t.Errorf("save_type with empty name should error")
 	}
 }
