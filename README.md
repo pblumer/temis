@@ -421,6 +421,25 @@ curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rota
 curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
 ```
 
+**Absichern beim ersten Start (Trust-on-first-use, WP-107):** Ohne Bootstrap-Secret
+starten — nur mit `-keys-dir` — und den ersten Admin-Key **über die Oberfläche**
+anlegen. Solange **kein** Key existiert, ist die API offen (die Lifecycle-API ist
+erreichbar, beim Start laut geloggt); der **erste angelegte Key kippt den Server zur
+Laufzeit auf abgesichert** (`enabled()` hängt an „mindestens ein Key") und wird
+persistiert, übersteht also den Neustart.
+
+```sh
+go run ./cmd/temisd -keys-dir ./keystore           # offen; /v1/keys ist erreichbar
+# Browser → Modeler → Sidebar „Zugriff" → „🔒 Admin-Key anlegen & absichern"
+# Der Modeler übernimmt den neuen Bearer sofort als Session, zeigt das Secret
+# einmalig und lädt neu — ab jetzt ist der Server abgesichert.
+```
+
+Der Bootstrap-Button erzwingt bewusst `admin`-Scope (sonst würde man den Server ohne
+Admin-Key aussperren). Achtung: bis der erste Key existiert, ist die API offen —
+diesen Schritt im vertrauenswürdigen Netz bzw. direkt nach dem Deploy machen, und
+für Klartext-Transport TLS davorschalten (`-tls-cert`/`-tls-key` oder Reverse-Proxy).
+
 **Lockout-Recovery — Offline-CLI (WP-104):** Ist kein nutzbarer Admin-Key mehr da,
 verwaltet `temisd keys …` denselben Keystore **bei gestopptem Server** direkt am
 Verzeichnis. Ein so erzeugter Key wird beim nächsten Start akzeptiert:

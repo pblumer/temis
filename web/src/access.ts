@@ -46,7 +46,7 @@ export async function mountAccess(group: HTMLElement, host: HTMLElement): Promis
   }
   host.append(renderIdentity(id))
   if (id.isAdmin) {
-    host.append(renderKeysPanel(), renderPublicPanel())
+    host.append(renderKeysPanel(!id.authEnabled), renderPublicPanel())
   }
 }
 
@@ -82,7 +82,7 @@ function renderLogin(message: string): HTMLElement {
 function renderIdentity(id: AccessIdentity): HTMLElement {
   const wrap = div('access-block')
   if (!id.authEnabled) {
-    wrap.append(p('access-note', 'Offene API — keine Authentifizierung aktiv. Setze Keys per -keys-file / -keys-dir (ADR-0028).'))
+    wrap.append(p('access-note', 'Offene API — keine Authentifizierung aktiv. Lege unten einen Admin-Key an, um den Server abzusichern (persistente Keys via -keys-dir).'))
     return wrap
   }
   const who = div('access-identity')
@@ -100,9 +100,45 @@ function renderIdentity(id: AccessIdentity): HTMLElement {
 
 // renderKeysPanel lists the managed API keys and offers create/rotate/revoke. The
 // list loads lazily; a dormant lifecycle API (no -keys-dir) shows a hint.
-function renderKeysPanel(): HTMLElement {
+function renderKeysPanel(openMode: boolean): HTMLElement {
   const panel = div('access-block')
   panel.append(heading('API-Keys'))
+
+  // Trust-on-first-use bootstrap: on an OPEN server the lifecycle API is reachable
+  // (requireScope is transparent without configured auth), so the very first admin
+  // key can be minted right here. Creating any key flips the server to "secured" at
+  // runtime, so we force admin scope — otherwise the operator would lock the door
+  // with no admin key inside — and adopt the returned bearer as the session
+  // credential immediately, so the same person is now the admin of the secured
+  // server rather than shut out.
+  if (openMode) {
+    const boot = div('access-block')
+    boot.append(p('access-note', '🔓 Dieser Server ist offen. Lege einen Admin-Key an, um ihn abzusichern — du wirst dann automatisch als dieser Admin angemeldet.'))
+    const secureBtn = button('access-btn access-btn-primary', '🔒 Admin-Key anlegen & absichern')
+    const err = p('access-err', '')
+    err.hidden = true
+    secureBtn.addEventListener('click', async () => {
+      secureBtn.disabled = true
+      err.hidden = true
+      try {
+        const created = await createKey({ scopes: ['admin'], owner: 'bootstrap admin' })
+        setBearer(created.bearer) // adopt the new admin as the session so we aren't locked out
+        boot.replaceChildren()
+        showSecret(boot, created, 'Server abgesichert — du bist jetzt als Admin angemeldet. Secret einmalig sichtbar, jetzt kopieren:', true)
+      } catch (e) {
+        secureBtn.disabled = false
+        err.textContent =
+          e instanceof KeyMgmtDisabled
+            ? 'Key-Verwaltung ist deaktiviert. Starte den Server mit -keys-dir, damit angelegte Keys persistiert werden und den Neustart überstehen.'
+            : (e as Error).message
+        err.hidden = false
+      }
+    })
+    boot.append(secureBtn, err)
+    panel.append(boot)
+    return panel
+  }
+
   const list = div('access-list')
   const status = p('access-err', '')
   status.hidden = true
@@ -233,7 +269,7 @@ function renderCreateForm(refresh: () => Promise<void>): HTMLElement {
 
 // showSecret renders the one-time bearer with a copy button. The secret is never
 // retrievable again, so this is the only chance to grab it.
-function showSecret(container: HTMLElement, key: CreatedKey, title: string): void {
+function showSecret(container: HTMLElement, key: CreatedKey, title: string, reload = false): void {
   const box = div('access-secret')
   box.append(p('access-note', title))
   const code = document.createElement('code')
@@ -245,6 +281,13 @@ function showSecret(container: HTMLElement, key: CreatedKey, title: string): voi
     copy.textContent = 'Kopiert ✓'
   })
   box.append(code, copy)
+  // After a bootstrap (open → secured) the bearer is already stored; a reload
+  // re-reads whoami so the section switches to the authenticated admin view.
+  if (reload) {
+    const rl = button('access-btn access-btn-primary access-btn-sm', 'Fertig — neu laden')
+    rl.addEventListener('click', () => location.reload())
+    box.append(rl)
+  }
   container.prepend(box)
 }
 
