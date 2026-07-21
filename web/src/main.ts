@@ -91,6 +91,7 @@ async function boot(root: HTMLElement): Promise<void> {
           </span>
           <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
+          <button id="modelIdChip" class="model-id-chip" type="button" hidden title="Modell-ID kopieren"></button>
           <span id="clioStatus" class="conn-badge" hidden><span class="conn-dot"></span><span class="conn-label"></span></span>
         </div>
         <div id="opHistory" class="op-history"></div>
@@ -114,6 +115,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const modelList = root.querySelector<HTMLElement>('#modelList')
   const canvas = root.querySelector<HTMLElement>('#canvas')
   const status = root.querySelector<HTMLElement>('#status')
+  const modelIdChip = root.querySelector<HTMLButtonElement>('#modelIdChip')
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
   const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
@@ -138,7 +140,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modelIdChip || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
 
   // The left sidebar sits at a fixed width by default; its divider lets the user
   // drag it wider/narrower (persisted per browser), so long model/flow names get
@@ -1121,6 +1123,8 @@ async function boot(root: HTMLElement): Promise<void> {
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
+    // The model-id chip belongs to the open L1 model; flows have no single model.
+    if (m === 'flows' || m === 'flow-edit') modelIdChip.hidden = true
     if (m === 'operate') {
       operate.render()
       clioReplay.render()
@@ -1155,11 +1159,47 @@ async function boot(root: HTMLElement): Promise<void> {
   wireToggle('modelsToggle', 'groupModels')
   root.querySelector<HTMLButtonElement>('#flowRefresh')?.addEventListener('click', () => flowView.render())
 
+  // The toolbar chip shows the currently-open model's content-addressed id and
+  // copies the full id (with the sha256: prefix) on click — the exact string the
+  // HTTP/MCP surfaces expect, so it can be pasted straight into an API or agent
+  // call. The label is shortened for the toolbar; the full id is the title.
+  let chipResetTimer = 0
+  const setModelIdChip = (modelId: string): void => {
+    if (chipResetTimer) window.clearTimeout(chipResetTimer)
+    if (!modelId) {
+      modelIdChip.hidden = true
+      modelIdChip.textContent = ''
+      return
+    }
+    const hex = modelId.startsWith('sha256:') ? modelId.slice('sha256:'.length) : modelId
+    const short = hex.length > 12 ? hex.slice(0, 8) + '…' + hex.slice(-4) : hex
+    modelIdChip.hidden = false
+    modelIdChip.classList.remove('is-copied')
+    modelIdChip.dataset.modelId = modelId
+    modelIdChip.textContent = 'ID ' + short
+    modelIdChip.title = 'Modell-ID kopieren: ' + modelId
+  }
+  modelIdChip.addEventListener('click', () => {
+    const id = modelIdChip.dataset.modelId
+    if (!id) return
+    void navigator.clipboard.writeText(id).then(() => {
+      modelIdChip.classList.add('is-copied')
+      const short = modelIdChip.textContent ?? ''
+      modelIdChip.textContent = '✓ kopiert'
+      if (chipResetTimer) window.clearTimeout(chipResetTimer)
+      chipResetTimer = window.setTimeout(() => {
+        modelIdChip.classList.remove('is-copied')
+        modelIdChip.textContent = short
+      }, 1400)
+    })
+  })
+
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
     // Opening a model (L1) leaves the flow studio/designer and returns to the modeler.
     if (mode === 'flows' || mode === 'flow-edit') setMode('design')
     currentId = modelId
+    setModelIdChip(modelId)
     renderModelList()
     status.textContent = 'lädt …'
     dirty = false
