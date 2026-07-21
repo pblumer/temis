@@ -175,7 +175,7 @@ async function boot(root: HTMLElement): Promise<void> {
       ...opts.map((t) => {
         const o = document.createElement('option')
         o.value = t
-        o.textContent = t || '— Typ —'
+        o.textContent = t || '— beliebig —'
         return o
       }),
     )

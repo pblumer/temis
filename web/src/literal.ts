@@ -42,13 +42,13 @@ export async function openLiteralOverlay(modelId: string, decisionId: string, ti
   const cur = lit?.typeRef ?? ''
   const typeList = cur && !typeOptions.includes(cur) ? [...typeOptions, cur] : typeOptions
   for (const t of typeList) {
-    const o = el('option', { value: t }, t || '— Typ —') as HTMLOptionElement
+    const o = el('option', { value: t }, t || '— beliebig —') as HTMLOptionElement
     o.selected = cur === t
     typeSel.append(o)
   }
   const closeBtn = el('button', { class: 'dt-close', type: 'button', title: 'Schließen (Esc)' }, '✕') as HTMLButtonElement
   closeBtn.addEventListener('click', close)
-  const header = el('div', { class: 'dt-head' }, el('span', { class: 'dt-title' }, title || lit?.name || decisionId), el('span', { class: 'lit-type-label' }, 'Typ'), typeSel, closeBtn)
+  const header = el('div', { class: 'dt-head' }, el('span', { class: 'dt-title' }, title || lit?.name || decisionId), el('span', { class: 'lit-type-label' }, 'Ergebnistyp'), typeSel, closeBtn)
 
   const textarea = el('textarea', { class: 'lit-text', spellcheck: 'false', placeholder: 'FEEL-Ausdruck, z. B. Unit Price * Quantity' }) as HTMLTextAreaElement
   textarea.value = lit?.text ?? ''
