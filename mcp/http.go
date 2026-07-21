@@ -60,7 +60,7 @@ func (s *Server) handleHTTPMessage(w http.ResponseWriter, r *http.Request) {
 		bearer, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		switch s.authorize(bearer, requiredScope(body)) {
 		case AuthUnauthenticated:
-			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.Header().Set("WWW-Authenticate", s.wwwAuthenticate())
 			http.Error(w, "missing or invalid bearer token", http.StatusUnauthorized)
 			return
 		case AuthForbidden:
@@ -83,6 +83,16 @@ func (s *Server) handleHTTPMessage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHTTPGet(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", "POST")
 	http.Error(w, "this MCP endpoint does not offer an SSE stream", http.StatusMethodNotAllowed)
+}
+
+// wwwAuthenticate is the challenge sent on a 401. When a resource-metadata URL is
+// configured (WithResourceMetadataURL) it is included so an OAuth client can
+// discover the authorization server (RFC 9728 §5.1); otherwise a bare "Bearer".
+func (s *Server) wwwAuthenticate() string {
+	if s.resourceMetadataURL != "" {
+		return `Bearer resource_metadata="` + s.resourceMetadataURL + `"`
+	}
+	return "Bearer"
 }
 
 // authEnabled reports whether the HTTP transport enforces authentication: either

@@ -4,6 +4,11 @@
 - **Datum:** 2026-07-21
 - **Kontext-WP:** (künftig) Etappe „Zugriffskontrolle", Folge zu ADR-0028/0035
 
+> **Siehe auch ADR-0038:** die „temis ist selbst der Issuer"-Variante — ein
+> ko-lokalisierter, self-contained OAuth-2.1-Server, der Remote-MCP-Clients ohne
+> externen IdP anbindet. Dieses ADR (0036) bleibt das Zielbild für die Validierung
+> **fremder** JWTs (Keycloak); beide Authenticator-Varianten sind chainbar.
+
 ## Kontext
 
 ADR-0028 gab temis scoped `kid.secret`-API-Keys hinter einem schmalen
