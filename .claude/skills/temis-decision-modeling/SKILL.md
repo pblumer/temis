@@ -93,6 +93,7 @@ Ausführliche Vorher/Nachher-Beispiele: [`references/dmn-feel-traps.md`](referen
 | `list_models` | Modelle finden — je mit `name`, `decisions`, `inputs` (Name nicht eindeutig) |
 | `get_model_xml` | rohes DMN/FEEL eines gecachten Modells zurücklesen |
 | `describe_decision` | typisierte Inputs, die eine Decision erwartet |
+| `list_types` / `save_type` / `delete_type` | eigene Typen (Item-Definitionen) lesen, einfache anlegen/ändern, entfernen — jede Änderung liefert eine neue `modelId` |
 | `evaluate` (`explain`, `strict`) | auswerten + Spur + strikte Eingabevalidierung |
 | `load_model` | DMN-XML kompilieren+cachen → neue Revision (erscheint im Modeler) |
 | `git_load_model` / `git_propose` | versionierte Modelle aus/als git (Branch/PR) |

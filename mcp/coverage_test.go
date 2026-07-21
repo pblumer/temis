@@ -84,6 +84,54 @@ func TestToolGetModelXML(t *testing.T) {
 	}
 }
 
+// TestToolTypes covers the type-editing tools end to end: list is empty, save_type
+// adds a simple enum (returning a new modelId), list_types then shows it, and
+// delete_type removes it again.
+func TestToolTypes(t *testing.T) {
+	s := newServer()
+	xml, _ := json.Marshal(dishXML(t))
+	id, _ := run(t, s, call(1, "load_model", `{"xml":`+string(xml)+`}`))[0].payload(t)["modelId"].(string)
+	if id == "" {
+		t.Fatal("load_model returned no modelId")
+	}
+
+	// A fresh model has no custom types.
+	types0 := run(t, s, call(2, "list_types", `{"modelId":"`+id+`"}`))[0].payload(t)["types"]
+	if arr, _ := types0.([]any); len(arr) != 0 {
+		t.Fatalf("expected no types initially, got %v", types0)
+	}
+
+	// save_type adds a simple enum and returns a new modelId.
+	saved := run(t, s, call(3, "save_type", `{"modelId":"`+id+`","name":"Ampel","typeRef":"string","allowedValues":"\"rot\",\"gelb\",\"gruen\""}`))[0].payload(t)
+	newID, _ := saved["modelId"].(string)
+	if newID == "" || newID == id {
+		t.Fatalf("save_type should return a new modelId, got %v (was %v)", newID, id)
+	}
+
+	// list_types on the new model shows the type.
+	types1 := run(t, s, call(4, "list_types", `{"modelId":"`+newID+`"}`))[0].payload(t)["types"]
+	arr, _ := types1.([]any)
+	if len(arr) != 1 {
+		t.Fatalf("expected one type after save, got %v", types1)
+	}
+	if first, _ := arr[0].(map[string]any); first["name"] != "Ampel" {
+		t.Errorf("saved type name = %v, want Ampel", arr[0])
+	}
+
+	// delete_type removes it again.
+	del := run(t, s, call(5, "delete_type", `{"modelId":"`+newID+`","name":"Ampel"}`))[0].payload(t)
+	delID, _ := del["modelId"].(string)
+	types2 := run(t, s, call(6, "list_types", `{"modelId":"`+delID+`"}`))[0].payload(t)["types"]
+	if arr, _ := types2.([]any); len(arr) != 0 {
+		t.Fatalf("expected no types after delete, got %v", types2)
+	}
+
+	// A structured type cannot be edited via save_type.
+	if cr := run(t, s, call(7, "save_type", `{"modelId":"`+id+`","name":""}`))[0].call(t); !cr.IsError {
+		t.Errorf("save_type with empty name should error")
+	}
+}
+
 // fakeStore is a minimal Store used to prove WithStore swaps the cache and that
 // list_models reads through whatever Store the server holds.
 type fakeStore struct {
@@ -219,6 +267,7 @@ func TestToolsCallInvalidParams(t *testing.T) {
 func TestToolInvalidArguments(t *testing.T) {
 	tools := []string{
 		"load_model", "get_model_xml", "describe_decision", "evaluate",
+		"list_types", "save_type", "delete_type",
 		"git_list_models", "git_load_model", "git_propose",
 	}
 	for _, name := range tools {

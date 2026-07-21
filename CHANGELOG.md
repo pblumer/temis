@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **MCP: Typ-Werkzeuge `list_types`, `save_type`, `delete_type`.** Ein Agent kann die
+  eigenen Item-Definitionen eines gecachten Modells lesen (`list_types`, Scope
+  `models:read`) sowie einen einfachen Typ (Basistyp + optional Collection + Allowed-Values)
+  anlegen/ändern (`save_type`) oder entfernen (`delete_type`, beide `models:write`). Sie
+  spiegeln die HTTP-Endpunkte `…/types`; eine Änderung liefert eine neue content-adressierte
+  `modelId` und erscheint in der Typen-Verwaltung des Modelers. Strukturierte Typen bleiben
+  dem vollen `load_model`-XML vorbehalten.
 - **Agent-Zusammenarbeit: Co-Modeling-Vertrag als MCP-`instructions` + Repo-Skill.** Der
   MCP-Server liefert beim `initialize` jetzt ein `instructions`-Feld, das jedem verbundenen
   Agenten den Vertrag für gemeinsames Modellieren mit einem Menschen mitgibt (Agent via MCP,
