@@ -51,8 +51,8 @@ func TestAccessPublicConfig(t *testing.T) {
 	h := NewServer(nil, WithKeysFile(keys), WithPublicEvaluate(true), WithPublicModels("Dish", "sha256:abc")).Handler()
 
 	cfg := decode[AccessPublicConfig](t, doAuth(t, h, "GET", "/v1/access/public", "", nil, "boss.a"))
-	if !cfg.Evaluate || len(cfg.Models) != 2 || cfg.Models[0] != "Dish" {
-		t.Fatalf("public config = %+v, want evaluate=true models=[Dish sha256:abc]", cfg)
+	if !cfg.Evaluate || len(cfg.Static) != 2 || cfg.Static[0] != "Dish" {
+		t.Fatalf("public config = %+v, want evaluate=true static=[Dish sha256:abc]", cfg)
 	}
 	if rec := doAuth(t, h, "GET", "/v1/access/public", "", nil, "runner.e"); rec.Code != http.StatusForbidden {
 		t.Fatalf("non-admin public config = %d, want 403", rec.Code)

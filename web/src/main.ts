@@ -20,7 +20,7 @@ import { mountAssist } from './assist'
 import { makeResizable } from './resizable'
 import { FEEL_TYPES } from './feeltypes'
 import { installFetchAuth } from './session'
-import { mountAccess } from './access'
+import { mountAccess, createPublicToggle } from './access'
 import './style.css'
 
 // The modeler shell (ADR-0016): a VS-Code-style left sidebar lists the server's
@@ -101,6 +101,7 @@ async function boot(root: HTMLElement): Promise<void> {
           <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
           <button id="modelIdChip" class="model-id-chip" type="button" hidden title="Modell-ID kopieren"></button>
+          <button id="publicToggle" class="tbtn public-toggle" type="button" hidden></button>
           <span id="clioStatus" class="conn-badge" hidden><span class="conn-dot"></span><span class="conn-label"></span></span>
         </div>
         <div id="opHistory" class="op-history"></div>
@@ -1133,7 +1134,12 @@ async function boot(root: HTMLElement): Promise<void> {
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
     // The model-id chip belongs to the open L1 model; flows have no single model.
-    if (m === 'flows' || m === 'flow-edit') modelIdChip.hidden = true
+    if (m === 'flows' || m === 'flow-edit') {
+      modelIdChip.hidden = true
+      publicToggle?.update('') // the per-model public toggle has no target in flow views
+    } else if (currentId) {
+      publicToggle?.update(currentId, currentModel?.name ?? '') // back to L1: reflect the open model
+    }
     if (m === 'operate') {
       operate.render()
       clioReplay.render()
@@ -1188,12 +1194,19 @@ async function boot(root: HTMLElement): Promise<void> {
   // copies the full id (with the sha256: prefix) on click — the exact string the
   // HTTP/MCP surfaces expect, so it can be pasted straight into an API or agent
   // call. The label is shortened for the toolbar; the full id is the title.
+  // Per-model "Öffentlich"-Schalter (WP-107, ADR-0035): an admin-only toolbar
+  // toggle that opens/closes the current model for anonymous evaluation. Self-hides
+  // for non-admins and when no model is open.
+  const publicToggleBtn = root.querySelector<HTMLButtonElement>('#publicToggle')
+  const publicToggle = publicToggleBtn ? createPublicToggle(publicToggleBtn) : null
+
   let chipResetTimer = 0
   const setModelIdChip = (modelId: string): void => {
     if (chipResetTimer) window.clearTimeout(chipResetTimer)
     if (!modelId) {
       modelIdChip.hidden = true
       modelIdChip.textContent = ''
+      publicToggle?.update('')
       return
     }
     const hex = modelId.startsWith('sha256:') ? modelId.slice('sha256:'.length) : modelId
@@ -1289,6 +1302,9 @@ async function boot(root: HTMLElement): Promise<void> {
         renderEvaluatePanel(evalHost, detail, (run) => recordRun(run))
         // Share the loaded model with the Import cockpit (template + run source).
         currentModel = detail
+        // Reflect this model's public state in the toolbar toggle (by name, so a
+        // re-saved revision stays public).
+        publicToggle?.update(modelId, detail.name ?? '')
         if (mode === 'import') importView.render()
         if (mode === 'operate') clioReplay.render()
       } catch {

@@ -114,9 +114,13 @@ den ganzen `evaluate`-Scope anonym, inkl. dem stateless `POST /v1/evaluate` (kei
 - Roadmap-Zeilen WP-106 (Backend) / WP-107 (Admin-UI-Toggle) in
   `docs/20-roadmap.md`.
 - Admin-UI: ein sichtbarer „Öffentlich"-Schalter pro Modell bzw. eine
-  Server-Sicht der Public-Konfiguration (nur für `admin`-Keys). Siehe die offene
-  Frage „Admin-Oberfläche für Zugriffskontrolle" — Key-Verwaltung (`/v1/keys*`)
-  und Public-Toggles gehören in dieselbe, admin-gescopte Ecke.
+  Server-Sicht der Public-Konfiguration (nur für `admin`-Keys). **Umgesetzt
+  (WP-107):** Toolbar-Toggle pro geöffnetem Modell + editierbares Zugriff-Panel;
+  Backend `GET /v1/access/public` und `POST /v1/access/public/models`
+  (`{model, public}`), managed Set persistiert in `public.json` im Access-Dir
+  (`-keys-dir`). Static-Einträge (`-public-models`) bleiben zur Laufzeit
+  unveränderlich (Entfernen → `409 PUBLIC_STATIC`); der globale `evaluate`-Schalter
+  bleibt bewusst Startup-Config.
 - `docs/40-api-contract.md`: Public-Ausnahme als Teil der stabilen Oberfläche
   vermerken; OpenAPI-`security` der evaluate-Routen als „optional bei public"
   annotieren.

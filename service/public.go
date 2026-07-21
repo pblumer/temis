@@ -34,13 +34,13 @@ func (s *Server) evaluateIsPublic(id string) bool {
 // public per-model. The name lookup reads only the in-memory cache, never a disk
 // compile, so an anonymous request cannot force work merely by probing an id.
 func (s *Server) isPublicModel(id string) bool {
-	if id == "" || len(s.publicModels) == 0 {
+	if id == "" || s.publicModels == nil || s.publicModels.empty() {
 		return false
 	}
-	if s.publicModels[id] {
+	if s.publicModels.has(id) {
 		return true // matched by modelId
 	}
-	if sm, ok := s.cache.get(id); ok && s.publicModels[sm.name] {
+	if sm, ok := s.cache.get(id); ok && s.publicModels.has(sm.name) {
 		return true // matched by display name
 	}
 	return false

@@ -64,14 +64,19 @@ type Server struct {
 	// WithPublicEvaluate / -public-evaluate / TEMIS_PUBLIC_EVALUATE.
 	publicEvaluate bool
 
+	// publicSeed holds the static -public-models entries collected by the option;
+	// NewServer folds them into publicModels (as immutable static entries).
+	publicSeed []string
+
 	// publicModels is the set of models whose evaluation is open to anonymous
 	// callers even when auth is configured (ADR-0035, option A). An entry matches a
 	// model by its content-addressed modelId (sha256:…) or by its display name, so a
-	// re-saved model stays public by name. It applies to the id-addressed HTTP
-	// evaluate routes only; the stateless POST /v1/evaluate is covered by
-	// publicEvaluate. Empty/nil = no per-model public evaluation. Set via
-	// WithPublicModels / -public-models / TEMIS_PUBLIC_MODELS.
-	publicModels map[string]bool
+	// re-saved model stays public by name. It merges immutable static entries
+	// (-public-models) with runtime-managed ones toggled through the admin API
+	// (WP-107 follow-up), which persist to public.json in the access-control dir
+	// (-keys-dir). It applies to the id-addressed HTTP evaluate routes only; the
+	// stateless POST /v1/evaluate is covered by publicEvaluate. Built by NewServer.
+	publicModels *publicSet
 
 	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
 	// NewServer. It authenticates kid.secret bearers and drives requireScope.
@@ -227,14 +232,9 @@ func WithPublicEvaluate(enabled bool) Option {
 func WithPublicModels(ids ...string) Option {
 	return func(s *Server) {
 		for _, id := range ids {
-			id = strings.TrimSpace(id)
-			if id == "" {
-				continue
+			if id = strings.TrimSpace(id); id != "" {
+				s.publicSeed = append(s.publicSeed, id)
 			}
-			if s.publicModels == nil {
-				s.publicModels = map[string]bool{}
-			}
-			s.publicModels[id] = true
 		}
 	}
 }
@@ -384,6 +384,20 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 		}
 		if !auth.enabled() {
 			log.Printf("temis: WARNING key management is enabled but no admin credential is configured — /v1/keys is OPEN to the first caller; set TEMIS_BOOTSTRAP_ADMIN_KEY or -keys-file")
+		}
+	}
+	// Public-decision allowlist (ADR-0035): static -public-models entries plus a
+	// runtime-managed set. The managed set persists next to the keystore in the
+	// access-control dir (-keys-dir), so an admin's per-model toggle survives a
+	// restart; without a dir the managed set is in-memory only.
+	s.publicModels = newPublicSet(s.publicSeed)
+	if s.keyStoreDir != "" {
+		loaded, err := s.publicModels.attach(s.keyStoreDir)
+		if err != nil {
+			panic("temis: public store: " + err.Error())
+		}
+		if loaded > 0 {
+			log.Printf("temis: public store at %s (%d managed public model(s) loaded)", s.keyStoreDir, loaded)
 		}
 	}
 	s.cache = newModelCache(s.cacheSize)
@@ -576,6 +590,10 @@ func (s *Server) Handler() http.Handler {
 	// Registered outside dataRoutes() (like the git routes) — not in openapi.yaml.
 	mux.HandleFunc("GET /v1/whoami", s.handleWhoami)
 	mux.HandleFunc("GET /v1/access/public", s.requireScope(ScopeAdmin, s.handleAccessPublic))
+	// Toggle a single model's public evaluation at runtime (ADR-0035, WP-107): the
+	// model is in the JSON body ({model, public}) so a name/id with any character is
+	// safe (no path encoding). Admin-scoped.
+	mux.HandleFunc("POST /v1/access/public/models", s.requireScope(ScopeAdmin, s.handleSetPublicModel))
 	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
 	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
 	// /ui and /app/ paths redirect here so old links keep working. This catch-all
