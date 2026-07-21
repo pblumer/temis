@@ -49,6 +49,7 @@ async function boot(root: HTMLElement): Promise<void> {
               <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
+              <button id="modelRefresh" class="icon-btn" type="button" title="Modelle neu laden">⟳</button>
             </span>
           </div>
           <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
@@ -1158,6 +1159,15 @@ async function boot(root: HTMLElement): Promise<void> {
   wireToggle('flowsToggle', 'groupFlows')
   wireToggle('modelsToggle', 'groupModels')
   root.querySelector<HTMLButtonElement>('#flowRefresh')?.addEventListener('click', () => flowView.render())
+  // Re-fetch the model list from the server so models added out-of-band (e.g. an
+  // agent's load_model over MCP, sharing this cache) show up without a full browser
+  // reload — the L1 counterpart to the Flows section's refresh.
+  root.querySelector<HTMLButtonElement>('#modelRefresh')?.addEventListener('click', () => {
+    void (async () => {
+      models = await listModels()
+      renderModelList()
+    })()
+  })
 
   // The toolbar chip shows the currently-open model's content-addressed id and
   // copies the full id (with the sha256: prefix) on click — the exact string the
