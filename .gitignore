@@ -35,3 +35,6 @@ go.work.sum
 # CPU/memory profiles and scratch profiling artifacts.
 *.prof
 scratch_prof/
+
+# Claude Code local (personal) settings — per-user tool permissions, never shared.
+.claude/settings.local.json
