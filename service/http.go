@@ -87,6 +87,23 @@ type Server struct {
 	// persistent key store is configured, so the lifecycle handlers can mutate it.
 	keyStore *keystore
 
+	// externalURL is the server's canonical public base URL (scheme+host), the
+	// OAuth issuer (ADR-0038). Set via WithExternalURL / -external-url. Empty leaves
+	// the OAuth authorization-server endpoints unmounted (the feature stays off).
+	externalURL string
+
+	// oauthRedirectHosts / oauthScopes tune the OAuth server when enabled:
+	// additional allowed redirect hosts beyond the built-in defaults, and the
+	// scope set an issued token may carry (empty = the least-privilege default).
+	oauthRedirectHosts []string
+	oauthScopes        []Scope
+
+	// sessions / oauth are the cookie-session store and OAuth authorization server,
+	// built by NewServer only when externalURL is set and a managed keystore exists
+	// (OAuth tokens are minted as managed keys). Nil leaves the endpoints unmounted.
+	sessions *sessionStore
+	oauth    *oauthServer
+
 	// listModels enables the GET /v1/models listing endpoint. When false the
 	// handler responds 404, so callers cannot enumerate the cached models (and
 	// thereby the decisions in them). Defaults to true.
@@ -253,6 +270,44 @@ func WithVersion(v string) Option {
 	return func(s *Server) { s.version = v }
 }
 
+// WithExternalURL sets the server's canonical public base URL (e.g.
+// https://temis.example.com) — the OAuth issuer (ADR-0038). It turns temis into a
+// self-contained OAuth 2.1 authorization server for the co-located /mcp endpoint,
+// mounting /authorize, /token, /register and the discovery metadata. It takes
+// effect only when a managed keystore is also configured (WithKeyStore), because
+// issued access tokens are minted as managed keys; otherwise the endpoints stay
+// unmounted and NewServer logs a warning. An https URL marks session cookies
+// Secure. Empty (the default) leaves OAuth off.
+func WithExternalURL(url string) Option {
+	return func(s *Server) { s.externalURL = strings.TrimRight(url, "/") }
+}
+
+// WithOAuthRedirectAllow adds redirect_uri hosts accepted by the OAuth server
+// beyond the built-in defaults (claude.ai and loopback). Each entry is a bare
+// host (e.g. "chatgpt.com"). Ignored unless OAuth is enabled.
+func WithOAuthRedirectAllow(hosts ...string) Option {
+	return func(s *Server) {
+		for _, h := range hosts {
+			if h = strings.TrimSpace(h); h != "" {
+				s.oauthRedirectHosts = append(s.oauthRedirectHosts, h)
+			}
+		}
+	}
+}
+
+// WithOAuthScopes sets the scope set an OAuth-issued token may carry, overriding
+// the least-privilege default (evaluate, models:read, models:write, flow, git).
+// Unknown scopes are dropped. Ignored unless OAuth is enabled.
+func WithOAuthScopes(scopes ...Scope) Option {
+	return func(s *Server) {
+		for _, sc := range scopes {
+			if knownScopes[sc] {
+				s.oauthScopes = append(s.oauthScopes, sc)
+			}
+		}
+	}
+}
+
 // WithClioActiveProbe makes GET /v1/status determine clio reachability with a
 // live GET to clio's health endpoint rather than the passive last-write outcome
 // (ADR-0030, WP-112). Off by default: reachability then comes from real writes
@@ -392,6 +447,24 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 		}
 		if !auth.enabled() {
 			log.Printf("temis: WARNING key management is enabled but no admin credential is configured — /v1/keys is OPEN to the first caller; set TEMIS_BOOTSTRAP_ADMIN_KEY or -keys-file")
+		}
+	}
+	// OAuth 2.1 authorization server (ADR-0038): enabled only when an external URL
+	// (the issuer) is set AND a managed keystore exists, since issued access tokens
+	// are minted as managed keys. temis then serves /authorize, /token, /register
+	// and the discovery metadata for the co-located /mcp resource server.
+	if s.externalURL != "" {
+		if s.keyStore == nil {
+			log.Printf("temis: WARNING -external-url is set but OAuth stays OFF — it also requires a managed key store (-keys-dir / TEMIS_KEYS_DIR)")
+		} else {
+			s.sessions = newSessionStore(0)
+			s.oauth = newOAuthServer(oauthConfig{
+				issuer:        s.externalURL,
+				grantScopes:   s.oauthScopes,
+				redirectHosts: s.oauthRedirectHosts,
+				secure:        strings.HasPrefix(s.externalURL, "https://"),
+			}, s.keyStore, s.sessions)
+			log.Printf("temis: OAuth authorization server enabled (issuer=%s) — /authorize, /token, /register, /.well-known/*", s.externalURL)
 		}
 	}
 	// Public-decision allowlist (ADR-0035): static -public-models entries plus a
@@ -643,6 +716,19 @@ func (s *Server) Handler() http.Handler {
 	// model is in the JSON body ({model, public}) so a name/id with any character is
 	// safe (no path encoding). Admin-scoped.
 	mux.HandleFunc("POST /v1/access/public/models", s.requireScope(ScopeAdmin, s.handleSetPublicModel))
+	// OAuth 2.1 authorization server (ADR-0038): mounted only when configured
+	// (WithExternalURL + a managed keystore). These top-level paths do not collide
+	// with the "/" SPA catch-all below (Go 1.22 mux: more specific patterns win).
+	if s.oauth != nil {
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.oauth.handleAuthzMetadata)
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.oauth.handleProtectedResourceMetadata)
+		mux.HandleFunc("POST /register", s.oauth.handleRegister)
+		mux.HandleFunc("GET /authorize", s.oauth.handleAuthorize)
+		mux.HandleFunc("POST /authorize", s.oauth.handleApprove)
+		mux.HandleFunc("POST /oauth/login", s.oauth.handleLogin)
+		mux.HandleFunc("POST /oauth/logout", s.oauth.handleLogout)
+		mux.HandleFunc("POST /token", s.oauth.handleToken)
+	}
 	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
 	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
 	// /ui and /app/ paths redirect here so old links keep working. This catch-all

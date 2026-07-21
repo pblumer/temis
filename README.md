@@ -666,6 +666,27 @@ In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
 bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
 `-token` nur über HTTP).
 
+**Remote-MCP-Client per OAuth verbinden (z. B. der claude.ai-Web-Connector).**
+Web-Connectors sprechen keinen statischen Bearer, sondern den OAuth-Flow. `temisd`
+kann daher **selbst als OAuth-2.1-Server** auftreten (Authorization- *und*
+Resource-Server ko-lokalisiert, ADR-0038) — kein externer IdP nötig. Voraussetzung:
+eine kanonische öffentliche URL (der Issuer) **und** ein persistenter Keystore, denn
+das ausgestellte Access-Token ist ein kurzlebiger scoped Key (ADR-0028):
+
+```sh
+temisd -external-url https://temis.example.com -keys-dir ./keystore
+# mountet /authorize, /token, /register und /.well-known/oauth-*
+```
+
+Ablauf: Der Connector schickt den Nutzer auf `/authorize` (Authorization Code +
+PKCE/S256); der Mensch meldet sich einmalig mit seinem `kid.secret` an (echte
+HttpOnly-Cookie-Session), bestätigt die Freigabe, und `/token` prägt ein Token mit
+least-privilege-Scopes (`evaluate, models:read, models:write, flow, git`; via
+`-oauth-scopes` änderbar). Erlaubte Redirect-Ziele sind `claude.ai` und Loopback
+(erweiterbar mit `-oauth-redirect-allow`). Ohne `-external-url`/`-keys-dir` bleibt
+OAuth aus — dann verbindet man rein per CLI-Header
+(`claude mcp add --transport http … --header "Authorization: Bearer kid.secret"`).
+
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine
 `trace` — welche Regel(n) gefeuert haben, welche Bedingungen erfüllt/verfehlt waren und

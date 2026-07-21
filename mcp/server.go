@@ -69,6 +69,12 @@ type Server struct {
 	// tests. The git-provider token is supplied per tool call (gitToken arg),
 	// never stored on the server (WP-73, auth model A).
 	gitBaseURL string
+
+	// resourceMetadataURL, when set (WithResourceMetadataURL), is advertised in the
+	// WWW-Authenticate header on a 401 so an OAuth-capable client can discover this
+	// resource server's protected-resource metadata and the authorization server
+	// behind it (RFC 9728 §5.1, ADR-0038). Empty leaves the bare "Bearer" challenge.
+	resourceMetadataURL string
 }
 
 // ModelInfo summarises a cached model for list_models: its content-addressed id,
@@ -149,6 +155,17 @@ func WithAuth(auth Auth) Option {
 	return func(s *Server) {
 		if auth != nil {
 			s.auth = auth
+		}
+	}
+}
+
+// WithResourceMetadataURL makes the HTTP transport point OAuth clients at this
+// server's protected-resource metadata in the WWW-Authenticate challenge on a
+// 401 (RFC 9728 §5.1, ADR-0038). An empty URL is ignored.
+func WithResourceMetadataURL(url string) Option {
+	return func(s *Server) {
+		if url != "" {
+			s.resourceMetadataURL = url
 		}
 	}
 }

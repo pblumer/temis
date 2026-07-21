@@ -86,7 +86,7 @@ func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFu
 		}
 		key, ok := s.auth.authenticate(bearerToken(r.Header.Get("Authorization")))
 		if !ok {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="temis"`)
+			w.Header().Set("WWW-Authenticate", s.wwwAuthenticate())
 			writeProblem(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid bearer token")
 			return
 		}
@@ -101,6 +101,17 @@ func (s *Server) requireScope(scope Scope, next http.HandlerFunc) http.HandlerFu
 		// (clioauthkid) on the decision/flow event (ADR-0023, WP-105).
 		next(w, r.WithContext(withAuthKid(r.Context(), key.Kid)))
 	}
+}
+
+// wwwAuthenticate is the challenge sent on a 401 from the /v1 surface. When the
+// OAuth authorization server is enabled (ADR-0038) it advertises the
+// protected-resource metadata so an OAuth client can discover the token issuer
+// (RFC 9728 §5.1); otherwise it is the bare realm challenge.
+func (s *Server) wwwAuthenticate() string {
+	if s.oauth != nil {
+		return `Bearer realm="temis", resource_metadata="` + s.oauth.resourceMetadataURL() + `"`
+	}
+	return `Bearer realm="temis"`
 }
 
 // bearerToken extracts the credential from an "Authorization: Bearer <token>"
