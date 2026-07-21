@@ -60,6 +60,13 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **MCP: Modellname in `list_models` und neues Tool `get_model_xml`.** `list_models`
+  liefert je Modell zusätzlich den Anzeigenamen (den DMN-`definitions`-Namen, wie im Modeler),
+  sodass ein Agent ein ihm bekanntes Modell wiederfindet — der Name ist kein eindeutiger
+  Schlüssel, da jede gespeicherte Revision eine eigene content-adressierte `modelId` ist. Das
+  neue Tool **`get_model_xml`** liest das rohe DMN/FEEL eines gecachten Modells zurück (Scope
+  `models:read`), analog zum HTTP-Endpunkt `GET /v1/models/{id}/xml` — ein Agent kann so die
+  FEEL-Ausdrücke inspizieren, nicht nur auswerten.
 - **DMN-TCK-Konformität: über 98 % (WP-41.28, 98,0 % → 98,1 %).**
   Vier weitere Fixes: ein `some`/`every` mit echt nicht-boolescher `satisfies`-Klausel ergibt null
   (dieselbe Regel wie beim Boxed-Filter, jetzt auch für Quantoren); `list replace(match: …)` bindet

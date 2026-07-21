@@ -71,10 +71,14 @@ type Server struct {
 	gitBaseURL string
 }
 
-// ModelInfo summarises a cached model for list_models: its content-addressed id
-// and the names of its evaluable decisions and input data.
+// ModelInfo summarises a cached model for list_models: its content-addressed id,
+// its display name (the DMN definitions name) and the names of its evaluable
+// decisions and input data. Name lets a caller find a model it knows by the name
+// shown in the modeler; it is not a unique key, since every saved revision of a
+// same-named model is its own content-addressed id.
 type ModelInfo struct {
 	ID        string
+	Name      string
 	Decisions []string
 	Inputs    []string
 }
@@ -93,6 +97,10 @@ type Store interface {
 	Lookup(id string) (defs *dmn.Definitions, index dmn.ModelIndex, ok bool)
 	// List summarises every cached model, in any order (the caller sorts).
 	List() []ModelInfo
+	// ModelXML returns the raw DMN XML the model with id was compiled from, or
+	// ok=false when it is not cached. It lets get_model_xml read a cached model's
+	// source back so an agent can inspect its FEEL, not just evaluate it.
+	ModelXML(id string) (xml []byte, ok bool)
 }
 
 // FlowStore is the decision-flow catalog the MCP flow tools operate on. Like
@@ -170,6 +178,7 @@ const (
 // only authentication, then dispatch reports the unknown tool.
 var toolScopes = map[string]string{
 	"list_models":       "models:read",
+	"get_model_xml":     "models:read",
 	"load_model":        "models:read",
 	"describe_decision": "models:read",
 	"evaluate":          "evaluate",
@@ -227,6 +236,7 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 // any diagnostics produced while compiling it.
 type storedModel struct {
 	id    string
+	xml   []byte // the raw DMN XML this model was compiled from, served back by get_model_xml
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
 	diags dmn.Diagnostics
@@ -277,8 +287,19 @@ var tools = []toolSpec{
 	{
 		Name: "list_models",
 		Description: "List the DMN models currently loaded in this server's cache, " +
-			"each with its evaluable decisions and input-data names.",
+			"each with its display name, its evaluable decisions and input-data names. " +
+			"The name is the one shown in the modeler; it is not unique, since every " +
+			"saved revision is its own modelId.",
 		InputSchema: obj(map[string]any{}),
+	},
+	{
+		Name: "get_model_xml",
+		Description: "Return the raw DMN 1.5 XML a cached model was compiled from, so " +
+			"you can inspect its FEEL expressions and decision logic — not just " +
+			"evaluate it. Look the modelId up with list_models first.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId (sha256:… hash) of a cached model, from list_models or load_model."),
+		}, "modelId"),
 	},
 	{
 		Name: "load_model",
@@ -339,6 +360,8 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 	switch p.Name {
 	case "list_models":
 		return s.toolListModels()
+	case "get_model_xml":
+		return s.toolGetModelXML(p.Arguments)
 	case "load_model":
 		return s.toolLoadModel(ctx, p.Arguments)
 	case "describe_decision":
@@ -370,10 +393,31 @@ func (s *Server) toolListModels() (any, *rpcError) {
 	infos := s.store.List()
 	summaries := make([]modelSummary, 0, len(infos))
 	for _, mi := range infos {
-		summaries = append(summaries, modelSummary{ModelID: mi.ID, Decisions: mi.Decisions, Inputs: mi.Inputs})
+		summaries = append(summaries, modelSummary{ModelID: mi.ID, Name: mi.Name, Decisions: mi.Decisions, Inputs: mi.Inputs})
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ModelID < summaries[j].ModelID })
 	return toolText(map[string]any{"models": summaries, "count": len(summaries)})
+}
+
+func (s *Server) toolGetModelXML(raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	name := ""
+	if defs, _, ok := s.store.Lookup(a.ModelID); ok {
+		name = defs.ModelName()
+	}
+	return toolText(modelXMLResponse{ModelID: a.ModelID, Name: name, XML: string(xml)})
 }
 
 func (s *Server) toolLoadModel(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
@@ -531,7 +575,7 @@ func (m *memStore) Compile(ctx context.Context, xml []byte) (string, *dmn.Defini
 	if err != nil {
 		return "", nil, dmn.ModelIndex{}, nil, err
 	}
-	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
+	sm := &storedModel{id: id, xml: append([]byte(nil), xml...), defs: defs, index: defs.Index(), diags: diags}
 
 	m.mu.Lock()
 	m.models[id] = sm
@@ -554,9 +598,19 @@ func (m *memStore) List() []ModelInfo {
 	defer m.mu.RUnlock()
 	out := make([]ModelInfo, 0, len(m.models))
 	for _, sm := range m.models {
-		out = append(out, ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+		out = append(out, ModelInfo{ID: sm.id, Name: sm.defs.ModelName(), Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
 	}
 	return out
+}
+
+func (m *memStore) ModelXML(id string) ([]byte, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sm, ok := m.models[id]
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), sm.xml...), true
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"
@@ -600,8 +654,15 @@ type modelResponse struct {
 
 type modelSummary struct {
 	ModelID   string   `json:"modelId"`
+	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
+}
+
+type modelXMLResponse struct {
+	ModelID string `json:"modelId"`
+	Name    string `json:"name,omitempty"`
+	XML     string `json:"xml"`
 }
 
 type evaluateResponse struct {
