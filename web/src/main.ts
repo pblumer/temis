@@ -19,6 +19,8 @@ import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
 import { makeResizable } from './resizable'
 import { FEEL_TYPES } from './feeltypes'
+import { installFetchAuth } from './session'
+import { mountAccess } from './access'
 import './style.css'
 
 // The modeler shell (ADR-0016): a VS-Code-style left sidebar lists the server's
@@ -59,6 +61,12 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="modelSearchClear" class="model-search-clear" type="button" title="Suche zurücksetzen" hidden>✕</button>
           </div>
           <div id="modelList" class="model-list"></div>
+        </div>
+        <div class="side-group side-group-access" id="groupAccess" hidden>
+          <div class="sidebar-section">
+            <button class="section-title" id="accessToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Zugriff</button>
+          </div>
+          <div id="accessHost" class="access-host"></div>
         </div>
         <p class="sidebar-hint">
           Flows (L2a) komponieren Modelle (L1) — Modell öffnen zum Bearbeiten,
@@ -1158,6 +1166,13 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   wireToggle('flowsToggle', 'groupFlows')
   wireToggle('modelsToggle', 'groupModels')
+  wireToggle('accessToggle', 'groupAccess')
+  // Access section (WP-107, ADR-0028/0035): login + admin-only key/public panels.
+  // It self-hides when whoami is unreachable and drives the whole app's auth via
+  // the fetch interceptor installed at entry.
+  const accessGroup = root.querySelector<HTMLElement>('#groupAccess')
+  const accessHost = root.querySelector<HTMLElement>('#accessHost')
+  if (accessGroup && accessHost) void mountAccess(accessGroup, accessHost)
   root.querySelector<HTMLButtonElement>('#flowRefresh')?.addEventListener('click', () => flowView.render())
   // Re-fetch the model list from the server so models added out-of-band (e.g. an
   // agent's load_model over MCP, sharing this cache) show up without a full browser
@@ -1304,6 +1319,11 @@ async function boot(root: HTMLElement): Promise<void> {
   // mode. Opening a flow from it switches the editor to the flow studio.
   flowView.render()
 }
+
+// Attach the stored bearer to every API request before the first fetch runs
+// (WP-107): on a secured server the modeler's own calls must carry the credential
+// the user set in the Zugriff section, or they'd all 401.
+installFetchAuth()
 
 const root = document.getElementById('app')
 if (root) void boot(root)

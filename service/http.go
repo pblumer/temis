@@ -571,6 +571,11 @@ func (s *Server) Handler() http.Handler {
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	// Access UI reads (WP-107, ADR-0035): whoami is public and self-inspecting so
+	// the SPA can decide what to show; the public-config read is admin-scoped.
+	// Registered outside dataRoutes() (like the git routes) — not in openapi.yaml.
+	mux.HandleFunc("GET /v1/whoami", s.handleWhoami)
+	mux.HandleFunc("GET /v1/access/public", s.requireScope(ScopeAdmin, s.handleAccessPublic))
 	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
 	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
 	// /ui and /app/ paths redirect here so old links keep working. This catch-all
