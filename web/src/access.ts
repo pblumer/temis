@@ -221,6 +221,10 @@ function renderKeysPanel(openMode: boolean): HTMLElement {
   const list = div('access-list')
   const status = p('access-err', '')
   status.hidden = true
+  // Dedicated host for the one-time secret, OUTSIDE the list so a list refresh
+  // (which clears the list) never wipes a freshly minted/rotated secret before the
+  // admin can copy it.
+  const secretHost = div('access-secret-host')
   const newBtn = button('access-btn access-btn-primary', '+ Neuer Key')
 
   const refresh = async (): Promise<void> => {
@@ -233,7 +237,7 @@ function renderKeysPanel(openMode: boolean): HTMLElement {
         list.append(p('access-note', 'Noch keine Keys angelegt.'))
         return
       }
-      for (const k of keys) list.append(renderKeyRow(k, refresh))
+      for (const k of keys) list.append(renderKeyRow(k, refresh, secretHost))
     } catch (e) {
       if (e instanceof KeyMgmtDisabled) {
         list.append(p('access-note', 'Key-Verwaltung ist deaktiviert (Server ohne -keys-dir). Keys sind dann nur statisch über -keys-file konfigurierbar.'))
@@ -247,16 +251,16 @@ function renderKeysPanel(openMode: boolean): HTMLElement {
 
   newBtn.addEventListener('click', () => {
     if (list.querySelector('.access-create')) return
-    list.prepend(renderCreateForm(refresh))
+    list.prepend(renderCreateForm(refresh, secretHost))
   })
-  panel.append(newBtn, status, list)
+  panel.append(newBtn, status, secretHost, list)
   void refresh()
   return panel
 }
 
 // renderKeyRow is one key: kid, scopes, owner/expiry/revoked, plus rotate/revoke
 // for a live managed key.
-function renderKeyRow(k: KeyView, refresh: () => Promise<void>): HTMLElement {
+function renderKeyRow(k: KeyView, refresh: () => Promise<void>, secretHost: HTMLElement): HTMLElement {
   const row = div('access-key' + (k.revoked ? ' is-revoked' : ''))
   const meta: string[] = []
   if (k.owner) meta.push(escapeHtml(k.owner))
@@ -272,7 +276,8 @@ function renderKeyRow(k: KeyView, refresh: () => Promise<void>): HTMLElement {
     const rot = button('access-btn access-btn-sm', 'Rotieren')
     rot.addEventListener('click', async () => {
       try {
-        showSecret(row, await rotateKey(k.kid), 'Neues Secret — einmalig sichtbar:')
+        const rotated = await rotateKey(k.kid)
+        showSecret(secretHost, rotated, `Neues Secret für ${k.kid} — einmalig sichtbar, jetzt kopieren:`)
         await refresh()
       } catch (e) {
         alertRow(row, (e as Error).message)
@@ -296,7 +301,7 @@ function renderKeyRow(k: KeyView, refresh: () => Promise<void>): HTMLElement {
 
 // renderCreateForm collects scopes + owner + expiry and mints a key, showing its
 // one-time secret inline.
-function renderCreateForm(refresh: () => Promise<void>): HTMLElement {
+function renderCreateForm(refresh: () => Promise<void>, secretHost: HTMLElement): HTMLElement {
   const form = div('access-create')
   const owner = document.createElement('input')
   owner.className = 'access-input'
@@ -334,8 +339,10 @@ function renderCreateForm(refresh: () => Promise<void>): HTMLElement {
     if (expiry.value) req.expiresAt = new Date(expiry.value + 'T00:00:00Z').toISOString()
     try {
       const created = await createKey(req)
-      form.replaceChildren()
-      showSecret(form, created, 'Key erstellt — Secret einmalig sichtbar, jetzt kopieren:')
+      // Show the one-time secret in the dedicated host (survives the refresh), then
+      // close the form and reload the list.
+      showSecret(secretHost, created, 'Key erstellt — Secret einmalig sichtbar, jetzt kopieren:')
+      form.remove()
       await refresh()
     } catch (e) {
       err.textContent = (e as Error).message
@@ -362,12 +369,20 @@ function showSecret(container: HTMLElement, key: CreatedKey, title: string, relo
   box.append(code, copy)
   // After a bootstrap (open → secured) the bearer is already stored; a reload
   // re-reads whoami so the section switches to the authenticated admin view.
+  // Otherwise offer an explicit dismiss so the one-time secret stays on screen
+  // until the admin has copied it (it must survive the key-list refresh).
   if (reload) {
     const rl = button('access-btn access-btn-primary access-btn-sm', 'Fertig — neu laden')
     rl.addEventListener('click', () => location.reload())
     box.append(rl)
+  } else {
+    const close = button('access-btn access-btn-sm', 'Schließen')
+    close.addEventListener('click', () => box.remove())
+    box.append(close)
   }
-  container.prepend(box)
+  // Replace, not prepend: this container is the dedicated secret host, so only the
+  // latest one-time secret is shown, and it is never wiped by a list refresh.
+  container.replaceChildren(box)
 }
 
 // renderPublicPanel shows and edits the public-decision configuration (ADR-0035):
