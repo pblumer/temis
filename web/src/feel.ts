@@ -104,6 +104,27 @@ export function validateName(name: string): NameCheck {
   return fn(name)
 }
 
+// feelSafeName derives a FEEL-usable identifier from a free-form display label:
+// characters FEEL treats as operators/punctuation (e.g. "-", ".", "/") become
+// spaces — FEEL allows names with spaces — runs collapse, and a leading digit gets
+// an underscore (a FEEL name may not start with a digit). "U-002 Nr." → "U 002 Nr".
+// Best-effort: the FEEL-name editor still validates, so the author can refine it.
+export function feelSafeName(raw: string): string {
+  let s = (raw || '').normalize('NFC').replace(/[^\p{L}\p{N}_ ]+/gu, ' ').replace(/\s+/g, ' ').trim()
+  if (s && /^\p{N}/u.test(s)) s = '_' + s
+  return s
+}
+
+// feelRefFor picks the FEEL identifier for a display name: the name itself when it
+// is already a valid FEEL name, otherwise a FEEL-safe derivation of it. This is the
+// "follow the display name" default; an explicitly authored variable name overrides
+// it (see the modeler's varNameLocked).
+export function feelRefFor(name: string): string {
+  const nm = (name || '').trim()
+  if (!nm) return ''
+  return validateName(nm).ok ? nm : feelSafeName(nm)
+}
+
 export type CellCheck = { ok: boolean; message?: string }
 
 // validateExpr checks a decision-table output cell (a full FEEL expression) that

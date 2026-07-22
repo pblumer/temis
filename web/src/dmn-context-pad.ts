@@ -27,6 +27,9 @@ const ICON_RELATION = svg(`<rect x="2.5" y="3.5" width="13" height="11" rx="1" $
 const ICON_FILTER = svg(`<path d="M3 4h12l-4.5 5.5V14l-3 1.5V9.5L3 4Z" ${stroke}/>`)
 const ICON_ITERATOR = svg(`<path d="M4 6a4 4 0 1 1 0 6h6.5" ${stroke}/><path d="M9 9.5l2 2.5-2 2.5" ${stroke}/>`)
 const ICON_RENAME = svg(`<path d="M11.5 3.5l3 3L6 15H3v-3z" ${stroke}/><path d="M10 5l3 3" ${stroke}/>`)
+// A tag glyph for editing the FEEL identifier (variable name) — the italic "x"
+// evokes a variable, distinct from the pencil's free-form rename.
+const ICON_VARNAME = svg(`<path d="M3 8.5l4.2-4.2a1.4 1.4 0 0 1 1-.4H14v5.7a1.4 1.4 0 0 1-.4 1L9.4 15z" ${stroke}/><circle cx="11.3" cy="6.7" r="1" fill="#3b4150"/>`)
 const ICON_INVOCATION = svg(`<rect x="2.5" y="4" width="13" height="10" rx="1.5" ${stroke}/><path d="M6.5 9h5M9 6.5v5" ${stroke}/>`)
 // ICONS maps a boxed kind to its context-pad icon, so the registry-driven
 // open/create entries pick the right glyph by kind (WP-142).
@@ -212,6 +215,21 @@ class DmnContextPadProvider {
         title: 'Umbenennen (Enter / F2)',
         imageUrl: ICON_RENAME,
         action: { click: () => this.eventBus.fire('dmn.renameElement', { element }) },
+      }
+    }
+
+    // Edit the FEEL identifier (variable name) separately from the display name —
+    // only meaningful for a decision or input data, whose result/value is
+    // referenced in FEEL by that identifier. A BKM is referenced by its own name,
+    // so it has no separate one. This lets the display name be a free-form label
+    // (spaces, hyphens) while the FEEL reference stays a valid identifier.
+    if (element.type === 'dmn:decision' || element.type === 'dmn:inputData') {
+      entries['rename-var'] = {
+        group: 'edit',
+        className: 'cp-icon',
+        title: 'FEEL-Name (Variablenname)',
+        imageUrl: ICON_VARNAME,
+        action: { click: () => this.eventBus.fire('dmn.renameVariable', { element }) },
       }
     }
 

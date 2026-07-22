@@ -97,14 +97,20 @@ func buildConstraints(m *model.Definitions, dec *model.Decision, items map[strin
 	out := map[string]*inputConstraint{}
 	for _, id := range dec.RequiredInputs {
 		in, ok := inputByID[id]
-		if !ok || in.Name == "" {
+		// Key by the input's FEEL identifier (variable name, else display name), the
+		// same key the decision-table input expressions and the schema use.
+		name := ""
+		if ok {
+			name = in.RefName()
+		}
+		if !ok || name == "" {
 			continue
 		}
 		ref := in.TypeRef
 		if ref == "" {
-			ref = typeByExpr[in.Name]
+			ref = typeByExpr[name]
 		}
-		allowed := allowedByExpr[in.Name]
+		allowed := allowedByExpr[name]
 		if allowed == "" {
 			allowed = itemAllowed[strings.TrimSpace(ref)]
 		}
@@ -118,7 +124,7 @@ func buildConstraints(m *model.Definitions, dec *model.Decision, items map[strin
 			}
 		}
 		if c.typ != nil || c.matcher != nil {
-			out[in.Name] = c
+			out[name] = c
 		}
 	}
 	return out

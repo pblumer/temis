@@ -41,6 +41,10 @@ export type NodeState = {
   id: string
   type: string
   name?: string
+  // varName is the node's FEEL identifier (decision/inputData variable name), kept
+  // separate from the free-form display name so a label may contain characters FEEL
+  // rejects; empty/equal lets it follow the name (ADR-0016).
+  varName?: string
   dataType?: string
   x: number
   y: number
@@ -286,7 +290,10 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic } as never)
+    // varNameLocked marks a node whose FEEL identifier was authored to differ from
+    // its display name (the graph only sends varName then), so a later display
+    // rename keeps that explicit identifier instead of re-deriving it.
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, varNameLocked: !!n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -433,10 +440,14 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // input's entered value, or an upstream decision's computed result. Undefined for
   // a source that carries no data value (e.g. a BKM behind a knowledge requirement).
   const flowValueOf = (elId: string, inputs: Record<string, unknown>, values: Record<string, unknown>): unknown => {
-    const s = byId[elId] as (Shape & { name?: string; type?: string }) | undefined
-    if (!s || !s.name) return undefined
-    if (s.type === 'dmn:inputData') return inputs[s.name]
-    if (s.type === 'dmn:decision') return values[s.name]
+    const s = byId[elId] as (Shape & { name?: string; varName?: string; type?: string }) | undefined
+    if (!s) return undefined
+    // Evaluation keys everything by the FEEL identifier (the variable name), which
+    // falls back to the display name when no separate one is set.
+    const ref = s.varName || s.name
+    if (!ref) return undefined
+    if (s.type === 'dmn:inputData') return inputs[ref]
+    if (s.type === 'dmn:decision') return values[ref]
     return undefined
   }
 
@@ -529,8 +540,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       for (const el of elementRegistry.getAll()) {
         const type = (el as { type?: string }).type ?? ''
         if (NODE_TYPES.has(type)) {
-          const s = el as Shape & { name?: string; dataType?: string }
-          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name, dataType: s.dataType, x: s.x ?? 0, y: s.y ?? 0, width: s.width ?? 0, height: s.height ?? 0 })
+          const s = el as Shape & { name?: string; varName?: string; dataType?: string }
+          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name, varName: s.varName, dataType: s.dataType, x: s.x ?? 0, y: s.y ?? 0, width: s.width ?? 0, height: s.height ?? 0 })
         } else if (EDGE_TYPES.has(type)) {
           const c = el as Connection
           if (c.source && c.target) edges.push({ type: type.replace(/^dmn:/, ''), source: c.source.id, target: c.target.id })

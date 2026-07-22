@@ -333,7 +333,7 @@ export async function saveModel(modelId: string, nodes: NodeEdit[]): Promise<str
 
 // GraphEdit is the desired full graph for a structural save: every node and edge
 // currently on the canvas (not a delta — the server reconciles to this set).
-export type GraphNodeEdit = { id: string; type: string; name?: string; dataType?: string; x: number; y: number; width: number; height: number }
+export type GraphNodeEdit = { id: string; type: string; name?: string; varName?: string; dataType?: string; x: number; y: number; width: number; height: number }
 export type GraphEdgeEdit = { type: string; source: string; target: string }
 export type GraphEdit = { nodes: GraphNodeEdit[]; edges: GraphEdgeEdit[] }
 

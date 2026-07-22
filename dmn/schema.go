@@ -346,19 +346,27 @@ func buildInputSchema(m *model.Definitions, dec *model.Decision, items map[strin
 	seen := map[string]bool{}
 	for _, id := range dec.RequiredInputs {
 		idata, ok := byID[id]
-		if !ok || idata.Name == "" || seen[idata.Name] {
+		// Key the field by the input's FEEL identifier (variable name, else display
+		// name): that is what the decision-table input expressions reference and
+		// what the caller supplies the value under, so schema, constraints and
+		// evaluation stay aligned even when the display name is a free-form label.
+		ref := ""
+		if ok {
+			ref = idata.RefName()
+		}
+		if !ok || ref == "" || seen[ref] {
 			continue
 		}
-		seen[idata.Name] = true
+		seen[ref] = true
 		typ := idata.TypeRef
 		if typ == "" {
-			typ = typeByExpr[idata.Name]
+			typ = typeByExpr[ref]
 		}
-		f := InputField{Name: idata.Name, Type: schemaTypeName(typ, items), Required: true}
-		if c := constraints[idata.Name]; c != nil {
+		f := InputField{Name: ref, Type: schemaTypeName(typ, items), Required: true}
+		if c := constraints[ref]; c != nil {
 			f.Constraint = c.allowedText
 		}
-		f.Values, f.ValuesClosed = suggestValues(f.Constraint, cellLits[idata.Name])
+		f.Values, f.ValuesClosed = suggestValues(f.Constraint, cellLits[ref])
 		fields = append(fields, f)
 	}
 	return fields

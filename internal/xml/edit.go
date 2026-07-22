@@ -54,6 +54,46 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 	return false
 }
 
+// SetVariableName sets the FEEL identifier (the <variable> name) of the decision
+// or inputData identified by id, keeping it distinct from the element's free-form
+// display @name. An explicit <variable> is written only when the FEEL name differs
+// from the display name; when they coincide (or name is empty) the variable is
+// left to follow the display name — a name-only <variable> is dropped so the
+// document stays clean and unchanged for the common case. Any declared typeRef is
+// preserved. References elsewhere are not rewritten. It reports whether a matching
+// element was found.
+func (d *Definitions) SetVariableName(id, name string) bool {
+	name = strings.TrimSpace(name)
+	apply := func(elemName string, v **Variable) {
+		if name == "" || name == elemName {
+			// Follow the display name: no divergent identifier to record.
+			if *v != nil && strings.TrimSpace((*v).TypeRef) == "" {
+				*v = nil // drop a redundant name-only variable
+			} else if *v != nil {
+				(*v).Name = elemName // keep the declared type, sync the name
+			}
+			return
+		}
+		if *v == nil {
+			*v = &Variable{}
+		}
+		(*v).Name = name
+	}
+	for i := range d.InputData {
+		if d.InputData[i].ID == id {
+			apply(d.InputData[i].Name, &d.InputData[i].Variable)
+			return true
+		}
+	}
+	for i := range d.Decisions {
+		if d.Decisions[i].ID == id {
+			apply(d.Decisions[i].Name, &d.Decisions[i].Variable)
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateDecisionTable rewrites the decision-table logic of the decision
 // identified by id. Rules are always replaced. A non-empty hitPolicy sets the
 // policy and aggregation; columns are replaced only when replaceColumns is set

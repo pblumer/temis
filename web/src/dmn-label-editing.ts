@@ -3,7 +3,7 @@ import type EventBus from 'diagram-js/lib/core/EventBus'
 import type Canvas from 'diagram-js/lib/core/Canvas'
 import type CommandStack from 'diagram-js/lib/command/CommandStack'
 import type { Element, Shape } from 'diagram-js/lib/model/Types'
-import { ensureFeel, validateName } from './feel'
+import { ensureFeel, validateName, feelRefFor } from './feel'
 
 // A named DMN shape (decision, input data, BKM) — anything but the requirement
 // edges, which carry no name. This gates whether a name can be edited at all.
@@ -18,25 +18,63 @@ const isNameable = (el: Element | undefined): el is Shape =>
   el.type !== 'dmn:informationRequirement' &&
   el.type !== 'dmn:knowledgeRequirement'
 
-// Undoable rename: change the element's name and report it changed so the
-// renderer redraws. diagram-js core has no label command, so we add one.
+// A shape whose FEEL identifier (variable name) is separable from its display
+// name: a decision or an input data. A BKM is referenced by its name, so its name
+// must itself stay a valid FEEL identifier and carries no separate variable.
+const hasSeparableVarName = (el: Element | undefined): el is Shape =>
+  !!el && (el.type === 'dmn:decision' || el.type === 'dmn:inputData')
+
+// A mutable DMN shape carrying the fields the label editor touches: the free-form
+// display name, the FEEL identifier and whether that identifier was set explicitly
+// (so a display rename does not overwrite it).
+type NamedShape = Shape & { name?: string; varName?: string; varNameLocked?: boolean; type?: string }
+
+// Undoable display rename: change the element's name and report it changed so the
+// renderer redraws. diagram-js core has no label command, so we add one. For a
+// decision or input data the FEEL identifier follows the (new) display name unless
+// it was explicitly set — so the common case needs no second edit, while a
+// free-form label that FEEL would reject still yields a usable identifier.
 class UpdateNameHandler {
-  execute(ctx: { element: Shape & { name?: string }; newName: string; old?: string }): Element[] {
+  execute(ctx: { element: NamedShape; newName: string; old?: string; oldVar?: string }): Element[] {
     ctx.old = ctx.element.name
+    ctx.oldVar = ctx.element.varName
     ctx.element.name = ctx.newName
+    if (hasSeparableVarName(ctx.element) && !ctx.element.varNameLocked) {
+      ctx.element.varName = feelRefFor(ctx.newName)
+    }
     return [ctx.element]
   }
-  revert(ctx: { element: Shape & { name?: string }; old?: string }): Element[] {
+  revert(ctx: { element: NamedShape; old?: string; oldVar?: string }): Element[] {
     ctx.element.name = ctx.old
+    ctx.element.varName = ctx.oldVar
+    return [ctx.element]
+  }
+}
+
+// Undoable FEEL-identifier rename: set the element's variable name explicitly and
+// mark it locked, so it stops following the display name. Reachable only for a
+// decision or input data (see hasSeparableVarName).
+class UpdateVarNameHandler {
+  execute(ctx: { element: NamedShape; newVarName: string; oldVar?: string; oldLocked?: boolean }): Element[] {
+    ctx.oldVar = ctx.element.varName
+    ctx.oldLocked = ctx.element.varNameLocked
+    ctx.element.varName = ctx.newVarName
+    ctx.element.varNameLocked = true
+    return [ctx.element]
+  }
+  revert(ctx: { element: NamedShape; oldVar?: string; oldLocked?: boolean }): Element[] {
+    ctx.element.varName = ctx.oldVar
+    ctx.element.varNameLocked = ctx.oldLocked
     return [ctx.element]
   }
 }
 
 // Rename a node inline via the pencil icon, the Enter/F2 keys or an auto-rename
-// on create; the name is validated live
-// against the FEEL engine (spaces ok, operator characters not) and only applied
-// when valid — through the command stack, so it undoes/redoes (ADR-0016, WP-65).
-// DirectEditing is the slice of the diagram-js-direct-editing service we use.
+// on create. The display name is free-form for a decision or input data (its FEEL
+// identifier is edited separately); a BKM's name and any FEEL identifier are
+// validated live against the FEEL engine (spaces ok, operator characters not) and
+// applied only when valid — through the command stack, so edits undo/redo
+// (ADR-0016, WP-65). DirectEditing is the slice of diagram-js-direct-editing we use.
 type DirectEditing = {
   registerProvider: (p: unknown) => void
   activate: (el: Element) => void
@@ -63,13 +101,17 @@ class DmnLabelEditing {
   private directEditing: DirectEditing
   // The shape currently being inline-edited, so the box can follow it when the
   // canvas pans or zooms; null when no edit is active.
-  private active: (Shape & { name?: string }) | null = null
+  private active: NamedShape | null = null
+  // Which field the open editor edits: the free-form display 'name', or the FEEL
+  // 'varName' identifier. Set before each activate() and read back inside it.
+  private mode: 'name' | 'varName' = 'name'
 
   constructor(eventBus: EventBus, directEditing: DirectEditing, commandStack: CommandStack, canvas: Canvas, selection: SelectionService) {
     this.commandStack = commandStack
     this.canvas = canvas as ViewboxCanvas
     this.directEditing = directEditing
     commandStack.registerHandler('element.updateName', UpdateNameHandler)
+    commandStack.registerHandler('element.updateVarName', UpdateVarNameHandler)
     directEditing.registerProvider(this)
 
     // Renaming is a deliberate gesture only — never double-click, which is
@@ -78,6 +120,14 @@ class DmnLabelEditing {
     eventBus.on('dmn.renameElement', (event: { element?: Element }) => {
       if (!isNameable(event.element)) return
       this.startRename(event.element)
+    })
+
+    // Edit the FEEL identifier (variable name) directly — the context pad's
+    // FEEL-name action, offered only for a decision or input data. It opens the
+    // same inline box bound to the variable name, validated against the engine.
+    eventBus.on('dmn.renameVariable', (event: { element?: Element }) => {
+      if (!hasSeparableVarName(event.element)) return
+      this.startRenameVar(event.element)
     })
 
     // Naming a new element is part of creating it: a shape placed from the palette
@@ -129,26 +179,48 @@ class DmnLabelEditing {
     })
   }
 
-  // startRename opens the inline editor over a nameable shape and wires the live
-  // FEEL validation. Shared by the pencil icon and the F2 key.
+  // startRename opens the inline editor over a nameable shape to edit its display
+  // name. Shared by the pencil icon, Enter/F2 and the auto-rename on create.
   private startRename(element: Element): void {
+    this.mode = 'name'
     void ensureFeel() // load the validator in the background
     this.directEditing.activate(element)
     this.wireLiveValidation()
+  }
+
+  // startRenameVar opens the inline editor over a decision/input-data shape to edit
+  // its FEEL identifier (variable name) directly, always validated.
+  private startRenameVar(element: Element): void {
+    this.mode = 'varName'
+    void ensureFeel()
+    this.directEditing.activate(element)
+    this.wireLiveValidation()
+  }
+
+  // feelRequiredNow reports whether the open editor's text must be a valid FEEL
+  // name: always when editing the variable name, and when editing a BKM's display
+  // name (a BKM is referenced by its name). A decision/input-data display name is
+  // free-form.
+  private feelRequiredNow(): boolean {
+    if (this.mode === 'varName') return true
+    return !!this.active && this.active.type === 'dmn:businessKnowledgeModel'
   }
 
   // activate tells direct-editing what to edit and where. The box is positioned in
   // SCREEN space (the canvas may be zoomed/panned), so it sits exactly over the
   // element, with the font scaled to the zoom.
   activate(element: Element): { text: string; bounds: { x: number; y: number; width: number; height: number }; style: Record<string, string>; options: { centerVertically: boolean } } | undefined {
-    // Gate on nameability: any DMN shape with a name can be renamed via the
-    // pencil icon, Enter/F2 or the auto-rename on create, including a decision
-    // with logic (whose double-click is reserved for opening its editor).
-    if (!isNameable(element)) return undefined
-    const shape = element as Shape & { name?: string }
+    // Gate on editability: any DMN shape's display name is editable; the FEEL-name
+    // mode is offered only for a decision or input data. Either way a decision with
+    // logic stays renamable (its double-click is reserved for opening its editor).
+    if (this.mode === 'varName' ? !hasSeparableVarName(element) : !isNameable(element)) return undefined
+    const shape = element as NamedShape
     this.active = shape
+    // The variable-name editor seeds from the current FEEL identifier (falling back
+    // to the display name); the display editor seeds from the display name.
+    const text = this.mode === 'varName' ? shape.varName || shape.name || '' : shape.name ?? ''
     return {
-      text: shape.name ?? '',
+      text,
       bounds: this.screenBounds(shape),
       // The box is the node's full width, so a longer name wraps within it (like
       // the rendered label) instead of spilling past the borders; centerVertically
@@ -181,19 +253,33 @@ class DmnLabelEditing {
     if (content) content.style.fontSize = 13 * this.canvas.zoom() + 'px'
   }
 
-  // update is called on commit; apply only a valid, non-empty name.
+  // update is called on commit. The variable-name edit applies only a valid,
+  // non-empty FEEL name; a BKM's display name likewise (it is the BKM's reference);
+  // a decision/input-data display name is free-form (only non-empty), its FEEL
+  // identifier following along or edited separately.
   update(element: Element, newText: string): void {
-    const name = (newText || '').trim()
-    if (!name || !validateName(name).ok) return
-    this.commandStack.execute('element.updateName', { element, newName: name })
+    const text = (newText || '').trim()
+    if (!text) return
+    if (this.feelRequiredNow() && !validateName(text).ok) return
+    if (this.mode === 'varName') {
+      this.commandStack.execute('element.updateVarName', { element, newVarName: text })
+    } else {
+      this.commandStack.execute('element.updateName', { element, newName: text })
+    }
   }
 
-  // wireLiveValidation marks the editing box red while the typed name is not a
-  // valid FEEL name, with the engine's reason as a tooltip.
+  // wireLiveValidation marks the editing box red while the typed text is not a
+  // valid FEEL name — but only when validity is required (the variable name, or a
+  // BKM's name). A free-form display label is never flagged.
   private wireLiveValidation(): void {
     const content = this.canvas.getContainer().querySelector<HTMLElement>('.djs-direct-editing-content')
     if (!content) return
     const check = (): void => {
+      if (!this.feelRequiredNow()) {
+        content.classList.remove('name-invalid')
+        content.title = ''
+        return
+      }
       const res = validateName((content.textContent ?? '').trim())
       content.classList.toggle('name-invalid', !res.ok)
       content.title = res.ok ? '' : res.message ?? ''

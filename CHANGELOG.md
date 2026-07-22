@@ -83,6 +83,23 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Anzeigename und FEEL-Variablenname getrennt (Weg A, DMN-idiomatisch).** Der Name eines
+  Elements ist jetzt zweigeteilt: ein **freies Anzeige-Label** (`@name`) und der **FEEL-Bezeichner**
+  (`variable/@name`), unter dem die Engine bindet und den Ausdrücke referenzieren. Für Decision und
+  Input Data darf das Anzeige-Label damit Zeichen enthalten, die FEEL ablehnt (z. B. Klammern,
+  `=`, `%`, führende Ziffer) — der FEEL-Name bleibt ein gültiger Bezeichner. *(FEEL selbst erlaubt
+  bereits Leerzeichen und Bindestriche wie „U-002 Nr." — die Trennung greift für die echt
+  ungültigen Fälle und ist die saubere DMN-Modellierung.)* Der FEEL-Name **folgt** dem Anzeige-Label,
+  solange dieses gültig ist (kein Mehraufwand im Normalfall, keine redundante `<variable>` in der
+  Datei); erst ein echt ungültiges Label oder ein bewusst gesetzter FEEL-Name (Context-Pad-Aktion
+  „FEEL-Name") lässt beide auseinanderlaufen. Der Kern bindet durchgängig über den FEEL-Bezeichner
+  (`RefName` = variable ∥ name): Schema, Env, Constraints, Type-Check, Decision-Service-Parameter,
+  Ergebnis-Keys und Decision-Table-Ausdrücke — mit Rückfall auf den Anzeigenamen, sodass alle
+  bestehenden Modelle unverändert evaluieren (nur 3 divergierende Namen existierten überhaupt im
+  Repo). Betroffen sind der Auswertungskern (`internal/model`, `dmn/{engine,eval,schema,constraint,
+  typecheck,service,drg,edit,graphedit,table}.go`, `internal/xml/{edit,graph}.go`) und das Frontend
+  (`dmn-label-editing`, `dmn-context-pad`, `dmn-renderer`, `canvas`, `main`, `feel`, `api`). Go- und
+  headless-e2e-Suite verifiziert, inklusive eines divergierenden Modells end-to-end.
 - **Neues Element direkt benennen + Enter als Umbenennen-Shortcut (Modeler).** Ein frisch
   eingefügtes Element (aus der Palette abgelegt oder über das Context-Pad angehängt) öffnet
   jetzt **sofort** sein Inline-Namensfeld — der Name lässt sich in einem Zug tippen, statt
