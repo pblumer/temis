@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
 	"github.com/pblumer/temis/internal/model"
 )
 

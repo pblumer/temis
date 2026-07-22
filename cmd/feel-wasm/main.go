@@ -29,8 +29,8 @@ import (
 	"strings"
 	"syscall/js"
 
-	"github.com/pblumer/temis/internal/feel"
-	"github.com/pblumer/temis/internal/feel/builtins"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/builtins"
 )
 
 // splitNames turns "Season, Guest Count" into ["Season", "Guest Count"], the

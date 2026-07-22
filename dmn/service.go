@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // CompiledService is a compiled DMN decision service: a reusable unit that

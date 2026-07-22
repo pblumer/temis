@@ -1,8 +1,8 @@
 package dmn
 
 import (
-	"github.com/pblumer/temis/internal/feel"
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 )
 
 // coerceToType applies FEEL's item-definition coercion of a value to a declared

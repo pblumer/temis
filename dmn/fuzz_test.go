@@ -13,8 +13,9 @@ import (
 // FuzzCompile drives the full public surface — Compile, then Decision/Evaluate
 // for every decision the model exposes — over arbitrary bytes (WP-44,
 // docs/50-testing-strategy.md §3). It is the end-to-end counterpart to the
-// component fuzzers (internal/xml.FuzzDecode, internal/feel.FuzzLexer/FuzzParser/
-// FuzzBoundedEvaluation): malformed input must yield an error or diagnostics,
+// component fuzzers (internal/xml.FuzzDecode here, plus the FEEL front-end
+// fuzzers that now live in github.com/pblumer/feel — ADR-0039): malformed input
+// must yield an error or diagnostics,
 // never a panic, and tight Limits guarantee evaluation returns rather than
 // hanging or exhausting memory on hostile input. Seeded from the DMN fixtures.
 func FuzzCompile(f *testing.F) {

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel/value"
 )
 
 // inputToValues converts an Input map into FEEL values keyed by variable name.

@@ -89,9 +89,11 @@ tck-results: tck-corpus
 
 ## cover: enforce the statement-coverage floor on the correctness-critical packages
 ## (docs/50-testing-strategy.md §8). Fails if any drops below COVER_MIN percent.
+## The FEEL front-end and value model now live in github.com/pblumer/feel and carry
+## their coverage floor there (ADR-0039); this lane covers only temis-owned packages.
 cover:
 	@fail=0; \
-	for pkg in ./dmn ./internal/feel ./internal/boxed ./internal/value ./internal/model; do \
+	for pkg in ./dmn ./internal/boxed ./internal/model; do \
 		pct=$$($(GO) test -cover $$pkg 2>/dev/null | sed -n 's/.*coverage: \([0-9.]*\)%.*/\1/p'); \
 		if [ -z "$$pct" ]; then echo "no coverage reported for $$pkg"; fail=1; continue; fi; \
 		awk -v p="$$pct" -v m="$(COVER_MIN)" 'BEGIN{ if (p+0 < m+0) exit 1 }' \
@@ -105,12 +107,7 @@ fuzz:
 	@set -e; \
 	for spec in \
 		"./dmn:FuzzCompile" \
-		"./internal/xml:FuzzDecode" \
-		"./internal/value:FuzzParseNumber" \
-		"./internal/value:FuzzParseDuration" \
-		"./internal/feel:FuzzLexer" \
-		"./internal/feel:FuzzParser" \
-		"./internal/feel:FuzzBoundedEvaluation"; do \
+		"./internal/xml:FuzzDecode"; do \
 		pkg=$${spec%%:*}; fn=$${spec##*:}; \
 		echo "=== fuzz $$fn ($$pkg) for $(FUZZTIME) ==="; \
 		$(GO) test -run='^$$' -fuzz="^$$fn$$" -fuzztime=$(FUZZTIME) $$pkg; \

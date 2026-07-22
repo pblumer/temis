@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pblumer/feel"
 	"github.com/pblumer/temis/internal/boxed"
-	"github.com/pblumer/temis/internal/feel"
 	"github.com/pblumer/temis/internal/model"
 	dmnxml "github.com/pblumer/temis/internal/xml"
 )
