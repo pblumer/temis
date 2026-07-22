@@ -631,7 +631,21 @@ async function boot(root: HTMLElement): Promise<void> {
   try {
     models = await listModels()
   } catch (e) {
-    status.textContent = (e as Error).message
+    // A failed initial load is almost always a missing/expired credential on a
+    // secured server (HTTP 401/403). The login lives in the Zugriff sidebar
+    // section, but mountAccess() only runs much later in boot — so a bare `return`
+    // here would strand the user with a raw "HTTP 401" and NO way to sign in (the
+    // very bug this fixes). Reveal and expand the Zugriff section right now and
+    // point at it, so logging back in is always one glance away.
+    const msg = (e as Error).message
+    const authish = /HTTP 40[13]/.test(msg)
+    status.textContent = authish ? 'Nicht angemeldet — bitte in der Sidebar unter „Zugriff" anmelden.' : msg
+    const grp = root.querySelector<HTMLElement>('#groupAccess')
+    const hst = root.querySelector<HTMLElement>('#accessHost')
+    if (grp && hst) {
+      grp.dataset.collapsed = 'false'
+      void mountAccess(grp, hst)
+    }
     return
   }
   await refreshReleases()

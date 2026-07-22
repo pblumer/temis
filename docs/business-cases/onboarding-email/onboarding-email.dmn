@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             id="def_onboarding_email"
+             name="Email-Onboarding"
+             namespace="http://temis.blumer.cloud/business-cases/onboarding-email">
+
+  <!-- ============================================================= -->
+  <!-- Eingaben: Merkmale des neu anzulegenden Benutzers             -->
+  <!-- ============================================================= -->
+  <inputData id="id_rolle" name="Rolle">
+    <variable name="Rolle" typeRef="string"/>
+  </inputData>
+  <inputData id="id_abteilung" name="Abteilung">
+    <variable name="Abteilung" typeRef="string"/>
+  </inputData>
+  <inputData id="id_vertragsart" name="Vertragsart">
+    <variable name="Vertragsart" typeRef="string"/>
+  </inputData>
+
+  <!-- ============================================================= -->
+  <!-- BKM: Postfachkontingent (GB) je Rolle - wiederverwendbar      -->
+  <!-- ============================================================= -->
+  <businessKnowledgeModel id="id_kontingent" name="Postfachkontingent">
+    <variable name="Postfachkontingent" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="rolle" typeRef="string"/>
+      <decisionTable id="dt_kontingent" hitPolicy="FIRST">
+        <input id="in_kont_rolle" label="rolle">
+          <inputExpression typeRef="string"><text>rolle</text></inputExpression>
+        </input>
+        <output id="out_kont" name="kontingentGB" typeRef="number"/>
+        <rule><inputEntry><text>"Fuehrungskraft"</text></inputEntry><outputEntry><text>100</text></outputEntry></rule>
+        <rule><inputEntry><text>"Manager"</text></inputEntry><outputEntry><text>75</text></outputEntry></rule>
+        <rule><inputEntry><text>"Mitarbeiter"</text></inputEntry><outputEntry><text>50</text></outputEntry></rule>
+        <rule><inputEntry><text>"Praktikant", "Extern"</text></inputEntry><outputEntry><text>25</text></outputEntry></rule>
+        <rule><inputEntry><text>-</text></inputEntry><outputEntry><text>10</text></outputEntry></rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <!-- ============================================================= -->
+  <!-- Decision: Postfach-Typ je Rolle                               -->
+  <!-- ============================================================= -->
+  <decision id="id_postfachtyp" name="Postfachtyp">
+    <variable name="PostfachTyp" typeRef="string"/>
+    <informationRequirement id="ir_pt_rolle">
+      <requiredInput href="#id_rolle"/>
+    </informationRequirement>
+    <decisionTable id="dt_postfachtyp" hitPolicy="FIRST">
+      <input id="in_pt_rolle" label="Rolle">
+        <inputExpression typeRef="string"><text>Rolle</text></inputExpression>
+      </input>
+      <output id="out_pt" name="postfachTyp" typeRef="string"/>
+      <rule><inputEntry><text>"Fuehrungskraft"</text></inputEntry><outputEntry><text>"Premium"</text></outputEntry></rule>
+      <rule><inputEntry><text>"Manager"</text></inputEntry><outputEntry><text>"Premium"</text></outputEntry></rule>
+      <rule><inputEntry><text>"Mitarbeiter"</text></inputEntry><outputEntry><text>"Standard"</text></outputEntry></rule>
+      <rule><inputEntry><text>"Praktikant"</text></inputEntry><outputEntry><text>"Standard"</text></outputEntry></rule>
+      <rule><inputEntry><text>"Extern"</text></inputEntry><outputEntry><text>"Gast"</text></outputEntry></rule>
+      <rule><inputEntry><text>"Dienstkonto"</text></inputEntry><outputEntry><text>"Funktionspostfach"</text></outputEntry></rule>
+      <rule><inputEntry><text>-</text></inputEntry><outputEntry><text>"Standard"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+
+  <!-- ============================================================= -->
+  <!-- Decision: Verteiler / Aliase je Abteilung (Liste)            -->
+  <!-- ============================================================= -->
+  <decision id="id_verteiler" name="Verteiler">
+    <variable name="Verteiler" typeRef="list"/>
+    <informationRequirement id="ir_v_abt">
+      <requiredInput href="#id_abteilung"/>
+    </informationRequirement>
+    <decisionTable id="dt_verteiler" hitPolicy="FIRST">
+      <input id="in_v_abt" label="Abteilung">
+        <inputExpression typeRef="string"><text>Abteilung</text></inputExpression>
+      </input>
+      <output id="out_v" name="verteiler" typeRef="list"/>
+      <rule><inputEntry><text>"Vertrieb"</text></inputEntry><outputEntry><text>["vertrieb@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>"IT"</text></inputEntry><outputEntry><text>["it@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>"HR"</text></inputEntry><outputEntry><text>["hr@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>"Finanzen"</text></inputEntry><outputEntry><text>["finanzen@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>"Marketing"</text></inputEntry><outputEntry><text>["marketing@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>"Geschaeftsleitung"</text></inputEntry><outputEntry><text>["gl@firma.de", "alle@firma.de"]</text></outputEntry></rule>
+      <rule><inputEntry><text>-</text></inputEntry><outputEntry><text>["alle@firma.de"]</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+
+  <!-- ============================================================= -->
+  <!-- Decision: Freigabe erforderlich? (Rolle + Vertragsart)        -->
+  <!-- ============================================================= -->
+  <decision id="id_freigabe" name="Freigabe">
+    <variable name="FreigabeErforderlich" typeRef="boolean"/>
+    <informationRequirement id="ir_f_rolle">
+      <requiredInput href="#id_rolle"/>
+    </informationRequirement>
+    <informationRequirement id="ir_f_vertrag">
+      <requiredInput href="#id_vertragsart"/>
+    </informationRequirement>
+    <decisionTable id="dt_freigabe" hitPolicy="FIRST">
+      <input id="in_f_rolle" label="Rolle">
+        <inputExpression typeRef="string"><text>Rolle</text></inputExpression>
+      </input>
+      <input id="in_f_vertrag" label="Vertragsart">
+        <inputExpression typeRef="string"><text>Vertragsart</text></inputExpression>
+      </input>
+      <output id="out_f" name="freigabeErforderlich" typeRef="boolean"/>
+      <rule><inputEntry><text>"Fuehrungskraft"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+      <rule><inputEntry><text>"Extern"</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+      <rule><inputEntry><text>-</text></inputEntry><inputEntry><text>"Extern"</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+      <rule><inputEntry><text>-</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>false</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+
+  <!-- ============================================================= -->
+  <!-- Top-Decision: Email-Provisionierung (Boxed Context)           -->
+  <!-- Bündelt alle Teilentscheidungen zu einem Provisionierungssatz -->
+  <!-- ============================================================= -->
+  <decision id="id_provisionierung" name="Email-Provisionierung">
+    <variable name="EmailProvisionierung"/>
+    <informationRequirement id="ir_p_pt">
+      <requiredDecision href="#id_postfachtyp"/>
+    </informationRequirement>
+    <informationRequirement id="ir_p_v">
+      <requiredDecision href="#id_verteiler"/>
+    </informationRequirement>
+    <informationRequirement id="ir_p_f">
+      <requiredDecision href="#id_freigabe"/>
+    </informationRequirement>
+    <informationRequirement id="ir_p_rolle">
+      <requiredInput href="#id_rolle"/>
+    </informationRequirement>
+    <knowledgeRequirement id="kr_p_kont">
+      <requiredKnowledge href="#id_kontingent"/>
+    </knowledgeRequirement>
+    <literalExpression><text>{
+  postfachTyp: Postfachtyp,
+  kontingentGB: Postfachkontingent(Rolle),
+  verteiler: Verteiler,
+  freigabeErforderlich: Freigabe
+}</text></literalExpression>
+  </decision>
+
+  <!-- ============================================================= -->
+  <!-- Diagramm-Layout (DMNDI)                                       -->
+  <!-- ============================================================= -->
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="diagram_1">
+      <dmndi:DMNShape id="sh_rolle" dmnElementRef="id_rolle">
+        <dc:Bounds x="120" y="80" width="160" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_abteilung" dmnElementRef="id_abteilung">
+        <dc:Bounds x="340" y="80" width="160" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_vertragsart" dmnElementRef="id_vertragsart">
+        <dc:Bounds x="560" y="80" width="160" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_kontingent" dmnElementRef="id_kontingent">
+        <dc:Bounds x="780" y="240" width="160" height="60"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_postfachtyp" dmnElementRef="id_postfachtyp">
+        <dc:Bounds x="120" y="240" width="160" height="70"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_verteiler" dmnElementRef="id_verteiler">
+        <dc:Bounds x="340" y="240" width="160" height="70"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_freigabe" dmnElementRef="id_freigabe">
+        <dc:Bounds x="560" y="240" width="160" height="70"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNShape id="sh_provisionierung" dmnElementRef="id_provisionierung">
+        <dc:Bounds x="340" y="420" width="180" height="80"/>
+      </dmndi:DMNShape>
+      <dmndi:DMNEdge id="e_pt_rolle" dmnElementRef="ir_pt_rolle">
+        <di:waypoint x="200" y="140"/><di:waypoint x="200" y="240"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_v_abt" dmnElementRef="ir_v_abt">
+        <di:waypoint x="420" y="140"/><di:waypoint x="420" y="240"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_f_rolle" dmnElementRef="ir_f_rolle">
+        <di:waypoint x="280" y="110"/><di:waypoint x="600" y="240"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_f_vertrag" dmnElementRef="ir_f_vertrag">
+        <di:waypoint x="640" y="140"/><di:waypoint x="640" y="240"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_p_pt" dmnElementRef="ir_p_pt">
+        <di:waypoint x="200" y="310"/><di:waypoint x="430" y="420"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_p_v" dmnElementRef="ir_p_v">
+        <di:waypoint x="420" y="310"/><di:waypoint x="430" y="420"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_p_f" dmnElementRef="ir_p_f">
+        <di:waypoint x="640" y="310"/><di:waypoint x="470" y="420"/>
+      </dmndi:DMNEdge>
+      <dmndi:DMNEdge id="e_p_kont" dmnElementRef="kr_p_kont">
+        <di:waypoint x="860" y="300"/><di:waypoint x="520" y="440"/>
+      </dmndi:DMNEdge>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+</definitions>

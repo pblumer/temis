@@ -110,6 +110,12 @@ func main() {
 		"operational log format: text or json (default $TEMIS_LOG_FORMAT, else text)")
 	logLevel := flag.String("log-level", envOr("TEMIS_LOG_LEVEL", "info"),
 		"minimum log level: debug, info, warn or error (default $TEMIS_LOG_LEVEL, else info)")
+	externalURL := flag.String("external-url", os.Getenv("TEMIS_EXTERNAL_URL"),
+		"canonical public base URL, the OAuth issuer (ADR-0038); with -keys-dir it enables temis as a self-contained OAuth server so remote MCP clients (e.g. the claude.ai connector) can obtain a /mcp token (default $TEMIS_EXTERNAL_URL; empty = OAuth off)")
+	oauthRedirectAllow := flag.String("oauth-redirect-allow", os.Getenv("TEMIS_OAUTH_REDIRECT_ALLOW"),
+		"comma-separated extra redirect_uri hosts the OAuth server accepts, beyond the built-in claude.ai and loopback (default $TEMIS_OAUTH_REDIRECT_ALLOW)")
+	oauthScopes := flag.String("oauth-scopes", os.Getenv("TEMIS_OAUTH_SCOPES"),
+		"comma-separated scopes an OAuth-issued token may carry (default evaluate,models:read,models:write,flow,git) (env TEMIS_OAUTH_SCOPES)")
 	flag.Parse()
 
 	// Structured operational logging (WP-114, ADR-0030): key/value records via
@@ -145,6 +151,24 @@ func main() {
 	}
 	if *publicModels != "" {
 		opts = append(opts, service.WithPublicModels(strings.Split(*publicModels, ",")...))
+	}
+	// OAuth authorization server (ADR-0038): the issuer/external URL turns temis
+	// into its own OAuth server for the /mcp endpoint (needs -keys-dir; the service
+	// logs a warning and stays off otherwise).
+	if *externalURL != "" {
+		opts = append(opts, service.WithExternalURL(*externalURL))
+		if *oauthRedirectAllow != "" {
+			opts = append(opts, service.WithOAuthRedirectAllow(strings.Split(*oauthRedirectAllow, ",")...))
+		}
+		if *oauthScopes != "" {
+			var sc []service.Scope
+			for _, s := range strings.Split(*oauthScopes, ",") {
+				if s = strings.TrimSpace(s); s != "" {
+					sc = append(sc, service.Scope(s))
+				}
+			}
+			opts = append(opts, service.WithOAuthScopes(sc...))
+		}
 	}
 	if *clioActiveProbe {
 		opts = append(opts, service.WithClioActiveProbe(true))
@@ -220,12 +244,18 @@ func main() {
 		// flow catalog, so the preloaded examples (and any API-loaded model) are
 		// visible over MCP, and models and flows registered over MCP appear in the
 		// modeler. The same optional token guards /mcp as the /v1 endpoints.
-		mcpSrv := mcp.NewServer(engine,
+		mcpOpts := []mcp.Option{
 			mcp.WithVersion(ver),
 			mcp.WithAuth(srv.MCPAuth()),
 			mcp.WithStore(srv.ModelStore()),
 			mcp.WithFlowStore(srv.FlowStore()),
-		)
+		}
+		// When OAuth is on, advertise the protected-resource metadata in the /mcp
+		// 401 challenge so an OAuth client can discover the token issuer (RFC 9728).
+		if *externalURL != "" {
+			mcpOpts = append(mcpOpts, mcp.WithResourceMetadataURL(strings.TrimRight(*externalURL, "/")+"/.well-known/oauth-protected-resource"))
+		}
+		mcpSrv := mcp.NewServer(engine, mcpOpts...)
 		srv.AttachMCP(mcpSrv)
 	}
 	switch {
@@ -328,10 +358,16 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// OAuth reaper (ADR-0038): prune aged-out codes/refresh grants/expired issued
+	// keys on a timer. A no-op unless OAuth is enabled; stopped on shutdown.
+	reapCtx, reapCancel := context.WithCancel(context.Background())
+	defer reapCancel()
+	go srv.RunOAuthReaper(reapCtx)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
+		reapCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
