@@ -367,6 +367,15 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .toolbar .zoom-group .tbtn { min-width: 28px; padding: 5px 7px; font-size: 14px; line-height: 1; }
 .toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
 .toolbar .type-editor select { max-width: 170px; }
+/* The connection-shape selector rides in the zoom group but needs room for its
+   label text and a normal select appearance rather than the square zoom-button. */
+.toolbar .zoom-group .edge-style-select {
+  min-width: auto;
+  padding: 5px 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+}
 .toolbar .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
 /* Copyable content-addressed model-id chip: monospace pill; click copies the
    full sha256: id (the string the HTTP/MCP surfaces expect). */

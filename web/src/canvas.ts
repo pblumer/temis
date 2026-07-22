@@ -93,6 +93,12 @@ export type ModelerHandle = {
   // place. Node/edge structure and per-node edits (names, types, logic) are
   // preserved; it is not undoable (a view arrangement, like the initial layout).
   arrange: (orientation: Orientation) => void
+  // setAllEdgeStyle sets the shape of every requirement edge at once — eckig
+  // ('ortho'), gerundet ('curved') or direkt ('direct') — as one undoable step,
+  // re-routing each edge through the layouter. The toolbar's "Verbindungen"
+  // selector calls this; individual edges can still be overridden via the context
+  // pad afterwards.
+  setAllEdgeStyle: (style: 'ortho' | 'curved' | 'direct') => void
   // showDiagnostics marks each decision node that has compile/eval problems with a
   // severity badge (error/warning) carrying the messages as a tooltip, so issues
   // are visible on the diagram. Diagnostics without a decision id are model-level
@@ -191,6 +197,45 @@ class UpdateEdgeStyleHandler {
   }
 }
 
+// Undoable connection-style change applied to every requirement edge at once (the
+// toolbar's "Verbindungen" selector): the same per-edge re-route as above, but
+// captured as a single command so one undo restores all of them. Each edge keeps
+// its own routed waypoints for the chosen style; reverting puts every edge back to
+// exactly the style and waypoints it carried before.
+type EdgeSnapshot = { connection: StyledConnection; style?: string; waypoints?: Waypoint[] }
+class UpdateAllEdgeStylesHandler {
+  static $inject = ['layouter', 'elementRegistry']
+  private layouter: LayouterLike
+  private elementRegistry: ElementRegistry
+  constructor(layouter: LayouterLike, elementRegistry: ElementRegistry) {
+    this.layouter = layouter
+    this.elementRegistry = elementRegistry
+  }
+  execute(ctx: { style: string; snapshots?: EdgeSnapshot[] }): Connection[] {
+    ctx.snapshots = []
+    const changed: Connection[] = []
+    for (const el of this.elementRegistry.getAll()) {
+      const type = (el as { type?: string }).type ?? ''
+      if (!EDGE_TYPES.has(type)) continue
+      const c = el as StyledConnection
+      ctx.snapshots.push({ connection: c, style: c.connectionStyle, waypoints: c.waypoints })
+      c.connectionStyle = ctx.style
+      c.waypoints = this.layouter.layoutConnection(c)
+      changed.push(c)
+    }
+    return changed
+  }
+  revert(ctx: { snapshots?: EdgeSnapshot[] }): Connection[] {
+    const changed: Connection[] = []
+    for (const s of ctx.snapshots ?? []) {
+      s.connection.connectionStyle = s.style
+      if (s.waypoints) s.connection.waypoints = s.waypoints
+      changed.push(s.connection)
+    }
+    return changed
+  }
+}
+
 type SelectionService = { get: () => Shape[] }
 const isInputData = (el: Shape | undefined): boolean => !!el && el.type === 'dmn:inputData'
 
@@ -235,6 +280,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   const overlays = diagram.get<Overlays>('overlays')
   commandStack.registerHandler('element.updateType', UpdateTypeHandler)
   commandStack.registerHandler('connection.updateStyle', UpdateEdgeStyleHandler)
+  commandStack.registerHandler('connection.updateAllStyles', UpdateAllEdgeStylesHandler)
 
   const byId: Record<string, Shape> = {}
   for (const n of laid.nodes) {
@@ -556,6 +602,9 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       eventBus.fire('elements.changed', { elements: changed })
       for (const el of changed) eventBus.fire('element.changed', { element: el })
       fitViewport(canvas)
+    },
+    setAllEdgeStyle: (style) => {
+      commandStack.execute('connection.updateAllStyles', { style })
     },
     showDiagnostics: (diags) => {
       overlays.remove({ type: 'diagnostic' })
