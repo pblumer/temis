@@ -8,12 +8,32 @@
 // is the one place the UI learns who the caller is.
 
 const BEARER_KEY = 'temis.bearer'
+const EXPIRES_KEY = 'temis.bearer.exp'
 
-// getBearer returns the stored session credential, or null when none is set.
-// sessionStorage (not localStorage) so the credential dies with the tab.
+// The credential PERSISTS across browser restarts (localStorage), so a re-opened
+// browser stays signed in instead of landing on a bare HTTP 401 with no visible
+// way back in. It previously lived in sessionStorage and died with the tab, which
+// forced a re-login on every restart and — worse — stranded the user, because the
+// login prompt only mounts once boot gets past the (now failing) first data load.
+// To bound the exposure of a key sitting on disk, the credential carries a
+// client-side lifetime: an untouched browser drops it after MAX_AGE_MS, and every
+// fresh login (setBearer) restarts that window. Explicit logout removes it at once.
+const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+
+// getBearer returns the stored credential, or null when none is set or it has aged
+// out. A credential still in the OLD sessionStorage slot (written by a pre-upgrade
+// tab) is migrated into the persistent slot once, so the upgrade never logs an open
+// session out.
 export function getBearer(): string | null {
   try {
-    return sessionStorage.getItem(BEARER_KEY)
+    const v = localStorage.getItem(BEARER_KEY)
+    if (v === null) return migrateLegacy()
+    const exp = Number(localStorage.getItem(EXPIRES_KEY) ?? '0')
+    if (exp > 0 && Date.now() > exp) {
+      clearBearer()
+      return null
+    }
+    return v
   } catch {
     return null
   }
@@ -21,7 +41,8 @@ export function getBearer(): string | null {
 
 export function setBearer(v: string): void {
   try {
-    sessionStorage.setItem(BEARER_KEY, v.trim())
+    localStorage.setItem(BEARER_KEY, v.trim())
+    localStorage.setItem(EXPIRES_KEY, String(Date.now() + MAX_AGE_MS))
   } catch {
     /* storage unavailable — the credential simply won't persist */
   }
@@ -29,9 +50,28 @@ export function setBearer(v: string): void {
 
 export function clearBearer(): void {
   try {
+    localStorage.removeItem(BEARER_KEY)
+    localStorage.removeItem(EXPIRES_KEY)
+    // Drop any credential left in the pre-upgrade sessionStorage slot too, so
+    // logout truly signs out regardless of where the token was stored.
     sessionStorage.removeItem(BEARER_KEY)
   } catch {
     /* ignore */
+  }
+}
+
+// migrateLegacy adopts a credential written by the previous sessionStorage-based
+// build into the persistent slot (once) and clears the old slot. Returns the
+// adopted credential, or null when there is nothing to migrate.
+function migrateLegacy(): string | null {
+  try {
+    const legacy = sessionStorage.getItem(BEARER_KEY)
+    if (legacy === null) return null
+    setBearer(legacy)
+    sessionStorage.removeItem(BEARER_KEY)
+    return legacy
+  } catch {
+    return null
   }
 }
 
