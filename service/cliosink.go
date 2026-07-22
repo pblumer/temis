@@ -55,6 +55,12 @@ type ClioConfig struct {
 	// default (false) is best-effort: a failed write is logged and the
 	// evaluation still succeeds.
 	Strict bool
+	// DisableAuthorship turns off stamping the authenticated key's kid as the
+	// clioauthkid CloudEvents extension (WP-105). The default (false) stamps it;
+	// the sink also disables it automatically if clio rejects the extension. Set
+	// this to force it off up front for a clio that does not support the extension
+	// and to avoid the one rejected write that the auto-fallback recovers from.
+	DisableAuthorship bool
 	// HTTPClient overrides the HTTP client used to reach clio (e.g. in tests).
 	// Nil uses a client with a 5s timeout.
 	HTTPClient *http.Client
@@ -83,6 +89,12 @@ type ClioSink struct {
 	strict        bool
 	logf          func(format string, args ...any)
 	logger        *slog.Logger
+
+	// authorship gates stamping the clioauthkid extension (WP-105). It starts from
+	// cfg.DisableAuthorship and latches off the first time clio rejects the
+	// extension, so at most one write is spent discovering that clio does not
+	// support it. Safe for concurrent use.
+	authorship atomic.Bool
 
 	// health tracks the outcome of real writes so the status endpoint (WP-112)
 	// and the readiness probe (WP-110) can report whether audits are getting
@@ -223,7 +235,7 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 	if logf == nil {
 		logf = log.Printf
 	}
-	return &ClioSink{
+	sink := &ClioSink{
 		client:        client,
 		baseURL:       strings.TrimRight(cfg.URL, "/"),
 		token:         cfg.Token,
@@ -235,7 +247,9 @@ func NewClioSink(cfg ClioConfig) (*ClioSink, error) {
 		strict:        cfg.Strict,
 		logf:          logf,
 		logger:        cfg.Logger,
-	}, nil
+	}
+	sink.authorship.Store(!cfg.DisableAuthorship)
+	return sink, nil
 }
 
 // DecisionRecord is the data the sink needs to record one evaluation. Trace is
@@ -310,6 +324,48 @@ type clioPrecondition struct {
 	Payload map[string]any `json:"payload"`
 }
 
+// errAuthorshipRejected is returned by send when clio refuses the write because
+// it does not recognise the clioauthkid authorship extension — an older clio, or
+// one whose registered event schema omits the extension. The write path retries
+// once without authorship and latches it off (see authorship): a lost authorship
+// stamp — which clio could not store anyway — must never cost the whole audit
+// event (ADR-0023, best-effort).
+var errAuthorshipRejected = errors.New("clio rejected the clioauthkid authorship extension")
+
+// warnAuthorshipDisabled logs, once, that authorship stamping has been turned off
+// because clio rejected the extension. detail carries clio's own error text.
+func (c *ClioSink) warnAuthorshipDisabled(detail string) {
+	const msg = "clio rejected the clioauthkid authorship extension; recording audit events without authorship (upgrade clio or register the extension in its event schema to restore it, or set -clio-authorship=false to silence this)"
+	if c.logger != nil {
+		c.logger.Warn(msg, slog.String("system", "clio"), slog.String("detail", detail))
+	} else {
+		c.logf("temisd: clio audit sink: %s: %s", msg, detail)
+	}
+}
+
+// postWithAuthorshipFallback marshals body and posts it. If clio rejects the
+// clioauthkid extension, it latches authorship off, calls stripKid to drop the
+// extension from body, and retries once — so the audit event still lands, losing
+// only the authorship stamp. stripKid must zero every event's ClioAuthKid.
+func (c *ClioSink) postWithAuthorshipFallback(ctx context.Context, body any, stripKid func()) (idempotent bool, err error) {
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return false, fmt.Errorf("encode event: %w", err)
+	}
+	idempotent, err = c.send(ctx, buf)
+	if !errors.Is(err, errAuthorshipRejected) {
+		return idempotent, err
+	}
+	if c.authorship.CompareAndSwap(true, false) {
+		c.warnAuthorshipDisabled(err.Error())
+	}
+	stripKid()
+	if buf, err = json.Marshal(body); err != nil {
+		return false, fmt.Errorf("encode event: %w", err)
+	}
+	return c.send(ctx, buf)
+}
+
 // write builds the decision event and posts it to clio. A 409 (precondition
 // failed) means an identical decision was already recorded and is reported as an
 // idempotent no-op (still a success) — that is what makes recording idempotent
@@ -318,12 +374,16 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bo
 	subject := c.subjectFor(rec.Decision, rec.Input)
 	hash := inputHash(rec.ModelID, rec.Decision, rec.Input)
 
+	authKid := rec.AuthKid
+	if !c.authorship.Load() {
+		authKid = ""
+	}
 	body := clioWriteRequest{
 		Events: []clioEvent{{
 			Source:      c.source,
 			Subject:     subject,
 			Type:        DecisionEventType,
-			ClioAuthKid: rec.AuthKid,
+			ClioAuthKid: authKid,
 			Data: decisionEventData{
 				ModelID:   rec.ModelID,
 				Decision:  rec.Decision,
@@ -344,11 +404,7 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bo
 		}},
 	}
 
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return false, fmt.Errorf("encode event: %w", err)
-	}
-	return c.send(ctx, buf)
+	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].ClioAuthKid = "" })
 }
 
 // send POSTs a pre-marshaled write-events body to clio and maps the response. A
@@ -381,7 +437,11 @@ func (c *ClioSink) send(ctx context.Context, buf []byte) (idempotent bool, err e
 		return false, nil
 	default:
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return false, fmt.Errorf("clio write-events: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+		msg := strings.TrimSpace(string(snippet))
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(msg, "clioauthkid") {
+			return false, fmt.Errorf("%w: %s", errAuthorshipRejected, msg)
+		}
+		return false, fmt.Errorf("clio write-events: status %d: %s", resp.StatusCode, msg)
 	}
 }
 
@@ -474,12 +534,16 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 	subject := c.subjectFor(entity, rec.Input)
 	hash := flowInputHash(rec.FlowID, rec.Input)
 
+	authKid := rec.AuthKid
+	if !c.authorship.Load() {
+		authKid = ""
+	}
 	body := clioFlowWriteRequest{
 		Events: []clioFlowEvent{{
 			Source:      c.source,
 			Subject:     subject,
 			Type:        FlowEventType,
-			ClioAuthKid: rec.AuthKid,
+			ClioAuthKid: authKid,
 			Data: flowEventData{
 				FlowID:     rec.FlowID,
 				Flow:       rec.Name,
@@ -501,11 +565,7 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 		}},
 	}
 
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return false, fmt.Errorf("encode flow event: %w", err)
-	}
-	return c.send(ctx, buf)
+	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].ClioAuthKid = "" })
 }
 
 // flowInputHash is the idempotency key for a flow evaluation: a stable digest over

@@ -21,6 +21,10 @@ type captureClio struct {
 	auths  []string
 	paths  []string
 	status int // status to return; 0 means 200
+	// rejectAuthorship makes the stub behave like a clio that decodes the body
+	// with DisallowUnknownFields and does not know the clioauthkid extension: any
+	// write carrying it is answered with the same 400 the real clio returns.
+	rejectAuthorship bool
 }
 
 func (c *captureClio) start(t *testing.T) *httptest.Server {
@@ -35,7 +39,13 @@ func (c *captureClio) start(t *testing.T) *httptest.Server {
 		c.reqs = append(c.reqs, req)
 		c.raws = append(c.raws, raw)
 		status := c.status
+		reject := c.rejectAuthorship
 		c.mu.Unlock()
+		if reject && bytes.Contains(raw, []byte("clioauthkid")) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Bad Request","status":400,"detail":"ungültiger request-body: json: unknown field \"clioauthkid\""}`))
+			return
+		}
 		if status == 0 {
 			status = http.StatusOK
 		}
@@ -314,5 +324,97 @@ func TestClioSinkAuthorshipEmptyWhenOpen(t *testing.T) {
 	// And the wire form omits the field entirely.
 	if strings.Contains(string(clio.rawBodies()[0]), "clioauthkid") {
 		t.Error("clioauthkid must be omitted from the wire when unknown")
+	}
+}
+
+// TestClioSinkFallsBackWhenAuthorshipRejected covers the connection-lost fix: a
+// clio that rejects the clioauthkid extension (400) must not lose the audit
+// event. The sink retries the write without authorship, latches it off, and
+// reports the write as succeeded — so the status goes green, not red.
+func TestClioSinkFallsBackWhenAuthorshipRejected(t *testing.T) {
+	clio := &captureClio{rejectAuthorship: true}
+	stub := clio.start(t)
+	sink, err := NewClioSink(ClioConfig{URL: stub.URL, Token: "kid_t.secret", Engine: "temisd test"})
+	if err != nil {
+		t.Fatalf("NewClioSink: %v", err)
+	}
+	path := writeKeysFile(t, []scopedKey{{"agent7", "sec", []Scope{ScopeEvaluate}}})
+	h := NewServer(nil, WithKeysFile(path), WithClioSink(sink)).Handler()
+
+	winter, _ := json.Marshal(evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+	})
+	if rec := doAuth(t, h, "POST", "/v1/evaluate", "application/json", winter, "agent7.sec"); rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	// The first attempt carries clioauthkid and is rejected; the retry omits it
+	// and lands — two writes for one evaluation.
+	raws := clio.rawBodies()
+	if len(raws) != 2 {
+		t.Fatalf("clio writes = %d, want 2 (rejected + retry)", len(raws))
+	}
+	if !strings.Contains(string(raws[0]), "clioauthkid") {
+		t.Error("first write should carry the authorship extension")
+	}
+	if strings.Contains(string(raws[1]), "clioauthkid") {
+		t.Error("retry must omit the authorship extension")
+	}
+
+	// Health is green: the event landed, so the status must not read as a failure.
+	if snap := sink.snapshot(); !snap.reachable || snap.writesOk != 1 || snap.writesFailed != 0 {
+		t.Errorf("snapshot reachable=%v writesOk=%d writesFailed=%d, want true/1/0",
+			snap.reachable, snap.writesOk, snap.writesFailed)
+	}
+
+	// Authorship is now latched off: the next evaluation omits the field from the
+	// first attempt, so it takes a single write with no retry.
+	before := len(clio.rawBodies())
+	summer, _ := json.Marshal(evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Summer", "Guest Count": 2},
+	})
+	if rec := doAuth(t, h, "POST", "/v1/evaluate", "application/json", summer, "agent7.sec"); rec.Code != http.StatusOK {
+		t.Fatalf("2nd evaluate = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	raws = clio.rawBodies()
+	if n := len(raws) - before; n != 1 {
+		t.Errorf("second evaluation writes = %d, want 1 (no retry after latch)", n)
+	}
+	if strings.Contains(string(raws[len(raws)-1]), "clioauthkid") {
+		t.Error("after latch, writes must omit the authorship extension")
+	}
+}
+
+// TestClioSinkAuthorshipDisabledByConfig asserts the -clio-authorship=false
+// escape hatch: the extension is never stamped, so no write is ever rejected and
+// no discovery retry is spent, even with an authenticated key.
+func TestClioSinkAuthorshipDisabledByConfig(t *testing.T) {
+	clio := &captureClio{rejectAuthorship: true}
+	stub := clio.start(t)
+	sink, err := NewClioSink(ClioConfig{URL: stub.URL, Token: "kid_t.secret", Engine: "temisd test", DisableAuthorship: true})
+	if err != nil {
+		t.Fatalf("NewClioSink: %v", err)
+	}
+	path := writeKeysFile(t, []scopedKey{{"agent7", "sec", []Scope{ScopeEvaluate}}})
+	h := NewServer(nil, WithKeysFile(path), WithClioSink(sink)).Handler()
+
+	body, _ := json.Marshal(evaluateStatelessRequest{
+		XML:      string(dishXML(t)),
+		Decision: "Dish",
+		Input:    map[string]any{"Season": "Winter", "Guest Count": 8},
+	})
+	if rec := doAuth(t, h, "POST", "/v1/evaluate", "application/json", body, "agent7.sec"); rec.Code != http.StatusOK {
+		t.Fatalf("evaluate = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	raws := clio.rawBodies()
+	if len(raws) != 1 {
+		t.Fatalf("clio writes = %d, want 1 (no retry when authorship off)", len(raws))
+	}
+	if strings.Contains(string(raws[0]), "clioauthkid") {
+		t.Error("disabled authorship must omit the field from the wire")
 	}
 }

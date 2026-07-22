@@ -94,6 +94,8 @@ func main() {
 		"input field whose value becomes the subject's entity segment (empty = decision name) (env TEMIS_CLIO_SUBJECT_KEY)")
 	clioStrict := flag.Bool("clio-strict", envBool("TEMIS_CLIO_STRICT", false),
 		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue) (env TEMIS_CLIO_STRICT)")
+	clioAuthorship := flag.Bool("clio-authorship", envBool("TEMIS_CLIO_AUTHORSHIP", true),
+		"stamp the authenticated API key's kid on audit events as the clioauthkid extension; the sink also auto-disables it if clio rejects the extension (env TEMIS_CLIO_AUTHORSHIP)")
 	clioActiveProbe := flag.Bool("clio-active-probe", envBool("TEMIS_CLIO_ACTIVE_PROBE", false),
 		"GET /v1/status actively pings clio's health endpoint for reachability instead of using the passive last-write outcome (env TEMIS_CLIO_ACTIVE_PROBE)")
 	tlsCert := flag.String("tls-cert", os.Getenv("TEMIS_TLS_CERT"),
@@ -191,14 +193,15 @@ func main() {
 	var qq *service.QualityQueue
 	if clioOn {
 		sink, err := service.NewClioSink(service.ClioConfig{
-			URL:           *clioURL,
-			Token:         *clioToken,
-			Source:        *clioSource,
-			SubjectPrefix: *clioSubjectPrefix,
-			SubjectKey:    *clioSubjectKey,
-			Engine:        "temisd " + ver,
-			Strict:        *clioStrict,
-			Logger:        slog.Default(),
+			URL:               *clioURL,
+			Token:             *clioToken,
+			Source:            *clioSource,
+			SubjectPrefix:     *clioSubjectPrefix,
+			SubjectKey:        *clioSubjectKey,
+			Engine:            "temisd " + ver,
+			Strict:            *clioStrict,
+			DisableAuthorship: !*clioAuthorship,
+			Logger:            slog.Default(),
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "temisd: %v\n", err)

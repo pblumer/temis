@@ -60,7 +60,7 @@ liefert nur `source`/`subject`/`type`/`data`.
 | `source` | Konfiguration (`-clio-source`, Default `temisd`) | identifiziert die schreibende Instanz |
 | `subject` | Mapping aus der Eingabe/Decision (Abschnitt 3) | die clio-Geschäftsentität, hierarchischer Pfad |
 | `type` | konstant `com.temis.decision.evaluated.v1` | versioniert; Schema-Änderung ⇒ `.v2` |
-| `clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | CloudEvents-**Extension** für Authorship; **ausgelassen** bei offener API/Legacy-Token; clio bindet sie in die Hash-Kette |
+| `clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | CloudEvents-**Extension** für Authorship; **ausgelassen** bei offener API/Legacy-Token; clio bindet sie in die Hash-Kette. Kennt eine clio die Extension nicht (alter Stand oder strenges Event-Schema) und lehnt den Write mit `400 unknown field "clioauthkid"` ab, schreibt der Sink das Event **einmal** ohne die Extension nach und stempelt Authorship danach nicht mehr — der Audit-Trail geht nie verloren, nur der Autorenstempel. Mit `-clio-authorship=false` / `TEMIS_CLIO_AUTHORSHIP=false` lässt sich das Stempeln vorab abschalten. |
 | `data.modelId` | content-addressed `modelId` (`load_model` / Modell-Cache) | **exakte** Modellversion ⇒ reproduzierbar |
 | `data.decision` | `decision`-Argument der Auswertung | Name oder ID |
 | `data.input` | die übergebene `Input` | FEEL-Numbers als exakter **Dezimal-String** (ADR-0007) |

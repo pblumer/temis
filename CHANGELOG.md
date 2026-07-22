@@ -51,6 +51,16 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Fixed
 
+- **clio-Verbindung bricht nicht mehr, wenn clio die `clioauthkid`-Extension nicht kennt.**
+  Seit der Scoped-API-Key-Authorship (WP-105, ADR-0028) stempelt der Audit-Sink die `kid`
+  des authentifizierenden Keys als CloudEvents-Extension `clioauthkid`. Eine clio-Instanz,
+  die den Write-Body strikt dekodiert und die Extension (noch) nicht kennt, wies daraufhin
+  **jeden** Write mit `400 unknown field "clioauthkid"` ab — der Status kippte trotz
+  erreichbarer clio auf „getrennt". Der Sink degradiert jetzt automatisch: bei genau dieser
+  Ablehnung wird das Event **einmal** ohne die Extension nachgeschrieben und Authorship für
+  weitere Writes stillgelegt (eine WARN-Zeile), sodass der Audit-Trail erhalten bleibt.
+  Neuer Schalter `-clio-authorship` / `TEMIS_CLIO_AUTHORSHIP` (Default an) schaltet das
+  Stempeln vorab ab.
 - **`DELETE /v1/models/{id}` ist mit `-models-dir` dauerhaft (M3):** löschte bisher nur den
   Cache, sodass ein persistiertes Modell beim nächsten Zugriff zurückkehrte.
 - **Testsuite offline vollständig grün (M5):** die Scope-Autorisierungs-Tests rufen nicht mehr
