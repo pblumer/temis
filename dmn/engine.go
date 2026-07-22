@@ -94,8 +94,16 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 		if cd.id != "" {
 			defs.byID[cd.id] = cd
 		}
+		// Resolve by the FEEL identifier (cd.name) and, for backward compatibility,
+		// by the display name when it differs — so callers may still address a
+		// decision by the label it shows in the diagram.
 		if cd.name != "" {
 			defs.byName[cd.name] = cd
+		}
+		if dec.Name != "" && dec.Name != cd.name {
+			if _, taken := defs.byName[dec.Name]; !taken {
+				defs.byName[dec.Name] = cd
+			}
 		}
 	}
 
@@ -170,8 +178,11 @@ func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string
 	env := feel.NewEnv(envNames(m, dec)...).WithTypes(items)
 	constraints := buildConstraints(m, dec, items)
 	cd := &CompiledDecision{
-		id:          dec.ID,
-		name:        dec.Name,
+		id: dec.ID,
+		// The FEEL identifier the result is bound under and referenced by — the
+		// decision's variable name, falling back to its (display) name. Name stays
+		// the free-form label (used for diagnostics via decisionLabel).
+		name:        dec.RefName(),
 		env:         env,
 		inputs:      buildInputSchema(m, dec, items, constraints),
 		reqInputs:   reqInputNames(m, dec),
@@ -200,10 +211,10 @@ func compileDecision(m *model.Definitions, dec *model.Decision, funcs map[string
 func envNames(m *model.Definitions, dec *model.Decision) []string {
 	byID := make(map[string]string, len(m.InputData)+len(m.Decisions))
 	for _, in := range m.InputData {
-		byID[in.ID] = in.Name
+		byID[in.ID] = in.RefName()
 	}
 	for _, d := range m.Decisions {
-		byID[d.ID] = d.Name
+		byID[d.ID] = d.RefName()
 	}
 
 	var names []string
@@ -232,7 +243,7 @@ func envNames(m *model.Definitions, dec *model.Decision) []string {
 func reqInputNames(m *model.Definitions, dec *model.Decision) []string {
 	byID := make(map[string]string, len(m.InputData))
 	for _, in := range m.InputData {
-		byID[in.ID] = in.Name
+		byID[in.ID] = in.RefName()
 	}
 
 	var names []string

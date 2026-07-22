@@ -90,8 +90,10 @@ func (d *Definitions) Index() ModelIndex {
 		}
 	}
 	for _, in := range d.model.InputData {
-		if in.Name != "" {
-			idx.Inputs = append(idx.Inputs, in.Name)
+		// The FEEL identifier callers supply the value under and expressions
+		// reference (its variable name, else its display name), matching the schema.
+		if ref := in.RefName(); ref != "" {
+			idx.Inputs = append(idx.Inputs, ref)
 		}
 	}
 	return idx

@@ -119,7 +119,11 @@ function label(parent: SVGElement, shape: Shape & Named, w: number, h: number): 
   const name = shape.name ?? shape.id
   let sub = ''
   if (shape.type === 'dmn:inputData') {
-    sub = shape.dataType ?? ''
+    // Show the FEEL identifier only when it differs from the display label (a
+    // free-form name), so the modeler sees how to reference the input; otherwise
+    // just the type.
+    const vn = shape.varName && shape.varName !== name ? shape.varName : ''
+    sub = vn ? '▸ ' + vn + (shape.dataType ? ' : ' + shape.dataType : '') : shape.dataType ?? ''
   } else if (shape.type === 'dmn:decision') {
     const vn = shape.varName ?? name
     sub = '▸ ' + vn + (shape.dataType ? ' : ' + shape.dataType : '')

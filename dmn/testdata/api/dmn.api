@@ -350,9 +350,11 @@ type GraphNode struct {
 }
 
 type GraphNodeEdit struct {
-	ID		string	`json:"id"`
-	Type		string	`json:"type"`
-	Name		string	`json:"name"`
+	ID	string	`json:"id"`
+	Type	string	`json:"type"`
+	Name	string	`json:"name"`
+
+	VarName		string	`json:"varName,omitempty"`
 	DataType	string	`json:"dataType,omitempty"`
 	X		float64	`json:"x"`
 	Y		float64	`json:"y"`
@@ -471,8 +473,10 @@ type ModelIndex struct {
 }
 
 type NodeEdit struct {
-	ID		string		`json:"id"`
-	Name		*string		`json:"name,omitempty"`
+	ID	string	`json:"id"`
+	Name	*string	`json:"name,omitempty"`
+
+	VarName		*string		`json:"varName,omitempty"`
 	DataType	*string		`json:"dataType,omitempty"`
 	X		*float64	`json:"x,omitempty"`
 	Y		*float64	`json:"y,omitempty"`

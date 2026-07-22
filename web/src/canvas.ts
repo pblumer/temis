@@ -5,6 +5,7 @@ import ContextPadModule from 'diagram-js/lib/features/context-pad'
 import ConnectModule from 'diagram-js/lib/features/connect'
 import PaletteModule from 'diagram-js/lib/features/palette'
 import CreateModule from 'diagram-js/lib/features/create'
+import ResizeModule from 'diagram-js/lib/features/resize'
 import HandToolModule from 'diagram-js/lib/features/hand-tool'
 import KeyboardModule from 'diagram-js/lib/features/keyboard'
 import EditorActionsModule from 'diagram-js/lib/features/editor-actions'
@@ -41,6 +42,10 @@ export type NodeState = {
   id: string
   type: string
   name?: string
+  // varName is the node's FEEL identifier (decision/inputData variable name), kept
+  // separate from the free-form display name so a label may contain characters FEEL
+  // rejects; empty/equal lets it follow the name (ADR-0016).
+  varName?: string
   dataType?: string
   x: number
   y: number
@@ -260,7 +265,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       dmnPaletteModule, ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      PaletteModule, CreateModule, HandToolModule, KeyboardModule, EditorActionsModule,
+      PaletteModule, CreateModule, ResizeModule, HandToolModule, KeyboardModule, EditorActionsModule,
       MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
       dmnSnappingModule,
     ],
@@ -286,7 +291,10 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   for (const n of laid.nodes) {
     // The /v1 graph uses bare type names ("inputData", …); our renderer keys on
     // the "dmn:" vocabulary. name/type are carried on the element for it to read.
-    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic } as never)
+    // varNameLocked marks a node whose FEEL identifier was authored to differ from
+    // its display name (the graph only sends varName then), so a later display
+    // rename keeps that explicit identifier instead of re-deriving it.
+    const shape = factory.createShape({ id: n.id, x: n.x, y: n.y, width: n.w, height: n.h, type: 'dmn:' + n.type, name: n.name, dataType: n.dataType, varName: n.varName, varNameLocked: !!n.varName, hasTable: n.hasTable, hasLiteral: n.hasLiteral, hasContext: n.hasContext, hasConditional: n.hasConditional, hasList: n.hasList, hasRelation: n.hasRelation, hasFilter: n.hasFilter, hasIterator: n.hasIterator, hasInvocation: n.hasInvocation, hasLogic: n.hasLogic } as never)
     canvas.addShape(shape)
     byId[n.id] = shape
   }
@@ -433,10 +441,14 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // input's entered value, or an upstream decision's computed result. Undefined for
   // a source that carries no data value (e.g. a BKM behind a knowledge requirement).
   const flowValueOf = (elId: string, inputs: Record<string, unknown>, values: Record<string, unknown>): unknown => {
-    const s = byId[elId] as (Shape & { name?: string; type?: string }) | undefined
-    if (!s || !s.name) return undefined
-    if (s.type === 'dmn:inputData') return inputs[s.name]
-    if (s.type === 'dmn:decision') return values[s.name]
+    const s = byId[elId] as (Shape & { name?: string; varName?: string; type?: string }) | undefined
+    if (!s) return undefined
+    // Evaluation keys everything by the FEEL identifier (the variable name), which
+    // falls back to the display name when no separate one is set.
+    const ref = s.varName || s.name
+    if (!ref) return undefined
+    if (s.type === 'dmn:inputData') return inputs[ref]
+    if (s.type === 'dmn:decision') return values[ref]
     return undefined
   }
 
@@ -497,6 +509,19 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     if (e.element && e.style) commandStack.execute('connection.updateStyle', { connection: e.element, style: e.style })
   })
 
+  // Resizing a node (drag its corner handles) runs through the command stack like
+  // any edit, so it undoes/redoes and marks the model dirty; the structural save
+  // then writes the new width/height into the DMNDI bounds (ApplyGraph/UpsertShape),
+  // so the size survives a reload. Give it a floor so a node can't be shrunk below
+  // where its badge and label stay legible — diagram-js reads context.minDimensions
+  // on resize.start. Input-data pills are a touch shorter than decisions/BKMs.
+  eventBus.on('resize.start', (event: { context?: { shape?: Shape; minDimensions?: { width: number; height: number } } }) => {
+    const ctx = event.context
+    if (!ctx || !ctx.shape) return
+    const isInput = (ctx.shape as { type?: string }).type === 'dmn:inputData'
+    ctx.minDimensions = { width: 80, height: isInput ? 36 : 50 }
+  })
+
   let selectCb = (_sel: Selected): void => {}
   const reportSelection = (): void => {
     const sel = selection.get()
@@ -529,8 +554,8 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
       for (const el of elementRegistry.getAll()) {
         const type = (el as { type?: string }).type ?? ''
         if (NODE_TYPES.has(type)) {
-          const s = el as Shape & { name?: string; dataType?: string }
-          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name, dataType: s.dataType, x: s.x ?? 0, y: s.y ?? 0, width: s.width ?? 0, height: s.height ?? 0 })
+          const s = el as Shape & { name?: string; varName?: string; dataType?: string }
+          nodes.push({ id: s.id, type: type.replace(/^dmn:/, ''), name: s.name, varName: s.varName, dataType: s.dataType, x: s.x ?? 0, y: s.y ?? 0, width: s.width ?? 0, height: s.height ?? 0 })
         } else if (EDGE_TYPES.has(type)) {
           const c = el as Connection
           if (c.source && c.target) edges.push({ type: type.replace(/^dmn:/, ''), source: c.source.id, target: c.target.id })

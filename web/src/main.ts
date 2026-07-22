@@ -287,12 +287,17 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
+  // feelRef is the identifier a node is referenced by in FEEL — its variable name
+  // when it declares one, else its (display) name. Expressions and the completion
+  // scope key on this, so a free-form display label never leaks into FEEL source.
+  const feelRef = (n: { name?: string; varName?: string }): string => (n.varName?.trim() || n.name?.trim() || '')
   // namesFor gathers the in-scope variable names for a decision's expression (the
-  // other nodes' names) and the decision's own title, from the live graph.
+  // other nodes' FEEL identifiers) and the decision's own display title, from the
+  // live graph.
   const namesFor = (decisionId: string): { names: string[]; title: string } => {
     const nodes = handle?.graph().nodes ?? []
     const self = nodes.find((n) => n.id === decisionId)
-    const names = nodes.filter((n) => n.id !== decisionId).map((n) => n.name ?? '').filter((s) => s !== '')
+    const names = nodes.filter((n) => n.id !== decisionId).map((n) => feelRef(n)).filter((s) => s !== '')
     return { names, title: self?.name ?? '' }
   }
   // wiredInputsFor lists the inputs the decision is wired to in the live graph (its
@@ -308,7 +313,8 @@ async function boot(root: HTMLElement): Promise<void> {
     for (const e of graph.edges) {
       if (e.type !== 'informationRequirement' || e.target !== decisionId) continue
       const src = byId.get(e.source)
-      const name = src?.name?.trim()
+      // The column expression references the input by its FEEL identifier.
+      const name = src ? feelRef(src) : ''
       if (name) out.push({ expression: name, typeRef: src?.dataType })
     }
     return out
@@ -1224,8 +1230,15 @@ async function boot(root: HTMLElement): Promise<void> {
   // run. Without a loaded schema/handle it simply shows no pills.
   const mountInputPills = (): void => {
     if (!handle || !currentModel) return
+    // Keyed by the FEEL identifier (variable name, else display name) — the same
+    // key the schema uses — so each schema input maps to its node even when the
+    // node's display label differs from the identifier.
     const nodeIdByName = new Map<string, string>()
-    for (const n of handle.graph().nodes) if (n.type === 'inputData' && n.name) nodeIdByName.set(n.name, n.id)
+    for (const n of handle.graph().nodes) {
+      if (n.type !== 'inputData') continue
+      const ref = feelRef(n)
+      if (ref) nodeIdByName.set(ref, n.id)
+    }
     inputPills = buildInputPills(currentModel, nodeIdByName, runFromPills)
     if (activeRun) inputPills.setValues(activeRun.inputs)
     handle.showInputPills(inputPills.items)
@@ -1235,7 +1248,9 @@ async function boot(root: HTMLElement): Promise<void> {
   // active run's hit rule(s) highlighted in Operate.
   const openTable = (modelId: string, decisionId: string): void => {
     if (mode === 'operate') {
-      const name = handle?.graph().nodes.find((n) => n.id === decisionId)?.name ?? ''
+      // Traces are keyed by the decision's FEEL identifier, not its display label.
+      const dnode = handle?.graph().nodes.find((n) => n.id === decisionId)
+      const name = dnode ? feelRef(dnode) : ''
       const tr = activeRun?.result.traces?.[name]
       const matched: number[] = []
       for (const t of tr?.tables ?? []) for (const m of t.matched ?? []) matched.push(m)

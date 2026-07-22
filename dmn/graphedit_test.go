@@ -155,6 +155,26 @@ func TestApplyGraphMoveExisting(t *testing.T) {
 	}
 }
 
+// TestApplyGraphResizeExisting checks resizing an existing node via the graph
+// save writes the new width/height into its DMNDI shape bounds and reads them
+// back — the round-trip that persists a manual resize in the modeler.
+func TestApplyGraphResizeExisting(t *testing.T) {
+	src := readModel(t, "dish_15.dmn")
+	e := graphEdit(t, src)
+	for i := range e.Nodes {
+		if e.Nodes[i].ID == "id_dish" {
+			e.Nodes[i].Width, e.Nodes[i].Height = 240, 96
+		}
+	}
+	out, err := dmn.ApplyGraph(src, e)
+	if err != nil {
+		t.Fatalf("ApplyGraph: %v", err)
+	}
+	if n := graphByName(t, out)["Dish"]; n.Width != 240 || n.Height != 96 {
+		t.Errorf("Dish bounds after resize = (%v x %v), want (240 x 96)", n.Width, n.Height)
+	}
+}
+
 // TestApplyGraphUnknownType errors on an unrecognised node type.
 func TestApplyGraphUnknownType(t *testing.T) {
 	src := readModel(t, "dish_15.dmn")
