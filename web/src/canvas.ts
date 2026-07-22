@@ -5,6 +5,7 @@ import ContextPadModule from 'diagram-js/lib/features/context-pad'
 import ConnectModule from 'diagram-js/lib/features/connect'
 import PaletteModule from 'diagram-js/lib/features/palette'
 import CreateModule from 'diagram-js/lib/features/create'
+import ResizeModule from 'diagram-js/lib/features/resize'
 import HandToolModule from 'diagram-js/lib/features/hand-tool'
 import KeyboardModule from 'diagram-js/lib/features/keyboard'
 import EditorActionsModule from 'diagram-js/lib/features/editor-actions'
@@ -264,7 +265,7 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
     modules: [
       dmnRendererModule, dmnRulesModule, dmnContextPadModule, dmnLabelEditingModule,
       dmnPaletteModule, ModelingModule, MoveModule, ContextPadModule, ConnectModule,
-      PaletteModule, CreateModule, HandToolModule, KeyboardModule, EditorActionsModule,
+      PaletteModule, CreateModule, ResizeModule, HandToolModule, KeyboardModule, EditorActionsModule,
       MoveCanvasModule, ZoomScrollModule, OverlaysModule, dmnLayouterModule,
       dmnSnappingModule,
     ],
@@ -506,6 +507,19 @@ export function renderGraph(container: HTMLElement, laid: Laid): ModelerHandle {
   // through the command stack so it undoes/redoes like every other edit.
   eventBus.on('dmn.setEdgeStyle', (e: { element?: Connection; style?: string }) => {
     if (e.element && e.style) commandStack.execute('connection.updateStyle', { connection: e.element, style: e.style })
+  })
+
+  // Resizing a node (drag its corner handles) runs through the command stack like
+  // any edit, so it undoes/redoes and marks the model dirty; the structural save
+  // then writes the new width/height into the DMNDI bounds (ApplyGraph/UpsertShape),
+  // so the size survives a reload. Give it a floor so a node can't be shrunk below
+  // where its badge and label stay legible — diagram-js reads context.minDimensions
+  // on resize.start. Input-data pills are a touch shorter than decisions/BKMs.
+  eventBus.on('resize.start', (event: { context?: { shape?: Shape; minDimensions?: { width: number; height: number } } }) => {
+    const ctx = event.context
+    if (!ctx || !ctx.shape) return
+    const isInput = (ctx.shape as { type?: string }).type === 'dmn:inputData'
+    ctx.minDimensions = { width: 80, height: isInput ? 36 : 50 }
   })
 
   let selectCb = (_sel: Selected): void => {}

@@ -83,6 +83,15 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Knoten-Größe im Modeler ändern (Resize).** Ein selektierter Knoten zeigt jetzt
+  Größen-Anfasser an den Ecken/Kanten (diagram-js-Resize); Ziehen ändert seine Größe,
+  läuft über den Command-Stack (Undo/Redo) und markiert das Modell als geändert. Die
+  neue Breite/Höhe wird beim Speichern in die **DMNDI-Bounds** (`dc:Bounds`) geschrieben
+  und beim Laden zurückgelesen — die Größe übersteht also einen Reload. Ein Minimum
+  (80×50, Eingabe-Pillen 80×36) hält Badge und Label lesbar. Betroffen sind
+  `web/src/dmn-rules.ts` (`shape.resize`-Regel) und `web/src/canvas.ts` (Resize-Modul +
+  Mindestgröße); die Persistenz stand bereits (`ApplyGraph`/`UpsertShape`). Go- und
+  e2e-Test (Größe wächst, Save round-trips; DMNDI-Round-Trip separat) verifiziert.
 - **Anzeigename und FEEL-Variablenname getrennt (Weg A, DMN-idiomatisch).** Der Name eines
   Elements ist jetzt zweigeteilt: ein **freies Anzeige-Label** (`@name`) und der **FEEL-Bezeichner**
   (`variable/@name`), unter dem die Engine bindet und den Ausdrücke referenzieren. Für Decision und
