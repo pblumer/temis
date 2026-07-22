@@ -364,10 +364,14 @@ Lesbarkeit). Ein **unbeschränkter** Grant (`evaluate`) deckt alles ab; ein
 `admin` bleibt Super-Scope.
 
 **Authorship (WP-105):** bei aktiver Auth stempelt der clio-Sink die
-authentifizierte `kid` als CloudEvents-Extension **`clioauthkid`** auf jedes
-Decision- und Flow-Event (ausgelassen bei offener API oder Legacy-Token); clio
-bindet die Extension in seine Hash-Kette. `temis-reaudit` verträgt Events mit
-`clioauthkid` unverändert.
+authentifizierte `kid` als **`data.clioauthkid`** auf jedes Decision- und
+Flow-Event (ausgelassen bei offener API oder Legacy-Token); clio bindet `data` in
+seine Hash-Kette, die Zuordnung ist über `event.data.clioauthkid` abfragbar. Das
+Feld liegt in `data` und nicht als CloudEvents-Extension, weil clios `write-events`
+ein Event als genau `{source, subject, type, data}` modelliert und unbekannte
+Top-Level-Felder abweist (`400 unknown field`); der Sink degradiert zusätzlich
+automatisch und ist per `-clio-authorship=false` abschaltbar (docs/80).
+`temis-reaudit` verträgt Events mit `clioauthkid` unverändert.
 
 ### 2.1 Modeler-Endpunkte (ADR-0016)
 
