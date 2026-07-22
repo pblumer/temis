@@ -51,16 +51,18 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Fixed
 
-- **clio-Verbindung bricht nicht mehr, wenn clio die `clioauthkid`-Extension nicht kennt.**
+- **clio-Verbindung bricht nicht mehr durch die Authorship-Zuordnung (`clioauthkid`).**
   Seit der Scoped-API-Key-Authorship (WP-105, ADR-0028) stempelt der Audit-Sink die `kid`
-  des authentifizierenden Keys als CloudEvents-Extension `clioauthkid`. Eine clio-Instanz,
-  die den Write-Body strikt dekodiert und die Extension (noch) nicht kennt, wies daraufhin
-  **jeden** Write mit `400 unknown field "clioauthkid"` ab — der Status kippte trotz
-  erreichbarer clio auf „getrennt". Der Sink degradiert jetzt automatisch: bei genau dieser
-  Ablehnung wird das Event **einmal** ohne die Extension nachgeschrieben und Authorship für
-  weitere Writes stillgelegt (eine WARN-Zeile), sodass der Audit-Trail erhalten bleibt.
-  Neuer Schalter `-clio-authorship` / `TEMIS_CLIO_AUTHORSHIP` (Default an) schaltet das
-  Stempeln vorab ab.
+  des authentifizierenden Keys auf jedes Decision-/Flow-Event. Sie wurde als **Top-Level-
+  CloudEvents-Extension** gesendet — clios `write-events` modelliert ein Event aber als genau
+  `{source, subject, type, data}` und wies das unbekannte Feld mit `400 unknown field
+  "clioauthkid"` ab (auch ohne registriertes Schema), sodass **jeder** authentifizierte Write
+  scheiterte und der Status trotz erreichbarer clio auf „getrennt" kippte. Die `kid` liegt
+  jetzt in **`data.clioauthkid`**: clio akzeptiert `data` frei und bindet es in die
+  Hash-Kette, also bleibt die Zuordnung manipulationssicher und über `event.data.clioauthkid`
+  abfragbar. Als Sicherheitsnetz degradiert der Sink zusätzlich automatisch (Event einmal
+  ohne das Feld nachschreiben, Authorship stilllegen, WARN); neuer Schalter
+  `-clio-authorship` / `TEMIS_CLIO_AUTHORSHIP` (Default an) schaltet das Stempeln vorab ab.
 - **Modeler-Login nach Browser-Neustart erreichbar & bleibt bestehen (WP-107).** Der
   Zugangs-Key lag im `sessionStorage` und starb mit dem Tab; nach einem Browser-Neustart
   war er weg, der erste `GET /v1/models` lief auf `HTTP 401` — und weil der Boot bei diesem

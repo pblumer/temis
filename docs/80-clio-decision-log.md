@@ -37,15 +37,15 @@ unverändert annimmt. Der `type` ist **versioniert** (`.v1`) und unterliegt SemV
   "source":      "temisd",
   "subject":     "/orders/42",
   "type":        "com.temis.decision.evaluated.v1",
-  "clioauthkid": "k_ci01",
   "data": {
-    "modelId":  "sha256-1f3a…",
-    "decision": "Dish",
-    "input":    { "Season": "Winter", "Guest Count": 8 },
-    "outputs":  { "Dish": "Roastbeef" },
-    "trace":    { "...": "opt-in: welche Regeln warum gefeuert haben" },
-    "engine":   "temisd v1.2.3",
-    "strict":   true
+    "modelId":     "sha256-1f3a…",
+    "decision":    "Dish",
+    "input":       { "Season": "Winter", "Guest Count": 8 },
+    "outputs":     { "Dish": "Roastbeef" },
+    "trace":       { "...": "opt-in: welche Regeln warum gefeuert haben" },
+    "engine":      "temisd v1.2.3",
+    "strict":      true,
+    "clioauthkid": "k_ci01"
   }
 }
 ```
@@ -60,7 +60,6 @@ liefert nur `source`/`subject`/`type`/`data`.
 | `source` | Konfiguration (`-clio-source`, Default `temisd`) | identifiziert die schreibende Instanz |
 | `subject` | Mapping aus der Eingabe/Decision (Abschnitt 3) | die clio-Geschäftsentität, hierarchischer Pfad |
 | `type` | konstant `com.temis.decision.evaluated.v1` | versioniert; Schema-Änderung ⇒ `.v2` |
-| `clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | CloudEvents-**Extension** für Authorship; **ausgelassen** bei offener API/Legacy-Token; clio bindet sie in die Hash-Kette. Kennt eine clio die Extension nicht (alter Stand oder strenges Event-Schema) und lehnt den Write mit `400 unknown field "clioauthkid"` ab, schreibt der Sink das Event **einmal** ohne die Extension nach und stempelt Authorship danach nicht mehr — der Audit-Trail geht nie verloren, nur der Autorenstempel. Mit `-clio-authorship=false` / `TEMIS_CLIO_AUTHORSHIP=false` lässt sich das Stempeln vorab abschalten. |
 | `data.modelId` | content-addressed `modelId` (`load_model` / Modell-Cache) | **exakte** Modellversion ⇒ reproduzierbar |
 | `data.decision` | `decision`-Argument der Auswertung | Name oder ID |
 | `data.input` | die übergebene `Input` | FEEL-Numbers als exakter **Dezimal-String** (ADR-0007) |
@@ -68,6 +67,17 @@ liefert nur `source`/`subject`/`type`/`data`.
 | `data.trace` | `Result.Trace` (WP-51) | **nur** wenn `explain`/Spur-Logging aktiv |
 | `data.engine` | `internal/version` | Nachvollziehbarkeit der Engine-Version |
 | `data.strict` | ob `WithStrictInput()` aktiv war (WP-52) | dokumentiert die Validierungsstrenge |
+| `data.clioauthkid` | `kid` des authentifizierenden API-Keys (WP-105, ADR-0028) | Authorship; **ausgelassen** bei offener API/Legacy-Token. Liegt **in `data`** (nicht als Top-Level-Extension), weil clios `write-events` ein Event als genau `{source, subject, type, data}` modelliert und unbekannte Top-Level-Felder abweist; `data` ist frei und wird in die Hash-Kette gebunden, also bleibt die Zuordnung manipulationssicher und über `event.data.clioauthkid` abfragbar. |
+
+> **Warum in `data` und nicht als CloudEvents-Extension?** clios `write-events`
+> dekodiert den Body strikt in `{source, subject, type, data}` und lehnt jedes weitere
+> Top-Level-Feld mit `400 unknown field "…"` ab — unabhängig von einem Schema. Ein früher
+> als Top-Level-`clioauthkid` gesendetes Feld ließ daher **jeden** authentifizierten Write
+> scheitern. Als Sicherheitsnetz degradiert der Sink zusätzlich automatisch: wird `data`
+> (z. B. durch ein registriertes Data-Schema) mit `clioauthkid` abgelehnt, schreibt er das
+> Event **einmal** ohne das Feld nach und stempelt Authorship danach nicht mehr (eine
+> WARN-Zeile) — der Audit-Trail geht nie verloren. `-clio-authorship=false` /
+> `TEMIS_CLIO_AUTHORSHIP=false` schaltet das Stempeln vorab ab.
 
 > **Optionales clio-Schema.** Der `data`-Vertrag lässt sich in clio als JSON Schema
 > hinterlegen (`register-event-schema` für `com.temis.decision.evaluated.v1`), sodass

@@ -282,7 +282,7 @@ func TestNewClioSinkRequiresURL(t *testing.T) {
 }
 
 // TestClioSinkStampsAuthorship covers WP-105: the authenticated key's kid is
-// stamped on the decision event as the clioauthkid extension.
+// stamped inside the decision event as data.clioauthkid.
 func TestClioSinkStampsAuthorship(t *testing.T) {
 	clio := &captureClio{}
 	stub := clio.start(t)
@@ -305,7 +305,7 @@ func TestClioSinkStampsAuthorship(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("clio writes = %d, want 1", len(calls))
 	}
-	if got := calls[0].Events[0].ClioAuthKid; got != "agent7" {
+	if got := calls[0].Events[0].Data.ClioAuthKid; got != "agent7" {
 		t.Errorf("clioauthkid = %q, want agent7", got)
 	}
 }
@@ -318,7 +318,7 @@ func TestClioSinkAuthorshipEmptyWhenOpen(t *testing.T) {
 	if rec := evalDish(t, h); rec.Code != http.StatusOK {
 		t.Fatalf("evaluate = %d, want 200", rec.Code)
 	}
-	if got := clio.calls()[0].Events[0].ClioAuthKid; got != "" {
+	if got := clio.calls()[0].Events[0].Data.ClioAuthKid; got != "" {
 		t.Errorf("clioauthkid = %q, want empty on open API", got)
 	}
 	// And the wire form omits the field entirely.

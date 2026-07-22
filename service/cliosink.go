@@ -261,9 +261,9 @@ type DecisionRecord struct {
 	Outputs  map[string]any
 	Trace    *dmn.Trace
 	Strict   bool
-	// AuthKid is the kid of the API key that authorised the evaluation, stamped on
-	// the event as the clioauthkid CloudEvents extension for authorship (WP-105).
-	// Empty when the API is open or the caller used the legacy token.
+	// AuthKid is the kid of the API key that authorised the evaluation, stamped in
+	// the event as data.clioauthkid for authorship (WP-105). Empty when the API is
+	// open or the caller used the legacy token.
 	AuthKid string
 }
 
@@ -300,23 +300,27 @@ type clioEvent struct {
 	Subject string            `json:"subject"`
 	Type    string            `json:"type"`
 	Data    decisionEventData `json:"data"`
-	// ClioAuthKid is the authorship CloudEvents extension: the kid of the key that
-	// authorised the evaluation (WP-105, ADR-0028 §3 Phase 3). Omitted when unknown
-	// (open API or legacy token). clio binds it into the event's hash chain.
-	ClioAuthKid string `json:"clioauthkid,omitempty"`
 }
 
 // decisionEventData is the versioned data payload of a decision event
 // (DecisionEventType). See docs/80-clio-decision-log.md for the field contract.
 type decisionEventData struct {
-	ModelID   string         `json:"modelId"`
-	Decision  string         `json:"decision"`
-	Input     map[string]any `json:"input"`
-	Outputs   map[string]any `json:"outputs"`
-	Trace     *dmn.Trace     `json:"trace,omitempty"`
-	Engine    string         `json:"engine,omitempty"`
-	Strict    bool           `json:"strict"`
-	InputHash string         `json:"inputHash"`
+	ModelID  string         `json:"modelId"`
+	Decision string         `json:"decision"`
+	Input    map[string]any `json:"input"`
+	Outputs  map[string]any `json:"outputs"`
+	Trace    *dmn.Trace     `json:"trace,omitempty"`
+	Engine   string         `json:"engine,omitempty"`
+	Strict   bool           `json:"strict"`
+	// ClioAuthKid is the authorship of the evaluation: the kid of the key that
+	// authorised it (WP-105, ADR-0028 §3 Phase 3). It lives inside data — not as a
+	// top-level CloudEvents extension — because clio's write-events API models an
+	// event as exactly {source, subject, type, data} and rejects unknown top-level
+	// fields; data is free-form and clio binds it into the event's hash chain, so
+	// authorship stays tamper-evident and queryable (event.data.clioauthkid).
+	// Omitted when unknown (open API or legacy token).
+	ClioAuthKid string `json:"clioauthkid,omitempty"`
+	InputHash   string `json:"inputHash"`
 }
 
 type clioPrecondition struct {
@@ -380,19 +384,19 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bo
 	}
 	body := clioWriteRequest{
 		Events: []clioEvent{{
-			Source:      c.source,
-			Subject:     subject,
-			Type:        DecisionEventType,
-			ClioAuthKid: authKid,
+			Source:  c.source,
+			Subject: subject,
+			Type:    DecisionEventType,
 			Data: decisionEventData{
-				ModelID:   rec.ModelID,
-				Decision:  rec.Decision,
-				Input:     rec.Input,
-				Outputs:   rec.Outputs,
-				Trace:     rec.Trace,
-				Engine:    c.engine,
-				Strict:    rec.Strict,
-				InputHash: hash,
+				ModelID:     rec.ModelID,
+				Decision:    rec.Decision,
+				Input:       rec.Input,
+				Outputs:     rec.Outputs,
+				Trace:       rec.Trace,
+				Engine:      c.engine,
+				Strict:      rec.Strict,
+				ClioAuthKid: authKid,
+				InputHash:   hash,
 			},
 		}},
 		Preconditions: []clioPrecondition{{
@@ -404,7 +408,7 @@ func (c *ClioSink) write(ctx context.Context, rec DecisionRecord) (idempotent bo
 		}},
 	}
 
-	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].ClioAuthKid = "" })
+	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].Data.ClioAuthKid = "" })
 }
 
 // send POSTs a pre-marshaled write-events body to clio and maps the response. A
@@ -479,7 +483,7 @@ type FlowRecord struct {
 	Input      map[string]any
 	Outputs    map[string]any
 	// AuthKid is the kid of the key that authorised the flow evaluation, stamped as
-	// the clioauthkid extension for authorship (WP-105). Empty when unknown.
+	// data.clioauthkid for authorship (WP-105). Empty when unknown.
 	AuthKid string
 }
 
@@ -503,25 +507,26 @@ type clioFlowWriteRequest struct {
 }
 
 type clioFlowEvent struct {
-	Source      string        `json:"source"`
-	Subject     string        `json:"subject"`
-	Type        string        `json:"type"`
-	Data        flowEventData `json:"data"`
-	ClioAuthKid string        `json:"clioauthkid,omitempty"`
+	Source  string        `json:"source"`
+	Subject string        `json:"subject"`
+	Type    string        `json:"type"`
+	Data    flowEventData `json:"data"`
 }
 
 // flowEventData is the versioned payload of a flow event (FlowEventType). The
-// descriptor makes the event self-contained for replay.
+// descriptor makes the event self-contained for replay. ClioAuthKid carries the
+// authorship inside data (see decisionEventData.ClioAuthKid for why).
 type flowEventData struct {
-	FlowID     string          `json:"flowId"`
-	Flow       string          `json:"flow,omitempty"`
-	Version    string          `json:"version,omitempty"`
-	Models     []string        `json:"models"`
-	Descriptor json.RawMessage `json:"descriptor"`
-	Input      map[string]any  `json:"input"`
-	Outputs    map[string]any  `json:"outputs"`
-	Engine     string          `json:"engine,omitempty"`
-	InputHash  string          `json:"inputHash"`
+	FlowID      string          `json:"flowId"`
+	Flow        string          `json:"flow,omitempty"`
+	Version     string          `json:"version,omitempty"`
+	Models      []string        `json:"models"`
+	Descriptor  json.RawMessage `json:"descriptor"`
+	Input       map[string]any  `json:"input"`
+	Outputs     map[string]any  `json:"outputs"`
+	Engine      string          `json:"engine,omitempty"`
+	ClioAuthKid string          `json:"clioauthkid,omitempty"`
+	InputHash   string          `json:"inputHash"`
 }
 
 // writeFlow builds the flow event and posts it to clio, idempotent on (subject,
@@ -540,20 +545,20 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 	}
 	body := clioFlowWriteRequest{
 		Events: []clioFlowEvent{{
-			Source:      c.source,
-			Subject:     subject,
-			Type:        FlowEventType,
-			ClioAuthKid: authKid,
+			Source:  c.source,
+			Subject: subject,
+			Type:    FlowEventType,
 			Data: flowEventData{
-				FlowID:     rec.FlowID,
-				Flow:       rec.Name,
-				Version:    rec.Version,
-				Models:     rec.Models,
-				Descriptor: rec.Descriptor,
-				Input:      rec.Input,
-				Outputs:    rec.Outputs,
-				Engine:     c.engine,
-				InputHash:  hash,
+				FlowID:      rec.FlowID,
+				Flow:        rec.Name,
+				Version:     rec.Version,
+				Models:      rec.Models,
+				Descriptor:  rec.Descriptor,
+				Input:       rec.Input,
+				Outputs:     rec.Outputs,
+				Engine:      c.engine,
+				ClioAuthKid: authKid,
+				InputHash:   hash,
 			},
 		}},
 		Preconditions: []clioPrecondition{{
@@ -565,7 +570,7 @@ func (c *ClioSink) writeFlow(ctx context.Context, rec FlowRecord) (idempotent bo
 		}},
 	}
 
-	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].ClioAuthKid = "" })
+	return c.postWithAuthorshipFallback(ctx, &body, func() { body.Events[0].Data.ClioAuthKid = "" })
 }
 
 // flowInputHash is the idempotency key for a flow evaluation: a stable digest over
