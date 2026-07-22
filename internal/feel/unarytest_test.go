@@ -202,3 +202,14 @@ func TestUnaryTestCompileErrors(t *testing.T) {
 		}
 	}
 }
+
+// TestCompileUnaryTestWithFuncs checks a unary-test cell that calls a
+// user-defined function (a BKM) resolves it as a known function when it is in
+// scope — parity with the output-expression path (WP: recursive BKM support).
+func TestCompileUnaryTestWithFuncs(t *testing.T) {
+	env := NewEnv(InputVar, "n")
+	funcs := map[string]*Func{"fact": {Name: "fact", Params: []string{"n"}}}
+	if _, err := CompileUnaryTestWith("> fact(n)", env, funcs); err != nil {
+		t.Fatalf("unary test calling a BKM should validate, got %v", err)
+	}
+}

@@ -232,6 +232,49 @@ func TestModelResponseCarriesTypedSchema(t *testing.T) {
 	}
 }
 
+// TestModelResponseCarriesFunctions checks the model response advertises the
+// model's user-defined functions (its BKMs) with their parameter names, so the
+// modeler's FEEL editors can complete and validate calls to them. The fixture is
+// a recursive factorial BKM — the reported case — which must both compile clean
+// (recursion is supported) and be listed as a callable function.
+func TestModelResponseCarriesFunctions(t *testing.T) {
+	const recursiveBKM = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/recursive-fact" name="RecursiveFact" id="def_fact">
+  <inputData id="id_n" name="N"><variable name="N" typeRef="number"/></inputData>
+  <businessKnowledgeModel id="id_fact" name="fact">
+    <variable name="fact" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="n" typeRef="number"/>
+      <literalExpression><text>if n &lt;= 1 then 1 else n * fact(n - 1)</text></literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+  <decision id="id_factorial" name="Factorial">
+    <variable name="Factorial" typeRef="number"/>
+    <informationRequirement><requiredInput href="#id_n"/></informationRequirement>
+    <knowledgeRequirement><requiredKnowledge href="#id_fact"/></knowledgeRequirement>
+    <literalExpression><text>fact(N)</text></literalExpression>
+  </decision>
+</definitions>`
+
+	h := newTestServer(t)
+	resp := decode[modelResponse](t, do(t, h, "POST", "/v1/models", "application/xml", []byte(recursiveBKM)))
+	for _, d := range resp.Diagnostics {
+		if d.Severity == "error" {
+			t.Fatalf("recursive BKM model should compile without errors, got %+v", resp.Diagnostics)
+		}
+	}
+	if len(resp.Functions) != 1 {
+		t.Fatalf("functions = %+v, want the single 'fact' BKM", resp.Functions)
+	}
+	if resp.Functions[0].Name != "fact" {
+		t.Errorf("function name = %q, want %q", resp.Functions[0].Name, "fact")
+	}
+	if len(resp.Functions[0].Params) != 1 || resp.Functions[0].Params[0] != "n" {
+		t.Errorf("function params = %+v, want [n]", resp.Functions[0].Params)
+	}
+}
+
 func TestEvaluateStrictRejectsMistypedInput(t *testing.T) {
 	h := newTestServer(t)
 	body := mustJSON(t, evaluateStatelessRequest{

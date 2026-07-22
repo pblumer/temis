@@ -6,8 +6,14 @@
 // parser/compiler that later evaluates the model — can validate FEEL cells
 // live in an in-browser editor, offline, with no server round-trip.
 //
-//	window.temisFeelValidate(expr, inputNamesCsv)       // output / literal expression
-//	window.temisFeelValidateUnary(test, inputNamesCsv)  // decision-table input cell (unary test)
+//	window.temisFeelValidate(expr, inputNamesCsv, funcNamesCsv)       // output / literal expression
+//	window.temisFeelValidateUnary(test, inputNamesCsv, funcNamesCsv)  // decision-table input cell (unary test)
+//
+// funcNamesCsv is an optional trailing argument: the names of the model's
+// user-defined functions (its BKMs), comma-separated like the input names, so a
+// call to one — a BKM's own recursive call included — validates as a known
+// function rather than an unknown name. It may be omitted or empty when the model
+// defines no functions.
 //
 // Each returns { ok: bool } on success or { ok: false, line, col, message }
 // with the engine's 1-based line/col diagnostic on failure.
@@ -39,6 +45,43 @@ func splitNames(csv string) []string {
 	return out
 }
 
+// modelFuncs turns the model's user-defined function names (its BKMs), passed as
+// a comma-separated list like the input names, into the engine's function map so
+// a call to one validates as a known function instead of an unknown name. This
+// is the path that makes a BKM's own recursive call resolve: the body is checked
+// with its own name in scope, exactly as compileBKMs does at evaluation time.
+//
+// Only the name matters here: it lets the parser assemble a multi-word BKM name
+// as one reference (the name oracle) and the compiler bind the call to a known
+// function. Argument arity is not an error either way (a mismatch evaluates to
+// null, as it does at runtime), so the signature is left empty — the modeler
+// carries the parameter names for its own completion hints, off this hot path.
+// A missing or blank argument yields no functions (the pre-existing behaviour).
+func modelFuncs(arg js.Value) map[string]*feel.Func {
+	if arg.Type() != js.TypeString {
+		return nil
+	}
+	names := splitNames(arg.String())
+	if len(names) == 0 {
+		return nil
+	}
+	funcs := make(map[string]*feel.Func, len(names))
+	for _, n := range names {
+		funcs[n] = &feel.Func{Name: n}
+	}
+	return funcs
+}
+
+// argAt returns args[i] or a JS undefined when the call passed fewer arguments,
+// so an optional trailing argument (the model functions) stays backward
+// compatible with callers that omit it.
+func argAt(args []js.Value, i int) js.Value {
+	if i < len(args) {
+		return args[i]
+	}
+	return js.Undefined()
+}
+
 // diag maps an engine error to the JS result object. ParseError and
 // CompileError both carry a 1-based source position; anything else degrades to
 // 0:0 with its message.
@@ -60,11 +103,13 @@ func diag(err error) map[string]any {
 }
 
 // validateOutput checks a full FEEL expression (output/literal cell) against
-// the given input names. CompileString runs parse + compile, so it catches both
-// syntax errors and unknown-variable references.
+// the given input names, with the model's user-defined functions (BKMs, args[2])
+// in scope so calls to them — a BKM's own recursion included — resolve as known
+// functions. CompileStringWith runs parse + compile, so it catches both syntax
+// errors and unknown-variable references.
 func validateOutput(_ js.Value, args []js.Value) any {
 	env := feel.NewEnv(splitNames(args[1].String())...)
-	_, err := feel.CompileString(args[0].String(), env)
+	_, err := feel.CompileStringWith(args[0].String(), env, modelFuncs(argAt(args, 2)))
 	return diag(err)
 }
 
@@ -74,7 +119,7 @@ func validateOutput(_ js.Value, args []js.Value) any {
 // ("?") — the decision-table compiler binds it per input column at runtime.
 func validateUnary(_ js.Value, args []js.Value) any {
 	env := feel.NewEnv(append([]string{feel.InputVar}, splitNames(args[1].String())...)...)
-	_, err := feel.CompileUnaryTest(args[0].String(), env)
+	_, err := feel.CompileUnaryTestWith(args[0].String(), env, modelFuncs(argAt(args, 2)))
 	return diag(err)
 }
 

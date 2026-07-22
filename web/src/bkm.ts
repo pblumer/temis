@@ -1,5 +1,5 @@
 import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
-import { ensureFeel, validateExpr, validateName } from './feel'
+import { ensureFeel, validateExpr, validateName, upsertModelFunction } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
 import { openBoxed } from './boxededitors'
@@ -78,6 +78,11 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   let hlRefresh: (() => void) | null = null
   const paramNames = (): string[] => params.map((p) => p.name.trim()).filter((n) => n !== '')
   const checkBody = (): void => {
+    // Keep this BKM registered as a function of the model, with its current
+    // parameters, so a recursive call in its own body (e.g. fact(n - 1) inside
+    // fact) resolves as a known function and is offered in completion — even for
+    // a just-created BKM the last model load did not yet know about.
+    if (view.name) upsertModelFunction({ name: view.name, params: paramNames() })
     const s = textarea.value.trim()
     const res = s === '' ? { ok: false, message: 'Body darf nicht leer sein' } : validateExpr(s, paramNames())
     textarea.classList.toggle('lit-invalid', !res.ok)

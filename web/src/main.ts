@@ -19,6 +19,7 @@ import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
 import { makeResizable } from './resizable'
 import { FEEL_TYPES } from './feeltypes'
+import { setModelFunctions } from './feel'
 import { installFetchAuth } from './session'
 import { mountAccess, createPublicToggle } from './access'
 import './style.css'
@@ -1411,6 +1412,10 @@ async function boot(root: HTMLElement): Promise<void> {
       // runs the model (ADR-0016).
       try {
         const detail = await getModel(modelId)
+        // Tell the FEEL editors about this model's user-defined functions (BKMs),
+        // so every cell completes and validates calls to them — a BKM's own
+        // recursive call included — instead of flagging the name as unknown.
+        setModelFunctions(detail.functions ?? [])
         const diags = detail.diagnostics ?? []
         handle.showDiagnostics(diags)
         const errors = diags.filter((d) => d.severity === 'error').length

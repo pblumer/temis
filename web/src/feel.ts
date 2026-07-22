@@ -9,14 +9,61 @@ type CellResult = { ok: boolean; line?: number; col?: number; message?: string }
 // parameter names (and whether it is variadic) for signature hints.
 export type FeelBuiltin = { name: string; params: string[]; variadic: boolean }
 
+// A model's user-defined function (a BKM): its name and ordered parameter names.
+// These are handed to the engine so calls to them validate as known functions,
+// and offered by the completion dropdown alongside the built-ins.
+export type ModelFunction = { name: string; params: string[] }
+
 declare global {
   interface Window {
     Go: new () => { run: (instance: WebAssembly.Instance) => void; importObject: WebAssembly.Imports }
     temisFeelValidateName?: (name: string) => { ok: boolean; message?: string }
-    temisFeelValidate?: (expr: string, namesCsv: string) => CellResult
-    temisFeelValidateUnary?: (test: string, namesCsv: string) => CellResult
+    temisFeelValidate?: (expr: string, namesCsv: string, funcNamesCsv?: string) => CellResult
+    temisFeelValidateUnary?: (test: string, namesCsv: string, funcNamesCsv?: string) => CellResult
     temisFeelBuiltins?: () => FeelBuiltin[]
   }
+}
+
+// The user-defined functions of the model currently open in the editor. Set once
+// per model load (setModelFunctions) and read by every FEEL field's validation
+// and completion, so a call to a BKM — a BKM's own recursion included — is a
+// known function everywhere, not just in the editor that happens to define it.
+let modelFuncs: ModelFunction[] = []
+
+// setModelFunctions records the open model's user-defined functions (its BKMs).
+// The modeler calls it after loading a model's detail, so every FEEL field then
+// completes and validates calls to those functions. Passing an empty list (a
+// model with no BKMs) clears any previous model's functions.
+export function setModelFunctions(fns: ModelFunction[]): void {
+  modelFuncs = fns.filter((f) => f.name.trim() !== '').map((f) => ({ name: f.name, params: f.params ?? [] }))
+}
+
+// modelFunctions returns the open model's user-defined functions, for the
+// completion dropdown to offer them alongside the engine's built-ins.
+export function modelFunctions(): ModelFunction[] {
+  return modelFuncs
+}
+
+// upsertModelFunction adds (or refreshes, by name) a single function, so an
+// editor can guarantee its own function is in scope while it is open — a BKM
+// editor registering the BKM it edits, so a recursive call resolves even for a
+// freshly created BKM the last model load did not yet know. A blank name is
+// ignored. The next model load's setModelFunctions replaces the whole set.
+export function upsertModelFunction(fn: ModelFunction): void {
+  if (fn.name.trim() === '') return
+  const next = { name: fn.name, params: fn.params ?? [] }
+  const i = modelFuncs.findIndex((f) => f.name === next.name)
+  if (i >= 0) modelFuncs[i] = next
+  else modelFuncs = [...modelFuncs, next]
+}
+
+// funcNamesCsv lists the current model functions' names for the wasm validators,
+// comma-separated like the input names. Only the name is needed to recognise a
+// call (the parameter list drives completion hints, built in the browser). It
+// returns '' when there are none, so the argument stays optional and the engine
+// skips it entirely.
+function funcNamesCsv(): string {
+  return modelFuncs.map((f) => f.name).join(',')
 }
 
 let loading: Promise<void> | null = null
@@ -65,7 +112,7 @@ export type CellCheck = { ok: boolean; message?: string }
 export function validateExpr(expr: string, names: string[]): CellCheck {
   const fn = window.temisFeelValidate
   if (!fn) return { ok: true }
-  return fn(expr, names.join(','))
+  return fn(expr, names.join(','), funcNamesCsv())
 }
 
 // validateUnary checks a decision-table input cell (a FEEL unary test, e.g.
@@ -74,7 +121,7 @@ export function validateExpr(expr: string, names: string[]): CellCheck {
 export function validateUnary(test: string, names: string[]): CellCheck {
   const fn = window.temisFeelValidateUnary
   if (!fn) return { ok: true }
-  return fn(test, names.join(','))
+  return fn(test, names.join(','), funcNamesCsv())
 }
 
 // builtins returns the engine's catalog of FEEL built-in functions, or an empty

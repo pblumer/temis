@@ -68,6 +68,8 @@ func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
 
 func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalOption) (GraphResult, error)
 
+func (d *Definitions) Functions() []FeelFunction
+
 func (d *Definitions) Graph() Graph
 
 func (d *Definitions) Index() ModelIndex
@@ -272,6 +274,11 @@ type EvalError struct {
 }
 
 type EvalOption func(*evalConfig)
+
+type FeelFunction struct {
+	Name	string		`json:"name"`
+	Params	[]string	`json:"params"`
+}
 
 type FilterEdit struct {
 	In	string	`json:"in"`

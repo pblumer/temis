@@ -6,7 +6,7 @@
 // real engine (src/feel.ts → cmd/feel-wasm), so it can never drift from what
 // actually evaluates (ADR-0016).
 
-import { builtins, ensureFeel } from './feel'
+import { builtins, ensureFeel, modelFunctions } from './feel'
 
 export type CompletionKind = 'variable' | 'function' | 'keyword'
 
@@ -29,10 +29,13 @@ const KEYWORDS = [
 ]
 
 // feelItems assembles the completion list for a FEEL field: the in-scope
-// variables first (most relevant), then the engine's built-in functions, then the
-// keywords. extra is for context-specific entries (e.g. the `?` input value in a
-// decision-table input cell). Built-ins are absent until the wasm module loads;
-// the list simply grows once it does.
+// variables first (most relevant), then the model's own functions (BKMs), then
+// the engine's built-in functions, then the keywords. extra is for
+// context-specific entries (e.g. the `?` input value in a decision-table input
+// cell). Built-ins are absent until the wasm module loads; the list simply grows
+// once it does. A model function is offered before the built-ins so a recursive
+// BKM call (e.g. `fact` inside `fact`) surfaces without scrolling past the whole
+// standard library.
 export function feelItems(names: string[], extra: CompletionItem[] = []): CompletionItem[] {
   const items: CompletionItem[] = [...extra]
   const seen = new Set(extra.map((e) => e.label))
@@ -41,6 +44,12 @@ export function feelItems(names: string[], extra: CompletionItem[] = []): Comple
       seen.add(n)
       items.push({ label: n, kind: 'variable', detail: 'Variable' })
     }
+  }
+  for (const f of modelFunctions()) {
+    if (seen.has(f.name)) continue
+    seen.add(f.name)
+    const sig = `${f.name}(${f.params.join(', ')})`
+    items.push({ label: f.name, kind: 'function', detail: sig, insert: f.name + '(', caretBack: 0 })
   }
   for (const b of builtins()) {
     const sig = `${b.name}(${b.params.join(', ')}${b.variadic ? ' …' : ''})`

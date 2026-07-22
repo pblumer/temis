@@ -13,11 +13,18 @@ const InputVar = "?"
 // to other decision variables (e.g. "< limit"). An empty cell or "-" always
 // matches.
 func CompileUnaryTest(src string, env *Env) (CompiledExpr, error) {
+	return CompileUnaryTestWith(src, env, nil)
+}
+
+// CompileUnaryTestWith is CompileUnaryTest with user-defined functions (BKMs) in
+// scope, so a cell that calls one (e.g. "> discount(?)") resolves it as a known
+// function rather than an unknown name. A nil map behaves like CompileUnaryTest.
+func CompileUnaryTestWith(src string, env *Env, funcs map[string]*Func) (CompiledExpr, error) {
 	expr, err := parseUnaryTest(src)
 	if err != nil {
 		return nil, err
 	}
-	return Compile(expr, env)
+	return CompileWith(expr, env, funcs)
 }
 
 // Matches evaluates a compiled unary test against scope and reports whether it
