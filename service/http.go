@@ -779,7 +779,15 @@ type modelResponse struct {
 	Decisions   []string                    `json:"decisions"`
 	Inputs      []string                    `json:"inputs"`
 	Schema      map[string][]dmn.InputField `json:"schema,omitempty"`
+	Functions   []dmn.FeelFunction          `json:"functions,omitempty"`
 	Diagnostics []diagnosticDTO             `json:"diagnostics,omitempty"`
+}
+
+// functionsOf lists the model's user-defined FEEL functions (its BKMs) so the
+// modeler's FEEL editors can complete and validate calls to them — a BKM's own
+// recursion included. Returns nil when the model defines none.
+func functionsOf(defs *dmn.Definitions) []dmn.FeelFunction {
+	return defs.Functions()
 }
 
 // schemaOf returns each executable decision's typed input schema, keyed by
@@ -947,6 +955,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
+		Functions:   functionsOf(sm.defs),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -992,6 +1001,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
+		Functions:   functionsOf(sm.defs),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -1060,6 +1070,7 @@ func (s *Server) handleRenameModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1152,6 +1163,7 @@ func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, patched []
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1264,6 +1276,7 @@ func (s *Server) handleSaveLiteral(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1294,6 +1307,7 @@ func (s *Server) handleCreateDecisionTable(w http.ResponseWriter, r *http.Reques
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1330,6 +1344,7 @@ func (s *Server) handleSaveDecisionTable(w http.ResponseWriter, r *http.Request)
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1366,6 +1381,7 @@ func (s *Server) handleSaveGraph(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1403,6 +1419,7 @@ func (s *Server) handleSaveModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }

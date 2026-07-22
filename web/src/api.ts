@@ -46,14 +46,23 @@ export type InputField = { name: string; type?: string; required: boolean; const
 // FEEL source position when applicable.
 export type Diagnostic = { severity: string; code: string; message: string; decisionId?: string; line?: number; col?: number }
 
+// FeelFunction mirrors dmn.FeelFunction: a model's user-defined invocable
+// function (a BKM), with its formal parameter names in order for a signature
+// hint. The modeler feeds these to its FEEL editors so calls to a BKM — from a
+// decision, a sibling BKM, or a BKM's own recursion — complete and validate as
+// known functions instead of being flagged as unknown.
+export type FeelFunction = { name: string; params: string[] }
+
 // ModelDetail mirrors the service modelResponse: decisions/inputs plus the typed
-// per-decision input schema used to drive the evaluate form.
+// per-decision input schema used to drive the evaluate form, and the model's
+// user-defined functions (BKMs) for FEEL completion/validation.
 export type ModelDetail = {
   modelId: string
   name?: string
   decisions: string[]
   inputs: string[]
   schema?: Record<string, InputField[]>
+  functions?: FeelFunction[]
   diagnostics?: Diagnostic[]
 }
 
