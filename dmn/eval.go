@@ -3,9 +3,9 @@ package dmn
 import (
 	"fmt"
 
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/boxed"
-	"github.com/pblumer/temis/internal/feel"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // evaluator runs a decision graph for one Evaluate call: it memoises each

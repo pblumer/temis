@@ -3,7 +3,7 @@ package dmn
 import (
 	"time"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
 )
 
 // Limits bounds the resources a single compilation or evaluation may consume,

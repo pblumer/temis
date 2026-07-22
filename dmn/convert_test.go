@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel/value"
 )
 
 func TestToValueAndBack(t *testing.T) {

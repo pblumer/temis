@@ -1,6 +1,6 @@
 package boxed
 
-import "github.com/pblumer/temis/internal/value"
+import "github.com/pblumer/feel/value"
 
 // Recorder collects a decision table's evaluation steps so the engine can hand
 // back a structured explanation (ADR-0013, WP-51). It is attached to a Scope via

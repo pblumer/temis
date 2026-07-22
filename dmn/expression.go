@@ -3,7 +3,7 @@ package dmn
 import (
 	"context"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
 )
 
 // CompiledExpression is a standalone compiled FEEL expression: the engine's FEEL

@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pblumer/temis/internal/feel"
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 )
 
 // parsePriorityList parses an output clause's list of allowed values (priority
