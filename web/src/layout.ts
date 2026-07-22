@@ -9,10 +9,14 @@ import dagre from '@dagrejs/dagre'
 //     flows with shared inputs read as clean, well-separated layers with bent
 //     waypoints instead of a pile of overlapping straight lines (WP-97/98). See
 //     dagreLayout for the rankdir/direction convention.
-//   - ortho auto-layout (the DRD modeler, opts.ortho) → the hand-rolled layered
-//     layout below plus orthogonal (right-angle) edge routing; opts.orientation
-//     flips whether inputs feed decisions from below (bottom-up) or above. This
-//     path is unchanged — dagre is used only for the flow views' plain path.
+//   - ortho auto-layout (the DRD modeler, opts.ortho) → dagre positions the nodes
+//     (same crossing-minimized layering as the flow views), then the orthogonal
+//     (right-angle) edge router below re-routes every edge over those positions —
+//     fanning a hub's inputs into a clean comb and threading skip edges through
+//     clear lanes. opts.orientation flips whether inputs feed decisions from below
+//     (bottom-up, dagre rankdir 'BT') or above (top-down, 'TB'). Adopting dagre
+//     here retired the hand-rolled barycentre layout the modeler used before — it
+//     piled long skip edges into overlapping columns; dagre keeps the layers apart.
 
 // LayoutOpts tunes the auto-layout for the DRD modeler; omitting it keeps the
 // legacy straight-diagonal, bottom-up, DMNDI-verbatim behaviour.
@@ -40,12 +44,9 @@ const SIZE: Record<string, { w: number; h: number }> = {
 const sizeOf = (type: string) => SIZE[type] ?? SIZE.decision
 
 const COL_GAP = 44
-const ROW_GAP = 80
 const PAD = 24
-// Vertical gap dagre keeps between rank boundaries. The legacy layout stacked
-// rows ~150px centre-to-centre (ROW_GAP + node height); dagre's ranksep is the
-// clear gap between rows, so ~90 lands the same centre distance once the node
-// height is added back.
+// Vertical gap dagre keeps between rank boundaries (ranksep is the clear gap
+// between rows, so the row centre-to-centre distance is RANK_GAP + node height).
 const RANK_GAP = 90
 
 // toLaidNode copies a graph node's render-driving fields into a LaidNode, taking
@@ -67,20 +68,25 @@ function borderPoint(n: LaidNode, tx: number, ty: number): { x: number; y: numbe
   return { x: cx + dx * t, y: cy + dy * t }
 }
 
-// dagreLayout positions the flow views' graph with dagre (the plain, no-opts
-// path). Requirement edges run "target requires source" (leaf inputs are the
-// sources); feeding dagre source→target with rankdir 'BT' puts the sources (rank
-// 0) at the bottom and the requiring decisions above them — the same picture the
-// legacy longest-chain model produced, but with dagre's crossing-minimization and
-// edge routing. y grows downward in both dagre's 'BT' output and diagram-js, so
-// positions map straight across (no inversion). Nodes/edges are fed in stable
-// input order, and dagre is deterministic on fixed input, so the same graph always
-// yields the same layout. Fills edgeWaypoints[edgeIndex] with dagre's routed
-// polyline for the edge builder in layout().
-function dagreLayout(graph: Graph, pos: Map<string, LaidNode>, edgeWaypoints: Map<number, { x: number; y: number }[]>): void {
+// dagreLayout positions a graph with dagre. Requirement edges run "target
+// requires source" (leaf inputs are the sources); feeding dagre source→target
+// puts the sources at rank 0. rankdir 'BT' (bottom-up) then places rank 0 at the
+// bottom with the requiring decisions above them; 'TB' (top-down) flips it, inputs
+// on top. y grows downward in both dagre's output and diagram-js, so positions map
+// straight across (no inversion). Nodes/edges are fed in stable input order, and
+// dagre is deterministic on fixed input, so the same graph always yields the same
+// layout. When edgeWaypoints is given, it is filled per edge index with dagre's
+// routed polyline (the flow views' path); when null, dagre positions the nodes
+// only and the caller re-routes the edges itself (the modeler's ortho path).
+function dagreLayout(
+  graph: Graph,
+  pos: Map<string, LaidNode>,
+  edgeWaypoints: Map<number, { x: number; y: number }[]> | null,
+  rankdir: 'BT' | 'TB' = 'BT',
+): void {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
   const g = new dagre.graphlib.Graph({ multigraph: true })
-  g.setGraph({ rankdir: 'BT', nodesep: COL_GAP, ranksep: RANK_GAP, marginx: PAD, marginy: PAD })
+  g.setGraph({ rankdir, nodesep: COL_GAP, ranksep: RANK_GAP, marginx: PAD, marginy: PAD })
   g.setDefaultEdgeLabel(() => ({}))
   for (const n of graph.nodes) {
     const s = sizeOf(n.type)
@@ -98,6 +104,7 @@ function dagreLayout(graph: Graph, pos: Map<string, LaidNode>, edgeWaypoints: Ma
     // dagre reports node centres; Laid wants the top-left corner.
     pos.set(n.id, toLaidNode(n, nd.x - s.w / 2, nd.y - s.h / 2, s.w, s.h))
   }
+  if (!edgeWaypoints) return
   graph.edges.forEach((e, i) => {
     if (!byId.has(e.source) || !byId.has(e.target)) return
     const ge = g.edge(e.source, e.target, String(i)) as { points?: { x: number; y: number }[] } | undefined
@@ -116,133 +123,16 @@ function dockDagre(s: LaidNode, t: LaidNode, pts: { x: number; y: number }[]): {
   return dedupePoints([first, ...pts.slice(1, -1), last])
 }
 
-// legacyAutoLayout is the hand-rolled layered layout kept for the DRD modeler's
-// ortho arrange (opts.ortho). The flow views use dagreLayout instead.
-function legacyAutoLayout(graph: Graph, pos: Map<string, LaidNode>, opts: LayoutOpts = {}): void {
-  const orientation = opts.orientation ?? 'bottomUp'
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
-  const req = new Map<string, string[]>() // node -> nodes it requires (below it)
-  const reqBy = new Map<string, string[]>() // node -> nodes that require it (above it)
-  for (const n of graph.nodes) {
-    req.set(n.id, [])
-    reqBy.set(n.id, [])
-  }
-  for (const e of graph.edges) {
-    req.get(e.target)?.push(e.source)
-    reqBy.get(e.source)?.push(e.target)
-  }
-
-  // Row = longest requirement chain (leaves/inputs at the bottom, row 0).
-  const memo = new Map<string, number>()
-  const rowOf = (id: string, seen: Set<string>): number => {
-    const cached = memo.get(id)
-    if (cached !== undefined) return cached
-    if (seen.has(id)) return 0 // cycle guard (the engine forbids cycles)
-    seen.add(id)
-    const reqs = req.get(id) ?? []
-    const row = reqs.length ? 1 + Math.max(...reqs.map((s) => rowOf(s, seen))) : 0
-    seen.delete(id)
-    memo.set(id, row)
-    return row
-  }
-
-  const rowIds = new Map<number, string[]>()
-  let maxRow = 0
-  for (const n of graph.nodes) {
-    const r = rowOf(n.id, new Set())
-    maxRow = Math.max(maxRow, r)
-    const bucket = rowIds.get(r) ?? []
-    bucket.push(n.id)
-    rowIds.set(r, bucket)
-  }
-
-  const rowWidth = (ids: string[]) => ids.reduce((acc, id) => acc + sizeOf(byId.get(id)!.type).w + COL_GAP, -COL_GAP)
-  const maxWidth = Math.max(0, ...[...rowIds.values()].map(rowWidth))
-
-  // yOf places row r vertically. Bottom-up (default) keeps leaf inputs at the
-  // bottom (row 0) with decisions stacking upward; top-down flips it so inputs
-  // sit on top and decisions grow downward.
-  const stepY = ROW_GAP + 70
-  const yOf = (r: number): number => PAD + (orientation === 'topDown' ? r : maxRow - r) * stepY
-
-  // pack lays out each row left-to-right in its current order, centred.
-  const pack = (): void => {
-    for (const [r, ids] of rowIds) {
-      let x = PAD + (maxWidth - rowWidth(ids)) / 2
-      const y = yOf(r)
-      for (const id of ids) {
-        const n = byId.get(id)!
-        const s = sizeOf(n.type)
-        pos.set(id, toLaidNode(n, x, y, s.w, s.h))
-        x += s.w + COL_GAP
-      }
-    }
-  }
-  pack()
-
-  // Order each row by the barycentre of its neighbours' horizontal centres, so a
-  // node sits under/over the elements it connects to (e.g. an input lands beneath
-  // the decisions it feeds) instead of wherever it happened to be listed. A few
-  // sweeps settle it; unconnected nodes keep their relative position.
-  const cx = (id: string): number => {
-    const p = pos.get(id)
-    return p ? p.x + p.w / 2 : 0
-  }
-  for (let iter = 0; iter < 8; iter++) {
-    for (const ids of rowIds.values()) {
-      const want = new Map<string, number>()
-      for (const id of ids) {
-        const nb = [...(req.get(id) ?? []), ...(reqBy.get(id) ?? [])]
-        want.set(id, nb.length ? nb.reduce((a, n) => a + cx(n), 0) / nb.length : cx(id))
-      }
-      ids.sort((a, b) => want.get(a)! - want.get(b)! || cx(a) - cx(b))
-    }
-    pack()
-  }
-
-  // With edges routed orthogonally, straight vertical connectors read best, so
-  // pull each node toward the horizontal centre of the nodes it connects to —
-  // without changing its in-row order or letting it overlap its row neighbours.
-  // A node with a single parent/child ends up directly under/over it (a straight
-  // edge); a hub settles above the centre of its inputs. Gauss-Seidel style: a
-  // few sweeps, alternating direction, using neighbours' current positions.
-  if (opts.ortho) {
-    const centre = (id: string): number => {
-      const p = pos.get(id)!
-      return p.x + p.w / 2
-    }
-    const rows = [...rowIds.values()]
-    for (let round = 0; round < 16; round++) {
-      const order = round % 2 ? [...rows].reverse() : rows
-      for (const ids of order) {
-        for (let i = 0; i < ids.length; i++) {
-          const p = pos.get(ids[i])!
-          const nb = [...(req.get(ids[i]) ?? []), ...(reqBy.get(ids[i]) ?? [])]
-          let want = nb.length ? nb.reduce((a, n) => a + centre(n), 0) / nb.length : centre(ids[i])
-          // Clamp between the in-row neighbours so order and spacing hold.
-          if (i > 0) {
-            const left = pos.get(ids[i - 1])!
-            want = Math.max(want, left.x + left.w + COL_GAP + p.w / 2)
-          }
-          if (i < ids.length - 1) {
-            const right = pos.get(ids[i + 1])!
-            want = Math.min(want, right.x - COL_GAP - p.w / 2)
-          }
-          p.x = want - p.w / 2
-        }
-      }
-    }
-  }
-}
-
 export function layout(graph: Graph, opts: LayoutOpts = {}): Laid {
   const pos = new Map<string, LaidNode>()
   // Filled by dagreLayout only (edgeIndex → routed polyline); empty otherwise.
   const dagreEdges = new Map<number, { x: number; y: number }[]>()
 
   // Use authored DMNDI bounds when every node has them (unless the caller forces
-  // a re-arrange), else auto-layout: dagre for the flow views, the legacy layered
-  // layout for the modeler's ortho arrange.
+  // a re-arrange), else auto-layout with dagre: the flow views take dagre's routed
+  // edges, the modeler's ortho path takes dagre's node positions only (edgeWaypoints
+  // = null) and re-routes the edges orthogonally below. opts.orientation picks the
+  // rank direction — bottom-up ('BT', inputs at the bottom) or top-down ('TB').
   const hasLayout =
     graph.nodes.length > 0 &&
     graph.nodes.every((n) => (n.width ?? 0) > 0 && (n.height ?? 0) > 0)
@@ -252,7 +142,7 @@ export function layout(graph: Graph, opts: LayoutOpts = {}): Laid {
       pos.set(n.id, toLaidNode(n, n.x ?? 0, n.y ?? 0, n.width ?? 0, n.height ?? 0))
     }
   } else if (opts.ortho) {
-    legacyAutoLayout(graph, pos, opts)
+    dagreLayout(graph, pos, null, (opts.orientation ?? 'bottomUp') === 'topDown' ? 'TB' : 'BT')
   } else {
     dagreLayout(graph, pos, dagreEdges)
   }

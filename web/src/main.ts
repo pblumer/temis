@@ -93,6 +93,11 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
             <button id="orient" class="tbtn design-only" type="button" title="Anordnung umschalten: Eingaben unten (Pfeile nach oben) ↔ Eingaben oben (Pfeile nach unten)">↥ Bottom-up</button>
+            <select id="edgeStyle" class="tbtn design-only edge-style-select" title="Form aller Verbindungen: eckig, gerundet oder direkt">
+              <option value="ortho">⌐ Eckig</option>
+              <option value="curved">◜ Gerundet</option>
+              <option value="direct">╱ Direkt</option>
+            </select>
             <button id="juice" class="tbtn" type="button" title="Effekte beim Auswerten: Datenfluss-Animation, Partikel & Combo ein-/ausschalten">⚡ Effekte</button>
           </span>
           <span id="typeEditor" class="type-editor design-only" style="display:none">
@@ -437,6 +442,18 @@ async function boot(root: HTMLElement): Promise<void> {
       dirty = true
       syncButtons()
     }
+  })
+
+  // Connection-shape selector: set the shape of every requirement edge at once —
+  // eckig (right-angle), gerundet (rounded corners) or direkt (straight line). A
+  // single undoable step; individual edges can still be overridden via their
+  // context pad. Changing edge shape re-routes them, so the model is marked dirty.
+  const edgeStyleSel = root.querySelector<HTMLSelectElement>('#edgeStyle')
+  edgeStyleSel?.addEventListener('change', () => {
+    if (!handle) return
+    handle.setAllEdgeStyle(edgeStyleSel.value as 'ortho' | 'curved' | 'direct')
+    dirty = true
+    syncButtons()
   })
 
   // The juice toggle turns the evaluation animation (dataflow, particles, combo) on
