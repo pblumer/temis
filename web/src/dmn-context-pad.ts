@@ -200,14 +200,16 @@ class DmnContextPadProvider {
     }
 
     // Rename: an explicit, deliberate gesture to inline-edit the element's name.
-    // This pencil icon and the F2 key are the ONLY ways to rename — double-click
-    // is reserved throughout the editor for switching to an element's content
-    // (see dmn-label-editing and canvas.ts). Requirement edges carry no name.
+    // This pencil icon and the Enter/F2 keys are the ONLY ways to rename an
+    // existing element — double-click is reserved throughout the editor for
+    // switching to an element's content (see dmn-label-editing and canvas.ts).
+    // The keys are named in the tooltip so they are discoverable. Requirement
+    // edges carry no name.
     if (element.type !== 'dmn:informationRequirement' && element.type !== 'dmn:knowledgeRequirement') {
       entries['rename'] = {
         group: 'edit',
         className: 'cp-icon',
-        title: 'Umbenennen',
+        title: 'Umbenennen (Enter / F2)',
         imageUrl: ICON_RENAME,
         action: { click: () => this.eventBus.fire('dmn.renameElement', { element }) },
       }

@@ -1,5 +1,18 @@
 import { test, expect } from '@playwright/test'
 
+// boxOf returns a locator's bounding box, retrying until it is available — under
+// heavy parallel load the shared dev server can re-render the canvas mid-test, so
+// a single boundingBox() call occasionally returns null (see palette.spec.ts).
+async function boxOf(locator: import('@playwright/test').Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  await expect(locator).toBeVisible()
+  for (let i = 0; i < 20; i++) {
+    const b = await locator.boundingBox()
+    if (b) return b
+    await locator.page().waitForTimeout(50)
+  }
+  throw new Error('no bounding box')
+}
+
 // Double-click switches to an element's CONTENT throughout the editor — it never
 // renames. Renaming is a deliberate gesture only: the context pad's pencil icon
 // or the F2 key. These guards pin both halves of that contract.
@@ -40,7 +53,7 @@ test('a decision with logic is renamable via the context pad', async ({ page }) 
   await page.goto('/')
   await page.getByText('BoxedCollections', { exact: true }).first().click()
   await page.locator('[data-element-id="id_numbers"]').first().click()
-  await page.locator('.djs-context-pad [title="Umbenennen"]').click()
+  await page.locator('.djs-context-pad [title^="Umbenennen"]').click()
 
   await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
   await expect(page.locator('.dt-overlay')).toHaveCount(0)
@@ -63,14 +76,15 @@ test('double-clicking a decision never inline-renames; F2 does', async ({ page }
   await expect(canvas).toBeVisible()
   const paletteEntry = page.locator('.djs-palette [title="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
-  const box = await canvas.boundingBox()
-  if (!box) throw new Error('no canvas')
+  const box = await boxOf(canvas)
   await paletteEntry.click()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await expect(page.locator('.djs-shape')).toHaveCount(1)
-  // A freshly dropped decision starts an inline rename; dismiss it so we test the
-  // double-click gesture on a settled element.
+  // A freshly dropped decision starts an inline rename so it can be named in the
+  // same gesture; the box must appear. Dismiss it so we test the double-click
+  // gesture on a settled element.
+  await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('.djs-direct-editing-content')).toHaveCount(0)
 
@@ -86,5 +100,57 @@ test('double-clicking a decision never inline-renames; F2 does', async ({ page }
   await page.locator('.djs-shape').first().click()
   await expect(page.locator('.djs-context-pad')).toBeVisible()
   await page.keyboard.press('F2')
+  await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
+})
+
+// Creating an element and naming it is one gesture: the freshly dropped decision
+// opens its inline-rename box, and typing + Enter names it directly — no second
+// trip to the pencil icon.
+test('a freshly dropped decision can be named directly in the same gesture', async ({ page }) => {
+  await page.goto('/')
+  const model = 'E2E NameOnCreate ' + Date.now()
+  await page.locator('#newModel').click()
+  const dialog = page.locator('.dlg-modal')
+  await expect(dialog).toBeVisible()
+  await dialog.locator('.dlg-input').fill(model)
+  await dialog.getByRole('button', { name: 'Anlegen' }).click()
+  await expect(page.locator('.model-item', { hasText: model })).toHaveClass(/is-current/)
+
+  const canvas = page.locator('.djs-container').first()
+  await expect(canvas).toBeVisible()
+  const paletteEntry = page.locator('.djs-palette [title="Decision erstellen"]')
+  await expect(paletteEntry).toBeVisible()
+  const box = await boxOf(canvas)
+  await paletteEntry.click()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page.locator('.djs-shape')).toHaveCount(1)
+
+  // The rename box opens on its own; type the name and commit with Enter.
+  const editor = page.locator('.djs-direct-editing-content')
+  await expect(editor).toBeVisible()
+  const name = 'Rabattstufe'
+  await editor.selectText()
+  await page.keyboard.type(name)
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.djs-direct-editing-content')).toHaveCount(0)
+
+  // The node now carries the typed name, not the "Neue Decision" default.
+  await expect(page.locator(`.djs-element:has-text("${name}")`)).toHaveCount(1)
+  await expect(page.locator('.djs-element:has-text("Neue Decision")')).toHaveCount(0)
+})
+
+// Enter is a second keyboard rename next to F2 (Finder-style): on the selected
+// nameable shape it opens the inline-rename box.
+test('Enter renames the selected element', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('BoxedCollections', { exact: true }).first().click()
+  await expect(page.locator('.djs-palette')).toBeVisible()
+
+  // Select a settled decision (deselect first so the selection is fresh), then
+  // press Enter — the inline-rename box must open.
+  await page.locator('[data-element-id="id_numbers"]').first().click()
+  await expect(page.locator('.djs-context-pad')).toBeVisible()
+  await page.keyboard.press('Enter')
   await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
 })

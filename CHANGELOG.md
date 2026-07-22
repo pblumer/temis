@@ -83,6 +83,19 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Neues Element direkt benennen + Enter als Umbenennen-Shortcut (Modeler).** Ein frisch
+  eingefügtes Element (aus der Palette abgelegt oder über das Context-Pad angehängt) öffnet
+  jetzt **sofort** sein Inline-Namensfeld — der Name lässt sich in einem Zug tippen, statt
+  danach erst das Bleistift-Symbol zu suchen; wer den Vorschlag („Neue Decision") behalten
+  will, drückt einfach `Esc`. Zusätzlich benennt neben `F2` nun auch **`Enter`** das
+  selektierte Element um (Finder-Manier; die meisten anderen Tasten sind vom Browser/OS
+  belegt) — der Context-Pad-Tooltip weist die Tasten aus („Umbenennen (Enter / F2)"). Beide
+  Wege ignorieren Modifier und Eingabe-Fokus (FEEL-Editor, Modell-Suche, Buttons), damit sie
+  nie eine für etwas anderes gedachte Taste abfangen; Laden und Undo/Redo lösen kein
+  Auto-Umbenennen aus. Das Inline-Namensfeld umbricht lange Namen jetzt innerhalb des Knotens
+  und zentriert sie vertikal, statt über die Ränder hinauszulaufen. Betroffen sind
+  `web/src/dmn-label-editing.ts` und `web/src/dmn-context-pad.ts`; headless (Chromium)
+  verifiziert.
 - **Strukturierte Typen im Modeler bearbeiten + über MCP.** Die Typen-Verwaltung des
   Modelers zeigte strukturierte Typen bisher nur schreibgeschützt („struct"). Jetzt gibt es
   einen **Feld-Editor**: eine „Struktur"-Umschaltung mit Feldzeilen (Name + Typ + Collection,
