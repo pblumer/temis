@@ -51,6 +51,17 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Fixed
 
+- **Modeler-Login nach Browser-Neustart erreichbar & bleibt bestehen (WP-107).** Der
+  Zugangs-Key lag im `sessionStorage` und starb mit dem Tab; nach einem Browser-Neustart
+  war er weg, der erste `GET /v1/models` lief auf `HTTP 401` — und weil der Boot bei diesem
+  Fehler früh abbrach, bevor die Zugriff-Sektion (`mountAccess`) gemountet wurde, blieb das
+  Login-Feld unsichtbar: der Nutzer sah nur „Modelle laden fehlgeschlagen (HTTP 401)" ohne
+  Weg zurück. Zwei Korrekturen: (a) der Bearer wird jetzt persistent im `localStorage`
+  gehalten (mit client-seitigem 30-Tage-Ablauf; Alt-Tokens aus dem `sessionStorage` werden
+  einmalig migriert), sodass ein neu geöffneter Browser angemeldet bleibt; (b) schlägt der
+  Erst-Load dennoch fehl (401/403), wird die Zugriff-Sektion jetzt sofort eingeblendet und
+  aufgeklappt statt versteckt, mit klarem Hinweis „Nicht angemeldet — bitte in der Sidebar
+  unter ‚Zugriff' anmelden."
 - **`DELETE /v1/models/{id}` ist mit `-models-dir` dauerhaft (M3):** löschte bisher nur den
   Cache, sodass ein persistiertes Modell beim nächsten Zugriff zurückkehrte.
 - **Testsuite offline vollständig grün (M5):** die Scope-Autorisierungs-Tests rufen nicht mehr
