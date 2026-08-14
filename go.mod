@@ -12,7 +12,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/pblumer/feel v0.0.0-20260722114835-38f697db2c7d
 	golang.org/x/net v0.57.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
