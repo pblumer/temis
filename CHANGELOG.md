@@ -15,8 +15,14 @@ gilt für die öffentliche Go-API (`package dmn`) und die HTTP-API (ADR-0019,
 
 ## [Unreleased]
 
-Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Version
-`0.0.0-dev`. Bisher umgesetzt (Auszug, voller Stand in `docs/20-roadmap.md`):
+_Noch keine unveröffentlichten Änderungen._
+
+## [0.1.0] - 2026-07-06
+
+Erstes getaggtes Release. Ab hier tragen die Binaries eine echte SemVer-Version
+(zuvor `0.0.0-dev`); die öffentliche `dmn/`-API ist als **v1** zugesagt (ADR-0019).
+Der folgende Auszug fasst den bis hierher umgesetzten Stand zusammen (voller Stand
+in `docs/20-roadmap.md`).
 
 ### Security
 
