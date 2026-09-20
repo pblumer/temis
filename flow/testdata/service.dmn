@@ -12,10 +12,26 @@
     <literalExpression><text>if Applicant Age &gt;= 18 then "ELIGIBLE" else "INELIGIBLE"</text></literalExpression>
   </decision>
 
+  <!-- Routing is a decision TABLE while Eligibility stays a literal expression:
+       the service then has exactly one traceable table, which is what lets a
+       test tell "the service contributed its rules" from "the service ran". -->
   <decision id="id_route" name="Routing">
     <variable name="Routing" typeRef="string"/>
     <informationRequirement><requiredDecision href="#id_elig"/></informationRequirement>
-    <literalExpression><text>if Eligibility = "ELIGIBLE" then "ACCEPT" else "DECLINE"</text></literalExpression>
+    <decisionTable id="dt_route" hitPolicy="UNIQUE">
+      <input id="in_route_elig">
+        <inputExpression id="ie_route_elig" typeRef="string"><text>Eligibility</text></inputExpression>
+      </input>
+      <output id="out_route" name="Routing" typeRef="string"/>
+      <rule id="r_route_accept">
+        <inputEntry id="e_route_accept"><text>"ELIGIBLE"</text></inputEntry>
+        <outputEntry id="o_route_accept"><text>"ACCEPT"</text></outputEntry>
+      </rule>
+      <rule id="r_route_decline">
+        <inputEntry id="e_route_decline"><text>"INELIGIBLE"</text></inputEntry>
+        <outputEntry id="o_route_decline"><text>"DECLINE"</text></outputEntry>
+      </rule>
+    </decisionTable>
   </decision>
 
   <decisionService id="id_approval" name="Approval">

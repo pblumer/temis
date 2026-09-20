@@ -62,6 +62,10 @@ type Result struct {
 // Evaluate ist variadisch erweiterbar; ohne Optionen unverändert (abwärtskompatibel).
 func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
 
+// Ein Decision Service nimmt dieselben Optionen — sonst wäre die veröffentlichte
+// Schnittstelle genau die Stelle, an der eine Erklärung verloren geht.
+func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
+
 type EvalOption func(*evalConfig)
 func WithTrace() EvalOption   // opt-in: füllt Result.Trace
 ```
@@ -112,6 +116,19 @@ type TraceRule      struct {
 }
 type TraceCondition struct { Input, Entry string; Matched bool }
 ```
+
+**Decision Service.** `CompiledService.Evaluate(…, WithTrace())` liefert eine
+`Trace` nach denselben Regeln: je Decision Table, die der Service tatsächlich
+ausgeführt hat, ein Eintrag in Auswertungsreihenfolge. Die **Grenze gilt auch in
+der Spur** — eine Input-Decision liefert der Aufrufer, der Service berechnet sie
+nie, also taucht ihre Tabelle nicht auf. Die Spur eines Service ist ein Bericht
+darüber, was *hinter der Schnittstelle* geschah, nicht über den ganzen Graphen.
+
+`WithStrictInput()` bleibt beim Service **wirkungslos** (angenommen, aber
+ignoriert): strenge Validierung prüft gegen das deklarierte Schema einer Decision
+(WP-52), und ein Service veröffentlicht keines — seine Eingaben sind Input Data
+plus Input-Decisions, die `CompiledService` bisher nicht typisiert trägt. Ein
+Service-Schema ist die Folgearbeit, die der Option dort Bedeutung gäbe.
 
 HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
 dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
@@ -438,7 +455,8 @@ ADR-0019). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
   `Engine`/`New`/`Option` (+ `WithLimits`), `Compile`, `Definitions`
   (+ `Decision`/`Service`/`InputSchema`/`Index`/`ModelName`), `CompiledDecision`
   (+ `Evaluate`/`EvalOption`/`WithTrace`/`WithStrictInput`/`ValidateInput`),
-  `CompiledService`, `Input`/`Result`/`Trace`, `Diagnostics`/`Diagnostic`/`Sev*`,
+  `CompiledService` (+ `Evaluate`/`ID`/`Name`), `Input`/`Result`/`Trace`,
+  `Diagnostics`/`Diagnostic`/`Sev*`,
   die `Code*`-Konstanten, `EvalError`/`InputError`, `InputField`/`InputProblem`,
   `Limits`. Diese Menge ist durch den **API-Surface-Golden-Test**
   (`dmn/apisurface_test.go` → `testdata/api/dmn.api`) eingefroren: jede Änderung

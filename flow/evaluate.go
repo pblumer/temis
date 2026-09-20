@@ -32,9 +32,10 @@ func WithMaxSteps(n int) Option {
 }
 
 // WithTrace makes Evaluate attach a decision trace to Result.Trace: the table
-// traces of every decision step, in evaluation order, so a caller can see which
-// rules fired across the whole flow. Service steps contribute no trace (the dmn
-// service API produces none). Without it, Result.Trace stays nil.
+// traces of every step, in evaluation order, so a caller can see which rules
+// fired across the whole flow. A service step contributes the tables the service
+// ran behind its interface — the decisions it computed, not the input decisions
+// the step supplied as boundaries. Without it, Result.Trace stays nil.
 func WithTrace() Option {
 	return func(c *evalConfig) { c.trace = true }
 }
@@ -122,6 +123,13 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 	all := make(map[string]any)
 	var traceTables []dmn.TableTrace
 
+	// One option set for every step, whichever kind it turns out to be: a flow's
+	// trace is only as complete as its least-traced step.
+	var evalOpts []dmn.EvalOption
+	if cfg.trace {
+		evalOpts = append(evalOpts, dmn.WithTrace())
+	}
+
 	for _, idx := range f.order {
 		if err := ctx.Err(); err != nil {
 			return dmn.Result{}, err
@@ -158,17 +166,17 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 			} else if len(probs) > 0 {
 				return dmn.Result{}, fmt.Errorf("flow: step %q: %w", s.ID, &dmn.InputError{Problems: probs})
 			}
-			var evalOpts []dmn.EvalOption
-			if cfg.trace {
-				evalOpts = append(evalOpts, dmn.WithTrace())
-			}
 			res, err = dec.Evaluate(ctx, stepIn, evalOpts...)
 		} else if svc, svcErr := defs.Service(s.Decision); svcErr == nil {
 			stepIn, berr := f.buildInput(ctx, idx, nil, in, stepOut)
 			if berr != nil {
 				return dmn.Result{}, berr
 			}
-			res, err = svc.Evaluate(ctx, stepIn)
+			// A service step is traced like a decision step. It was not, because the
+			// service API took no options — which made a flow's trace silently skip
+			// whichever steps happened to be published behind an interface, the one
+			// place where a reader is least able to notice the omission.
+			res, err = svc.Evaluate(ctx, stepIn, evalOpts...)
 		} else {
 			return dmn.Result{}, &Error{Diagnostics: Diagnostics{{Code: CodeTargetNotFound, Step: s.ID, Message: decErr.Error()}}}
 		}
