@@ -27,7 +27,7 @@ test('drop a decision and create its table without a manual save first', async (
   // to place it. Placing auto-selects the new shape and opens its context pad.
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  const paletteEntry = page.locator('.djs-palette [title="Decision erstellen"]')
+  const paletteEntry = page.locator('.djs-palette [aria-label="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await canvas.boundingBox()
   if (!box) throw new Error('no canvas')

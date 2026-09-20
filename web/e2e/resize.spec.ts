@@ -29,7 +29,7 @@ test('a node can be resized on the canvas and the change is savable', async ({ p
   // Drop a decision and dismiss its auto-rename box.
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  await page.locator('.djs-palette [title="Decision erstellen"]').click()
+  await page.locator('.djs-palette [aria-label="Decision erstellen"]').click()
   const cbox = await canvas.boundingBox()
   if (!cbox) throw new Error('no canvas')
   await page.mouse.move(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2)

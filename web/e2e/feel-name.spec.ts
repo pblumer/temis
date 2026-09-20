@@ -29,7 +29,7 @@ test('a node takes a free-form display label and a separate, validated FEEL name
   // Drop a decision; the auto-rename box opens.
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  await page.locator('.djs-palette [title="Decision erstellen"]').click()
+  await page.locator('.djs-palette [aria-label="Decision erstellen"]').click()
   const box = await boxOf(canvas)
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)

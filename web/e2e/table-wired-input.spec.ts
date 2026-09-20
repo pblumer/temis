@@ -21,7 +21,7 @@ async function createModel(page: Page): Promise<void> {
 async function dropDecision(page: Page): Promise<string> {
   const canvas = page.locator('#canvas')
   await expect(canvas).toBeVisible()
-  const paletteEntry = canvas.locator('.djs-palette [title="Decision erstellen"]')
+  const paletteEntry = canvas.locator('.djs-palette [aria-label="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await canvas.boundingBox()
   if (!box) throw new Error('no canvas')
