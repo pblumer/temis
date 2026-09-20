@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	dmnv1 "github.com/pblumer/temis/internal/gen/dmnv1"
@@ -17,15 +14,14 @@ import (
 )
 
 // h2cClient returns an HTTP client that speaks cleartext HTTP/2, so the gRPC
-// protocol (and the bidi EvaluateBatch stream) reach the handler over h2c.
+// protocol (and the bidi EvaluateBatch stream) reach the handler over h2c. The
+// transport selects h2c via Protocols, mirroring the server side below — the
+// golang.org/x/net/http2 route is deprecated in favour of it.
 func h2cClient() *http.Client {
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
 	return &http.Client{
-		Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, network, addr)
-			},
-		},
+		Transport: &http.Transport{Protocols: protocols},
 	}
 }
 

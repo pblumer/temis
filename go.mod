@@ -1,6 +1,6 @@
 module github.com/pblumer/temis
 
-// Minimum Go 1.25: connectrpc.com/connect v1.20.0 requires it. This also keeps
+// Minimum Go 1.25: connectrpc.com/connect v1.21.0 requires it. This also keeps
 // clear of the stdlib CVEs the govulncheck gate (WP-137) flags — notably
 // GO-2025-4007 (quadratic crypto/x509 name-constraint check, reachable via
 // ListenAndServeTLS), fixed in Go 1.24.9+ and never backported to the EOL 1.23
@@ -9,13 +9,9 @@ module github.com/pblumer/temis
 go 1.25.0
 
 require (
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/pblumer/feel v0.0.0-20260722114835-38f697db2c7d
-	golang.org/x/net v0.57.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
-require (
-	github.com/cockroachdb/apd/v3 v3.2.3 // indirect
-	golang.org/x/text v0.40.0 // indirect
-)
+require github.com/cockroachdb/apd/v3 v3.2.3 // indirect
