@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // typecheckModel statically type-checks every decision's FEEL expressions
@@ -138,21 +138,23 @@ func buildTypeEnv(m *model.Definitions, dec *model.Decision, items map[string]*f
 
 	for _, id := range dec.RequiredInputs {
 		in, ok := inputByID[id]
-		if !ok || in.Name == "" {
+		// Bind under the FEEL identifier (variable name, else display name), the same
+		// key envNames/schema use, so type-checking sees the names expressions use.
+		if !ok || in.RefName() == "" {
 			continue
 		}
 		ref := in.TypeRef
 		if ref == "" {
-			ref = typeByExpr[in.Name]
+			ref = typeByExpr[in.RefName()]
 		}
-		env.Set(in.Name, resolveType(ref, items))
+		env.Set(in.RefName(), resolveType(ref, items))
 	}
 	for _, id := range dec.RequiredDecisions {
 		d, ok := decByID[id]
-		if !ok || d.Name == "" {
+		if !ok || d.RefName() == "" {
 			continue
 		}
-		env.Set(d.Name, resolveType(d.VariableTypeRef, items))
+		env.Set(d.RefName(), resolveType(d.VariableTypeRef, items))
 	}
 	return env
 }

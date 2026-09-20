@@ -3,8 +3,8 @@ package boxed
 import (
 	"testing"
 
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // mkTableOut builds a single-input table whose one output carries a priority

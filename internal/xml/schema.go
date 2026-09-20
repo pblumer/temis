@@ -35,12 +35,13 @@ type Definitions struct {
 // the ones it expects the caller to supply (inputDecision / inputData), all by
 // href.
 type DecisionService struct {
-	ID                    string `xml:"id,attr,omitempty"`
-	Name                  string `xml:"name,attr,omitempty"`
-	OutputDecisions       []Ref  `xml:"outputDecision"`
-	EncapsulatedDecisions []Ref  `xml:"encapsulatedDecision"`
-	InputDecisions        []Ref  `xml:"inputDecision"`
-	InputData             []Ref  `xml:"inputData"`
+	ID                    string    `xml:"id,attr,omitempty"`
+	Name                  string    `xml:"name,attr,omitempty"`
+	Variable              *Variable `xml:"variable"`
+	OutputDecisions       []Ref     `xml:"outputDecision"`
+	EncapsulatedDecisions []Ref     `xml:"encapsulatedDecision"`
+	InputDecisions        []Ref     `xml:"inputDecision"`
+	InputData             []Ref     `xml:"inputData"`
 }
 
 // ItemDef mirrors <itemDefinition>. Nested components are captured one level
@@ -224,6 +225,7 @@ type Output struct {
 	Label         string `xml:"label,attr,omitempty"`
 	TypeRef       string `xml:"typeRef,attr,omitempty"`
 	AllowedValues *Text  `xml:"outputValues>text"`
+	DefaultOutput *Text  `xml:"defaultOutputEntry>text"`
 }
 
 // Rule mirrors a decision table <rule> row.

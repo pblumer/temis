@@ -24,11 +24,9 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-
 	"github.com/pblumer/temis/dmn"
 	"github.com/pblumer/temis/mcp"
+	"github.com/pblumer/temis/quality"
 	webui "github.com/pblumer/temis/web"
 )
 
@@ -58,6 +56,28 @@ type Server struct {
 	// there so they survive a restart. Empty leaves key management disabled (404).
 	keyStoreDir string
 
+	// publicEvaluate, when true, opens the evaluate scope to anonymous callers even
+	// while scoped keys guard everything else (ADR-0035, option B): every evaluation
+	// surface — the HTTP evaluate routes, gRPC Evaluate/EvaluateBatch and the MCP
+	// evaluate tool — is reachable without a token, while models:write, admin,
+	// assist, git and flow keep requiring one. Off by default. Set via
+	// WithPublicEvaluate / -public-evaluate / TEMIS_PUBLIC_EVALUATE.
+	publicEvaluate bool
+
+	// publicSeed holds the static -public-models entries collected by the option;
+	// NewServer folds them into publicModels (as immutable static entries).
+	publicSeed []string
+
+	// publicModels is the set of models whose evaluation is open to anonymous
+	// callers even when auth is configured (ADR-0035, option A). An entry matches a
+	// model by its content-addressed modelId (sha256:…) or by its display name, so a
+	// re-saved model stays public by name. It merges immutable static entries
+	// (-public-models) with runtime-managed ones toggled through the admin API
+	// (WP-107 follow-up), which persist to public.json in the access-control dir
+	// (-keys-dir). It applies to the id-addressed HTTP evaluate routes only; the
+	// stateless POST /v1/evaluate is covered by publicEvaluate. Built by NewServer.
+	publicModels *publicSet
+
 	// auth is the Authenticator assembled from token/keysFile/bootstrapAdminKey by
 	// NewServer. It authenticates kid.secret bearers and drives requireScope.
 	// When it reports !enabled() the /v1 surface is open (the historical default).
@@ -66,6 +86,23 @@ type Server struct {
 	// keyStore is the concrete keystore behind auth, retained (non-nil) only when a
 	// persistent key store is configured, so the lifecycle handlers can mutate it.
 	keyStore *keystore
+
+	// externalURL is the server's canonical public base URL (scheme+host), the
+	// OAuth issuer (ADR-0038). Set via WithExternalURL / -external-url. Empty leaves
+	// the OAuth authorization-server endpoints unmounted (the feature stays off).
+	externalURL string
+
+	// oauthRedirectHosts / oauthScopes tune the OAuth server when enabled:
+	// additional allowed redirect hosts beyond the built-in defaults, and the
+	// scope set an issued token may carry (empty = the least-privilege default).
+	oauthRedirectHosts []string
+	oauthScopes        []Scope
+
+	// sessions / oauth are the cookie-session store and OAuth authorization server,
+	// built by NewServer only when externalURL is set and a managed keystore exists
+	// (OAuth tokens are minted as managed keys). Nil leaves the endpoints unmounted.
+	sessions *sessionStore
+	oauth    *oauthServer
 
 	// listModels enables the GET /v1/models listing endpoint. When false the
 	// handler responds 404, so callers cannot enumerate the cached models (and
@@ -100,6 +137,14 @@ type Server struct {
 	// leaves the server purely in-memory (the default).
 	storeDir string
 	store    *diskStore
+
+	// releases is the model-release catalog (ADR-0037): named, immutable pointers
+	// (name, version) → modelId over content-addressed revisions, plus moving
+	// channels. Always non-nil (in-memory); when a model store dir is configured it
+	// is persisted as releases.json next to the models so releases survive a
+	// restart. The shared resolver runs in lookup, so every model-id-taking surface
+	// accepts a release reference (name@version, name@channel, bare name).
+	releases *releaseStore
 
 	// mcpServer, when set via AttachMCP, co-locates the MCP endpoint (/mcp) in
 	// this server's mux so it shares this server's model cache — one process, one
@@ -139,6 +184,15 @@ type Server struct {
 	// metrics holds the process-level operational counters reported by the status
 	// endpoint (ADR-0030). Always set by NewServer.
 	metrics *metrics
+
+	// limiter, when set via WithRateLimit, throttles the /v1 data surface per
+	// client IP (audit findings H6/M2). Nil leaves the surface unthrottled (the
+	// default).
+	limiter *rateLimiter
+
+	// metricsEnabled mounts GET /debug/vars and GET /metrics (WP-113) behind the
+	// audit scope when set via WithMetrics. Off by default → both are 404.
+	metricsEnabled bool
 }
 
 // Option configures a Server at construction time.
@@ -180,10 +234,78 @@ func WithKeyStore(dir string) Option {
 	return func(s *Server) { s.keyStoreDir = dir }
 }
 
+// WithPublicEvaluate opens the evaluate scope to anonymous callers even when
+// scoped keys are configured (ADR-0035, option B): every evaluation surface —
+// the HTTP evaluate routes (including the stateless POST /v1/evaluate), gRPC
+// Evaluate/EvaluateBatch and the MCP evaluate tool — becomes reachable without a
+// token, while models:write, admin, assist, git and flow keep requiring a key.
+// Off by default. Rate limiting (WithRateLimit) still applies to anonymous
+// callers. Prefer WithPublicModels to open only specific decisions.
+func WithPublicEvaluate(enabled bool) Option {
+	return func(s *Server) { s.publicEvaluate = enabled }
+}
+
+// WithPublicModels marks specific models as publicly evaluable even when scoped
+// keys are configured (ADR-0035, option A): an anonymous caller may evaluate
+// them, while every other route still requires a key. Each id matches a model by
+// its content-addressed modelId (sha256:…) or by its display name — so a
+// re-saved model, which gets a new modelId, stays public when listed by name. It
+// applies to the id-addressed HTTP evaluate routes (/v1/models/{id}/evaluate,
+// …/evaluate-graph, …/evaluate-graph-batch); the stateless POST /v1/evaluate
+// (model in the body, no id) is covered only by WithPublicEvaluate. Empty ids
+// contribute nothing.
+func WithPublicModels(ids ...string) Option {
+	return func(s *Server) {
+		for _, id := range ids {
+			if id = strings.TrimSpace(id); id != "" {
+				s.publicSeed = append(s.publicSeed, id)
+			}
+		}
+	}
+}
+
 // WithVersion sets the build version reported by GET /v1/status (ADR-0030). An
 // empty version falls back to the development placeholder.
 func WithVersion(v string) Option {
 	return func(s *Server) { s.version = v }
+}
+
+// WithExternalURL sets the server's canonical public base URL (e.g.
+// https://temis.example.com) — the OAuth issuer (ADR-0038). It turns temis into a
+// self-contained OAuth 2.1 authorization server for the co-located /mcp endpoint,
+// mounting /authorize, /token, /register and the discovery metadata. It takes
+// effect only when a managed keystore is also configured (WithKeyStore), because
+// issued access tokens are minted as managed keys; otherwise the endpoints stay
+// unmounted and NewServer logs a warning. An https URL marks session cookies
+// Secure. Empty (the default) leaves OAuth off.
+func WithExternalURL(url string) Option {
+	return func(s *Server) { s.externalURL = strings.TrimRight(url, "/") }
+}
+
+// WithOAuthRedirectAllow adds redirect_uri hosts accepted by the OAuth server
+// beyond the built-in defaults (claude.ai and loopback). Each entry is a bare
+// host (e.g. "chatgpt.com"). Ignored unless OAuth is enabled.
+func WithOAuthRedirectAllow(hosts ...string) Option {
+	return func(s *Server) {
+		for _, h := range hosts {
+			if h = strings.TrimSpace(h); h != "" {
+				s.oauthRedirectHosts = append(s.oauthRedirectHosts, h)
+			}
+		}
+	}
+}
+
+// WithOAuthScopes sets the scope set an OAuth-issued token may carry, overriding
+// the least-privilege default (evaluate, models:read, models:write, flow, git).
+// Unknown scopes are dropped. Ignored unless OAuth is enabled.
+func WithOAuthScopes(scopes ...Scope) Option {
+	return func(s *Server) {
+		for _, sc := range scopes {
+			if knownScopes[sc] {
+				s.oauthScopes = append(s.oauthScopes, sc)
+			}
+		}
+	}
 }
 
 // WithClioActiveProbe makes GET /v1/status determine clio reachability with a
@@ -225,6 +347,32 @@ func WithQualityQueue(q *QualityQueue) Option {
 // eviction). The default is a bounded cache (WP-35).
 func WithCacheSize(size int) Option {
 	return func(s *Server) { s.cacheSize = size }
+}
+
+// WithRateLimit enables a per-client-IP token-bucket throttle over the /v1 data
+// surface: rps sustained requests per second with a burst allowance (audit
+// findings H6/M2). A non-positive rps disables it (the default), leaving the
+// surface unthrottled. Burst defaults to rps (min 1) when not larger.
+func WithRateLimit(rps, burst float64) Option {
+	return func(s *Server) {
+		if rps <= 0 {
+			return
+		}
+		if burst < rps {
+			burst = rps
+		}
+		if burst < 1 {
+			burst = 1
+		}
+		s.limiter = newRateLimiter(rps, burst, nil)
+	}
+}
+
+// WithMetrics mounts the operational metrics endpoints (GET /debug/vars expvar
+// JSON and GET /metrics Prometheus text) behind the audit scope (ADR-0030,
+// WP-113). Off by default so the endpoints stay 404 unless a deployment opts in.
+func WithMetrics(enabled bool) Option {
+	return func(s *Server) { s.metricsEnabled = enabled }
 }
 
 // WithModelStore persists uploaded and edited models to dir on disk and reloads
@@ -301,6 +449,38 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			log.Printf("temis: WARNING key management is enabled but no admin credential is configured — /v1/keys is OPEN to the first caller; set TEMIS_BOOTSTRAP_ADMIN_KEY or -keys-file")
 		}
 	}
+	// OAuth 2.1 authorization server (ADR-0038): enabled only when an external URL
+	// (the issuer) is set AND a managed keystore exists, since issued access tokens
+	// are minted as managed keys. temis then serves /authorize, /token, /register
+	// and the discovery metadata for the co-located /mcp resource server.
+	if s.externalURL != "" {
+		if s.keyStore == nil {
+			log.Printf("temis: WARNING -external-url is set but OAuth stays OFF — it also requires a managed key store (-keys-dir / TEMIS_KEYS_DIR)")
+		} else {
+			s.sessions = newSessionStore(0)
+			s.oauth = newOAuthServer(oauthConfig{
+				issuer:        s.externalURL,
+				grantScopes:   s.oauthScopes,
+				redirectHosts: s.oauthRedirectHosts,
+				secure:        strings.HasPrefix(s.externalURL, "https://"),
+			}, s.keyStore, s.sessions)
+			log.Printf("temis: OAuth authorization server enabled (issuer=%s) — /authorize, /token, /register, /.well-known/*", s.externalURL)
+		}
+	}
+	// Public-decision allowlist (ADR-0035): static -public-models entries plus a
+	// runtime-managed set. The managed set persists next to the keystore in the
+	// access-control dir (-keys-dir), so an admin's per-model toggle survives a
+	// restart; without a dir the managed set is in-memory only.
+	s.publicModels = newPublicSet(s.publicSeed)
+	if s.keyStoreDir != "" {
+		loaded, err := s.publicModels.attach(s.keyStoreDir)
+		if err != nil {
+			panic("temis: public store: " + err.Error())
+		}
+		if loaded > 0 {
+			log.Printf("temis: public store at %s (%d managed public model(s) loaded)", s.keyStoreDir, loaded)
+		}
+	}
 	s.cache = newModelCache(s.cacheSize)
 	s.flows = newFlowStore()
 	// Examples load first, while store is still nil, so the bundled models are
@@ -320,6 +500,17 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 			s.loadPersisted(context.Background())
 		}
 	}
+	// Open the release catalog (ADR-0037). It shares the model store's directory
+	// for persistence; with no store dir it stays in-memory. A corrupt manifest is
+	// logged and the catalog starts empty rather than blocking startup. Releases
+	// whose model id is not resolvable are logged as a warning but kept (they
+	// recover once the model reloads) — same spirit as the flow registry (ADR-0032).
+	rs, err := newReleaseStore(s.storeDir)
+	if err != nil {
+		log.Printf("temis: %v", err)
+	}
+	s.releases = rs
+	s.warnDanglingReleases()
 	// Finally load declared flows from disk (ADR-0032), after the models they
 	// reference are in the cache so validation is meaningful. Read-only: the
 	// directory is the source of truth, never written back.
@@ -342,6 +533,23 @@ func (s *Server) loadPersisted(ctx context.Context) {
 	for _, xml := range xmls {
 		if _, err := s.compileAndStore(ctx, xml); err != nil {
 			continue
+		}
+	}
+}
+
+// warnDanglingReleases logs a warning for any release whose model id is not
+// resolvable in the cache or store at startup (ADR-0037). It never fails startup
+// or drops the release — the referenced revision may reload later — mirroring the
+// flow registry's tolerance of not-yet-loaded models (ADR-0032).
+func (s *Server) warnDanglingReleases() {
+	if s.releases == nil {
+		return
+	}
+	for name, mr := range s.releases.snapshot() {
+		for _, r := range mr.Releases {
+			if _, ok := s.lookup(r.ModelID); !ok {
+				log.Printf("temis: release %s@%s references unresolved model %s (kept; will recover if the model reloads)", name, r.Version, r.ModelID)
+			}
 		}
 	}
 }
@@ -410,12 +618,30 @@ func (s *Server) dataRoutes() []route {
 		{"POST", "/v1/models/{id}/decisions/{decision}/create-invocation", ScopeModelsWrite, s.handleCreateInvocation},
 		{"GET", "/v1/models/{id}/bkm/{bkm}", ScopeModelsRead, s.handleGetBKM},
 		{"POST", "/v1/models/{id}/bkm/{bkm}", ScopeModelsWrite, s.handleSaveBKM},
+		// Anchored boxed logic (ADR-0016, WP-66): read/write the boxed expression of
+		// a decision or a BKM body by {anchorKind}/{anchorId}/{kind}, so the per-kind
+		// editors can edit a BKM's boxed body — not just a decision's logic.
+		{"GET", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsRead, s.handleGetLogic},
+		{"POST", "/v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}", ScopeModelsWrite, s.handleSaveLogic},
 		{"POST", "/v1/models/{id}/save", ScopeModelsWrite, s.handleSaveModel},
 		// Evaluation.
 		{"POST", "/v1/models/{id}/evaluate", ScopeEvaluate, s.handleEvaluateModel},
 		{"POST", "/v1/models/{id}/evaluate-graph", ScopeEvaluate, s.handleEvaluateGraph},
 		{"POST", "/v1/models/{id}/evaluate-graph-batch", ScopeEvaluate, s.handleEvaluateGraphBatch},
 		{"POST", "/v1/evaluate", ScopeEvaluate, s.handleEvaluateStateless},
+		// Model releases (ADR-0037): named, immutable publications over
+		// content-addressed revisions, plus moving channels (latest/stable/…).
+		// Publishing/re-pointing a channel mutates the catalog (models:write);
+		// reading needs models:read. A top-level resource so a human name — not a
+		// content hash — keys it.
+		{"POST", "/v1/releases", ScopeModelsWrite, s.handlePublishRelease},
+		{"GET", "/v1/releases", ScopeModelsRead, s.handleListReleases},
+		{"GET", "/v1/releases/{name}", ScopeModelsRead, s.handleGetReleases},
+		{"POST", "/v1/releases/{name}/channels", ScopeModelsWrite, s.handleSetChannel},
+		// Draft garbage collection (ADR-0037, WP-143): an explicit, admin-scoped
+		// prune of unreferenced drafts — keeps releases, flow-referenced revisions
+		// and each named model's newest cached revision, removes the rest.
+		{"POST", "/v1/models/gc", ScopeAdmin, s.handleGCModels},
 		// Decision flows (WP-91, ADR-0026): register a JSON flow descriptor and
 		// evaluate it as one stateless composition over the cached models.
 		{"POST", "/v1/flows", ScopeFlow, s.handleCreateFlow},
@@ -437,6 +663,12 @@ func (s *Server) dataRoutes() []route {
 		// over the sink's connection so the browser never holds the token. Audit
 		// scope, like /v1/status (admin passes too).
 		{"GET", "/v1/clio/events", ScopeAudit, s.handleClioEvents},
+		// Quality report (ADR-0031 follow-up): aggregate the quality events of
+		// productive Import runs into a per-entity / per-rule violation view — run a
+		// whole ruleset over a dataset (e.g. 70 000 servers), then ask which entity
+		// failed which rule. The server queries clio itself (it holds the token), so
+		// a browser never needs it. Read-only; guarded by the audit scope.
+		{"GET", "/v1/quality/report", ScopeAudit, s.handleQualityReport},
 		// Key lifecycle API (ADR-0028 Phase 2, WP-103): admin-scoped create/list/
 		// rotate/revoke of scoped API keys, backed by the persistent key store.
 		// Dormant (404) unless a -keys-dir is configured.
@@ -456,7 +688,15 @@ func (s *Server) Handler() http.Handler {
 	// single dataRoutes() table so the route set has one source of truth — the
 	// OpenAPI-sync test reads the same table (see http_test.go).
 	for _, rt := range s.dataRoutes() {
-		mux.HandleFunc(rt.method+" "+rt.pattern, s.requireScope(rt.scope, rt.handler))
+		h := s.requireScope(rt.scope, rt.handler)
+		// Rate-limit the whole gated data surface when configured: the flood
+		// vectors (BYOK /v1/chat cost abuse, recompiling modeler edits) all live
+		// here. The throttle sits in front of the scope gate so it also sheds load
+		// from unauthenticated callers on an open API (H6/M2).
+		if s.limiter != nil {
+			h = s.limiter.wrap(h)
+		}
+		mux.HandleFunc(rt.method+" "+rt.pattern, h)
 	}
 	// Git-backed models: browse, load, save and propose against a repository
 	// (WP-72). Registered outside the dataRoutes() table (and thus the
@@ -467,6 +707,28 @@ func (s *Server) Handler() http.Handler {
 	// Discovery and probes: always public.
 	mux.HandleFunc("GET /docs", s.handleDocs)
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	// Access UI reads (WP-107, ADR-0035): whoami is public and self-inspecting so
+	// the SPA can decide what to show; the public-config read is admin-scoped.
+	// Registered outside dataRoutes() (like the git routes) — not in openapi.yaml.
+	mux.HandleFunc("GET /v1/whoami", s.handleWhoami)
+	mux.HandleFunc("GET /v1/access/public", s.requireScope(ScopeAdmin, s.handleAccessPublic))
+	// Toggle a single model's public evaluation at runtime (ADR-0035, WP-107): the
+	// model is in the JSON body ({model, public}) so a name/id with any character is
+	// safe (no path encoding). Admin-scoped.
+	mux.HandleFunc("POST /v1/access/public/models", s.requireScope(ScopeAdmin, s.handleSetPublicModel))
+	// OAuth 2.1 authorization server (ADR-0038): mounted only when configured
+	// (WithExternalURL + a managed keystore). These top-level paths do not collide
+	// with the "/" SPA catch-all below (Go 1.22 mux: more specific patterns win).
+	if s.oauth != nil {
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.oauth.handleAuthzMetadata)
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.oauth.handleProtectedResourceMetadata)
+		mux.HandleFunc("POST /register", s.oauth.handleRegister)
+		mux.HandleFunc("GET /authorize", s.oauth.handleAuthorize)
+		mux.HandleFunc("POST /authorize", s.oauth.handleApprove)
+		mux.HandleFunc("POST /oauth/login", s.oauth.handleLogin)
+		mux.HandleFunc("POST /oauth/logout", s.oauth.handleLogout)
+		mux.HandleFunc("POST /token", s.oauth.handleToken)
+	}
 	// Own DMN modeler frontend (ADR-0016, WP-67 cutover): the embedded SPA is now
 	// THE editor, served at the site root — no dmn-js, no CDN, offline. The legacy
 	// /ui and /app/ paths redirect here so old links keep working. This catch-all
@@ -483,6 +745,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleLive)
 	mux.HandleFunc("GET /readyz", s.handleReady)
 
+	// Operational metrics (ADR-0030, WP-113): opt-in and audit-scoped. Left
+	// unmounted by default so both paths 404 unless WithMetrics is set.
+	if s.metricsEnabled {
+		mux.HandleFunc("GET /debug/vars", s.requireScope(ScopeAudit, s.handleExpvars))
+		mux.HandleFunc("GET /metrics", s.requireScope(ScopeAudit, s.handleMetrics))
+	}
+
 	// MCP endpoint, co-located when attached: POST/GET /mcp share this server's
 	// model cache (and its preloaded examples), so a model is visible whether it
 	// was loaded over the API, the modeler or MCP (one address space).
@@ -495,9 +764,11 @@ func (s *Server) Handler() http.Handler {
 	grpcPath, grpcHandler := s.grpcHandler()
 	mux.Handle(grpcPath, grpcHandler)
 
-	// h2c lets full gRPC and the bidi EvaluateBatch stream work over cleartext
-	// HTTP/2 (no TLS); HTTP/1.1 requests are still served normally.
-	return h2c.NewHandler(mux, &http2.Server{})
+	// The mux is returned bare: cleartext HTTP/2 (h2c) — needed for full gRPC and
+	// the bidi EvaluateBatch stream without TLS — is enabled at the server level
+	// via http.Server.Protocols (SetUnencryptedHTTP2), which supersedes the
+	// deprecated golang.org/x/net/http2/h2c wrapper. See cmd/temisd/main.go.
+	return mux
 }
 
 // --- request/response DTOs ---
@@ -508,7 +779,15 @@ type modelResponse struct {
 	Decisions   []string                    `json:"decisions"`
 	Inputs      []string                    `json:"inputs"`
 	Schema      map[string][]dmn.InputField `json:"schema,omitempty"`
+	Functions   []dmn.FeelFunction          `json:"functions,omitempty"`
 	Diagnostics []diagnosticDTO             `json:"diagnostics,omitempty"`
+}
+
+// functionsOf lists the model's user-defined FEEL functions (its BKMs) so the
+// modeler's FEEL editors can complete and validate calls to them — a BKM's own
+// recursion included. Returns nil when the model defines none.
+func functionsOf(defs *dmn.Definitions) []dmn.FeelFunction {
+	return defs.Functions()
 }
 
 // schemaOf returns each executable decision's typed input schema, keyed by
@@ -676,6 +955,7 @@ func (s *Server) handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
+		Functions:   functionsOf(sm.defs),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -721,6 +1001,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   sm.index.Decisions,
 		Inputs:      sm.index.Inputs,
 		Schema:      schemaOf(sm.defs, sm.index.Decisions),
+		Functions:   functionsOf(sm.defs),
 		Diagnostics: toDiagnosticDTOs(sm.diags),
 	})
 }
@@ -730,7 +1011,21 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 // named group is done by the client calling this once per revision. It responds
 // 204 on success and 404 when no model has that id.
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
-	if !s.cache.delete(r.PathValue("id")) {
+	id := r.PathValue("id")
+	inCache := s.cache.delete(id)
+	// Also remove the durable copy, if any: without this a model persisted via
+	// -models-dir would resurrect on the next cache-miss fallback, making the
+	// admin-scoped delete a no-op (audit finding M3).
+	removedFromStore := false
+	if s.store != nil {
+		ok, err := s.store.delete(id)
+		if err != nil {
+			writeProblem(w, http.StatusInternalServerError, "DELETE_FAILED", err.Error())
+			return
+		}
+		removedFromStore = ok
+	}
+	if !inCache && !removedFromStore {
 		writeProblem(w, http.StatusNotFound, "MODEL_NOT_FOUND", "no model with that id")
 		return
 	}
@@ -775,6 +1070,7 @@ func (s *Server) handleRenameModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -867,6 +1163,7 @@ func (s *Server) respondSaved(w http.ResponseWriter, r *http.Request, patched []
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -979,6 +1276,7 @@ func (s *Server) handleSaveLiteral(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1009,6 +1307,7 @@ func (s *Server) handleCreateDecisionTable(w http.ResponseWriter, r *http.Reques
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1045,6 +1344,7 @@ func (s *Server) handleSaveDecisionTable(w http.ResponseWriter, r *http.Request)
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1081,6 +1381,7 @@ func (s *Server) handleSaveGraph(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1118,6 +1419,7 @@ func (s *Server) handleSaveModel(w http.ResponseWriter, r *http.Request) {
 		Decisions:   saved.index.Decisions,
 		Inputs:      saved.index.Inputs,
 		Schema:      schemaOf(saved.defs, saved.index.Decisions),
+		Functions:   functionsOf(saved.defs),
 		Diagnostics: toDiagnosticDTOs(saved.diags),
 	})
 }
@@ -1209,6 +1511,9 @@ func (s *Server) handleEvaluateGraph(w http.ResponseWriter, r *http.Request) {
 				Input:    req.Input,
 				Outputs:  map[string]any{name: val},
 				Strict:   req.Strict,
+				// Stamp authorship so a whole-graph eval carries clioauthkid too,
+				// matching single-decision evaluate (audit finding N7, WP-105).
+				AuthKid: authKidFromContext(r.Context()),
 			}
 			if res.Traces != nil {
 				rec.Trace = res.Traces[name]
@@ -1374,6 +1679,46 @@ func asFloat(v any) (float64, bool) {
 	}
 }
 
+// handleQualityReport aggregates the quality events of productive Import runs into
+// a per-entity / per-rule violation report (ADR-0031 follow-up): run a whole
+// ruleset over a dataset, then ask which entity failed which rule. The server
+// holds the clio token and queries clio itself, so a browser never sees it — this
+// is the read side of the productive Import run, mirrored by the temis-quality-report
+// CLI. Guarded by the audit scope; 409 when no clio sink is configured (there is
+// nothing recorded to report on). Query params: subject (default the sink's
+// quality prefix), ruleField (the decision output holding the violated-rule list;
+// empty auto-detects), recursive (default true), limit (default the batch cap).
+func (s *Server) handleQualityReport(w http.ResponseWriter, r *http.Request) {
+	if s.sink == nil {
+		writeProblem(w, http.StatusConflict, "CLIO_NOT_CONFIGURED", "quality reporting needs a clio sink; set TEMIS_CLIO_TOKEN")
+		return
+	}
+	q := r.URL.Query()
+	recursive := q.Get("recursive") != "false"
+	limit := maxGraphBatchInputs
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "limit must be a non-negative integer")
+			return
+		}
+		limit = n
+	}
+	stream, err := s.sink.QueryQuality(r.Context(), q.Get("subject"), recursive, limit)
+	if err != nil {
+		writeProblem(w, http.StatusBadGateway, "CLIO_QUERY_FAILED", err.Error())
+		return
+	}
+	defer func() { _ = stream.Close() }()
+
+	rep, err := quality.ReadReport(r.Context(), stream, q.Get("ruleField"))
+	if err != nil {
+		writeProblem(w, http.StatusBadGateway, "CLIO_QUERY_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
 // redirectTo permanently redirects to target. It keeps the retired /ui and /app/
 // paths pointing at the modeler's new home at the site root (ADR-0016 WP-67).
 func redirectTo(target string) http.HandlerFunc {
@@ -1475,6 +1820,16 @@ func (s *Server) compileAndStore(ctx context.Context, xml []byte) (*storedModel,
 }
 
 func (s *Server) lookup(id string) (*storedModel, bool) {
+	// A release reference (name@version, name@channel or a bare name → its latest
+	// channel) resolves to a concrete content-addressed model id first, so every
+	// model-id-taking surface — evaluate, xml, graph, flow steps, MCP — accepts a
+	// stable release name (ADR-0037). A raw model id skips this entirely (resolve
+	// returns ok=false for a valid sha256), so existing lookups are byte-identical.
+	if s.releases != nil {
+		if mid, ok := s.releases.resolve(id); ok {
+			id = mid
+		}
+	}
 	if sm, ok := s.cache.get(id); ok {
 		return sm, true
 	}

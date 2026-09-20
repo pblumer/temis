@@ -138,6 +138,21 @@ test('import: a productive run without clio is refused with a clear message', as
   await expect(page.locator('.imp-lane-store .imp-card')).toHaveCount(0)
 })
 
+test('import: the quality report panel opens and explains a missing clio', async ({ page }) => {
+  await page.goto('/')
+  await page.getByText('Discount', { exact: true }).first().click()
+  await page.locator('#modeImport').click()
+
+  // The report reads back what productive runs recorded (GET /v1/quality/report).
+  // The test server runs without a clio token, so opening the panel must surface a
+  // clear, actionable message rather than an empty table — then close cleanly.
+  await page.getByRole('button', { name: /^Bericht/ }).click()
+  await expect(page.locator('.imp-report')).toBeVisible()
+  await expect(page.locator('.imp-report .imp-note')).toContainText('clio ist nicht konfiguriert')
+  await page.getByRole('button', { name: 'Schliessen' }).click()
+  await expect(page.locator('.imp-report')).toBeHidden()
+})
+
 test('import: the CSV template downloads shaped to the model', async ({ page }) => {
   await page.goto('/')
   await page.getByText('Discount', { exact: true }).first().click()

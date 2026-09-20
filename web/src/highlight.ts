@@ -10,6 +10,7 @@
 // sources the completion dropdown uses — plus strings, numbers and keywords. That
 // is enough to colour functions, variables and keywords distinctly.
 
+import { escapeHtml } from './dom'
 import { builtins, ensureFeel } from './feel'
 
 // FEEL keywords coloured as such (the words a user types; operators are not).
@@ -23,9 +24,6 @@ type Token = { text: string; cls: string }
 const isIdentStart = (c: string): boolean => /[A-Za-z_]/.test(c)
 const isIdent = (c: string): boolean => /[A-Za-z0-9_]/.test(c)
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
 
 // tokenize splits FEEL source into coloured spans. Known names (variables and
 // built-ins, possibly multi-word like "Guest Count" or "substring after") are

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20191111/MODEL/" namespace="http://temis.example/bench/DrgChain" name="DrgChain" id="def_DrgChain">
+  <inputData id="i_Seed" name="Seed"><variable name="Seed" typeRef="number"/></inputData>
+  <decision id="d_D1" name="D1"><variable name="D1" typeRef="number"/>
+    <informationRequirement id="ir_D1"><requiredInput href="#i_Seed"/></informationRequirement>
+    <literalExpression id="le_D1"><text>Seed + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D2" name="D2"><variable name="D2" typeRef="number"/>
+    <informationRequirement id="ir_D2"><requiredDecision href="#d_D1"/></informationRequirement>
+    <literalExpression id="le_D2"><text>D1 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D3" name="D3"><variable name="D3" typeRef="number"/>
+    <informationRequirement id="ir_D3"><requiredDecision href="#d_D2"/></informationRequirement>
+    <literalExpression id="le_D3"><text>D2 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D4" name="D4"><variable name="D4" typeRef="number"/>
+    <informationRequirement id="ir_D4"><requiredDecision href="#d_D3"/></informationRequirement>
+    <literalExpression id="le_D4"><text>D3 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D5" name="D5"><variable name="D5" typeRef="number"/>
+    <informationRequirement id="ir_D5"><requiredDecision href="#d_D4"/></informationRequirement>
+    <literalExpression id="le_D5"><text>D4 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D6" name="D6"><variable name="D6" typeRef="number"/>
+    <informationRequirement id="ir_D6"><requiredDecision href="#d_D5"/></informationRequirement>
+    <literalExpression id="le_D6"><text>D5 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D7" name="D7"><variable name="D7" typeRef="number"/>
+    <informationRequirement id="ir_D7"><requiredDecision href="#d_D6"/></informationRequirement>
+    <literalExpression id="le_D7"><text>D6 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D8" name="D8"><variable name="D8" typeRef="number"/>
+    <informationRequirement id="ir_D8"><requiredDecision href="#d_D7"/></informationRequirement>
+    <literalExpression id="le_D8"><text>D7 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D9" name="D9"><variable name="D9" typeRef="number"/>
+    <informationRequirement id="ir_D9"><requiredDecision href="#d_D8"/></informationRequirement>
+    <literalExpression id="le_D9"><text>D8 + 1</text></literalExpression>
+  </decision>
+  <decision id="d_D10" name="D10"><variable name="D10" typeRef="number"/>
+    <informationRequirement id="ir_D10"><requiredDecision href="#d_D9"/></informationRequirement>
+    <literalExpression id="le_D10"><text>D9 + 1</text></literalExpression>
+  </decision>
+</definitions>

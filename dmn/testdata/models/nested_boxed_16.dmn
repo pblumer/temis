@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/nested-boxed"
+             name="NestedBoxed" id="def_nested">
+  <!-- A decision whose logic is a boxed context; one entry's value is itself a
+       boxed list (a nested boxed expression). This is the recursive/drill-in case
+       (WP-66 Phase 2). -->
+  <decision id="id_nested" name="Nested">
+    <variable name="Nested" typeRef="number"/>
+    <context>
+      <contextEntry>
+        <variable name="base" typeRef="number"/>
+        <literalExpression><text>10</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="items"/>
+        <list>
+          <literalExpression><text>1</text></literalExpression>
+          <literalExpression><text>base</text></literalExpression>
+        </list>
+      </contextEntry>
+      <contextEntry>
+        <literalExpression><text>sum(items)</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+</definitions>

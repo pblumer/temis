@@ -27,6 +27,24 @@ func TestBKMFunctionView(t *testing.T) {
 	}
 }
 
+// TestFunctions lists the model's user-defined functions (its BKMs) with their
+// parameter names — the signatures the modeler hands to its FEEL editors so a
+// call to a BKM (a BKM's own recursion included) completes and validates as a
+// known function.
+func TestFunctions(t *testing.T) {
+	defs := compileModel(t, "bkm_invocation_15.dmn")
+	fns := defs.Functions()
+	if len(fns) != 1 {
+		t.Fatalf("Functions() = %+v, want one BKM", fns)
+	}
+	if fns[0].Name != "Discount Rate" {
+		t.Errorf("name = %q, want %q", fns[0].Name, "Discount Rate")
+	}
+	if len(fns[0].Params) != 1 || fns[0].Params[0] != "total" {
+		t.Errorf("params = %+v, want [total]", fns[0].Params)
+	}
+}
+
 // TestSetBKMFunction edits a BKM's body and parameters and checks the recompiled
 // model invokes the new logic.
 func TestSetBKMFunction(t *testing.T) {

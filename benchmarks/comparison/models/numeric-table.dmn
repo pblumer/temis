@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20191111/MODEL/" namespace="http://temis.example/bench/NumericTable" name="NumericTable" id="def_NumericTable">
+  <inputData id="i_A" name="A"><variable name="A" typeRef="number"/></inputData>
+  <inputData id="i_B" name="B"><variable name="B" typeRef="number"/></inputData>
+  <inputData id="i_C" name="C"><variable name="C" typeRef="number"/></inputData>
+  <inputData id="i_D" name="D"><variable name="D" typeRef="number"/></inputData>
+  <decision id="d_Grade" name="Grade">
+    <variable name="Grade" typeRef="string"/>
+    <informationRequirement id="ir_A"><requiredInput href="#i_A"/></informationRequirement>
+    <informationRequirement id="ir_B"><requiredInput href="#i_B"/></informationRequirement>
+    <informationRequirement id="ir_C"><requiredInput href="#i_C"/></informationRequirement>
+    <informationRequirement id="ir_D"><requiredInput href="#i_D"/></informationRequirement>
+    <decisionTable id="dt_Grade" hitPolicy="UNIQUE">
+      <input id="in_A"><inputExpression id="ie_A" typeRef="number"><text>A</text></inputExpression></input>
+      <input id="in_B"><inputExpression id="ie_B" typeRef="number"><text>B</text></inputExpression></input>
+      <input id="in_C"><inputExpression id="ie_C" typeRef="number"><text>C</text></inputExpression></input>
+      <input id="in_D"><inputExpression id="ie_D" typeRef="number"><text>D</text></inputExpression></input>
+      <output id="out_Grade" name="Grade" typeRef="string"/>
+      <rule id="r0"><inputEntry id="r0_1"><text>[0..9]</text></inputEntry><inputEntry id="r0_2"><text>-</text></inputEntry><inputEntry id="r0_3"><text>-</text></inputEntry><inputEntry id="r0_4"><text>-</text></inputEntry><outputEntry id="r0_o"><text>"g0"</text></outputEntry></rule>
+      <rule id="r1"><inputEntry id="r1_1"><text>[10..19]</text></inputEntry><inputEntry id="r1_2"><text>-</text></inputEntry><inputEntry id="r1_3"><text>-</text></inputEntry><inputEntry id="r1_4"><text>-</text></inputEntry><outputEntry id="r1_o"><text>"g1"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry id="r2_1"><text>[20..29]</text></inputEntry><inputEntry id="r2_2"><text>-</text></inputEntry><inputEntry id="r2_3"><text>-</text></inputEntry><inputEntry id="r2_4"><text>-</text></inputEntry><outputEntry id="r2_o"><text>"g2"</text></outputEntry></rule>
+      <rule id="r3"><inputEntry id="r3_1"><text>[30..39]</text></inputEntry><inputEntry id="r3_2"><text>-</text></inputEntry><inputEntry id="r3_3"><text>-</text></inputEntry><inputEntry id="r3_4"><text>-</text></inputEntry><outputEntry id="r3_o"><text>"g3"</text></outputEntry></rule>
+      <rule id="r4"><inputEntry id="r4_1"><text>[40..49]</text></inputEntry><inputEntry id="r4_2"><text>-</text></inputEntry><inputEntry id="r4_3"><text>-</text></inputEntry><inputEntry id="r4_4"><text>-</text></inputEntry><outputEntry id="r4_o"><text>"g4"</text></outputEntry></rule>
+      <rule id="r5"><inputEntry id="r5_1"><text>[50..59]</text></inputEntry><inputEntry id="r5_2"><text>-</text></inputEntry><inputEntry id="r5_3"><text>-</text></inputEntry><inputEntry id="r5_4"><text>-</text></inputEntry><outputEntry id="r5_o"><text>"g5"</text></outputEntry></rule>
+      <rule id="r6"><inputEntry id="r6_1"><text>[60..69]</text></inputEntry><inputEntry id="r6_2"><text>-</text></inputEntry><inputEntry id="r6_3"><text>-</text></inputEntry><inputEntry id="r6_4"><text>-</text></inputEntry><outputEntry id="r6_o"><text>"g6"</text></outputEntry></rule>
+      <rule id="r7"><inputEntry id="r7_1"><text>[70..79]</text></inputEntry><inputEntry id="r7_2"><text>-</text></inputEntry><inputEntry id="r7_3"><text>-</text></inputEntry><inputEntry id="r7_4"><text>-</text></inputEntry><outputEntry id="r7_o"><text>"g7"</text></outputEntry></rule>
+      <rule id="r8"><inputEntry id="r8_1"><text>[80..89]</text></inputEntry><inputEntry id="r8_2"><text>-</text></inputEntry><inputEntry id="r8_3"><text>-</text></inputEntry><inputEntry id="r8_4"><text>-</text></inputEntry><outputEntry id="r8_o"><text>"g8"</text></outputEntry></rule>
+      <rule id="r9"><inputEntry id="r9_1"><text>[90..99]</text></inputEntry><inputEntry id="r9_2"><text>-</text></inputEntry><inputEntry id="r9_3"><text>-</text></inputEntry><inputEntry id="r9_4"><text>-</text></inputEntry><outputEntry id="r9_o"><text>"g9"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

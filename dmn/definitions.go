@@ -3,7 +3,7 @@ package dmn
 import (
 	"fmt"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
 	"github.com/pblumer/temis/internal/model"
 )
 
@@ -41,6 +41,10 @@ type CompiledDecision struct {
 	// limits are the resource bounds enforced for an evaluation rooted at this
 	// decision (WP-34), resolved from the engine configuration at compile time.
 	limits feel.Limits
+	// outType is the decision's declared output type (from its variable's typeRef),
+	// nil when none is declared. The result is coerced to conform to it (FEEL
+	// singleton-list coercion, then type conformance or null) — see coerceToType.
+	outType *feel.Type
 }
 
 // Decision returns the compiled decision identified by idOrName. It is an error
@@ -86,8 +90,10 @@ func (d *Definitions) Index() ModelIndex {
 		}
 	}
 	for _, in := range d.model.InputData {
-		if in.Name != "" {
-			idx.Inputs = append(idx.Inputs, in.Name)
+		// The FEEL identifier callers supply the value under and expressions
+		// reference (its variable name, else its display name), matching the schema.
+		if ref := in.RefName(); ref != "" {
+			idx.Inputs = append(idx.Inputs, ref)
 		}
 	}
 	return idx

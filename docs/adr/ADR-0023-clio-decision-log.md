@@ -1,6 +1,6 @@
 # ADR-0023: Entscheidungs-Logbuch über clio (revisionssicherer Event-Sink, opt-in)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-06-30
 - **Kontext-WP:** WP-54 / WP-55 / WP-56 (Etappe „Entscheidungs-Logbuch", Ausbau von ADR-0013)
 

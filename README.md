@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/readme-hero.svg" alt="Temis — DMN decision engine with FEEL, API service, modeler and agent integrations" width="900">
+  <img src="docs/readme-hero.svg" alt="Temis — deterministische DMN-1.5/FEEL-Engine, erreichbar als eingebettete Go-Library, über REST, gRPC und MCP für AI-Agenten; im Kern wertet eine Decision-Table mit Hit Policy U aus und liefert typisierte, nachvollziehbare Entscheidungen" width="900">
 </p>
 
-<h1 align="center">Temis — Decisioning, das sich gut anfühlt</h1>
+<h1 align="center">Temis — Deterministische DMN-Engine: Go-Library, REST, gRPC & MCP für AI-Agenten</h1>
 
 <p align="center">
   <strong>Schnelle DMN-1.5-Engine in Go</strong> · <strong>volles FEEL</strong> · <strong>Library</strong> · <strong>HTTP/gRPC</strong> · <strong>Modeler</strong> · <strong>MCP für Agenten</strong>
@@ -13,6 +13,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="DMN" src="https://img.shields.io/badge/DMN-1.5-7C3AED">
   <img alt="FEEL" src="https://img.shields.io/badge/FEEL-full-EC4899">
+  <a href="#dmn-tck-konformität"><img alt="DMN-TCK" src="https://img.shields.io/badge/DMN--TCK-98.1%25-brightgreen"></a>
   <img alt="API" src="https://img.shields.io/badge/API-HTTP%20%2B%20gRPC-10B981">
   <img alt="Agents" src="https://img.shields.io/badge/Agent--First-MCP-F59E0B">
 </p>
@@ -59,6 +60,58 @@ res, _ := dec.Evaluate(ctx, dmn.Input{"Season": "Winter", "Guest Count": 8})
 fmt.Println(res.Outputs["Dish"]) // → "Roastbeef"
 ```
 
+## DMN-TCK-Konformität
+
+Temis wird gegen das **offizielle DMN Technology Compatibility Kit**
+([github.com/dmn-tck/tck](https://github.com/dmn-tck/tck)) geprüft — die vom DMN-Standard
+getragene Referenz-Testsuite. Über **Compliance Level 2 + 3** bestehen aktuell:
+
+<div align="center">
+
+### **3430 / 3495 Cases — 98,1 %** ✅
+
+</div>
+
+Das ist kein Selbstläufer-Wert, sondern **nachprüfbar und regressionsgeschützt**:
+
+- **Gepinnter Korpus:** Der TCK wird an Commit `0dbcaf9` bezogen (nicht vendored), damit
+  die Zahl reproduzierbar bleibt.
+- **Im CI verankert:** Die Lane `tck` (`.github/workflows/ci.yml`) klont den gepinnten
+  Korpus und lässt `internal/tck.TestOfficialTCKConformance` laufen.
+- **Ratchet-Floor:** Der Gate erzwingt einen Mindestwert (aktuell **98,1 %**), der nur nach
+  oben wandert — eine Regression bricht den Build.
+- **Selbst nachvollziehen:** `make tck-conformance` holt den Korpus und misst lokal.
+
+Die verbleibenden ~2 % sind kategorisiert und dokumentiert (u. a. externe Java-Funktionen
+ohne JVM, Decision-Service-Randfälle) — siehe **[`docs/tck-exceptions.md`](docs/tck-exceptions.md)**.
+
+## Performance
+
+Eine kompilierte Entscheidung ist unveränderlich und nebenläufigkeitssicher:
+einmal kompilieren, millionenfach auswerten.
+
+<div align="center">
+
+### **> 1,6 Mio Entscheidungen/s** auf einer 4-Kern-VM ⚡
+
+</div>
+
+| Szenario (4 vCPU, `GOGC=400`) | Durchsatz | Latenz (1 Kern, warm) |
+|---|---:|---:|
+| Decision-Table (String/Enum) | ≈ 1,62 Mio/s | ≈ 1,9 µs |
+| Decision-Table (numerisch, Intervalle) | ≈ 1,22 Mio/s | ≈ 2,9 µs |
+
+Gemessen auf einer bescheidenen, geteilten Cloud-VM (Intel® Xeon® @ 2,8 GHz) —
+also eine Untergrenze; bessere Hardware skaliert linear. Jede Zahl ist mit einem
+eingecheckten Benchmark reproduzierbar (`go test -bench=BenchmarkThroughput ./dmn/`),
+Methodik und ehrliche Einordnung in **[`docs/55-benchmarks.md`](docs/55-benchmarks.md)**.
+
+**1:1 gegen Drools** (`kie-dmn-core`, identische DMN-Dateien, gleiche VM, fünf
+Feature-Typen): pro Auswertung ist Temis in jedem Szenario schneller — **1,2×–3,0×**
+(ein Kern), am stärksten bei Decision-Tables. Reproduzierbares Harness mit
+vollen Zahlen und ehrlicher Einordnung in
+**[`benchmarks/comparison/`](benchmarks/comparison/README.md)**.
+
 ## Status
 
 **Aktiv in Entwicklung.** Das Fundament der Engine steht; das MVP (lauffähige Library, die
@@ -104,7 +157,9 @@ Jedes Arbeitspaket landet als eigener, CI-grüner Pull Request (`make verify`: f
 > **WP-43** (API-Stabilisierung: `package dmn` als **v1**, SemVer + Deprecation-Policy,
 > Golden-Surface-Test) und **WP-44** (Fuzzing über jede untrusted-Input-Schicht) fertig.
 > Die öffentliche `dmn/`-API ist damit **als v1 zugesagt** (ADR-0019); `internal/` bleibt frei.
-> Offen u. a.: **WP-33** (gRPC) und **WP-41** (offizielles TCK-Korpus). Voller Live-Status:
+> **WP-41** (offizielle TCK-Konformität) hat sein Ziel erreicht: **98,1 %** der Level-2/3-Cases,
+> CI-verankert mit Ratchet-Floor (siehe [Abschnitt oben](#dmn-tck-konformität) und
+> `docs/tck-exceptions.md`). Offen u. a. das erste getaggte Release. Voller Live-Status:
 > `docs/20-roadmap.md`.
 
 ### Was heute funktioniert
@@ -171,6 +226,8 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_KEYS_DIR` | *(leer)* | Verzeichnis für den persistenten Keystore + Lifecycle-API (`POST /v1/keys …`); Keys überleben Neustart (leer = Key-Verwaltung aus; WP-103) |
 | `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
 | `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
+| `TEMIS_PUBLIC_EVALUATE` | `false` | Öffnet den `evaluate`-Scope für anonyme Aufrufer trotz konfigurierter Keys — jede Auswertung (HTTP/gRPC/MCP) braucht keinen Token, `write`/`admin`/`assist`/`git`/`flow` weiterhin schon (ADR-0035) |
+| `TEMIS_PUBLIC_MODELS` | *(leer)* | Komma-Liste von `modelId`s **oder** Modellnamen, deren Auswertung anonym offen ist (public decisions) — alles andere bleibt hinter Key (leer = keine; ADR-0035) |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
 | `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
@@ -261,6 +318,30 @@ Zeile eine **Pass/Fail-Erwartung**. „Durchlaufen lassen" schickt jeden Datensa
 links (*Eingang*) durch die *Evaluation* (dieselbe Engine wie Operate) nach rechts in den *clio
 Store* — mit berechneten Ergebnissen und Pass/Fail-Badges. Reines Frontend, kein neuer Endpunkt.
 
+**Regelset über einen Datensatz + Auswertung „welcher Datensatz welche Regel verletzt" (ADR-0034):**
+Der typische Fall: ein **ganzes Regelset** über einen grossen Datensatz laufen lassen — etwa 70 000
+Server — und am Schluss wissen, **welcher Server welche Regel nicht bestanden hat**. Das Regelset ist
+ein DMN-Modell; das gebündelte Beispiel **`server_compliance`** nutzt eine **`COLLECT`**-Tabelle,
+deren Regeln je einen Server-Check prüfen (Patch-Alter, TLS-Version, freier Speicher, Firewall,
+Root-SSH) und die **verletzten Regel-IDs als Liste** ausgeben. Man streamt den Datensatz als
+**Produktivlauf** (`record: true`) über `POST /v1/models/{id}/evaluate-graph-batch` (ein einzelner
+Request bleibt an das 8-MiB-Body-Limit gebunden, ~50 000 reiche Zeilen — grössere Flotten in Blöcken).
+Pro Fall entsteht ein revisionssicheres **Quality-Event** auf der Entität. Die **Auswertung** liest
+diese Events über **einen** geteilten Kern (`package quality`) auf **drei Kanälen**:
+
+```sh
+# CLI: Report aus clio, Text oder JSON; -fail-on-violation macht es CI-gattbar
+go run ./cmd/temis-quality-report -clio-url http://127.0.0.1:3000 -clio-token kid_ro.secret
+# → Rangliste je Regel + jede verletzende Entität mit ihren Regeln; „55 000 failed …"
+
+# HTTP: der Server fragt clio selbst ab (Token bleibt serverseitig), Scope `audit`
+curl -H 'Authorization: Bearer kid.audit' localhost:8080/v1/quality/report | jq
+```
+
+Im **Import-Cockpit** öffnet der Button **„Bericht ▾"** dasselbe als Panel (Tabelle „Entität ×
+verletzte Regeln" plus Regel-Rangliste) — der Browser sieht nie einen clio-Token. Ohne konfigurierte
+clio antwortet der Endpunkt klar mit `409 CLIO_NOT_CONFIGURED`.
+
 **Flow Studio & Designer (Decision-Flows via UI, ADR-0026/0032):** Über den Modellen (L1) liegt
 eine eigene **FLOWS**-Sektion (L2a) in der Sidebar. Ein registrierter Flow wird per Klick im
 **Flow Studio** geöffnet: seine Steps als auto-gelayouteter **Cross-Model-Graph**, ein Run-Panel
@@ -340,6 +421,25 @@ curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rota
 curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
 ```
 
+**Absichern beim ersten Start (Trust-on-first-use, WP-107):** Ohne Bootstrap-Secret
+starten — nur mit `-keys-dir` — und den ersten Admin-Key **über die Oberfläche**
+anlegen. Solange **kein** Key existiert, ist die API offen (die Lifecycle-API ist
+erreichbar, beim Start laut geloggt); der **erste angelegte Key kippt den Server zur
+Laufzeit auf abgesichert** (`enabled()` hängt an „mindestens ein Key") und wird
+persistiert, übersteht also den Neustart.
+
+```sh
+go run ./cmd/temisd -keys-dir ./keystore           # offen; /v1/keys ist erreichbar
+# Browser → Modeler → Sidebar „Zugriff" → „🔒 Admin-Key anlegen & absichern"
+# Der Modeler übernimmt den neuen Bearer sofort als Session, zeigt das Secret
+# einmalig und lädt neu — ab jetzt ist der Server abgesichert.
+```
+
+Der Bootstrap-Button erzwingt bewusst `admin`-Scope (sonst würde man den Server ohne
+Admin-Key aussperren). Achtung: bis der erste Key existiert, ist die API offen —
+diesen Schritt im vertrauenswürdigen Netz bzw. direkt nach dem Deploy machen, und
+für Klartext-Transport TLS davorschalten (`-tls-cert`/`-tls-key` oder Reverse-Proxy).
+
 **Lockout-Recovery — Offline-CLI (WP-104):** Ist kein nutzbarer Admin-Key mehr da,
 verwaltet `temisd keys …` denselben Keystore **bei gestopptem Server** direkt am
 Verzeichnis. Ein so erzeugter Key wird beim nächsten Start akzeptiert:
@@ -356,8 +456,8 @@ einschränken — `evaluate:/orders/*` oder eine auf eine `modelId` gepinnte
 `models:read:sha256:…`. Der Grant greift nur, wenn die Request-Ressource (`{id}` =
 modelId/flowId) mit dem Prefix beginnt; ressourcenlose Routen (Listing, stateless
 `/v1/evaluate`, gRPC, MCP) erfüllt nur ein **unbeschränkter** Grant. **Authorship:**
-bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als CloudEvents-Extension
-`clioauthkid` auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
+bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als `data.clioauthkid`
+auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
 (`expiresAt`) werden abgewiesen (`401`).
 
 **DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als
@@ -371,6 +471,37 @@ curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
+
+**Public decisions (ADR-0035):** Sonst ist Auth binär — sobald ein Key existiert, verlangt
+*jede* Route einen Token. Für „diese Entscheidung darf jeder auswerten, alles andere bleibt
+zu" öffnet man gezielt nur den `evaluate`-Scope, ohne die schreibenden/kostenverursachenden
+Routen (`models:write`/`admin`/`assist`) freizugeben:
+
+- **Pro Modell** — `-public-models "<modelId|Name>,…"` (oder `TEMIS_PUBLIC_MODELS`): nur die
+  gelisteten Modelle sind anonym auswertbar. Ein Eintrag matcht per content-adressierter
+  `modelId` **oder** per Anzeigename (so bleibt ein neu gespeichertes Modell per Name public).
+  Gilt für die id-adressierten Routen (`/v1/models/{id}/evaluate`, `…/evaluate-graph`).
+- **Global** — `-public-evaluate` (oder `TEMIS_PUBLIC_EVALUATE=true`): der ganze `evaluate`-Scope
+  ist anonym offen, inkl. dem stateless `POST /v1/evaluate`, über HTTP, gRPC und MCP.
+
+Beides ist opt-in und wird beim Start laut geloggt. Rate-Limiting (`-rate-limit`) greift auch
+für anonyme Aufrufer; ein trotzdem mitgeschickter gültiger Key stempelt weiterhin seine
+Authorship (`clioauthkid`) ins Audit-Log.
+
+```sh
+# Nur das Modell "Dish" ist öffentlich auswertbar, alles andere braucht einen Key:
+go run ./cmd/temisd -keys-file keys.json -public-models Dish
+curl --data '{"decision":"Dish","input":{"Season":"Winter","Guest Count":4}}' \
+     -H 'Content-Type: application/json' \
+     localhost:8080/v1/models/<modelId>/evaluate      # ohne Authorization-Header → 200
+```
+
+**Zur Laufzeit umschalten (WP-107):** Neben der Startup-Config lässt sich der Pro-Modell-Schalter
+**ohne Redeploy** umlegen — im Modeler über den **„🔒 Privat / 🌐 Öffentlich"-Toggle** in der
+Toolbar (pro geöffnetem Modell, nur für `admin`) oder das Zugriff-Panel, bzw. per API
+`POST /v1/access/public/models` `{"model":"<id|Name>","public":true|false}` (Scope `admin`). Mit
+`-keys-dir` werden Laufzeit-Umschaltungen in `public.json` **persistiert** (überstehen Neustart);
+ohne bleiben sie im Speicher. `-public-models`-Einträge sind fix (nur per Neustart änderbar).
 
 **Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
 ist *observierbar*, überwacht sich aber nicht selbst. `GET /v1/status` zeigt den Zustand
@@ -487,9 +618,14 @@ bietet die Engine dafür als natives Werkzeug über das **Model Context Protocol
 go run ./cmd/temis-mcp        # spricht MCP über stdin/stdout (Logs auf stderr)
 ```
 
-Vier Tools: **`list_models`** (Cache auflisten), **`load_model`** (DMN-XML kompilieren +
-content-addressed cachen, idempotent), **`describe_decision`** (Decision + erwartete
-Inputs beschreiben) und **`evaluate`** (auswerten per `modelId` oder stateless per `xml`).
+Kern-Tools: **`list_models`** (Cache auflisten — je Modell mit Name, Decisions und Inputs),
+**`get_model_xml`** (das rohe DMN/FEEL eines gecachten Modells zurücklesen, nicht nur
+auswerten), **`load_model`** (DMN-XML kompilieren + content-addressed cachen, idempotent),
+**`describe_decision`** (Decision + erwartete Inputs beschreiben), **`evaluate`**
+(auswerten per `modelId` oder stateless per `xml`) sowie die Typ-Werkzeuge
+**`list_types`**/**`save_type`**/**`delete_type`** (eigene Item-Definitionen lesen,
+Typen anlegen/ändern und entfernen — einfache wie strukturierte, letztere über
+`components`; jede Änderung liefert eine neue modelId).
 Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Eintrag:
 
 ```jsonc
@@ -524,10 +660,32 @@ go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
 
 In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
 (ADR-0028): jedes Tool verlangt seinen Scope (`evaluate`→`evaluate`,
-`list_models`/`load_model`/`describe_decision`→`models:read`, `git_*`→`git`,
+`list_models`/`get_model_xml`/`load_model`/`describe_decision`/`list_types`→`models:read`,
+`save_type`/`delete_type`→`models:write`, `git_*`→`git`,
 `*_flow`→`flow`), gültiger Key ohne Scope → `403`. Das eigenständige `temis-mcp`
 bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
 `-token` nur über HTTP).
+
+**Remote-MCP-Client per OAuth verbinden (z. B. der claude.ai-Web-Connector).**
+Web-Connectors sprechen keinen statischen Bearer, sondern den OAuth-Flow. `temisd`
+kann daher **selbst als OAuth-2.1-Server** auftreten (Authorization- *und*
+Resource-Server ko-lokalisiert, ADR-0038) — kein externer IdP nötig. Voraussetzung:
+eine kanonische öffentliche URL (der Issuer) **und** ein persistenter Keystore, denn
+das ausgestellte Access-Token ist ein kurzlebiger scoped Key (ADR-0028):
+
+```sh
+temisd -external-url https://temis.example.com -keys-dir ./keystore
+# mountet /authorize, /token, /register und /.well-known/oauth-*
+```
+
+Ablauf: Der Connector schickt den Nutzer auf `/authorize` (Authorization Code +
+PKCE/S256); der Mensch meldet sich einmalig mit seinem `kid.secret` an (echte
+HttpOnly-Cookie-Session), bestätigt die Freigabe, und `/token` prägt ein Token mit
+least-privilege-Scopes (`evaluate, models:read, models:write, flow, git`; via
+`-oauth-scopes` änderbar). Erlaubte Redirect-Ziele sind `claude.ai` und Loopback
+(erweiterbar mit `-oauth-redirect-allow`). Ohne `-external-url`/`-keys-dir` bleibt
+OAuth aus — dann verbindet man rein per CLI-Header
+(`claude mcp add --transport http … --header "Authorization: Bearer kid.secret"`).
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine
@@ -619,7 +777,7 @@ OpenAPI-Spec und Beispielmodelle per `go:embed` ein, läuft also ohne weitere As
 
 ## Entwicklung
 
-Voraussetzung: **Go ≥ 1.23**.
+Voraussetzung: **Go ≥ 1.24**.
 
 ```sh
 go test ./...      # alle Tests
@@ -665,7 +823,13 @@ docs/                # Planung, Architektur, ADRs (Single Source of Truth)
 Die Implementierung erfolgt durch einen KI-Coding-Agenten entlang der Arbeitspakete. Wer Code
 beiträgt, liest zuerst `docs/00-overview.md`, `docs/10-architecture.md` und
 `docs/60-ai-agent-guide.md`, wählt das nächste offene Arbeitspaket aus `docs/20-roadmap.md`,
-schreibt Tests zuerst und hält `make verify` grün.
+schreibt Tests zuerst und hält `make verify` grün. Der Einstieg steht in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Sicherheit
+
+Schwachstellen bitte vertraulich melden — siehe [SECURITY.md](SECURITY.md). Für den
+produktiven Betrieb ist die Grundhaltung dort dokumentiert (Auth/TLS sind opt-in).
 
 ## Lizenz
 

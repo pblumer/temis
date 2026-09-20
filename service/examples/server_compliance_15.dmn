@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/server-compliance"
+             name="Server Compliance" id="def_server_compliance">
+  <!--
+    A whole ruleset applied to one server dataset. Each rule below checks a single
+    server attribute; a COLLECT hit policy gathers the ids of every rule the server
+    VIOLATES into a list. An empty list means the server is compliant. Run a batch
+    of servers through this model (POST /v1/models/{id}/evaluate-graph-batch) and a
+    quality report tells you which server failed which rule.
+  -->
+  <inputData id="id_days_since_patch" name="Days Since Patch">
+    <variable name="Days Since Patch" typeRef="number"/>
+  </inputData>
+  <inputData id="id_tls_version" name="TLS Version">
+    <variable name="TLS Version" typeRef="string"/>
+  </inputData>
+  <inputData id="id_disk_free_percent" name="Disk Free Percent">
+    <variable name="Disk Free Percent" typeRef="number"/>
+  </inputData>
+  <inputData id="id_firewall_enabled" name="Firewall Enabled">
+    <variable name="Firewall Enabled" typeRef="boolean"/>
+  </inputData>
+  <inputData id="id_root_ssh_login" name="Root SSH Login">
+    <variable name="Root SSH Login" typeRef="boolean"/>
+  </inputData>
+
+  <decision id="id_violations" name="Violations">
+    <variable name="Violations"/>
+    <informationRequirement><requiredInput href="#id_days_since_patch"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_tls_version"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_disk_free_percent"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_firewall_enabled"/></informationRequirement>
+    <informationRequirement><requiredInput href="#id_root_ssh_login"/></informationRequirement>
+    <!--
+      COLLECT: every rule whose condition holds contributes its id. The decision's
+      value is therefore the list of violated rule ids. Each rule tests exactly one
+      column ("-" is "any"), so the rules are independent per-attribute checks.
+    -->
+    <decisionTable hitPolicy="COLLECT" id="dt_violations">
+      <input id="in_days_since_patch">
+        <inputExpression typeRef="number"><text>Days Since Patch</text></inputExpression>
+      </input>
+      <input id="in_tls_version">
+        <inputExpression typeRef="string"><text>TLS Version</text></inputExpression>
+      </input>
+      <input id="in_disk_free_percent">
+        <inputExpression typeRef="number"><text>Disk Free Percent</text></inputExpression>
+      </input>
+      <input id="in_firewall_enabled">
+        <inputExpression typeRef="boolean"><text>Firewall Enabled</text></inputExpression>
+      </input>
+      <input id="in_root_ssh_login">
+        <inputExpression typeRef="boolean"><text>Root SSH Login</text></inputExpression>
+      </input>
+      <output name="Violation" typeRef="string"/>
+
+      <rule id="r_patch">
+        <inputEntry><text>&gt; 30</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"PATCH_OUTDATED"</text></outputEntry>
+      </rule>
+      <rule id="r_tls">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"1.0","1.1"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"TLS_OUTDATED"</text></outputEntry>
+      </rule>
+      <rule id="r_disk">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&lt; 10</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"DISK_LOW"</text></outputEntry>
+      </rule>
+      <rule id="r_firewall">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>false</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"FIREWALL_OFF"</text></outputEntry>
+      </rule>
+      <rule id="r_root_ssh">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>true</text></inputEntry>
+        <outputEntry><text>"ROOT_SSH_ENABLED"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

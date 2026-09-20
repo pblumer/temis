@@ -781,6 +781,52 @@ paths:
         "400": { $ref: "#/components/responses/BadModelEdit" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/ModelNotFound" }
+  /v1/models/{id}/logic/{anchorKind}/{anchorId}/{kind}:
+    get:
+      summary: Get an anchored element's boxed logic as the {kind} editor view
+      description: >
+        Returns the boxed-expression logic of a decision (anchorKind=decision) or
+        a business knowledge model's encapsulated body (anchorKind=bkm) as the
+        typed view for {kind} (context, list, relation, invocation, iterator,
+        conditional, filter, table) — the same views the decision routes return.
+        This is how the modeler opens the per-kind editors on a BKM's boxed body
+        (ADR-0016, WP-66).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
+        - { name: anchorId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+        - { name: at, in: query, required: false, description: "Locator into a nested child (e.g. entry.1/item.0); empty = the root logic.", schema: { type: string } }
+      responses:
+        "200":
+          description: The anchored logic as the requested kind's view
+          content:
+            application/json:
+              schema: { type: object }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
+    post:
+      summary: Rewrite an anchored element's boxed logic of the given kind
+      description: >
+        Writes the {kind} editor payload back to the anchored element (a decision's
+        logic or a BKM's encapsulated body), recompiles and returns the saved
+        model. The body kind cannot be switched to a different boxed kind.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: anchorKind, in: path, required: true, schema: { type: string, enum: [decision, bkm] } }
+        - { name: anchorId, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: path, required: true, schema: { type: string, enum: [context, list, relation, invocation, iterator, conditional, filter, table] } }
+        - { name: at, in: query, required: false, description: "Locator into a nested child (e.g. entry.1/item.0); empty = the root logic.", schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201": { $ref: "#/components/responses/ModelSaved" }
+        "400": { $ref: "#/components/responses/BadModelEdit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ModelNotFound" }
   /v1/models/{id}/save:
     post:
       summary: Apply modeler edits (positions, names, types) to a model
@@ -819,6 +865,130 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/releases:
+    post:
+      summary: Publish a model revision as a named release (ADR-0037)
+      description: >-
+        Tags a content-addressed revision as (name, version) — a named, immutable
+        pointer, like a git tag, with no duplicated content. The "latest" channel
+        moves to the highest version automatically. The model must be loaded; a
+        release is immutable, so re-using a (name, version) is a 409. When name is
+        omitted the model's display name is used, so the modeler can publish the
+        open model by id alone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishReleaseRequest" }
+      responses:
+        "201":
+          description: The model's releases and channels after publishing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "400":
+          description: Malformed name or version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model with that id
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          description: A release with that version already exists
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    get:
+      summary: List every model's releases and channels (ADR-0037)
+      description: >-
+        Returns, name-sorted, each named model's releases (newest-first) and its
+        moving channels — the catalog a UI shows in place of the raw revision
+        history.
+      responses:
+        "200":
+          description: The release catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReleasesListResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/releases/{name}:
+    get:
+      summary: Get one model's releases and channels (ADR-0037)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The model's releases and channels
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No releases for that model
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/releases/{name}/channels:
+    post:
+      summary: Point a moving channel at a published version (ADR-0037)
+      description: >-
+        Sets a channel (e.g. stable, prod) to an already-published version.
+        Consumers may pin a channel (moving) or a concrete version (immutable).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetChannelRequest" }
+      responses:
+        "200":
+          description: The model's releases and channels after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelReleases" }
+        "400":
+          description: Malformed channel
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such release or version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/models/gc:
+    post:
+      summary: Prune unreferenced model drafts (ADR-0037, WP-143)
+      description: >-
+        Deliberate, admin-scoped garbage collection of the append-only draft
+        history: removes every content-addressed revision that is NOT a release,
+        NOT referenced by a registered flow, and NOT the newest cached revision of
+        its named model. Releases and referenced revisions are always kept. Opt-in
+        (never automatic), so the default append-only behaviour is unchanged.
+      responses:
+        "200":
+          description: The pruned model ids and the remaining count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GCResponse" }
         "401":
           $ref: "#/components/responses/Unauthorized"
   /v1/flows:
@@ -1039,6 +1209,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "502":
           description: Reading from clio failed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/quality/report:
+    get:
+      summary: Per-entity / per-rule violation report over productive Import runs (ADR-0031)
+      description: >
+        Aggregate the quality events written by productive Import runs (record=true)
+        into a compliance report: run a whole ruleset over a dataset — e.g. 70 000
+        servers — then ask which entity failed which rule. The server queries clio
+        itself (it holds the token), so a browser never needs it. Read-only; gated
+        by the `audit` scope. Answers 409 when no clio sink is configured.
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          schema: { type: string }
+          description: clio subject to report on (default the sink's quality prefix, /quality).
+        - name: ruleField
+          in: query
+          required: false
+          schema: { type: string }
+          description: >
+            Decision output holding the violated-rule list. Empty auto-detects every
+            list-of-strings output as rule ids (a COLLECT ruleset's value).
+        - name: recursive
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+          description: Report on the whole subject subtree (default true).
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Max events to read from clio (0 = clio default; defaults to the batch cap).
+      responses:
+        "200":
+          description: The aggregated violation report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QualityReport" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: No clio sink configured (nothing recorded to report on)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "502":
+          description: The clio query failed
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -1448,6 +1670,71 @@ components:
         output:
           type: object
           additionalProperties: { type: string }
+    PublishReleaseRequest:
+      type: object
+      required: [modelId, version]
+      properties:
+        modelId:
+          type: string
+          description: The content-addressed revision to tag (a release reference is also accepted and resolved first).
+          example: "sha256:1a2b…"
+        name:
+          type: string
+          description: The model name to publish under; defaults to the model's display name when omitted.
+        version:
+          type: string
+          description: A well-formed version — SemVer (2.1.0, 2.1.0-rc.1) or the simpler v3 form.
+          example: "2.1.0"
+        notes:
+          type: string
+          description: Optional human release notes.
+    SetChannelRequest:
+      type: object
+      required: [channel, version]
+      properties:
+        channel:
+          type: string
+          description: Channel name (lowercase letters, digits, dashes), e.g. stable or prod.
+          example: "stable"
+        version:
+          type: string
+          description: An already-published version to point the channel at.
+          example: "2.0.0"
+    Release:
+      type: object
+      properties:
+        version: { type: string }
+        modelId: { type: string }
+        publishedAt: { type: string, format: date-time }
+        notes: { type: string }
+    ModelReleases:
+      type: object
+      properties:
+        name: { type: string }
+        releases:
+          type: array
+          description: The model's releases, newest (highest version) first.
+          items: { $ref: "#/components/schemas/Release" }
+        channels:
+          type: object
+          additionalProperties: { type: string }
+          description: Moving channel → version pointers (e.g. latest, stable).
+    ReleasesListResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelReleases" }
+        count: { type: integer }
+    GCResponse:
+      type: object
+      properties:
+        deleted:
+          type: array
+          description: The model ids that were pruned.
+          items: { type: string }
+        deletedCount: { type: integer }
+        remaining: { type: integer, description: Model revisions kept after the pass. }
     FlowResponse:
       type: object
       properties:
@@ -2032,6 +2319,37 @@ components:
         dataType: { type: string }
         x: { type: number }
         y: { type: number }
+    QualityReport:
+      type: object
+      description: >
+        Aggregated compliance verdict over a dataset (ADR-0031): how many distinct
+        entities were seen, how many passed clean, and — for the failing ones —
+        which rules each violated, plus a per-rule tally across the fleet. Only
+        failing entities are listed; passing ones are counted.
+      properties:
+        total: { type: integer, description: Quality events read. }
+        servers: { type: integer, description: Distinct entities observed. }
+        passed: { type: integer, description: Entities with no violated rule. }
+        failed: { type: integer, description: Entities with at least one violated rule. }
+        entities:
+          type: array
+          description: Failing entities only, sorted by id.
+          items:
+            type: object
+            properties:
+              entity: { type: string }
+              rules:
+                type: array
+                items: { type: string }
+                description: De-duplicated, sorted violated rule ids (empty for a bare expectation mismatch).
+        rules:
+          type: array
+          description: Per-rule tally, most-violated first.
+          items:
+            type: object
+            properties:
+              rule: { type: string }
+              failures: { type: integer, description: Distinct entities that violated this rule. }
     StatusResponse:
       type: object
       description: >

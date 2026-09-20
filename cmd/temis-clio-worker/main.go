@@ -119,6 +119,10 @@ type worker struct {
 	processed map[string]bool
 }
 
+// maxProcessed caps the in-memory dedup set (see process); beyond it the set is
+// reset, bounding memory without weakening idempotency (clio's precondition).
+const maxProcessed = 100_000
+
 // observeLoop watches clio's live observe stream, reconnecting with backoff. Each
 // (re)connection is preceded by a run-query backfill so events appended during a
 // disconnect are not missed; the requestId precondition makes the overlap safe.
@@ -240,6 +244,15 @@ func (w *worker) process(ctx context.Context, raw []byte) error {
 		if err := w.write(ctx, ev); err != nil {
 			return fmt.Errorf("write result for command %s: %w", cmd.EventID, err)
 		}
+	}
+	// Bound the in-memory dedup set so a long-running worker cannot leak memory
+	// proportional to the command history (audit finding M4). This set is only a
+	// fast-path optimisation to skip re-evaluating a command that the backfill and
+	// the live stream both deliver; true idempotency is clio's requestId
+	// precondition (a duplicate write 409s as a harmless no-op), so clearing the
+	// set when it grows large is safe.
+	if len(w.processed) >= maxProcessed {
+		w.processed = map[string]bool{}
 	}
 	w.processed[cmd.EventID] = true
 	if evalErr == nil {

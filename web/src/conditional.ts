@@ -1,4 +1,4 @@
-import { getConditional, saveConditional, type ConditionalView } from './api'
+import { getConditional, saveConditional, type Anchor, type ConditionalView } from './api'
 import { ensureFeel, validateExpr } from './feel'
 import { attachFeelField } from './feelfield'
 
@@ -11,10 +11,10 @@ type Branch = { key: 'if' | 'then' | 'else'; label: string; placeholder: string;
 // branches may reference (the other nodes' names). A conditional whose branches
 // nest other boxed expressions (cv.simple === false) opens read-only, so the text
 // editor never clobbers the nesting. onSaved gets the saved model's id.
-export async function openConditionalOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean }): Promise<void> {
+export async function openConditionalOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let cv: ConditionalView | null = null
   try {
-    cv = await getConditional(modelId, decisionId)
+    cv = await getConditional(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -92,7 +92,7 @@ export async function openConditionalOverlay(modelId: string, decisionId: string
         if: branches[0].text.trim(),
         then: branches[1].text.trim(),
         else: branches[2].text.trim(),
-      })
+      }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

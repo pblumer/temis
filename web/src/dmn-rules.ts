@@ -80,6 +80,10 @@ class DmnRules extends RuleProvider {
   init(): void {
     this.addRule('shape.move', () => true)
     this.addRule('elements.move', () => true)
+    // Any DMN node may be resized; the minimum size is enforced in the app shell
+    // (resize.start), and the new bounds are persisted to the DMNDI by the
+    // structural save. Requirement edges are not shapes, so they never resize.
+    this.addRule('shape.resize', () => true)
     // Permit creating a fresh element from the palette (drag/click to place);
     // the new node is undoable and persisted by the structural save.
     this.addRule('shape.create', () => true)

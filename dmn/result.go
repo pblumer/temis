@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/pblumer/feel"
 	"github.com/pblumer/temis/internal/boxed"
-	"github.com/pblumer/temis/internal/feel"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data
@@ -146,6 +146,29 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 			Message:    "converting inputs",
 			Err:        err,
 		}
+	}
+
+	// Fast path: a decision that requires no other decision (its only inputs are
+	// input data, which covers the large majority of real decisions) needs none
+	// of the graph evaluator's memoisation, cycle guard or overlay maps. Build the
+	// scope straight from base and run the expression. Tracing keeps the general
+	// path so its recorder threads through unchanged.
+	if len(c.requires) == 0 && !cfg.trace {
+		scope := c.env.NewScopeWithLimits(base, c.limits)
+		out, err := c.expr(scope)
+		if err != nil {
+			return Result{}, c.classifyRuntime(err)
+		}
+		out = coerceToType(out, c.outType)
+		outputs := map[string]any{c.name: fromValue(out)}
+		res := Result{Outputs: outputs}
+		if c.name != "" {
+			// Decisions mirrors the general path: the evaluated decision, by name.
+			res.Decisions = map[string]any{c.name: outputs[c.name]}
+		} else {
+			res.Decisions = map[string]any{}
+		}
+		return res, nil
 	}
 
 	ev := newEvaluator(base, c.limits)

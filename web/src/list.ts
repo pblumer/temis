@@ -1,4 +1,4 @@
-import { getList, saveList, type ListView } from './api'
+import { getList, saveList, type Anchor, type ListView } from './api'
 import { ensureFeel, validateExpr } from './feel'
 import { attachFeelField } from './feelfield'
 
@@ -8,10 +8,10 @@ import { attachFeelField } from './feelfield'
 // (the other nodes' names). A list whose items nest other boxed expressions
 // (lv.simple === false) opens read-only, so the text editor never clobbers the
 // nesting. onSaved gets the saved model's id.
-export async function openListOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean }): Promise<void> {
+export async function openListOverlay(modelId: string, decisionId: string, baseNames: string[], onSaved?: (newModelId: string) => void, opts?: { readOnly?: boolean; anchor?: Anchor; at?: string }): Promise<void> {
   let lv: ListView | null = null
   try {
-    lv = await getList(modelId, decisionId)
+    lv = await getList(modelId, decisionId, opts?.anchor, opts?.at)
   } catch (e) {
     console.error(e)
     return
@@ -100,7 +100,7 @@ export async function openListOverlay(modelId: string, decisionId: string, baseN
     status.className = 'dt-status'
     status.textContent = 'speichert …'
     try {
-      const saved = await saveList(modelId, decisionId, { items: items.map((s) => s.trim()).filter((s) => s !== '') })
+      const saved = await saveList(modelId, decisionId, { items: items.map((s) => s.trim()).filter((s) => s !== '') }, opts?.anchor, opts?.at)
       const errs = (saved.diagnostics ?? []).filter((d) => d.severity === 'error')
       if (errs.length) {
         status.className = 'dt-status dt-error'

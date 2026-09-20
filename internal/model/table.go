@@ -49,13 +49,15 @@ type InputClause struct {
 	AllowedValues string `json:",omitempty"`
 }
 
-// OutputClause is one output column.
+// OutputClause is one output column. DefaultOutput is the FEEL text of the
+// column's <defaultOutputEntry>, applied when no rule matches (empty when none).
 type OutputClause struct {
 	ID            string `json:",omitempty"`
 	Name          string `json:",omitempty"`
 	Label         string `json:",omitempty"`
 	TypeRef       string `json:",omitempty"`
 	AllowedValues string `json:",omitempty"`
+	DefaultOutput string `json:",omitempty"`
 }
 
 // Rule is one decision-table row. InputEntries are unary-test texts (aligned

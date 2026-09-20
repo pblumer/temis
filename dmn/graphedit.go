@@ -21,9 +21,13 @@ type GraphEdit struct {
 // "businessKnowledgeModel". DataType (inputData only) sets the declared FEEL type.
 // X/Y/Width/Height are the node's DMNDI shape bounds.
 type GraphNodeEdit struct {
-	ID       string  `json:"id"`
-	Type     string  `json:"type"`
-	Name     string  `json:"name"`
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// VarName is the element's FEEL identifier (decision/inputData variable name),
+	// distinct from the free-form display Name. Persisted as an explicit <variable>
+	// only when it differs from Name; empty or equal lets it follow the name.
+	VarName  string  `json:"varName,omitempty"`
 	DataType string  `json:"dataType,omitempty"`
 	X        float64 `json:"x"`
 	Y        float64 `json:"y"`
@@ -88,6 +92,12 @@ func ApplyGraph(src []byte, edit GraphEdit) ([]byte, error) {
 			def.UpsertBKM(n.ID, n.Name)
 		default:
 			return nil, fmt.Errorf("dmn: unknown node type %q for %q", n.Type, n.ID)
+		}
+		// The FEEL identifier is separable from the display name for decisions and
+		// input data; set it after the name so "follow the name" is judged correctly.
+		// (A BKM is referenced by its name, so it has no separate variable identifier.)
+		if n.Type == "decision" || n.Type == "inputData" {
+			def.SetVariableName(n.ID, n.VarName)
 		}
 	}
 

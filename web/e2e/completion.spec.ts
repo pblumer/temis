@@ -84,6 +84,21 @@ test('the in-scope input names are offered as variables', async ({ page }) => {
   await expect(pop.locator('.cc-label', { hasText: /^Order Total$/ })).toBeVisible()
 })
 
+test('decision-table input header offers the decision scope variables', async ({ page }) => {
+  await openDecision(page, 'Discount', 'id_discount')
+  await waitForEngine(page)
+  // Clear the first input-column expression so "Customer Type" is no longer a
+  // sibling column name — it can now only come from the decision's scope (its
+  // connected input-data nodes). The old editor, which knew only the column
+  // names, would not offer it here.
+  const head = page.locator('.dt-in .dt-head-field').first()
+  await head.fill('')
+  await head.press('Control+Space')
+  const pop = page.locator('.cc-pop')
+  await expect(pop.locator('.cc-label', { hasText: /^Customer Type$/ })).toBeVisible()
+  await expect(pop.locator('.cc-label', { hasText: /^Order Total$/ })).toBeVisible()
+})
+
 test('decision-table input cell also offers the column value "?"', async ({ page }) => {
   await openDecision(page, 'Discount', 'id_discount')
   await waitForEngine(page)

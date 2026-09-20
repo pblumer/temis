@@ -351,15 +351,18 @@ func (e Expression) present() bool {
 		e.Some != nil || e.Filter != nil
 }
 
-// elementNameType resolves an inputData or decision id to its name and declared
-// variable type ("" when none).
+// elementNameType resolves an inputData or decision id to its FEEL identifier and
+// declared variable type ("" when none). The name is the element's variable name
+// when declared, else its display @name — so an authored input expression (a
+// decision-table column) references the element the way FEEL binds it, not by a
+// free-form display label.
 func (d *Definitions) elementNameType(id string) (name, typeRef string) {
 	for _, in := range d.InputData {
 		if in.ID == id {
 			if in.Variable != nil {
 				typeRef = in.Variable.TypeRef
 			}
-			return in.Name, typeRef
+			return refElementName(in.Name, in.Variable), typeRef
 		}
 	}
 	for _, dec := range d.Decisions {
@@ -367,10 +370,21 @@ func (d *Definitions) elementNameType(id string) (name, typeRef string) {
 			if dec.Variable != nil {
 				typeRef = dec.Variable.TypeRef
 			}
-			return dec.Name, typeRef
+			return refElementName(dec.Name, dec.Variable), typeRef
 		}
 	}
 	return "", ""
+}
+
+// refElementName is the FEEL identifier for an element: its variable name when
+// declared, else its display name. Mirrors model.RefName on the raw XML side.
+func refElementName(displayName string, v *Variable) string {
+	if v != nil {
+		if n := strings.TrimSpace(v.Name); n != "" {
+			return n
+		}
+	}
+	return displayName
 }
 
 // --- DMNDI shape surgery ---

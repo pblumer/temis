@@ -42,12 +42,120 @@ func TestToolListModels(t *testing.T) {
 	if !contains(toStrings(first["decisions"]), "Dish") {
 		t.Errorf("listed model decisions = %v, want Dish", first["decisions"])
 	}
+	// list_models surfaces the model's display name (the DMN definitions name).
+	if first["name"] != "Dish" {
+		t.Errorf("listed model name = %v, want Dish", first["name"])
+	}
+}
+
+// TestToolGetModelXML covers get_model_xml: it reads a cached model's raw XML back
+// (byte-identical to what was loaded, with its name), and errors for a missing or
+// unknown modelId.
+func TestToolGetModelXML(t *testing.T) {
+	s := newServer()
+	src := dishXML(t)
+	xml, _ := json.Marshal(src)
+	id, _ := run(t, s, call(1, "load_model", `{"xml":`+string(xml)+`}`))[0].payload(t)["modelId"].(string)
+	if id == "" {
+		t.Fatal("load_model returned no modelId")
+	}
+
+	got := run(t, s, call(2, "get_model_xml", `{"modelId":"`+id+`"}`))[0].payload(t)
+	if got["xml"] != src {
+		t.Errorf("get_model_xml returned XML that does not match the loaded source")
+	}
+	if got["name"] != "Dish" {
+		t.Errorf("get_model_xml name = %v, want Dish", got["name"])
+	}
+	if got["modelId"] != id {
+		t.Errorf("get_model_xml modelId = %v, want %v", got["modelId"], id)
+	}
+
+	// Missing modelId → error.
+	if cr := run(t, s, call(3, "get_model_xml", `{}`))[0].call(t); !cr.IsError ||
+		!strings.Contains(cr.Content[0].Text, "missing required argument") {
+		t.Errorf("get_model_xml without modelId should error, got %+v", cr)
+	}
+
+	// Unknown modelId → error.
+	if cr := run(t, s, call(4, "get_model_xml", `{"modelId":"sha256:deadbeef"}`))[0].call(t); !cr.IsError ||
+		!strings.Contains(cr.Content[0].Text, "no model with id") {
+		t.Errorf("get_model_xml with unknown id should error, got %+v", cr)
+	}
+}
+
+// TestToolTypes covers the type-editing tools end to end: list is empty, save_type
+// adds a simple enum (returning a new modelId), list_types then shows it, and
+// delete_type removes it again.
+func TestToolTypes(t *testing.T) {
+	s := newServer()
+	xml, _ := json.Marshal(dishXML(t))
+	id, _ := run(t, s, call(1, "load_model", `{"xml":`+string(xml)+`}`))[0].payload(t)["modelId"].(string)
+	if id == "" {
+		t.Fatal("load_model returned no modelId")
+	}
+
+	// A fresh model has no custom types.
+	types0 := run(t, s, call(2, "list_types", `{"modelId":"`+id+`"}`))[0].payload(t)["types"]
+	if arr, _ := types0.([]any); len(arr) != 0 {
+		t.Fatalf("expected no types initially, got %v", types0)
+	}
+
+	// save_type adds a simple enum and returns a new modelId.
+	saved := run(t, s, call(3, "save_type", `{"modelId":"`+id+`","name":"Ampel","typeRef":"string","allowedValues":"\"rot\",\"gelb\",\"gruen\""}`))[0].payload(t)
+	newID, _ := saved["modelId"].(string)
+	if newID == "" || newID == id {
+		t.Fatalf("save_type should return a new modelId, got %v (was %v)", newID, id)
+	}
+
+	// list_types on the new model shows the type.
+	types1 := run(t, s, call(4, "list_types", `{"modelId":"`+newID+`"}`))[0].payload(t)["types"]
+	arr, _ := types1.([]any)
+	if len(arr) != 1 {
+		t.Fatalf("expected one type after save, got %v", types1)
+	}
+	if first, _ := arr[0].(map[string]any); first["name"] != "Ampel" {
+		t.Errorf("saved type name = %v, want Ampel", arr[0])
+	}
+
+	// delete_type removes it again.
+	del := run(t, s, call(5, "delete_type", `{"modelId":"`+newID+`","name":"Ampel"}`))[0].payload(t)
+	delID, _ := del["modelId"].(string)
+	types2 := run(t, s, call(6, "list_types", `{"modelId":"`+delID+`"}`))[0].payload(t)["types"]
+	if arr, _ := types2.([]any); len(arr) != 0 {
+		t.Fatalf("expected no types after delete, got %v", types2)
+	}
+
+	// save_type with components creates a structured type.
+	structSaved := run(t, s, call(7, "save_type", `{"modelId":"`+id+`","name":"Person","components":[{"name":"name","typeRef":"string"},{"name":"alter","typeRef":"number"}]}`))[0].payload(t)
+	structID, _ := structSaved["modelId"].(string)
+	if structID == "" {
+		t.Fatal("save_type (struct) returned no modelId")
+	}
+	stypes := run(t, s, call(8, "list_types", `{"modelId":"`+structID+`"}`))[0].payload(t)["types"]
+	sarr, _ := stypes.([]any)
+	if len(sarr) != 1 {
+		t.Fatalf("expected one struct type, got %v", stypes)
+	}
+	person, _ := sarr[0].(map[string]any)
+	if person["structured"] != true {
+		t.Errorf("Person should be structured, got %v", person)
+	}
+	if comps, _ := person["components"].([]any); len(comps) != 2 {
+		t.Errorf("Person should have 2 components, got %v", person["components"])
+	}
+
+	// An empty name still errors.
+	if cr := run(t, s, call(9, "save_type", `{"modelId":"`+id+`","name":""}`))[0].call(t); !cr.IsError {
+		t.Errorf("save_type with empty name should error")
+	}
 }
 
 // fakeStore is a minimal Store used to prove WithStore swaps the cache and that
 // list_models reads through whatever Store the server holds.
 type fakeStore struct {
 	infos     []ModelInfo
+	xml       map[string][]byte
 	compileFn func() (string, *dmn.Definitions, dmn.ModelIndex, dmn.Diagnostics, error)
 	lookupFn  func(id string) (*dmn.Definitions, dmn.ModelIndex, bool)
 }
@@ -67,6 +175,11 @@ func (f *fakeStore) Lookup(id string) (*dmn.Definitions, dmn.ModelIndex, bool) {
 }
 
 func (f *fakeStore) List() []ModelInfo { return f.infos }
+
+func (f *fakeStore) ModelXML(id string) ([]byte, bool) {
+	xml, ok := f.xml[id]
+	return xml, ok
+}
 
 // TestWithStore checks WithStore replaces the default store (and that a nil
 // store is ignored, leaving the default in place).
@@ -172,7 +285,8 @@ func TestToolsCallInvalidParams(t *testing.T) {
 // of every tool by passing arguments of the wrong JSON shape.
 func TestToolInvalidArguments(t *testing.T) {
 	tools := []string{
-		"load_model", "describe_decision", "evaluate",
+		"load_model", "get_model_xml", "describe_decision", "evaluate",
+		"list_types", "save_type", "delete_type",
 		"git_list_models", "git_load_model", "git_propose",
 	}
 	for _, name := range tools {

@@ -1,6 +1,6 @@
 # ADR-0033: Clio-Command-Consumer — Entscheidungen per Event auslösen, Ergebnis zurück ins Logbuch (opt-in, adaptergetrieben)
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-07-02
 - **Kontext-WP:** neue Etappe „Command-Consumer" (Ausbau von ADR-0023, im Rahmen von ADR-0025)
 

@@ -1,0 +1,513 @@
+// access.ts — the "Zugriff" sidebar section (WP-107, ADR-0028/0035). Visible to
+// everyone as a login affordance; the management panels (API keys, public
+// decisions) render only for an admin credential. It drives the whole modeler's
+// auth: on a secured server the user pastes a key here, it is stored (session.ts)
+// and attached to every request, and the page reloads so all data re-fetches
+// authenticated.
+
+import { confirmDialog } from './dialog'
+import { escapeHtml } from './dom'
+import {
+  clearBearer,
+  createKey,
+  getPublicConfig,
+  KeyMgmtDisabled,
+  listKeys,
+  PUBLIC_CHANGED,
+  revokeKey,
+  rotateKey,
+  SCOPES,
+  setBearer,
+  setPublicModel,
+  whoami,
+  type AccessIdentity,
+  type CreatedKey,
+  type KeyView,
+  type PublicConfig,
+} from './session'
+
+// mountAccess renders the section into host and toggles the surrounding group's
+// visibility. It fetches the current identity and branches: prompt for a
+// credential when auth is on but the caller is anonymous; show the admin panels
+// only to an admin; otherwise show a minimal identity + logout.
+export async function mountAccess(group: HTMLElement, host: HTMLElement): Promise<void> {
+  let id: AccessIdentity
+  try {
+    id = await whoami()
+  } catch {
+    // whoami unreachable (old server / offline): keep the section hidden rather
+    // than showing a broken panel.
+    group.hidden = true
+    return
+  }
+  group.hidden = false
+  host.innerHTML = ''
+
+  if (id.authEnabled && !id.authenticated) {
+    host.append(renderLogin('Dieser Server ist abgesichert. Melde dich mit einem Zugangs-Key an.'))
+    return
+  }
+  host.append(renderIdentity(id))
+  if (id.isAdmin) {
+    host.append(renderKeysPanel(!id.authEnabled), renderPublicPanel())
+  }
+}
+
+// createPublicToggle wires a toolbar button that opens or closes the currently
+// open model for anonymous evaluation (ADR-0035, WP-107) — the per-model
+// "Öffentlich"-Schalter. It is admin-only (hidden otherwise) and toggles by the
+// model's display name so a re-saved revision stays public. A model made public
+// at server start (-public-models) shows as fixed and cannot be toggled off.
+export function createPublicToggle(btn: HTMLButtonElement): { update: (modelId: string, modelName?: string) => void } {
+  let cfg: PublicConfig | null = null
+  let admin = false
+  let ready: Promise<void> | null = null
+  let cur: { id: string; name: string } | null = null
+
+  const ensure = (): Promise<void> => {
+    if (!ready) {
+      ready = (async () => {
+        try {
+          admin = (await whoami()).isAdmin
+          if (admin) cfg = await getPublicConfig()
+        } catch {
+          admin = false
+        }
+      })()
+    }
+    return ready
+  }
+
+  const state = (): { pub: boolean; fixed: boolean } => {
+    if (!cfg || !cur) return { pub: false, fixed: false }
+    const hit = (list?: string[]): boolean => !!list?.some((m) => m === cur!.id || (cur!.name !== '' && m === cur!.name))
+    const inStatic = hit(cfg.static)
+    return { pub: inStatic || hit(cfg.managed), fixed: inStatic }
+  }
+
+  const paint = (): void => {
+    if (!admin || !cur) {
+      btn.hidden = true
+      return
+    }
+    const { pub, fixed } = state()
+    btn.hidden = false
+    btn.disabled = fixed
+    btn.textContent = pub ? '🌐 Öffentlich' : '🔒 Privat'
+    btn.classList.toggle('is-public', pub)
+    btn.title = fixed
+      ? 'Öffentlich per Serverstart (-public-models) — nicht zur Laufzeit änderbar'
+      : pub
+        ? 'Anonym auswertbar — klicken zum Schließen'
+        : 'Nur mit Key auswertbar — klicken, um diese Decision öffentlich zu machen'
+  }
+
+  btn.addEventListener('click', async () => {
+    if (!cfg || !cur) return
+    const { pub, fixed } = state()
+    if (fixed) return
+    btn.disabled = true
+    try {
+      cfg = await setPublicModel(cur.name || cur.id, !pub)
+    } catch {
+      /* leave state unchanged; re-enable below */
+    }
+    paint()
+  })
+
+  // Stay in sync when the Zugriff panel (or another tab widget) changes a model.
+  document.addEventListener(PUBLIC_CHANGED, (e) => {
+    cfg = (e as CustomEvent<PublicConfig>).detail
+    paint()
+  })
+
+  return {
+    update: (modelId, modelName = '') => {
+      cur = modelId ? { id: modelId, name: modelName } : null
+      void ensure().then(paint)
+    },
+  }
+}
+
+// renderLogin is the credential prompt: a masked field + "Anmelden". On submit it
+// stores the bearer and reloads, so every subsequent fetch is authenticated.
+function renderLogin(message: string): HTMLElement {
+  const wrap = div('access-block')
+  wrap.append(p('access-note', message))
+  const input = document.createElement('input')
+  input.type = 'password'
+  input.className = 'access-input'
+  input.placeholder = 'kid.secret'
+  input.autocomplete = 'off'
+  const btn = button('access-btn access-btn-primary', 'Anmelden')
+  const err = p('access-err', '')
+  err.hidden = true
+  const submit = (): void => {
+    const v = input.value.trim()
+    if (!v) return
+    setBearer(v)
+    location.reload()
+  }
+  btn.addEventListener('click', submit)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submit()
+  })
+  wrap.append(input, btn, err)
+  return wrap
+}
+
+// renderIdentity shows who is logged in (subject + scopes) and a logout button.
+// In an open (unauthenticated) server it notes that no auth is configured.
+function renderIdentity(id: AccessIdentity): HTMLElement {
+  const wrap = div('access-block')
+  if (!id.authEnabled) {
+    wrap.append(p('access-note', 'Offene API — keine Authentifizierung aktiv. Lege unten einen Admin-Key an, um den Server abzusichern (persistente Keys via -keys-dir).'))
+    return wrap
+  }
+  const who = div('access-identity')
+  who.innerHTML = `<span class="access-who">${escapeHtml(id.subject ?? '—')}</span>` + (id.isAdmin ? '<span class="access-badge">admin</span>' : '')
+  wrap.append(who)
+  if (id.scopes?.length) wrap.append(p('access-scopes', id.scopes.join(' · ')))
+  const logout = button('access-btn', 'Abmelden')
+  logout.addEventListener('click', () => {
+    clearBearer()
+    location.reload()
+  })
+  wrap.append(logout)
+  return wrap
+}
+
+// renderKeysPanel lists the managed API keys and offers create/rotate/revoke. The
+// list loads lazily; a dormant lifecycle API (no -keys-dir) shows a hint.
+function renderKeysPanel(openMode: boolean): HTMLElement {
+  const panel = div('access-block')
+  panel.append(heading('API-Keys'))
+
+  // Trust-on-first-use bootstrap: on an OPEN server the lifecycle API is reachable
+  // (requireScope is transparent without configured auth), so the very first admin
+  // key can be minted right here. Creating any key flips the server to "secured" at
+  // runtime, so we force admin scope — otherwise the operator would lock the door
+  // with no admin key inside — and adopt the returned bearer as the session
+  // credential immediately, so the same person is now the admin of the secured
+  // server rather than shut out.
+  if (openMode) {
+    const boot = div('access-block')
+    boot.append(p('access-note', '🔓 Dieser Server ist offen. Lege einen Admin-Key an, um ihn abzusichern — du wirst dann automatisch als dieser Admin angemeldet.'))
+    const secureBtn = button('access-btn access-btn-primary', '🔒 Admin-Key anlegen & absichern')
+    const err = p('access-err', '')
+    err.hidden = true
+    secureBtn.addEventListener('click', async () => {
+      secureBtn.disabled = true
+      err.hidden = true
+      try {
+        const created = await createKey({ scopes: ['admin'], owner: 'bootstrap admin' })
+        setBearer(created.bearer) // adopt the new admin as the session so we aren't locked out
+        boot.replaceChildren()
+        showSecret(boot, created, 'Server abgesichert — du bist jetzt als Admin angemeldet. Secret einmalig sichtbar, jetzt kopieren:', true)
+      } catch (e) {
+        secureBtn.disabled = false
+        err.textContent =
+          e instanceof KeyMgmtDisabled
+            ? 'Key-Verwaltung ist deaktiviert. Starte den Server mit -keys-dir, damit angelegte Keys persistiert werden und den Neustart überstehen.'
+            : (e as Error).message
+        err.hidden = false
+      }
+    })
+    boot.append(secureBtn, err)
+    panel.append(boot)
+    return panel
+  }
+
+  const list = div('access-list')
+  const status = p('access-err', '')
+  status.hidden = true
+  // Dedicated host for the one-time secret, OUTSIDE the list so a list refresh
+  // (which clears the list) never wipes a freshly minted/rotated secret before the
+  // admin can copy it.
+  const secretHost = div('access-secret-host')
+  const newBtn = button('access-btn access-btn-primary', '+ Neuer Key')
+
+  const refresh = async (): Promise<void> => {
+    list.innerHTML = ''
+    status.hidden = true
+    newBtn.hidden = false
+    try {
+      const keys = await listKeys()
+      if (!keys.length) {
+        list.append(p('access-note', 'Noch keine Keys angelegt.'))
+        return
+      }
+      for (const k of keys) list.append(renderKeyRow(k, refresh, secretHost))
+    } catch (e) {
+      if (e instanceof KeyMgmtDisabled) {
+        list.append(p('access-note', 'Key-Verwaltung ist deaktiviert (Server ohne -keys-dir). Keys sind dann nur statisch über -keys-file konfigurierbar.'))
+        newBtn.hidden = true
+        return
+      }
+      status.textContent = (e as Error).message
+      status.hidden = false
+    }
+  }
+
+  newBtn.addEventListener('click', () => {
+    if (list.querySelector('.access-create')) return
+    list.prepend(renderCreateForm(refresh, secretHost))
+  })
+  panel.append(newBtn, status, secretHost, list)
+  void refresh()
+  return panel
+}
+
+// renderKeyRow is one key: kid, scopes, owner/expiry/revoked, plus rotate/revoke
+// for a live managed key.
+function renderKeyRow(k: KeyView, refresh: () => Promise<void>, secretHost: HTMLElement): HTMLElement {
+  const row = div('access-key' + (k.revoked ? ' is-revoked' : ''))
+  const meta: string[] = []
+  if (k.owner) meta.push(escapeHtml(k.owner))
+  if (k.expiresAt) meta.push('bis ' + escapeHtml(k.expiresAt.slice(0, 10)))
+  if (k.revoked) meta.push('widerrufen')
+  else if (!k.managed) meta.push('statisch')
+  row.innerHTML =
+    `<div class="access-key-head"><code class="access-kid">${escapeHtml(k.kid)}</code>` +
+    (meta.length ? `<span class="access-key-meta">${meta.join(' · ')}</span>` : '') +
+    `</div><div class="access-key-scopes">${escapeHtml((k.scopes ?? []).join(' · '))}</div>`
+  if (k.managed && !k.revoked) {
+    const actions = div('access-key-actions')
+    const rot = button('access-btn access-btn-sm', 'Rotieren')
+    rot.addEventListener('click', async () => {
+      try {
+        const rotated = await rotateKey(k.kid)
+        showSecret(secretHost, rotated, `Neues Secret für ${k.kid} — einmalig sichtbar, jetzt kopieren:`)
+        await refresh()
+      } catch (e) {
+        alertRow(row, (e as Error).message)
+      }
+    })
+    const rev = button('access-btn access-btn-sm access-btn-danger', 'Widerrufen')
+    rev.addEventListener('click', async () => {
+      if (!(await confirmDialog({ title: 'Key widerrufen', message: `Key ${k.kid} dauerhaft entwerten? Der Aufrufer verliert sofort den Zugriff.`, okLabel: 'Widerrufen', danger: true }))) return
+      try {
+        await revokeKey(k.kid)
+        await refresh()
+      } catch (e) {
+        alertRow(row, (e as Error).message)
+      }
+    })
+    actions.append(rot, rev)
+    row.append(actions)
+  }
+  return row
+}
+
+// renderCreateForm collects scopes + owner + expiry and mints a key, showing its
+// one-time secret inline.
+function renderCreateForm(refresh: () => Promise<void>, secretHost: HTMLElement): HTMLElement {
+  const form = div('access-create')
+  const owner = document.createElement('input')
+  owner.className = 'access-input'
+  owner.placeholder = 'Besitzer (optional, z. B. "CI" oder "Agent")'
+  const scopeBox = div('access-scope-grid')
+  const checks: HTMLInputElement[] = []
+  for (const s of SCOPES) {
+    const label = document.createElement('label')
+    label.className = 'access-scope'
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.value = s.scope
+    checks.push(cb)
+    label.append(cb, document.createTextNode(' ' + s.label))
+    scopeBox.append(label)
+  }
+  const expiry = document.createElement('input')
+  expiry.type = 'date'
+  expiry.className = 'access-input'
+  expiry.title = 'Ablaufdatum (optional)'
+  const err = p('access-err', '')
+  err.hidden = true
+  const create = button('access-btn access-btn-primary', 'Erstellen')
+  const cancel = button('access-btn', 'Abbrechen')
+  cancel.addEventListener('click', () => form.remove())
+  create.addEventListener('click', async () => {
+    const scopes = checks.filter((c) => c.checked).map((c) => c.value)
+    if (!scopes.length) {
+      err.textContent = 'Mindestens einen Scope wählen.'
+      err.hidden = false
+      return
+    }
+    const req: { scopes: string[]; owner?: string; expiresAt?: string } = { scopes }
+    if (owner.value.trim()) req.owner = owner.value.trim()
+    if (expiry.value) req.expiresAt = new Date(expiry.value + 'T00:00:00Z').toISOString()
+    try {
+      const created = await createKey(req)
+      // Show the one-time secret in the dedicated host (survives the refresh), then
+      // close the form and reload the list.
+      showSecret(secretHost, created, 'Key erstellt — Secret einmalig sichtbar, jetzt kopieren:')
+      form.remove()
+      await refresh()
+    } catch (e) {
+      err.textContent = (e as Error).message
+      err.hidden = false
+    }
+  })
+  form.append(p('access-note', 'Scopes für den neuen Key:'), scopeBox, owner, expiry, err, rowOf(create, cancel))
+  return form
+}
+
+// showSecret renders the one-time bearer with a copy button. The secret is never
+// retrievable again, so this is the only chance to grab it.
+function showSecret(container: HTMLElement, key: CreatedKey, title: string, reload = false): void {
+  const box = div('access-secret')
+  box.append(p('access-note', title))
+  const code = document.createElement('code')
+  code.className = 'access-secret-value'
+  code.textContent = key.bearer
+  const copy = button('access-btn access-btn-sm', 'Kopieren')
+  copy.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(key.bearer)
+    copy.textContent = 'Kopiert ✓'
+  })
+  box.append(code, copy)
+  // After a bootstrap (open → secured) the bearer is already stored; a reload
+  // re-reads whoami so the section switches to the authenticated admin view.
+  // Otherwise offer an explicit dismiss so the one-time secret stays on screen
+  // until the admin has copied it (it must survive the key-list refresh).
+  if (reload) {
+    const rl = button('access-btn access-btn-primary access-btn-sm', 'Fertig — neu laden')
+    rl.addEventListener('click', () => location.reload())
+    box.append(rl)
+  } else {
+    const close = button('access-btn access-btn-sm', 'Schließen')
+    close.addEventListener('click', () => box.remove())
+    box.append(close)
+  }
+  // Replace, not prepend: this container is the dedicated secret host, so only the
+  // latest one-time secret is shown, and it is never wiped by a list refresh.
+  container.replaceChildren(box)
+}
+
+// renderPublicPanel shows and edits the public-decision configuration (ADR-0035):
+// which decisions anonymous callers may evaluate. The global switch and static
+// (-public-models) entries are read-only; managed entries can be toggled at
+// runtime and (with -keys-dir) persist across restarts.
+function renderPublicPanel(): HTMLElement {
+  const panel = div('access-block')
+  panel.append(heading('Public Decisions'))
+  const body = div('access-list')
+  const status = p('access-err', '')
+  status.hidden = true
+  panel.append(body, status)
+
+  const render = (cfg: PublicConfig): void => {
+    body.innerHTML = ''
+    if (cfg.evaluate) {
+      body.append(p('access-note', '🌐 Globaler Schalter aktiv: jede Auswertung ist anonym offen (write/admin bleiben geschützt).'))
+    }
+    const rows = div('access-list')
+    for (const m of cfg.static ?? []) rows.append(publicRow(m, true, cfg, render, status))
+    for (const m of cfg.managed ?? []) rows.append(publicRow(m, false, cfg, render, status))
+    if (!(cfg.static?.length || cfg.managed?.length)) {
+      rows.append(p('access-note', 'Keine öffentlich auswertbaren Modelle.'))
+    }
+    body.append(rows)
+
+    // Add control: open a model (by modelId or display name) to anonymous evaluation.
+    const add = document.createElement('input')
+    add.className = 'access-input'
+    add.placeholder = 'Modell öffentlich machen — modelId oder Name'
+    const addBtn = button('access-btn', '+ Öffentlich machen')
+    const doAdd = async (): Promise<void> => {
+      const v = add.value.trim()
+      if (!v) return
+      status.hidden = true
+      try {
+        render(await setPublicModel(v, true))
+      } catch (e) {
+        status.textContent = (e as Error).message
+        status.hidden = false
+      }
+    }
+    addBtn.addEventListener('click', doAdd)
+    add.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') void doAdd()
+    })
+    body.append(add, addBtn)
+    body.append(
+      p(
+        'access-hint',
+        cfg.persistent
+          ? 'Änderungen wirken sofort und überstehen einen Neustart (persistiert).'
+          : 'Änderungen wirken sofort, sind aber nur im Speicher — für Persistenz den Server mit -keys-dir starten.',
+      ),
+    )
+  }
+
+  void (async () => {
+    try {
+      render(await getPublicConfig())
+    } catch (e) {
+      body.append(p('access-err', (e as Error).message))
+    }
+  })()
+  // Repaint when the toolbar toggle (or another widget) changes a model's state.
+  document.addEventListener(PUBLIC_CHANGED, (e) => render((e as CustomEvent<PublicConfig>).detail))
+  return panel
+}
+
+// publicRow is one public entry: the model + a remove button. Static entries
+// (deployment config) are shown as fixed and cannot be removed at runtime.
+function publicRow(model: string, isStatic: boolean, cfg: PublicConfig, render: (c: PublicConfig) => void, status: HTMLElement): HTMLElement {
+  const row = div('access-public-row')
+  row.innerHTML = `<code class="access-public-model">${escapeHtml(model)}</code>` + (isStatic ? '<span class="access-key-meta">fix</span>' : '')
+  if (!isStatic) {
+    const rm = button('access-btn access-btn-sm access-btn-danger', '✕')
+    rm.title = 'Nicht mehr öffentlich'
+    rm.addEventListener('click', async () => {
+      status.hidden = true
+      try {
+        render(await setPublicModel(model, false))
+      } catch (e) {
+        status.textContent = (e as Error).message
+        status.hidden = false
+      }
+    })
+    row.append(rm)
+  }
+  void cfg
+  return row
+}
+
+// --- tiny DOM helpers (kept local; the section is self-contained) ---
+
+function div(cls: string): HTMLElement {
+  const d = document.createElement('div')
+  d.className = cls
+  return d
+}
+function p(cls: string, text: string): HTMLElement {
+  const n = document.createElement('p')
+  n.className = cls
+  n.textContent = text
+  return n
+}
+function heading(text: string): HTMLElement {
+  const h = document.createElement('div')
+  h.className = 'access-heading'
+  h.textContent = text
+  return h
+}
+function button(cls: string, text: string): HTMLButtonElement {
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = cls
+  b.textContent = text
+  return b
+}
+function rowOf(...nodes: Node[]): HTMLElement {
+  const r = div('access-actions')
+  r.append(...nodes)
+  return r
+}
+function alertRow(row: HTMLElement, msg: string): void {
+  const e = p('access-err', msg)
+  row.append(e)
+}

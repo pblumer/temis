@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/bkm-boxed-body"
+             name="BkmBoxedBody" id="def_bkm_boxed">
+  <inputData id="id_score" name="Score">
+    <variable name="Score" typeRef="number"/>
+  </inputData>
+
+  <!-- A BKM whose encapsulated body is a boxed DECISION TABLE (not a literal).
+       This is the read-only case the simple BKM editor guarded (WP-66). -->
+  <businessKnowledgeModel id="id_rating" name="Rating">
+    <variable name="Rating" typeRef="string"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="score" typeRef="number"/>
+      <decisionTable hitPolicy="FIRST">
+        <input id="in_score" label="score">
+          <inputExpression typeRef="number"><text>score</text></inputExpression>
+        </input>
+        <output id="out_rating" name="rating" typeRef="string"/>
+        <rule>
+          <inputEntry><text>&gt;= 80</text></inputEntry>
+          <outputEntry><text>"A"</text></outputEntry>
+        </rule>
+        <rule>
+          <inputEntry><text>&lt; 80</text></inputEntry>
+          <outputEntry><text>"B"</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <!-- A BKM whose encapsulated body is a boxed CONTEXT. -->
+  <businessKnowledgeModel id="id_weight" name="Weighted">
+    <variable name="Weighted" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="base" typeRef="number"/>
+      <context>
+        <contextEntry>
+          <variable name="factor" typeRef="number"/>
+          <literalExpression><text>2</text></literalExpression>
+        </contextEntry>
+        <contextEntry>
+          <literalExpression><text>base * factor</text></literalExpression>
+        </contextEntry>
+      </context>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision id="id_grade" name="Grade">
+    <variable name="Grade" typeRef="string"/>
+    <informationRequirement>
+      <requiredInput href="#id_score"/>
+    </informationRequirement>
+    <knowledgeRequirement>
+      <requiredKnowledge href="#id_rating"/>
+    </knowledgeRequirement>
+    <literalExpression><text>Rating(Score)</text></literalExpression>
+  </decision>
+</definitions>

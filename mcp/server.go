@@ -69,12 +69,22 @@ type Server struct {
 	// tests. The git-provider token is supplied per tool call (gitToken arg),
 	// never stored on the server (WP-73, auth model A).
 	gitBaseURL string
+
+	// resourceMetadataURL, when set (WithResourceMetadataURL), is advertised in the
+	// WWW-Authenticate header on a 401 so an OAuth-capable client can discover this
+	// resource server's protected-resource metadata and the authorization server
+	// behind it (RFC 9728 §5.1, ADR-0038). Empty leaves the bare "Bearer" challenge.
+	resourceMetadataURL string
 }
 
-// ModelInfo summarises a cached model for list_models: its content-addressed id
-// and the names of its evaluable decisions and input data.
+// ModelInfo summarises a cached model for list_models: its content-addressed id,
+// its display name (the DMN definitions name) and the names of its evaluable
+// decisions and input data. Name lets a caller find a model it knows by the name
+// shown in the modeler; it is not a unique key, since every saved revision of a
+// same-named model is its own content-addressed id.
 type ModelInfo struct {
 	ID        string
+	Name      string
 	Decisions []string
 	Inputs    []string
 }
@@ -93,6 +103,10 @@ type Store interface {
 	Lookup(id string) (defs *dmn.Definitions, index dmn.ModelIndex, ok bool)
 	// List summarises every cached model, in any order (the caller sorts).
 	List() []ModelInfo
+	// ModelXML returns the raw DMN XML the model with id was compiled from, or
+	// ok=false when it is not cached. It lets get_model_xml read a cached model's
+	// source back so an agent can inspect its FEEL, not just evaluate it.
+	ModelXML(id string) (xml []byte, ok bool)
 }
 
 // FlowStore is the decision-flow catalog the MCP flow tools operate on. Like
@@ -145,6 +159,17 @@ func WithAuth(auth Auth) Option {
 	}
 }
 
+// WithResourceMetadataURL makes the HTTP transport point OAuth clients at this
+// server's protected-resource metadata in the WWW-Authenticate challenge on a
+// 401 (RFC 9728 §5.1, ADR-0038). An empty URL is ignored.
+func WithResourceMetadataURL(url string) Option {
+	return func(s *Server) {
+		if url != "" {
+			s.resourceMetadataURL = url
+		}
+	}
+}
+
 // Auth authorizes MCP tool calls by scope. The host (temisd) implements it over
 // its keystore; the mcp package supplies the scope string for each tool and the
 // bearer credential from the request, and defers the verdict. Keeping the scope
@@ -170,8 +195,12 @@ const (
 // only authentication, then dispatch reports the unknown tool.
 var toolScopes = map[string]string{
 	"list_models":       "models:read",
+	"get_model_xml":     "models:read",
 	"load_model":        "models:read",
 	"describe_decision": "models:read",
+	"list_types":        "models:read",
+	"save_type":         "models:write",
+	"delete_type":       "models:write",
 	"evaluate":          "evaluate",
 	"load_flow":         "flow",
 	"describe_flow":     "flow",
@@ -227,12 +256,33 @@ func NewServer(engine *dmn.Engine, opts ...Option) *Server {
 // any diagnostics produced while compiling it.
 type storedModel struct {
 	id    string
+	xml   []byte // the raw DMN XML this model was compiled from, served back by get_model_xml
 	defs  *dmn.Definitions
 	index dmn.ModelIndex
 	diags dmn.Diagnostics
 }
 
 // --- initialize handshake ---
+
+// serverInstructions is returned as the MCP initialize result's "instructions"
+// field, which clients surface to the agent on connect. It is the co-modeling
+// contract: temis is a verification tool a human (in the Modeler) and an agent
+// (over these tools) build decisions with, hand in hand, on one shared cache. The
+// null traps at the end are the mistakes this contract exists to prevent; the
+// repo skill .claude/skills/temis-decision-modeling has the worked examples.
+const serverInstructions = `temis is a deterministic DMN/FEEL decision engine. You (the agent) and a human co-model decisions: you via these MCP tools, the human via the temis Modeler (GUI), on ONE shared content-addressed model cache. Work hand in hand:
+
+- Find the human's model with list_models. Each has a name (as shown in the Modeler), but the name is NOT unique: every save is a new revision with its own modelId. To target the exact current model, ask the human to copy its modelId from the Modeler's toolbar chip.
+- Read a model's real DMN/FEEL back with get_model_xml before you change it — inspect, don't guess.
+- Diagnose with evaluate + explain:true; the trace shows which rules fired and why (temis is deterministic). Use strict:true to turn a silent null / no-match into precise input errors (TYPE_MISMATCH, UNKNOWN_INPUT, MISSING_INPUT).
+- Only SAVED models are visible here. If results look stale, ask the human to Save in the Modeler, then re-check.
+- To change a model, prefer editing the XML you read back (this preserves the diagram layout and other nodes) and load_model it under the SAME name → it appears in the Modeler as a new version (the human presses the refresh button to see it). Use the DMN 2023 namespace (https://www.omg.org/spec/DMN/20230324/MODEL/) to avoid a namespace warning. Verify with evaluate before handing back, and tell the human which modelId is the corrected version.
+- For durable, reviewed models use git (git_load_model / git_propose) instead of the in-memory cache.
+
+Common null traps to check first:
+1. A decision-table INPUT cell is a UNARY TEST compared against that column's input expression — not a standalone boolean. A computed/boolean expression there (count(x) > 0, if...then...else) becomes "inputValue = (that expression)", which almost never holds, so the rule never fires and hit policy U returns null (or the catch-all "-" rule wins). Fix: put the value in the column's input expression (e.g. count(list)) and only the comparison in the cell (> 0); or make the decision a literal expression.
+2. Calling a BKM that has no encapsulated logic returns null (for x in list return BKM(x) -> [null, null, ...]). Give the BKM a formal parameter and a FEEL body.
+3. typeRef is the FEEL result type (string/number/boolean/list/date/...); empty means Any, not "no value".`
 
 func (s *Server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	var p struct {
@@ -249,6 +299,7 @@ func (s *Server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 		"protocolVersion": version,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
 		"serverInfo":      map[string]any{"name": serverName, "version": s.version},
+		"instructions":    serverInstructions,
 	}, nil
 }
 
@@ -277,8 +328,19 @@ var tools = []toolSpec{
 	{
 		Name: "list_models",
 		Description: "List the DMN models currently loaded in this server's cache, " +
-			"each with its evaluable decisions and input-data names.",
+			"each with its display name, its evaluable decisions and input-data names. " +
+			"The name is the one shown in the modeler; it is not unique, since every " +
+			"saved revision is its own modelId.",
 		InputSchema: obj(map[string]any{}),
+	},
+	{
+		Name: "get_model_xml",
+		Description: "Return the raw DMN 1.5 XML a cached model was compiled from, so " +
+			"you can inspect its FEEL expressions and decision logic — not just " +
+			"evaluate it. Look the modelId up with list_models first.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId (sha256:… hash) of a cached model, from list_models or load_model."),
+		}, "modelId"),
 	},
 	{
 		Name: "load_model",
@@ -298,6 +360,51 @@ var tools = []toolSpec{
 			"modelId":  str("The modelId returned by load_model."),
 			"decision": str("The decision name or id to describe."),
 		}, "modelId", "decision"),
+	},
+	{
+		Name: "list_types",
+		Description: "List a cached model's named item definitions (its custom FEEL types): " +
+			"each type's name, base typeRef, whether it is a collection, its allowed-values " +
+			"constraint, and — for structured types — its components. Use it before referring " +
+			"to a type by name.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId (sha256:… hash) of a cached model, from list_models or load_model."),
+		}, "modelId"),
+	},
+	{
+		Name: "save_type",
+		Description: "Create or update a custom type (item definition) on a cached model and " +
+			"return the recompiled model's new modelId (a new content-addressed revision that " +
+			"appears in the modeler's type manager). Pass either a SIMPLE type — a base FEEL " +
+			"type with an optional collection flag and allowed-values constraint — or a " +
+			"STRUCTURED type by giving `components` (its fields: name + typeRef + optional " +
+			"collection; nest by referencing another named type). When `components` is set, " +
+			"typeRef and allowedValues are ignored.",
+		InputSchema: obj(map[string]any{
+			"modelId":       str("The modelId of the cached model to add the type to."),
+			"name":          str("The type's name, e.g. \"Ampel\" or \"Person\"."),
+			"typeRef":       str("Simple type only: the base FEEL type, e.g. \"string\", \"number\". Empty means Any."),
+			"isCollection":  map[string]any{"type": "boolean", "description": "When true, the type is a collection (list)."},
+			"allowedValues": str("Simple type only: FEEL allowed-values, e.g. \"\\\"rot\\\",\\\"gelb\\\"\" (enum) or \"[1..10]\" (range)."),
+			"components": map[string]any{
+				"type":        "array",
+				"description": "Structured type only: the fields. Each is {name, typeRef, isCollection?}. typeRef may be a built-in FEEL type or another named type.",
+				"items": obj(map[string]any{
+					"name":         str("The field name."),
+					"typeRef":      str("The field's FEEL type (built-in or a named type)."),
+					"isCollection": map[string]any{"type": "boolean", "description": "When true, the field is a collection."},
+				}, "name"),
+			},
+		}, "modelId", "name"),
+	},
+	{
+		Name: "delete_type",
+		Description: "Remove a named item definition (custom type) from a cached model and return " +
+			"the recompiled model's new modelId. References to the type elsewhere are left as-is.",
+		InputSchema: obj(map[string]any{
+			"modelId": str("The modelId of the cached model to remove the type from."),
+			"name":    str("The name of the type to remove."),
+		}, "modelId", "name"),
 	},
 	{
 		Name: "evaluate",
@@ -339,10 +446,18 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 	switch p.Name {
 	case "list_models":
 		return s.toolListModels()
+	case "get_model_xml":
+		return s.toolGetModelXML(p.Arguments)
 	case "load_model":
 		return s.toolLoadModel(ctx, p.Arguments)
 	case "describe_decision":
 		return s.toolDescribeDecision(p.Arguments)
+	case "list_types":
+		return s.toolListTypes(p.Arguments)
+	case "save_type":
+		return s.toolSaveType(ctx, p.Arguments)
+	case "delete_type":
+		return s.toolDeleteType(ctx, p.Arguments)
 	case "evaluate":
 		return s.toolEvaluate(ctx, p.Arguments)
 	case "load_flow":
@@ -370,10 +485,31 @@ func (s *Server) toolListModels() (any, *rpcError) {
 	infos := s.store.List()
 	summaries := make([]modelSummary, 0, len(infos))
 	for _, mi := range infos {
-		summaries = append(summaries, modelSummary{ModelID: mi.ID, Decisions: mi.Decisions, Inputs: mi.Inputs})
+		summaries = append(summaries, modelSummary{ModelID: mi.ID, Name: mi.Name, Decisions: mi.Decisions, Inputs: mi.Inputs})
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ModelID < summaries[j].ModelID })
 	return toolText(map[string]any{"models": summaries, "count": len(summaries)})
+}
+
+func (s *Server) toolGetModelXML(raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	name := ""
+	if defs, _, ok := s.store.Lookup(a.ModelID); ok {
+		name = defs.ModelName()
+	}
+	return toolText(modelXMLResponse{ModelID: a.ModelID, Name: name, XML: string(xml)})
 }
 
 func (s *Server) toolLoadModel(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
@@ -431,6 +567,111 @@ func (s *Server) toolDescribeDecision(raw json.RawMessage) (any, *rpcError) {
 		"decisionId":      dec.ID(),
 		"inputs":          dec.InputSchema(),
 		"reachableInputs": reachable,
+	})
+}
+
+func (s *Server) toolListTypes(raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	defs, _, ok := s.store.Lookup(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	return toolText(map[string]any{"modelId": a.ModelID, "types": defs.ItemDefinitions()})
+}
+
+// toolSaveType patches the model's XML with the type, recompiles it and returns
+// the new content-addressed modelId — mirroring the HTTP POST /types endpoint, so
+// an agent can add a type to a model the same way the modeler does, without
+// reloading the whole XML.
+func (s *Server) toolSaveType(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID       string `json:"modelId"`
+		Name          string `json:"name"`
+		TypeRef       string `json:"typeRef"`
+		IsCollection  bool   `json:"isCollection"`
+		AllowedValues string `json:"allowedValues"`
+		Components    []struct {
+			Name         string `json:"name"`
+			TypeRef      string `json:"typeRef"`
+			IsCollection bool   `json:"isCollection"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	if a.Name == "" {
+		return toolError("missing required argument: name"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	var comps []dmn.ItemType
+	for _, c := range a.Components {
+		comps = append(comps, dmn.ItemType{Name: c.Name, TypeRef: c.TypeRef, IsCollection: c.IsCollection})
+	}
+	patched, err := dmn.SetItemDefinition(xml, dmn.ItemType{
+		Name:          a.Name,
+		TypeRef:       a.TypeRef,
+		IsCollection:  a.IsCollection,
+		AllowedValues: a.AllowedValues,
+		Components:    comps,
+	})
+	if err != nil {
+		return toolError("could not save type: " + err.Error()), nil
+	}
+	return s.compileToResponse(ctx, patched, "type change")
+}
+
+func (s *Server) toolDeleteType(ctx context.Context, raw json.RawMessage) (any, *rpcError) {
+	var a struct {
+		ModelID string `json:"modelId"`
+		Name    string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return toolError("invalid arguments: " + err.Error()), nil
+	}
+	if a.ModelID == "" {
+		return toolError("missing required argument: modelId"), nil
+	}
+	if a.Name == "" {
+		return toolError("missing required argument: name"), nil
+	}
+	xml, ok := s.store.ModelXML(a.ModelID)
+	if !ok {
+		return toolError("no model with id " + a.ModelID + "; list them with list_models or load it with load_model"), nil
+	}
+	patched, err := dmn.RemoveItemDefinition(xml, a.Name)
+	if err != nil {
+		return toolError("could not delete type: " + err.Error()), nil
+	}
+	return s.compileToResponse(ctx, patched, "type removal")
+}
+
+// compileToResponse compiles patched XML into the shared cache and returns the
+// standard model response (new modelId + decisions/inputs/diagnostics), the common
+// tail of the type-editing tools.
+func (s *Server) compileToResponse(ctx context.Context, patched []byte, what string) (any, *rpcError) {
+	id, _, index, diags, err := s.store.Compile(ctx, patched)
+	if err != nil {
+		return toolError("could not compile model after " + what + ": " + err.Error()), nil
+	}
+	return toolText(modelResponse{
+		ModelID:     id,
+		Decisions:   index.Decisions,
+		Inputs:      index.Inputs,
+		Diagnostics: toDiagnosticDTOs(diags),
 	})
 }
 
@@ -531,7 +772,7 @@ func (m *memStore) Compile(ctx context.Context, xml []byte) (string, *dmn.Defini
 	if err != nil {
 		return "", nil, dmn.ModelIndex{}, nil, err
 	}
-	sm := &storedModel{id: id, defs: defs, index: defs.Index(), diags: diags}
+	sm := &storedModel{id: id, xml: append([]byte(nil), xml...), defs: defs, index: defs.Index(), diags: diags}
 
 	m.mu.Lock()
 	m.models[id] = sm
@@ -554,9 +795,19 @@ func (m *memStore) List() []ModelInfo {
 	defer m.mu.RUnlock()
 	out := make([]ModelInfo, 0, len(m.models))
 	for _, sm := range m.models {
-		out = append(out, ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+		out = append(out, ModelInfo{ID: sm.id, Name: sm.defs.ModelName(), Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
 	}
 	return out
+}
+
+func (m *memStore) ModelXML(id string) ([]byte, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sm, ok := m.models[id]
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), sm.xml...), true
 }
 
 // modelID is the cache key for an XML document: a hex SHA-256 with a "sha256:"
@@ -600,8 +851,15 @@ type modelResponse struct {
 
 type modelSummary struct {
 	ModelID   string   `json:"modelId"`
+	Name      string   `json:"name,omitempty"`
 	Decisions []string `json:"decisions"`
 	Inputs    []string `json:"inputs"`
+}
+
+type modelXMLResponse struct {
+	ModelID string `json:"modelId"`
+	Name    string `json:"name,omitempty"`
+	XML     string `json:"xml"`
 }
 
 type evaluateResponse struct {

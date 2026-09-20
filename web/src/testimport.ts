@@ -1,4 +1,4 @@
-import { evaluateGraphBatch, ClioNotConfiguredError, type ModelDetail, type InputField, type GraphCaseResult, type BatchCase } from './api'
+import { evaluateGraphBatch, qualityReport, ClioNotConfiguredError, type ModelDetail, type InputField, type GraphCaseResult, type BatchCase, type QualityReport } from './api'
 import { leafInputs, coerce } from './evaluate'
 
 // The Import cockpit: a batch test-runner that reads like a conveyor belt. A
@@ -78,12 +78,20 @@ export function mountImport(opts: ImportOptions): ImportView {
   // entity when a case has no explicit one.
   let productive = false
   let subjectKey = ''
+  // The quality report panel: the read side of a productive run. It asks the
+  // server (GET /v1/quality/report) which entity failed which rule over every
+  // recorded run — the "am Schluss eine Auswertung" the cockpit's belt feeds.
+  let reportOpen = false
+  let report: QualityReport | null = null
+  let reportNote = ''
 
   host.textContent = ''
   const bar = el('div', 'imp-bar')
   const flow = el('div', 'imp-flow')
   const empty = el('div', 'imp-empty')
-  host.append(bar, empty, flow)
+  const reportHost = el('div', 'imp-report')
+  reportHost.hidden = true
+  host.append(bar, empty, reportHost, flow)
 
   const fileInput = el('input', 'imp-file') as HTMLInputElement
   fileInput.type = 'file'
@@ -224,9 +232,20 @@ export function mountImport(opts: ImportOptions): ImportView {
     runBtn.disabled = running || staged === 0
     const clearBtn = button('Leeren', clearAll)
     clearBtn.disabled = running || cases.length === 0
+    // The report reads back what productive runs recorded, so it is always
+    // available (not just right after a run) — a fleet's compliance is cumulative.
+    const reportBtn = button(reportOpen ? 'Bericht ✕' : 'Bericht ▾', () => {
+      if (reportOpen) {
+        reportOpen = false
+        renderReport()
+      } else {
+        void loadReport()
+      }
+    }, 'imp-report-btn')
+    reportBtn.disabled = running
 
     const left = el('div', 'imp-bar-group', csvBtn, jsonBtn, impBtn, sampleBtn)
-    const right = el('div', 'imp-bar-group', modeToggle(model), resultsBtn, clearBtn, runBtn)
+    const right = el('div', 'imp-bar-group', modeToggle(model), reportBtn, resultsBtn, clearBtn, runBtn)
     bar.append(left, right)
     if (note) bar.append(el('div', 'imp-note', note))
   }
@@ -362,6 +381,74 @@ export function mountImport(opts: ImportOptions): ImportView {
     return node
   }
 
+  // loadReport fetches the aggregated violation report from the server and shows
+  // the panel; renderReport draws whatever state it is in (loading, error, data).
+  const loadReport = async (): Promise<void> => {
+    reportOpen = true
+    report = null
+    reportNote = 'Bericht wird geladen …'
+    renderReport()
+    renderBar() // flip the toolbar button to its "close" state
+    try {
+      report = await qualityReport({ limit: 100000 })
+      reportNote = ''
+    } catch (e) {
+      reportNote =
+        e instanceof ClioNotConfiguredError
+          ? 'Kein Bericht: clio ist nicht konfiguriert. Ein Produktivlauf (TEMIS_CLIO_TOKEN) schreibt die Quality-Events, aus denen der Bericht entsteht.'
+          : 'Bericht fehlgeschlagen: ' + (e as Error).message
+    }
+    renderReport()
+  }
+
+  const renderReport = (): void => {
+    reportHost.hidden = !reportOpen
+    reportHost.textContent = ''
+    if (!reportOpen) return
+    const head = el('div', 'imp-report-head')
+    head.append(el('strong', 'imp-report-title', 'Auswertung — welcher Server welche Regel verletzt'))
+    head.append(button('Schliessen', () => {
+      reportOpen = false
+      renderReport()
+      renderBar()
+    }))
+    reportHost.append(head)
+    if (reportNote) {
+      reportHost.append(el('div', 'imp-note', reportNote))
+      return
+    }
+    if (!report) return
+    const r = report
+    reportHost.append(
+      el(
+        'div',
+        'imp-report-sum',
+        `${r.servers.toLocaleString('de-CH')} Entitäten · ${r.passed.toLocaleString('de-CH')} bestanden · ` +
+          `${r.failed.toLocaleString('de-CH')} verletzt (aus ${r.total.toLocaleString('de-CH')} Events)`,
+      ),
+    )
+    if (r.failed === 0) {
+      reportHost.append(el('div', 'imp-report-ok', 'Alle Entitäten konform ✓'))
+      return
+    }
+    if (r.rules && r.rules.length) {
+      const rt = el('table', 'imp-report-table')
+      rt.append(el('tr', 'imp-report-hr', el('th', '', 'Regel'), el('th', 'imp-report-num', 'Betroffene Entitäten')))
+      for (const rs of r.rules) {
+        rt.append(el('tr', '', el('td', '', rs.rule), el('td', 'imp-report-num', rs.failures.toLocaleString('de-CH'))))
+      }
+      reportHost.append(el('div', 'imp-report-cap', 'Regelverletzungen (Rangliste)'), rt)
+    }
+    if (r.entities && r.entities.length) {
+      const et = el('table', 'imp-report-table')
+      et.append(el('tr', 'imp-report-hr', el('th', '', 'Entität'), el('th', '', 'Verletzte Regeln')))
+      for (const e of r.entities) {
+        et.append(el('tr', '', el('td', 'imp-report-entity', e.entity), el('td', '', e.rules.length ? e.rules.join(', ') : '(Erwartung verfehlt)')))
+      }
+      reportHost.append(el('div', 'imp-report-cap', `Verletzende Entitäten (${r.entities.length.toLocaleString('de-CH')})`), et)
+    }
+  }
+
   const render = (): void => {
     renderBar()
     renderFlow()
@@ -375,6 +462,10 @@ export function mountImport(opts: ImportOptions): ImportView {
       running = false
       note = ''
       subjectKey = '' // the subject-key field names an input of the (now gone) model
+      reportOpen = false
+      report = null
+      reportNote = ''
+      renderReport()
       render()
     },
   }

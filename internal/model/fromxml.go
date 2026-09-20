@@ -59,7 +59,7 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		m.ItemDefinitions = append(m.ItemDefinitions, mapItemDef(it))
 	}
 	for _, in := range def.InputData {
-		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, TypeRef: variableTypeRef(in.Variable)})
+		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, VariableName: variableName(in.Variable), TypeRef: variableTypeRef(in.Variable)})
 	}
 	for _, b := range def.BKMs {
 		m.BKMs = append(m.BKMs, mapBKM(b))
@@ -293,7 +293,7 @@ func mapFunctionDef(fn *dmnxml.FunctionDefinition) *FunctionDef {
 }
 
 func mapService(ds dmnxml.DecisionService) *DecisionService {
-	return &DecisionService{
+	out := &DecisionService{
 		ID:                    ds.ID,
 		Name:                  ds.Name,
 		OutputDecisions:       localRefs(ds.OutputDecisions),
@@ -301,6 +301,10 @@ func mapService(ds dmnxml.DecisionService) *DecisionService {
 		InputDecisions:        localRefs(ds.InputDecisions),
 		InputData:             localRefs(ds.InputData),
 	}
+	if ds.Variable != nil {
+		out.VariableTypeRef = ds.Variable.TypeRef
+	}
+	return out
 }
 
 // localRefs resolves a list of href references to their local identifiers,
@@ -351,6 +355,7 @@ func mapTable(t *dmnxml.DecisionTable) *DecisionTable {
 			Label:         out.Label,
 			TypeRef:       out.TypeRef,
 			AllowedValues: textValue(out.AllowedValues),
+			DefaultOutput: textValue(out.DefaultOutput),
 		})
 	}
 	for _, r := range t.Rules {

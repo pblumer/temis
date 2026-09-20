@@ -6,6 +6,7 @@
 // "Entscheidungspfad" panel lists — from the real evaluation trace — which rules
 // fired, in order.
 
+import { escapeHtml } from './dom'
 import { listFlows, getFlow, evaluateFlow } from './api'
 import type { EvalResult, FlowDetail, Graph, GraphEdge, GraphNode, Trace } from './api'
 import { layout } from './layout'
@@ -40,9 +41,25 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// esc escapes text for safe inclusion in innerHTML.
-export function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+// esc escapes text for safe inclusion in innerHTML, including quoted attribute
+// contexts. It is the canonical escapeHtml (dom.ts), re-exported under the name
+// `esc` so existing call sites (this module + flow-editor.ts) keep working.
+export const esc = escapeHtml
+
+// shortFlowId turns a content-addressed flowId ("sha256:<64 hex>") into a compact,
+// scannable token — the algorithm prefix plus the first hex digits — so an unnamed
+// flow gets a readable label instead of dumping the full 64-char hash. Anything
+// that is not a recognisable hash id is returned unchanged. The full id always
+// stays available in the catalog row's hint.
+export function shortFlowId(id: string): string {
+  const m = /^([a-z0-9]+:)([0-9a-f]{8})[0-9a-f]+$/i.exec(id)
+  return m ? m[1] + m[2] + '…' : id
+}
+
+// flowLabel is the readable name shown for a flow in the catalog: its declared
+// name when it has one, otherwise a compact form of its content id.
+export function flowLabel(f: { flowId: string; name?: string }): string {
+  return f.name || shortFlowId(f.flowId)
 }
 
 // references reports whether a mapping expression refers to name — as a whole
@@ -303,9 +320,12 @@ export function mountFlows(opts: FlowMounts): FlowView {
       const row = document.createElement('div')
       row.className = 'model-item flow-item' + (f.flowId === currentId ? ' is-current' : '')
       row.dataset.flowId = f.flowId
+      // Show a readable name; keep the full content id reachable in the hint so it
+      // is never lost — the flowId is what a POST /v1/flows/{id} call needs.
+      row.title = f.name ? `${f.name}\n${f.flowId}` : f.flowId
       const name = document.createElement('span')
       name.className = 'model-name'
-      name.textContent = f.name || f.flowId
+      name.textContent = flowLabel(f)
       const rev = document.createElement('span')
       rev.className = 'model-rev'
       rev.textContent = f.steps + ' Steps'

@@ -17,32 +17,66 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.23"
+          go-version-file: go.mod
           cache: true
 
       - name: Build
         run: go build ./...
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5.0
 
       - name: Verify
         run: make verify
 
+      - name: Coverage gate
+        run: make cover
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Scan with the latest stable Go, not the go.mod minimum: stdlib CVEs are
+      # remediated by toolchain updates, so the scan should track the newest
+      # patched stdlib rather than the (necessarily older) minimum we compile
+      # against. This keeps the gate green without chasing patch versions in
+      # go.mod on every new stdlib advisory.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Smoke-build the release image on every PR so a Dockerfile break is caught
+      # here, not only when a release tag is pushed (audit WP-137).
+      - name: Build container image
+        run: docker build -t temisd:ci .
+
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -67,16 +101,16 @@ jobs:
   web-e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.23"
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -93,15 +127,31 @@ jobs:
         run: npm run test:e2e
         working-directory: web
 
+  tck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Fetch the pinned official DMN TCK corpus and run the conformance gate,
+      # which fails if the pass rate drops below the ratchet floor (WP-41).
+      - name: Official DMN TCK conformance
+        run: make tck-conformance
+
   proto:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.23"
+          go-version-file: go.mod
           cache: true
 
       - name: Install buf

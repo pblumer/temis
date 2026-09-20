@@ -54,31 +54,80 @@ func (d *Definitions) SetInputType(id, typeRef string) bool {
 	return false
 }
 
+// SetVariableName sets the FEEL identifier (the <variable> name) of the decision
+// or inputData identified by id, keeping it distinct from the element's free-form
+// display @name. An explicit <variable> is written only when the FEEL name differs
+// from the display name; when they coincide (or name is empty) the variable is
+// left to follow the display name — a name-only <variable> is dropped so the
+// document stays clean and unchanged for the common case. Any declared typeRef is
+// preserved. References elsewhere are not rewritten. It reports whether a matching
+// element was found.
+func (d *Definitions) SetVariableName(id, name string) bool {
+	name = strings.TrimSpace(name)
+	apply := func(elemName string, v **Variable) {
+		if name == "" || name == elemName {
+			// Follow the display name: no divergent identifier to record.
+			if *v != nil && strings.TrimSpace((*v).TypeRef) == "" {
+				*v = nil // drop a redundant name-only variable
+			} else if *v != nil {
+				(*v).Name = elemName // keep the declared type, sync the name
+			}
+			return
+		}
+		if *v == nil {
+			*v = &Variable{}
+		}
+		(*v).Name = name
+	}
+	for i := range d.InputData {
+		if d.InputData[i].ID == id {
+			apply(d.InputData[i].Name, &d.InputData[i].Variable)
+			return true
+		}
+	}
+	for i := range d.Decisions {
+		if d.Decisions[i].ID == id {
+			apply(d.Decisions[i].Name, &d.Decisions[i].Variable)
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateDecisionTable rewrites the decision-table logic of the decision
 // identified by id. Rules are always replaced. A non-empty hitPolicy sets the
 // policy and aggregation; columns are replaced only when replaceColumns is set
 // (otherwise the existing inputs/outputs are kept). It reports whether a matching
 // decision with decision-table logic was found.
 func (d *Definitions) UpdateDecisionTable(id, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
-	for i := range d.Decisions {
-		if d.Decisions[i].ID == id {
-			dt := d.Decisions[i].DecisionTable
-			if dt == nil {
-				return false
-			}
-			if hitPolicy != "" {
-				dt.HitPolicy = hitPolicy
-				dt.Aggregation = aggregation
-			}
-			if replaceColumns {
-				dt.Inputs = inputs
-				dt.Outputs = outputs
-			}
-			dt.Rules = rules
-			return true
-		}
+	return d.UpdateTableAt("decision", id, nil, hitPolicy, aggregation, inputs, outputs, rules, replaceColumns)
+}
+
+// UpdateTableAt patches the decision table at anchor+steps — a decision's logic,
+// a business knowledge model's encapsulated body, or a table nested inside another
+// boxed expression (see exprSlotAt). Rules are always replaced; a non-empty hitPolicy sets the
+// policy and aggregation; columns are replaced only when replaceColumns is set
+// (otherwise the existing inputs/outputs are kept). It reports whether a matching
+// element with decision-table logic was found.
+func (d *Definitions) UpdateTableAt(anchorKind, anchorID string, steps []Step, hitPolicy, aggregation string, inputs []Input, outputs []Output, rules []Rule, replaceColumns bool) bool {
+	slot, ok := d.exprSlotAt(anchorKind, anchorID, steps, false)
+	if !ok {
+		return false
 	}
-	return false
+	dt := slot.DecisionTable
+	if dt == nil {
+		return false
+	}
+	if hitPolicy != "" {
+		dt.HitPolicy = hitPolicy
+		dt.Aggregation = aggregation
+	}
+	if replaceColumns {
+		dt.Inputs = inputs
+		dt.Outputs = outputs
+	}
+	dt.Rules = rules
+	return true
 }
 
 // UpsertItemDefinition creates or updates a (simple) item definition by name: its
@@ -103,6 +152,28 @@ func (d *Definitions) UpsertItemDefinition(name, typeRef string, isCollection bo
 		}
 	}
 	d.ItemDefs = append(d.ItemDefs, ItemDef{Name: name, TypeRef: strings.TrimSpace(typeRef), IsCollection: isCollection, AllowedValues: textOrNil(allowedValues)})
+	return true
+}
+
+// UpsertStructDefinition creates or updates a structured item definition by name:
+// its fields (item components) and collection flag. Unlike UpsertItemDefinition it
+// may overwrite an existing definition of either kind, since the struct editor
+// owns structured types. It refuses (returns false) for an empty name or when no
+// components are given (a struct with no fields is meaningless — remove it instead).
+func (d *Definitions) UpsertStructDefinition(name string, comps []ItemDef, isCollection bool) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || len(comps) == 0 {
+		return false
+	}
+	def := ItemDef{Name: name, IsCollection: isCollection, Components: comps}
+	for i := range d.ItemDefs {
+		if d.ItemDefs[i].Name == name {
+			def.ID = d.ItemDefs[i].ID
+			d.ItemDefs[i] = def
+			return true
+		}
+	}
+	d.ItemDefs = append(d.ItemDefs, def)
 	return true
 }
 
@@ -477,6 +548,99 @@ func (d *Definitions) SetBKMFunction(id string, params []FormalParameter, bodyTe
 		return true
 	}
 	return false
+}
+
+// logicSlot resolves the boxed-expression slot that is the logic of an anchored
+// element: a decision's own logic (anchorKind "decision") or a business knowledge
+// model's encapsulated-logic body (anchorKind "bkm"). For a BKM with no
+// encapsulated function yet, create fills in an empty FEEL function shell so a
+// fresh body can be written; without create an absent function yields ok=false.
+// The returned pointer aliases the element's embedded Expression, so writing
+// through it mutates the model in place while preserving siblings (a decision's
+// requirements, a BKM's formal parameters). ok is false for an unknown anchor.
+func (d *Definitions) logicSlot(anchorKind, anchorID string, create bool) (*Expression, bool) {
+	switch anchorKind {
+	case "decision":
+		i := indexDecision(d.Decisions, anchorID)
+		if i < 0 {
+			return nil, false
+		}
+		return &d.Decisions[i].Expression, true
+	case "bkm":
+		i := indexBKM(d.BKMs, anchorID)
+		if i < 0 {
+			return nil, false
+		}
+		b := &d.BKMs[i]
+		if b.EncapsulatedLogic == nil {
+			if !create {
+				return nil, false
+			}
+			b.EncapsulatedLogic = &FunctionDefinition{Kind: "FEEL"}
+		}
+		return &b.EncapsulatedLogic.Expression, true
+	default:
+		return nil, false
+	}
+}
+
+// SetLogicBody replaces the anchored element's boxed-expression logic with expr,
+// preserving everything around it (a BKM's formal parameters, a decision's
+// requirements). It refuses (returns false) when the anchor is unknown or its
+// current logic is a different boxed kind than expr — the kind-specific editors
+// must not silently switch a table into a list, only rewrite the same kind. An
+// element with no logic yet accepts any kind (a BKM function shell is created).
+func (d *Definitions) SetLogicBody(anchorKind, anchorID string, expr Expression) bool {
+	return d.SetLogicBodyAt(anchorKind, anchorID, nil, expr)
+}
+
+// SetLogicBodyAt is SetLogicBody addressed at a nested child (steps): it rewrites
+// the boxed expression at anchor+steps, guarding the same-kind rule so a nested
+// editor rewrites the same kind rather than switching it. Nested steps require the
+// parent structure to exist (only the root may create a BKM function shell).
+func (d *Definitions) SetLogicBodyAt(anchorKind, anchorID string, steps []Step, expr Expression) bool {
+	slot, ok := d.exprSlotAt(anchorKind, anchorID, steps, true)
+	if !ok {
+		return false
+	}
+	if slot.present() && slotKind(slot) != slotKind(&expr) {
+		return false
+	}
+	// Assigning the whole Expression overwrites every boxed-child field at once, so
+	// a previous kind (e.g. a stale for/some/every trio) never lingers beside the
+	// new one.
+	*slot = expr
+	return true
+}
+
+// slotKind names the boxed kind currently occupying an Expression slot; the three
+// iteration elements collapse to one "iterator" kind (for/some/every are editable
+// as one). It returns "" for an empty slot.
+func slotKind(e *Expression) string {
+	switch {
+	case e.LiteralExpression != nil:
+		return "literal"
+	case e.DecisionTable != nil:
+		return "table"
+	case e.Context != nil:
+		return "context"
+	case e.Invocation != nil:
+		return "invocation"
+	case e.FunctionDefinition != nil:
+		return "function"
+	case e.List != nil:
+		return "list"
+	case e.Relation != nil:
+		return "relation"
+	case e.Conditional != nil:
+		return "conditional"
+	case e.For != nil, e.Every != nil, e.Some != nil:
+		return "iterator"
+	case e.Filter != nil:
+		return "filter"
+	default:
+		return ""
+	}
 }
 
 // MoveShape repositions the DMNShape bound to element id within a captured DMNDI

@@ -68,6 +68,8 @@ func (d *Definitions) DecisionTable(idOrName string) (TableView, bool)
 
 func (d *Definitions) EvaluateGraph(ctx context.Context, in Input, opts ...EvalOption) (GraphResult, error)
 
+func (d *Definitions) Functions() []FeelFunction
+
 func (d *Definitions) Graph() Graph
 
 func (d *Definitions) Index() ModelIndex
@@ -77,6 +79,8 @@ func (d *Definitions) InputSchema(idOrName string) ([]InputField, error)
 func (d *Definitions) ItemDefinitions() []ItemType
 
 func (d *Definitions) LiteralExpression(idOrName string) (LiteralView, bool)
+
+func (d *Definitions) LogicView(a Anchor, at, kind string) (any, bool)
 
 func (d *Definitions) ModelInputSchema() []InputField
 
@@ -156,6 +160,8 @@ func SetItemDefinition(src []byte, t ItemType) ([]byte, error)
 
 func SetLiteralExpression(src []byte, decisionID, text, typeRef string) ([]byte, error)
 
+func SetLogic(src []byte, a Anchor, at, kind string, raw json.RawMessage) ([]byte, error)
+
 func SetModelName(src []byte, name string) ([]byte, error)
 
 func WithLimits(l Limits) Option
@@ -163,6 +169,11 @@ func WithLimits(l Limits) Option
 func WithStrictInput() EvalOption
 
 func WithTrace() EvalOption
+
+type Anchor struct {
+	Kind	string	`json:"kind"`
+	ID	string	`json:"id"`
+}
 
 type BKMFunctionEdit struct {
 	Params		[]BKMParam	`json:"params"`
@@ -182,6 +193,8 @@ type BKMView struct {
 	BodyText	string		`json:"bodyText"`
 	BodyTypeRef	string		`json:"bodyTypeRef,omitempty"`
 	Simple		bool		`json:"simple"`
+
+	BodyKind	string	`json:"bodyKind,omitempty"`
 }
 
 type CompiledDecision struct {
@@ -218,9 +231,11 @@ type ContextEdit struct {
 }
 
 type ContextEntryView struct {
-	Name	string	`json:"name"`
-	Text	string	`json:"text"`
-	TypeRef	string	`json:"typeRef,omitempty"`
+	Name		string	`json:"name"`
+	Text		string	`json:"text"`
+	TypeRef		string	`json:"typeRef,omitempty"`
+	Index		int	`json:"index"`
+	ChildKind	string	`json:"childKind,omitempty"`
 }
 
 type ContextView struct {
@@ -259,6 +274,11 @@ type EvalError struct {
 }
 
 type EvalOption func(*evalConfig)
+
+type FeelFunction struct {
+	Name	string		`json:"name"`
+	Params	[]string	`json:"params"`
+}
 
 type FilterEdit struct {
 	In	string	`json:"in"`
@@ -330,9 +350,11 @@ type GraphNode struct {
 }
 
 type GraphNodeEdit struct {
-	ID		string	`json:"id"`
-	Type		string	`json:"type"`
-	Name		string	`json:"name"`
+	ID	string	`json:"id"`
+	Type	string	`json:"type"`
+	Name	string	`json:"name"`
+
+	VarName		string	`json:"varName,omitempty"`
 	DataType	string	`json:"dataType,omitempty"`
 	X		float64	`json:"x"`
 	Y		float64	`json:"y"`
@@ -451,8 +473,10 @@ type ModelIndex struct {
 }
 
 type NodeEdit struct {
-	ID		string		`json:"id"`
-	Name		*string		`json:"name,omitempty"`
+	ID	string	`json:"id"`
+	Name	*string	`json:"name,omitempty"`
+
+	VarName		*string		`json:"varName,omitempty"`
 	DataType	*string		`json:"dataType,omitempty"`
 	X		*float64	`json:"x,omitempty"`
 	Y		*float64	`json:"y,omitempty"`

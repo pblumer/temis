@@ -90,6 +90,7 @@ func (s *Server) loadFlows(ctx context.Context) {
 			skipped++
 			continue
 		}
+		body = s.freezeFlowRefs(body) // pin release refs to modelIds (ADR-0037)
 		f, _, err := flow.Compile(body)
 		if err != nil {
 			log.Printf("temis: flow %q: %v", e.Name(), err)
@@ -116,6 +117,44 @@ func (c cacheResolver) Resolve(_ context.Context, modelID string) (*dmn.Definiti
 		return sm.defs, nil
 	}
 	return nil, fmt.Errorf("model %q not loaded", modelID)
+}
+
+// freezeFlowRefs pins a flow descriptor's step model references (ADR-0037): a step
+// that references a release (name@version, name@channel or a bare name) is
+// rewritten to the concrete content-addressed modelId it resolves to *now*, so a
+// later channel move can never change what a registered flow evaluates — the
+// readable name is the input, the pinned id is the durable, re-auditable artifact
+// (ADR-0023). Refs that are already a raw modelId, or that do not resolve yet
+// (the model isn't published), are left untouched: the former needs no freezing,
+// the latter still resolves at evaluation time via lookup. When nothing changes
+// the original bytes are returned verbatim (idempotent, layout-preserving).
+func (s *Server) freezeFlowRefs(body []byte) []byte {
+	if s.releases == nil {
+		return body
+	}
+	var d flow.Descriptor
+	if err := json.Unmarshal(body, &d); err != nil {
+		return body // malformed input is reported by the caller's Compile
+	}
+	changed := false
+	for i := range d.Steps {
+		m := strings.TrimSpace(d.Steps[i].Model)
+		if m == "" || validModelID(m) {
+			continue // unset or already pinned
+		}
+		if mid, ok := s.releases.resolve(m); ok {
+			d.Steps[i].Model = mid
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	frozen, err := json.Marshal(d)
+	if err != nil {
+		return body
+	}
+	return frozen
 }
 
 // --- DTOs ---
@@ -182,6 +221,10 @@ func (s *Server) handleCreateFlow(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// Pin any release references to concrete modelIds before storing, so the
+	// registered flow is deterministic and re-auditable even if a channel later
+	// moves (ADR-0037). A raw-id or unresolved reference is left as-is.
+	body = s.freezeFlowRefs(body)
 	f, _, err := flow.Compile(body)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, "FLOW_MALFORMED", err.Error())

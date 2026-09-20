@@ -19,12 +19,12 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 
 | # | Entscheidung | Wert | ADR |
 |---|---|---|---|
-| D1 | Sprache | Go (≥ 1.23) | ADR-0001 |
+| D1 | Sprache | Go (≥ 1.24) | ADR-0001 |
 | D2 | DMN-Zielversion | 1.5 (formal OMG), abwärtskompatibel 1.3/1.4 lesen | ADR-0002 |
 | D3 | FEEL-Scope | **Voll** (alle Boxed Expressions, volle Grammatik) | ADR-0003 |
 | D4 | Ausführungsmodell | **Compile-to-Closures** (kein Tree-Walking im Hot Path) | ADR-0004 |
 | D5 | Betriebsform | **Library-first**, Service als dünner Wrapper | ADR-0005 |
-| D6 | Editor/Frontend | dmn-js (read/write Standard-DMN-XML) | ADR-0006 |
+| D6 | Editor/Frontend | eigener eingebetteter DMN-Modeler auf MIT-Kern (diagram-js), kein dmn-js/CDN | ADR-0016 (löst ADR-0006/0012 ab) |
 | D7 | Keine externen FEEL-Abhängigkeiten | eigener Lexer/Parser/Compiler | ADR-0004 |
 | D8 | Zielgruppe Agenten | **Agent-First**: temis als Laufzeit-Verifikationswerkzeug (MCP, Entscheidungsspur, Agent-Schema) | ADR-0013 |
 
@@ -86,7 +86,7 @@ FEEL-Support, betreibbar als Go-Library **und** als HTTP/gRPC-Service, deren Mod
 | `20-roadmap.md` | MVP / Beta / 1.0 mit Akzeptanzkriterien & Arbeitspaketen |
 | `30-feel-spec.md` | FEEL-Implementierungsplan (Grammatik, Typen, Built-ins) |
 | `40-api-contract.md` | Go-API + HTTP/gRPC-Vertrag (stabil zu haltende Oberfläche) |
-| `50-testing-strategy.md` | Test-Pyramide, TCK-Anbindung, Benchmarks, Fuzzing |
+| `50-testing-strategy.md` | Testarchitektur-Handbuch: Schichten, CI-Landschaft, Fixtures, Fehlerklassen→Gate-Matrix |
 | `60-ai-agent-guide.md` | Arbeitsregeln für KI-Coding-Agenten (Konventionen, Definition of Done) |
 | `adr/ADR-XXXX-*.md` | Architecture Decision Records |
 

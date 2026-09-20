@@ -1,6 +1,6 @@
 # ADR-0030: Betriebs-Observability (Status-Endpoint, `expvar`-Metriken, `slog`) — und die Grenze zur externen Control Plane
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-07-01
 - **Kontext-WP:** WP-110 – WP-114 (neue Etappe „Betriebs-Observability")
 

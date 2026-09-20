@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20191111/MODEL/" namespace="http://temis.example/bench/CollectTable" name="CollectTable" id="def_CollectTable">
+  <inputData id="i_Score" name="Score"><variable name="Score" typeRef="number"/></inputData>
+  <decision id="d_Tags" name="Tags">
+    <variable name="Tags"/>
+    <informationRequirement id="ir_Score"><requiredInput href="#i_Score"/></informationRequirement>
+    <decisionTable id="dt_Tags" hitPolicy="COLLECT">
+      <input id="in_Score"><inputExpression id="ie_Score" typeRef="number"><text>Score</text></inputExpression></input>
+      <output id="out_Tags" name="Tag" typeRef="string"/>
+      <rule id="r0"><inputEntry id="r0_1"><text>[0..10]</text></inputEntry><outputEntry id="r0_o"><text>"low"</text></outputEntry></rule>
+      <rule id="r1"><inputEntry id="r1_1"><text>[5..15]</text></inputEntry><outputEntry id="r1_o"><text>"mid"</text></outputEntry></rule>
+      <rule id="r2"><inputEntry id="r2_1"><text>[4..6]</text></inputEntry><outputEntry id="r2_o"><text>"spot"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

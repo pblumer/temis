@@ -24,7 +24,7 @@ import (
 func (s *Server) grpcHandler() (string, http.Handler) {
 	var opts []connect.HandlerOption
 	if s.auth.enabled() {
-		opts = append(opts, connect.WithInterceptors(&authInterceptor{auth: s.auth}))
+		opts = append(opts, connect.WithInterceptors(&authInterceptor{auth: s.auth, publicEvaluate: s.publicEvaluate}))
 	}
 	return dmnv1connect.NewDmnEngineHandler(&grpcService{srv: s}, opts...)
 }
@@ -49,11 +49,21 @@ func rpcScope(procedure string) Scope {
 // PermissionDenied. The secret comparison is constant-time (keystore).
 type authInterceptor struct {
 	auth Authenticator
+	// publicEvaluate mirrors the server's global public-evaluation switch
+	// (ADR-0035): when set, the evaluate procedures are served without a key, like
+	// the HTTP evaluate routes. Per-model public (WithPublicModels) is not honoured
+	// here — the interceptor sees only the request headers, not the body's model.
+	publicEvaluate bool
 }
 
 // check verifies the header credential for procedure's scope, returning a Connect
 // error (Unauthenticated or PermissionDenied) or nil when allowed.
 func (a *authInterceptor) check(header http.Header, procedure string) error {
+	// Public evaluation (ADR-0035, global switch): the evaluate procedures are open
+	// to anonymous callers when the operator enabled it.
+	if a.publicEvaluate && rpcScope(procedure) == ScopeEvaluate {
+		return nil
+	}
 	key, ok := a.auth.authenticate(bearerToken(header.Get("Authorization")))
 	if !ok {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("missing or invalid bearer token"))

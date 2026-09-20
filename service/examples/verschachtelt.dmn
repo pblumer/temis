@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/verschachtelt"
+             name="Verschachtelt" id="def_verschachtelt">
+  <!-- A decision whose logic is a boxed context; one entry's value is a nested
+       boxed list. In the modeler the context opens read-only with a drill-in ("✎")
+       on the nested entry that edits the list in place (WP-66 Phase 2). -->
+  <decision id="id_gesamt" name="Gesamt">
+    <variable name="Gesamt" typeRef="number"/>
+    <context>
+      <contextEntry>
+        <variable name="basis" typeRef="number"/>
+        <literalExpression><text>10</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="posten"/>
+        <list>
+          <literalExpression><text>1</text></literalExpression>
+          <literalExpression><text>basis</text></literalExpression>
+        </list>
+      </contextEntry>
+      <contextEntry>
+        <literalExpression><text>sum(posten)</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+</definitions>

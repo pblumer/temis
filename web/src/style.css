@@ -47,7 +47,7 @@ body {
   cursor: pointer;
 }
 .sidebar .icon-btn:hover { background: #e7effd; }
-.sidebar-hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); }
+.sidebar-hint { flex: 0 0 auto; color: var(--muted); font-size: 11.5px; line-height: 1.5; padding: 12px 16px; margin: 0; border-top: 1px solid var(--line); background: #f1f5f9; }
 .editor { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px 24px 24px; overflow: auto; }
 
 /* Draggable dividers (src/resizable.ts): a thin grab strip between two columns
@@ -167,6 +167,50 @@ body.resizing { cursor: col-resize; user-select: none; }
 .model-actions { display: inline-flex; gap: 2px; margin-left: auto; visibility: hidden; }
 .model-item:hover .model-actions,
 .model-item.is-current .model-actions { visibility: visible; }
+/* Releases (ADR-0037): a published-version pill, an unpublished-draft flag, and a
+   row of clickable release/channel chips shown under the model. */
+.model-release-badge {
+  font: 600 10.5px/1 ui-monospace, monospace;
+  color: #067647;
+  background: #dcfce7;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+.model-draft-badge {
+  font: 600 10px/1 system-ui, sans-serif;
+  color: #92400e;
+  background: #fef3c7;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+.model-releases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 10px 5px 22px;
+}
+.release-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 999px;
+  padding: 1px 5px 1px 7px;
+  cursor: pointer;
+  font: 11px/1.4 system-ui, sans-serif;
+  color: var(--fg);
+}
+.release-chip:hover { background: #f1f5f9; }
+.release-chip.is-current { border-color: #93b4f5; background: #dbe7fb; }
+.release-ver { font: 600 11px/1 ui-monospace, monospace; }
+.release-channel {
+  font: 10px/1 system-ui, sans-serif;
+  color: #7c3aed;
+  background: #f3e8ff;
+  border-radius: 999px;
+  padding: 2px 5px;
+}
 .model-act {
   display: inline-flex;
   align-items: center;
@@ -323,7 +367,37 @@ h1 { font-size: 24px; margin: 0 0 4px; }
 .toolbar .zoom-group .tbtn { min-width: 28px; padding: 5px 7px; font-size: 14px; line-height: 1; }
 .toolbar .type-editor { display: inline-flex; align-items: center; gap: 6px; }
 .toolbar .type-editor select { max-width: 170px; }
+/* The connection-shape selector rides in the zoom group but needs room for its
+   label text and a normal select appearance rather than the square zoom-button. */
+.toolbar .zoom-group .edge-style-select {
+  min-width: auto;
+  padding: 5px 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+}
 .toolbar .status { color: var(--muted); margin-left: auto; white-space: nowrap; }
+/* Copyable content-addressed model-id chip: monospace pill; click copies the
+   full sha256: id (the string the HTTP/MCP surfaces expect). */
+.toolbar .model-id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  background: #f8fafc;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.toolbar .model-id-chip::before { content: "⧉"; font-size: 12px; opacity: 0.7; }
+.toolbar .model-id-chip:hover { color: var(--fg, #1f2937); border-color: #cbd5e1; background: #f1f4f9; }
+.toolbar .model-id-chip.is-copied { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.toolbar .model-id-chip.is-copied::before { content: "✓"; opacity: 1; }
+.toolbar .model-id-chip[hidden] { display: none; }
 /* clio connection indicator (ADR-0030): a compact pill with a coloured dot. */
 .toolbar .conn-badge {
   display: inline-flex;
@@ -1103,6 +1177,8 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   border-radius: 6px;
 }
 .ctx-del:hover { color: #e5484d; background: #fff4f4; }
+/* Drill-in action for a context entry whose value is a nested boxed expression. */
+.ctx-drill { padding: 2px 8px; font-size: 12px; line-height: 1.6; white-space: nowrap; }
 .ctx-result {
   display: grid;
   grid-template-columns: auto 130px 1fr;
@@ -1158,6 +1234,15 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .tm-field:focus { outline: none; border-color: var(--accent); }
 .tm-invalid { border-color: #e5484d; background: #fff4f4; }
 .tm-form-actions { display: flex; justify-content: flex-end; }
+/* Structured-type field editor: a stacked list of {name, type, collection} rows. */
+.tm-fields-section { align-items: flex-start; }
+.tm-fields-col { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.tm-fields { display: flex; flex-direction: column; gap: 6px; }
+.tm-field-row { display: flex; align-items: center; gap: 8px; }
+.tm-field-row .tm-field-name { flex: 2; }
+.tm-field-row .tm-field-type { flex: 1; }
+.tm-field-coll { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tm-add-field { align-self: flex-start; }
 
 /* Modeling assistant panel (ADR-0024): a chat docked on the right, slid out by
    the toolbar's Assistent button. Closed by default (translated off-screen). */
@@ -1402,6 +1487,19 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 /* The empty/hint state before any cases are imported. */
 .imp-empty-msg { color: var(--muted); font-size: 13px; max-width: 640px; line-height: 1.5; }
 
+/* Quality report panel: which entity failed which rule, aggregated server-side. */
+.imp-report { border: 1px solid var(--line); border-radius: 10px; background: #fbfdfe; padding: 14px 16px; margin: 0 0 16px; }
+.imp-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.imp-report-title { font-size: 14px; color: var(--fg); }
+.imp-report-sum { font-size: 13px; font-weight: 600; color: var(--imp); margin-bottom: 12px; }
+.imp-report-ok { font-size: 13px; font-weight: 600; color: #15803d; }
+.imp-report-cap { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 6px; }
+.imp-report-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.imp-report-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 10px; border-bottom: 1px solid var(--line); }
+.imp-report-table td { padding: 5px 10px; border-bottom: 1px solid #eef2f4; color: var(--fg); }
+.imp-report-num { text-align: right; font-variant-numeric: tabular-nums; }
+.imp-report-entity { font-family: ui-monospace, monospace; font-size: 12px; }
+
 /* Drag-over affordance when dropping a file on the cockpit. */
 .import-cockpit.imp-drop { outline: 2px dashed #9cd0da; outline-offset: -6px; border-radius: 12px; }
 
@@ -1533,6 +1631,70 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
   pointer-events: none;
 }
 
+/* Live-Graph illumination in the modeler canvas. After an evaluation the
+   requirement edges that carried a value colour in and float the value that
+   travelled them at their midpoint — the dependency dataflow made visible on the
+   diagram itself (the "Auswerten" panel dissolved into the graph). Mirrors the
+   Flow Studio's illuminate (above) but in the Operate cockpit's blue accent. */
+.canvas .djs-connection.flow-active .djs-visual > :first-child {
+  stroke: #1d4ed8;
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 2px rgba(29, 78, 216, 0.55));
+}
+.flow-edge-op {
+  background: #1d4ed8;
+  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-val { animation: none; }
+}
+
+/* On-canvas input pills (Operate): fill a leaf input directly on its inputData
+   node instead of only in the side panel. Each edit re-evaluates the whole graph
+   live (debounced) and re-illuminates the diagram — the "Auswerten" form brought
+   onto the graph itself. */
+.node-input { display: flex; align-items: center; transform: translateY(3px); pointer-events: auto; }
+.pill-field {
+  font: 600 12px/1 ui-monospace, monospace;
+  color: #1e3a8a;
+  background: #eef4ff;
+  border: 1px solid #93b4f5;
+  border-radius: 999px;
+  padding: 3px 9px;
+  min-width: 68px;
+  max-width: 150px;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.18);
+  outline: none;
+}
+.pill-field:focus { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18); }
+select.pill-field { cursor: pointer; }
+.pill-field-invalid { border-color: #e5484d; box-shadow: 0 0 0 2px rgba(229, 72, 77, 0.25); }
+
+/* Juice (Stage 3): a fresh evaluation plays the illumination as a depth-staggered
+   wave — the wires stream, each decision pulses with a particle burst as its inputs
+   arrive, the deepest one hardest. The particle layer sits over the diagram and
+   ignores pointer events; the streaming/pulse are pure SVG/CSS so they stay aligned
+   under pan and zoom. All of it is opt-out via the ⚡ toolbar toggle and off under
+   reduced motion. */
+.fx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.canvas .djs-connection.flow-stream .djs-visual > :first-child {
+  stroke-dasharray: 5 7;
+  animation: flow-stream-move 0.6s linear infinite;
+}
+@keyframes flow-stream-move { to { stroke-dashoffset: -12; } }
+.canvas .djs-element.node-fire .djs-visual { animation: node-fire-pulse 0.48s ease-out; }
+@keyframes node-fire-pulse {
+  0% { filter: drop-shadow(0 0 0 rgba(29, 78, 216, 0)); }
+  30% { filter: drop-shadow(0 0 9px rgba(29, 78, 216, 0.75)); }
+  100% { filter: drop-shadow(0 0 0 rgba(29, 78, 216, 0)); }
+}
+/* The ⚡ toggle dims when effects are off. */
+.tbtn.juice-off { opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) {
+  .canvas .djs-connection.flow-stream .djs-visual > :first-child { animation: none; stroke-dasharray: none; }
+  .canvas .djs-element.node-fire .djs-visual { animation: none; }
+}
+
 .flow-trace { display: flex; flex-direction: column; gap: 6px; }
 .flow-trace-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 0 0; }
 .flow-trace-step { border: 1px solid var(--line); border-left: 3px solid #7c3aed; border-radius: 8px; padding: 6px 8px; background: #faf5ff; }
@@ -1649,3 +1811,72 @@ code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.
 .hl-str { color: #b45309; }
 .hl-num { color: #0e7490; }
 .hl-op  { color: #64748b; }
+
+/* Zugriff-Sektion (WP-107, ADR-0028/0035): Login + Admin-Panels in der Sidebar. */
+/* The Zugriff zone sits at the very bottom of the sidebar and can grow tall
+   (identity + API keys + public decisions). It is a self-contained panel: a top
+   border and a slightly deeper background set it apart from the model list, and
+   its body scrolls within a capped height so a long admin panel never overflows
+   onto the footer hint below it. */
+.side-group-access {
+  flex: 0 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: #e8eef7;
+}
+.side-group-access[hidden] { display: none; }
+.side-group-access .sidebar-section { padding-top: 8px; padding-bottom: 8px; }
+.access-host { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 0; overflow-y: auto; max-height: 40vh; }
+.side-group-access[data-collapsed="true"] .access-host { display: none; }
+/* Divide the sub-panels (identity · API keys · public decisions) with a rule so
+   each reads as its own block instead of one crowded run. */
+.access-block { display: flex; flex-direction: column; gap: 8px; }
+.access-host > .access-block { padding: 14px 0; }
+.access-host > .access-block:first-child { padding-top: 4px; }
+.access-host > .access-block + .access-block { border-top: 1px solid var(--line); }
+.access-heading { font: 600 11px/1 ui-sans-serif, system-ui; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.access-note { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0; }
+.access-hint { color: var(--muted); font-size: 10.5px; font-style: italic; margin: 2px 0 0; }
+.access-err { color: #b91c1c; font-size: 11.5px; margin: 0; }
+.access-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; color: var(--fg); background: #fff;
+}
+.access-input:focus { outline: none; border-color: var(--accent); }
+.access-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--fg); border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.access-btn:hover { background: #e7effd; }
+.access-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.access-btn-primary:hover { filter: brightness(1.05); background: var(--accent); }
+.access-btn-danger { color: #b91c1c; border-color: #f0c9c9; }
+.access-btn-danger:hover { background: #fdeaea; }
+.access-btn-sm { padding: 3px 8px; font-size: 11px; }
+.access-actions { display: flex; gap: 6px; }
+.access-identity { display: flex; align-items: center; gap: 6px; }
+.access-who { font: 600 12px/1 ui-monospace, monospace; color: var(--fg); }
+.access-badge { font: 600 9.5px/1 ui-sans-serif, system-ui; text-transform: uppercase; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 999px; }
+.access-scopes { font: 500 10.5px/1.4 ui-monospace, monospace; color: var(--muted); margin: 0; word-break: break-word; }
+.access-list { display: flex; flex-direction: column; gap: 8px; }
+.access-key { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+.access-key.is-revoked { opacity: 0.55; }
+.access-key-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.access-kid { font: 600 11.5px/1 ui-monospace, monospace; color: var(--fg); }
+.access-key-meta { font-size: 10px; color: var(--muted); text-align: right; }
+.access-key-scopes { font: 500 10.5px/1.4 ui-monospace, monospace; color: var(--muted); word-break: break-word; }
+.access-key-actions { display: flex; gap: 6px; margin-top: 2px; }
+.access-create { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.access-scope-grid { display: flex; flex-direction: column; gap: 4px; }
+.access-scope { font-size: 11.5px; color: var(--fg); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.access-secret { border: 1px solid var(--accent); background: #f0fdf4; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.access-secret-value { font: 600 11px/1.4 ui-monospace, monospace; color: var(--fg); word-break: break-all; background: #fff; border-radius: 4px; padding: 6px; }
+.access-public-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.access-public-list li { font-size: 11px; }
+.access-public-list code { font: 600 10.5px/1.3 ui-monospace, monospace; color: var(--fg); word-break: break-all; }
+.access-public-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.access-public-model { font: 600 10.5px/1.3 ui-monospace, monospace; color: var(--fg); word-break: break-all; flex: 1; }
+.access-public-row .access-key-meta { flex: 0 0 auto; }
+.public-toggle { font-size: 11.5px; }
+.public-toggle.is-public { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.public-toggle:disabled { opacity: 0.7; cursor: default; }

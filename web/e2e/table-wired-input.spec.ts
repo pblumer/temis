@@ -21,7 +21,7 @@ async function createModel(page: Page): Promise<void> {
 async function dropDecision(page: Page): Promise<string> {
   const canvas = page.locator('#canvas')
   await expect(canvas).toBeVisible()
-  const paletteEntry = canvas.locator('.djs-palette [title="Decision erstellen"]')
+  const paletteEntry = canvas.locator('.djs-palette [aria-label="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await canvas.boundingBox()
   if (!box) throw new Error('no canvas')
@@ -29,8 +29,11 @@ async function dropDecision(page: Page): Promise<string> {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3)
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 3)
   await expect(page.locator('.djs-shape')).toHaveCount(1)
-  // A freshly dropped decision starts an inline rename; dismiss it.
+  // A freshly dropped decision starts an inline rename so it can be named in one
+  // gesture; wait for that box, then dismiss it to keep the default name here.
+  await expect(page.locator('.djs-direct-editing-content')).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(page.locator('.djs-direct-editing-content')).toHaveCount(0)
   const id = await page.locator('.djs-shape').first().getAttribute('data-element-id')
   if (!id) throw new Error('no decision id')
   return id

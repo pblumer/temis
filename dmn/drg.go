@@ -110,11 +110,18 @@ func (d *Definitions) Graph() Graph {
 	}
 
 	for _, in := range d.model.InputData {
-		t := inputType[in.Name]
+		// The FEEL identifier is keyed on the ref name (schema/env), while the node
+		// shows the display Name. Surface a distinct varName only when the input
+		// declares a separate variable, so the modeler can reference it correctly.
+		t := inputType[in.RefName()]
 		if t == "" {
 			t = canonicalType(in.TypeRef)
 		}
-		add(in.ID, "inputData", in.Name, t, "", false, false, false, false, false, false, false, false, false, false)
+		varName := ""
+		if in.VariableName != "" && in.VariableName != in.Name {
+			varName = in.VariableName
+		}
+		add(in.ID, "inputData", in.Name, t, varName, false, false, false, false, false, false, false, false, false, false)
 	}
 	for _, b := range d.model.BKMs {
 		add(b.ID, "businessKnowledgeModel", b.Name, canonicalType(b.VariableTypeRef), "", false, false, false, false, false, false, false, false, false, false)

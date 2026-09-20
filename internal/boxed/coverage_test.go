@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // tightLimits trips the iteration limit on the first iteration step, so any cell

@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pblumer/temis/assist"
 )
@@ -64,6 +65,10 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
+// DefaultTimeout bounds a single provider request so a hung LLM endpoint cannot
+// block the calling handler goroutine indefinitely (audit finding H4).
+const DefaultTimeout = 120 * time.Second
+
 // New builds a Client authenticating with apiKey. The key may be a server-side
 // token or a per-request bring-your-own-key (ADR-0024); construct one Client per
 // distinct key.
@@ -72,7 +77,9 @@ func New(apiKey string, opts ...Option) *Client {
 		apiKey:  apiKey,
 		baseURL: DefaultBaseURL,
 		model:   DefaultModel,
-		http:    http.DefaultClient,
+		// A dedicated client with a deadline, not http.DefaultClient (no timeout):
+		// a stalled provider must not hang the calling handler forever (H4).
+		http: &http.Client{Timeout: DefaultTimeout},
 	}
 	for _, opt := range opts {
 		opt(c)

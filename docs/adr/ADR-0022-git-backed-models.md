@@ -1,6 +1,6 @@
 # ADR-0022: DMN-Modelle aus einem Git-Repository lesen und (später) bearbeiten
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-06-29
 - **Kontext-WP:** WP-70 (Lesen/Browsen), WP-71 (Schreiben/Commit/Branch/PR)
 
