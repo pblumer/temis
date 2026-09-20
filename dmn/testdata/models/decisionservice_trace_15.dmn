@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             namespace="http://temis.example/decision-service-trace"
+             name="DecisionServiceTrace" id="def_dst">
+
+  <!-- The same two-decision shape as decisionservice_15.dmn, but both decisions
+       are decision TABLES rather than literal expressions — so a service
+       evaluation over this model has rules to trace, which is the point.
+
+       Two services over the same decisions separate the two readings a service
+       trace has to get right: "Approval" computes Eligibility internally, so a
+       trace of it holds both tables; "Routing Only" takes Eligibility as a
+       caller-supplied boundary, so a trace of it holds one. -->
+
+  <inputData id="id_age" name="Applicant Age">
+    <variable name="Applicant Age" typeRef="number"/>
+  </inputData>
+
+  <decision id="id_elig" name="Eligibility">
+    <variable name="Eligibility" typeRef="string"/>
+    <informationRequirement><requiredInput href="#id_age"/></informationRequirement>
+    <decisionTable id="dt_elig" hitPolicy="UNIQUE">
+      <input id="in_elig_age">
+        <inputExpression id="ie_elig_age" typeRef="number"><text>Applicant Age</text></inputExpression>
+      </input>
+      <output id="out_elig" name="Eligibility" typeRef="string"/>
+      <rule id="r_elig_minor">
+        <inputEntry id="e_elig_minor"><text>&lt; 18</text></inputEntry>
+        <outputEntry id="o_elig_minor"><text>"INELIGIBLE"</text></outputEntry>
+      </rule>
+      <rule id="r_elig_adult">
+        <inputEntry id="e_elig_adult"><text>&gt;= 18</text></inputEntry>
+        <outputEntry id="o_elig_adult"><text>"ELIGIBLE"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="id_route" name="Routing">
+    <variable name="Routing" typeRef="string"/>
+    <informationRequirement><requiredDecision href="#id_elig"/></informationRequirement>
+    <decisionTable id="dt_route" hitPolicy="UNIQUE">
+      <input id="in_route_elig">
+        <inputExpression id="ie_route_elig" typeRef="string"><text>Eligibility</text></inputExpression>
+      </input>
+      <output id="out_route" name="Routing" typeRef="string"/>
+      <rule id="r_route_accept">
+        <inputEntry id="e_route_accept"><text>"ELIGIBLE"</text></inputEntry>
+        <outputEntry id="o_route_accept"><text>"ACCEPT"</text></outputEntry>
+      </rule>
+      <rule id="r_route_decline">
+        <inputEntry id="e_route_decline"><text>"INELIGIBLE"</text></inputEntry>
+        <outputEntry id="o_route_decline"><text>"DECLINE"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <!-- Eligibility is encapsulated: the service computes it internally, so both
+       tables run and both are traced. -->
+  <decisionService id="id_approval" name="Approval">
+    <outputDecision href="#id_route"/>
+    <encapsulatedDecision href="#id_elig"/>
+    <inputData href="#id_age"/>
+  </decisionService>
+
+  <!-- Eligibility is an input decision: the caller supplies it and the service
+       never computes it, so its table never runs and never appears in a trace. -->
+  <decisionService id="id_routeonly" name="Routing Only">
+    <outputDecision href="#id_route"/>
+    <inputDecision href="#id_elig"/>
+  </decisionService>
+</definitions>

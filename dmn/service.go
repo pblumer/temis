@@ -6,6 +6,7 @@ import (
 
 	"github.com/pblumer/feel"
 	"github.com/pblumer/feel/value"
+	"github.com/pblumer/temis/internal/boxed"
 	"github.com/pblumer/temis/internal/model"
 )
 
@@ -49,9 +50,28 @@ func (d *Definitions) Service(idOrName string) (*CompiledService, error) {
 // service's input decisions are treated as caller-supplied boundaries and are
 // not computed. Result.Outputs is keyed by output-decision name; Result.Decisions
 // holds every decision the service actually evaluated.
-func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error) {
+//
+// WithTrace fills Result.Trace with one entry per decision table the service
+// actually ran, in the order it ran them (WP-51). The boundary holds in the
+// trace as it does in the result: an input decision is supplied rather than
+// computed, so its table never runs and never appears — a service's trace is an
+// account of what happened behind the interface, not of the whole graph.
+//
+// WithStrictInput has no effect here, and deliberately so rather than by
+// oversight: strict validation checks an input against a decision's declared
+// schema (WP-52), and a service publishes none — its inputs are its input data
+// plus its input decisions, which nothing on CompiledService yet carries as
+// typed fields. Passing it is accepted and ignored instead of failing, because
+// an option that is meaningless for one callee should not turn a working call
+// into an error; a service-level schema is the follow-up that would give it
+// meaning.
+func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
+	}
+	var cfg evalConfig
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 	base, err := inputToValues(in)
 	if err != nil {
@@ -60,6 +80,12 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error
 
 	ev := newEvaluator(base, s.limits)
 	ev.boundary = s.boundary
+	// One recorder for the whole service call, so the tables of every decision it
+	// runs land in one trace in evaluation order — the same wiring a decision's
+	// own Evaluate uses, which is why the two produce the same shape.
+	if cfg.trace {
+		ev.rec = boxed.NewRecorder()
+	}
 
 	outputs := make(map[string]any, len(s.outputs))
 	for _, out := range s.outputs {
@@ -74,7 +100,11 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error
 		}
 		outputs[out.name] = fromValue(v)
 	}
-	return Result{Outputs: outputs, Decisions: ev.decisions}, nil
+	res := Result{Outputs: outputs, Decisions: ev.decisions}
+	if cfg.trace {
+		res.Trace = traceFromRecorder(ev.rec)
+	}
+	return res, nil
 }
 
 // compileServices resolves each decision service's references into compiled

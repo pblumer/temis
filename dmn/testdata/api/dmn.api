@@ -104,7 +104,7 @@ func (e *EvalError) Unwrap() error
 
 func (e *InputError) Error() string
 
-func (s *CompiledService) Evaluate(ctx context.Context, in Input) (Result, error)
+func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error)
 
 func (s *CompiledService) ID() string
 

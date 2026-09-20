@@ -373,6 +373,57 @@ func TestEvaluateWithTrace(t *testing.T) {
 	}
 }
 
+// TestServiceStepContributesItsTrace: a step published behind a decision service
+// is traced like any other. It was not — the dmn service API took no options, so
+// a flow's trace silently skipped exactly the steps whose internals a reader
+// cannot otherwise see, which is the worst place to be missing from an account.
+func TestServiceStepContributesItsTrace(t *testing.T) {
+	src := `{
+      "flow": "svc",
+      "inputs": [{"name":"Applicant Age","type":"number"}],
+      "steps": [
+        {"id": "appr", "model": "sha256:svc-model", "decision": "Approval",
+         "in": {"Applicant Age": "Applicant Age"}}
+      ],
+      "output": {"Result": "appr.Routing"}
+    }`
+	f := compile(t, src)
+
+	res, err := f.Evaluate(context.Background(),
+		dmn.Input{"Applicant Age": 30}, resolver(t), flow.WithTrace())
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if res.Outputs["Result"] != "ACCEPT" {
+		t.Fatalf("Result = %v, want ACCEPT", res.Outputs["Result"])
+	}
+	// The service runs one decision table (Routing); Eligibility is a literal
+	// expression and has no rules to report, which is a silence about the model
+	// rather than about the trace.
+	if res.Trace == nil || len(res.Trace.Tables) != 1 {
+		t.Fatalf("expected the service's one table trace, got %+v", res.Trace)
+	}
+	tbl := res.Trace.Tables[0]
+	if got := len(tbl.Inputs); got != 1 || tbl.Inputs[0].Expression != "Eligibility" {
+		t.Fatalf("traced table inputs = %+v, want one column over Eligibility", tbl.Inputs)
+	}
+	if tbl.Inputs[0].Value != "ELIGIBLE" {
+		t.Errorf("traced table read Eligibility = %v, want ELIGIBLE", tbl.Inputs[0].Value)
+	}
+	if len(tbl.Matched) != 1 || tbl.Matched[0] != 0 {
+		t.Errorf("matched = %v, want the first rule", tbl.Matched)
+	}
+
+	// And still nothing without the option.
+	plain, err := f.Evaluate(context.Background(), dmn.Input{"Applicant Age": 30}, resolver(t))
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if plain.Trace != nil {
+		t.Fatalf("expected no trace without WithTrace, got %+v", plain.Trace)
+	}
+}
+
 // TestFeelMappingArithmetic: a mapping is a full FEEL expression — arithmetic on
 // a flow input changes the outcome (800-200=600 → medium, not low).
 func TestFeelMappingArithmetic(t *testing.T) {

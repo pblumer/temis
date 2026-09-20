@@ -83,6 +83,31 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Added
 
+- **Ein Decision Service kann jetzt erklärt werden (`WithTrace`).** `WithTrace()` füllt
+  `Result.Trace` seit WP-51 — aber nur für eine Decision: `CompiledService.Evaluate` nahm
+  überhaupt keine `EvalOption` entgegen, sodass die Option dort nirgendwo hinkonnte. Wer ein
+  Modell über seine **veröffentlichte Schnittstelle** aufrief — also genau so, wie ein
+  Decision Service gedacht ist — bekam Outputs und nichts darüber, wie sie zustande kamen.
+  Die Entscheidungen hinter einer Schnittstelle sind in der Regel Tabellen, also fehlte die
+  Erklärung dort, wo sie am wenigsten zu entbehren ist: ein nachgelagerter Leser kann
+  „es wurden keine Regeln aufgezeichnet" nicht von „keine Regel hat getroffen"
+  unterscheiden. (Gemeldet aus der Integration: Atlas ADR-0398.)
+
+  `CompiledService.Evaluate(ctx, in, opts ...EvalOption)` nimmt nun dieselben Optionen wie
+  `CompiledDecision.Evaluate` und reicht denselben Recorder durch den geteilten `evaluator`.
+  Die **Grenze gilt auch in der Spur**: eine Input-Decision liefert der Aufrufer, der Service
+  berechnet sie nie — ihre Tabelle taucht darum nicht auf. `WithStrictInput()` bleibt beim
+  Service wirkungslos und ist als solches dokumentiert (ein Service veröffentlicht kein
+  Eingabeschema; siehe `docs/40-api-contract.md §1.3`).
+
+  Dieselbe Lücke schloss sich in `package flow`: ein Step hinter einem Service trug nichts
+  zur aggregierten Flow-Spur bei — eine Spur übersprang also stillschweigend genau die
+  Steps, deren Innenleben ein Leser sonst nicht sieht.
+
+  **Oberflächenänderung** (Golden `dmn/testdata/api/dmn.api`): variadische Erweiterung einer
+  bestehenden Signatur. Für alle Aufrufstellen quellkompatibel, nach dem Buchstaben von
+  ADR-0019 aber eine Signaturänderung — in der Vor-1.0-Phase die richtige Zeit dafür, nach
+  v1.0 wäre sie ein Major.
 - **Knoten-Größe im Modeler ändern (Resize).** Ein selektierter Knoten zeigt jetzt
   Größen-Anfasser an den Ecken/Kanten (diagram-js-Resize); Ziehen ändert seine Größe,
   läuft über den Command-Stack (Undo/Redo) und markiert das Modell als geändert. Die
