@@ -26,7 +26,7 @@ test('drop a BKM and edit its function without a manual save first', async ({ pa
   // Placing auto-selects the new shape and opens its context pad.
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  const paletteEntry = page.locator('.djs-palette [title="Business Knowledge Model erstellen"]')
+  const paletteEntry = page.locator('.djs-palette [aria-label="Business Knowledge Model erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await canvas.boundingBox()
   if (!box) throw new Error('no canvas')

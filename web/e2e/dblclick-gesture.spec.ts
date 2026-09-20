@@ -74,7 +74,7 @@ test('double-clicking a decision never inline-renames; F2 does', async ({ page }
   // Drop a bare decision via the palette (click the tool, then click the canvas).
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  const paletteEntry = page.locator('.djs-palette [title="Decision erstellen"]')
+  const paletteEntry = page.locator('.djs-palette [aria-label="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await boxOf(canvas)
   await paletteEntry.click()
@@ -118,7 +118,7 @@ test('a freshly dropped decision can be named directly in the same gesture', asy
 
   const canvas = page.locator('.djs-container').first()
   await expect(canvas).toBeVisible()
-  const paletteEntry = page.locator('.djs-palette [title="Decision erstellen"]')
+  const paletteEntry = page.locator('.djs-palette [aria-label="Decision erstellen"]')
   await expect(paletteEntry).toBeVisible()
   const box = await boxOf(canvas)
   await paletteEntry.click()
