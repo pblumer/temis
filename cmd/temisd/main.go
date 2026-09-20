@@ -51,6 +51,10 @@ func main() {
 		"JSON file of scoped kid.secret API keys guarding /v1, /mcp and gRPC (default $TEMIS_KEYS_FILE; empty = none)")
 	keysDir := flag.String("keys-dir", os.Getenv("TEMIS_KEYS_DIR"),
 		"directory for the persistent managed keystore + lifecycle API (POST /v1/keys …); keys survive a restart; empty = key management off (default $TEMIS_KEYS_DIR)")
+	publicEvaluate := flag.Bool("public-evaluate", envBool("TEMIS_PUBLIC_EVALUATE", false),
+		"open the evaluate scope to anonymous callers even when keys are configured: every evaluation (HTTP/gRPC/MCP) needs no token, while write/admin/assist/git/flow still do (env TEMIS_PUBLIC_EVALUATE)")
+	publicModels := flag.String("public-models", os.Getenv("TEMIS_PUBLIC_MODELS"),
+		"comma-separated modelIds or model names whose evaluation is open to anonymous callers even when keys are configured (public decisions); empty = none (default $TEMIS_PUBLIC_MODELS)")
 	listModels := flag.Bool("list-models", envBool("TEMIS_LIST_MODELS", true),
 		"expose GET /v1/models, which lists every cached model; set false to keep decisions private (env TEMIS_LIST_MODELS)")
 	cacheSize := flag.Int("cache-size", envInt("TEMIS_CACHE_SIZE", 0),
@@ -90,6 +94,8 @@ func main() {
 		"input field whose value becomes the subject's entity segment (empty = decision name) (env TEMIS_CLIO_SUBJECT_KEY)")
 	clioStrict := flag.Bool("clio-strict", envBool("TEMIS_CLIO_STRICT", false),
 		"fail-closed: abort the evaluation (502) if the audit write fails (default best-effort: log and continue) (env TEMIS_CLIO_STRICT)")
+	clioAuthorship := flag.Bool("clio-authorship", envBool("TEMIS_CLIO_AUTHORSHIP", true),
+		"stamp the authenticated API key's kid on audit events as the clioauthkid extension; the sink also auto-disables it if clio rejects the extension (env TEMIS_CLIO_AUTHORSHIP)")
 	clioActiveProbe := flag.Bool("clio-active-probe", envBool("TEMIS_CLIO_ACTIVE_PROBE", false),
 		"GET /v1/status actively pings clio's health endpoint for reachability instead of using the passive last-write outcome (env TEMIS_CLIO_ACTIVE_PROBE)")
 	tlsCert := flag.String("tls-cert", os.Getenv("TEMIS_TLS_CERT"),
@@ -104,6 +110,12 @@ func main() {
 		"operational log format: text or json (default $TEMIS_LOG_FORMAT, else text)")
 	logLevel := flag.String("log-level", envOr("TEMIS_LOG_LEVEL", "info"),
 		"minimum log level: debug, info, warn or error (default $TEMIS_LOG_LEVEL, else info)")
+	externalURL := flag.String("external-url", os.Getenv("TEMIS_EXTERNAL_URL"),
+		"canonical public base URL, the OAuth issuer (ADR-0038); with -keys-dir it enables temis as a self-contained OAuth server so remote MCP clients (e.g. the claude.ai connector) can obtain a /mcp token (default $TEMIS_EXTERNAL_URL; empty = OAuth off)")
+	oauthRedirectAllow := flag.String("oauth-redirect-allow", os.Getenv("TEMIS_OAUTH_REDIRECT_ALLOW"),
+		"comma-separated extra redirect_uri hosts the OAuth server accepts, beyond the built-in claude.ai and loopback (default $TEMIS_OAUTH_REDIRECT_ALLOW)")
+	oauthScopes := flag.String("oauth-scopes", os.Getenv("TEMIS_OAUTH_SCOPES"),
+		"comma-separated scopes an OAuth-issued token may carry (default evaluate,models:read,models:write,flow,git) (env TEMIS_OAUTH_SCOPES)")
 	flag.Parse()
 
 	// Structured operational logging (WP-114, ADR-0030): key/value records via
@@ -133,6 +145,30 @@ func main() {
 		service.WithKeyStore(*keysDir),
 		service.WithModelListing(*listModels),
 		service.WithVersion(ver),
+	}
+	if *publicEvaluate {
+		opts = append(opts, service.WithPublicEvaluate(true))
+	}
+	if *publicModels != "" {
+		opts = append(opts, service.WithPublicModels(strings.Split(*publicModels, ",")...))
+	}
+	// OAuth authorization server (ADR-0038): the issuer/external URL turns temis
+	// into its own OAuth server for the /mcp endpoint (needs -keys-dir; the service
+	// logs a warning and stays off otherwise).
+	if *externalURL != "" {
+		opts = append(opts, service.WithExternalURL(*externalURL))
+		if *oauthRedirectAllow != "" {
+			opts = append(opts, service.WithOAuthRedirectAllow(strings.Split(*oauthRedirectAllow, ",")...))
+		}
+		if *oauthScopes != "" {
+			var sc []service.Scope
+			for _, s := range strings.Split(*oauthScopes, ",") {
+				if s = strings.TrimSpace(s); s != "" {
+					sc = append(sc, service.Scope(s))
+				}
+			}
+			opts = append(opts, service.WithOAuthScopes(sc...))
+		}
 	}
 	if *clioActiveProbe {
 		opts = append(opts, service.WithClioActiveProbe(true))
@@ -181,14 +217,15 @@ func main() {
 	var qq *service.QualityQueue
 	if clioOn {
 		sink, err := service.NewClioSink(service.ClioConfig{
-			URL:           *clioURL,
-			Token:         *clioToken,
-			Source:        *clioSource,
-			SubjectPrefix: *clioSubjectPrefix,
-			SubjectKey:    *clioSubjectKey,
-			Engine:        "temisd " + ver,
-			Strict:        *clioStrict,
-			Logger:        slog.Default(),
+			URL:               *clioURL,
+			Token:             *clioToken,
+			Source:            *clioSource,
+			SubjectPrefix:     *clioSubjectPrefix,
+			SubjectKey:        *clioSubjectKey,
+			Engine:            "temisd " + ver,
+			Strict:            *clioStrict,
+			DisableAuthorship: !*clioAuthorship,
+			Logger:            slog.Default(),
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "temisd: %v\n", err)
@@ -207,12 +244,18 @@ func main() {
 		// flow catalog, so the preloaded examples (and any API-loaded model) are
 		// visible over MCP, and models and flows registered over MCP appear in the
 		// modeler. The same optional token guards /mcp as the /v1 endpoints.
-		mcpSrv := mcp.NewServer(engine,
+		mcpOpts := []mcp.Option{
 			mcp.WithVersion(ver),
 			mcp.WithAuth(srv.MCPAuth()),
 			mcp.WithStore(srv.ModelStore()),
 			mcp.WithFlowStore(srv.FlowStore()),
-		)
+		}
+		// When OAuth is on, advertise the protected-resource metadata in the /mcp
+		// 401 challenge so an OAuth client can discover the token issuer (RFC 9728).
+		if *externalURL != "" {
+			mcpOpts = append(mcpOpts, mcp.WithResourceMetadataURL(strings.TrimRight(*externalURL, "/")+"/.well-known/oauth-protected-resource"))
+		}
+		mcpSrv := mcp.NewServer(engine, mcpOpts...)
 		srv.AttachMCP(mcpSrv)
 	}
 	switch {
@@ -223,6 +266,13 @@ func main() {
 		}
 	case *token != "":
 		log.Printf("temisd: /v1, /mcp and gRPC require the DEPRECATED legacy admin token — migrate to -keys-file (ADR-0028)")
+	}
+	// Public decisions (ADR-0035): surface the exception loudly — it deliberately
+	// serves evaluations without a key while auth guards everything else.
+	if *publicEvaluate {
+		log.Printf("temisd: PUBLIC evaluation ENABLED — every evaluation is open to anonymous callers (write/admin/assist/git/flow still require a key)")
+	} else if *publicModels != "" {
+		log.Printf("temisd: PUBLIC evaluation enabled for specific models: %s (anonymous callers may evaluate them; everything else requires a key)", *publicModels)
 	}
 	if !*listModels {
 		log.Printf("temisd: GET /v1/models listing disabled")
@@ -292,16 +342,32 @@ func main() {
 	// WriteTimeout are deliberately left unset (0): the same server carries h2c
 	// bidi gRPC streams (EvaluateBatch) whose reads and writes legitimately span
 	// long periods, and a wall-clock cap there would sever live streams.
+	// Enable cleartext HTTP/2 (h2c) alongside HTTP/1.1 and TLS-negotiated HTTP/2:
+	// the same server carries h2c bidi gRPC streams (EvaluateBatch) when no TLS is
+	// terminated in front. This replaces the deprecated golang.org/x/net/http2/h2c
+	// wrapper (SA1019) — the mux is now served bare and the transport is selected
+	// here via the Protocols field (Go 1.24+).
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.Handler(),
+		Protocols:         protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// OAuth reaper (ADR-0038): prune aged-out codes/refresh grants/expired issued
+	// keys on a timer. A no-op unless OAuth is enabled; stopped on shutdown.
+	reapCtx, reapCancel := context.WithCancel(context.Background())
+	defer reapCancel()
+	go srv.RunOAuthReaper(reapCtx)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
+		reapCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)

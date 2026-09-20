@@ -120,6 +120,7 @@ func TestInitialize(t *testing.T) {
 			Name    string `json:"name"`
 			Version string `json:"version"`
 		} `json:"serverInfo"`
+		Instructions string `json:"instructions"`
 	}
 	if err := json.Unmarshal(resps[0].Result, &res); err != nil {
 		t.Fatalf("decode initialize result: %v", err)
@@ -132,6 +133,11 @@ func TestInitialize(t *testing.T) {
 	}
 	if res.ServerInfo.Name != serverName || res.ServerInfo.Version != "test" {
 		t.Errorf("serverInfo: got %+v", res.ServerInfo)
+	}
+	// The co-modeling contract must reach the agent on connect, including the
+	// unary-test null trap it exists to prevent.
+	if !strings.Contains(res.Instructions, "co-model") || !strings.Contains(res.Instructions, "UNARY TEST") {
+		t.Errorf("initialize instructions missing the co-modeling contract: %q", res.Instructions)
 	}
 }
 

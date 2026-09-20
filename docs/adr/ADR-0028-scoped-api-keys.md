@@ -124,8 +124,17 @@ kommt zuerst.
   **einmalig** in der Antwort, danach nie wieder); Offline-CLI `temisd keys …` für den
   Lockout-Fall (Server gestoppt, DB direkt).
 - **Phase 3 (WP-105): Parität & Ausbau.** Expiry-Durchsetzung, **Authorship** (`kid` als
-  `clioauthkid`-Extension in Decision-Events, ADR-0023, in Hash/Signatur gebunden),
-  Auth-/Audit-Events, Subject-/Modell-Prefix-Scopes.
+  `data.clioauthkid` in Decision-/Flow-Events, ADR-0023, über die `data`-Hash-Kette
+  gebunden), Auth-/Audit-Events, Subject-/Modell-Prefix-Scopes.
+
+  > **Korrektur (nach Deployment festgestellt):** ursprünglich wurde `clioauthkid` als
+  > Top-Level-CloudEvents-Extension gesendet. clios `write-events` dekodiert den Body
+  > jedoch strikt in `{source, subject, type, data}` und weist unbekannte Top-Level-Felder
+  > mit `400 unknown field "clioauthkid"` ab (auch ohne registriertes Schema), sodass jeder
+  > authentifizierte Write scheiterte. Die Zuordnung liegt deshalb jetzt in `data`; da clio
+  > `data` frei akzeptiert und in die Hash-Kette bindet, bleiben Tamper-Evidenz und
+  > Abfragbarkeit (`event.data.clioauthkid`) erhalten. Der Sink degradiert zusätzlich
+  > automatisch und ist per `-clio-authorship=false` abschaltbar (docs/80).
 
 Der **Engine-Kern bleibt unberührt** (kein Auth-Import in `package dmn`, ADR-0011);
 alles lebt in `service`/`cmd/temisd`. **Keine neue Dependency** (ADR-0014): SHA-256 und

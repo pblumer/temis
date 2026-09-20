@@ -34,20 +34,11 @@ temis/
 │   │   ├── schema.go           //   Go-Structs gemäß DMN-XSD
 │   │   └── decode.go           //   Namespace-tolerantes Decoding
 │   ├── model/                  // versionsneutrales Domänenmodell (DRG, Decision, Table…)
-│   ├── value/                  // FEEL/DMN-Wertemodell (eigenes Paket, s. u.)
-│   │   ├── value.go            //   Value-Interface, null/bool/string/list/context/range/function
-│   │   ├── number.go           //   Number = apd.Decimal (ADR-0007), 34 Stellen, half-even
-│   │   ├── temporal.go         //   date/time/date-time + zwei Dauer-Typen, Parsing
-│   │   ├── compare.go arith.go //   Gleichheit/Ordnung & Arithmetik mit null-Propagation
-│   ├── feel/                   // FEEL: Lexer→Parser→AST→Typecheck→Compiler→Closure
-│   │   ├── token.go lexer.go
-│   │   ├── ast.go parser.go
-│   │   ├── types.go            //   FEEL-Typsystem
-│   │   ├── typecheck.go
-│   │   ├── compile.go          //   AST → CompiledExpr (func(*Scope) Value)
-│   │   ├── builtins/           //   alle FEEL-Built-in-Funktionen, je Kategorie 1 Datei
-│   │   └── scope.go            //   Variablenauflösung zur Laufzeit
-│   ├── boxed/                  // Boxed Expressions → Compiler (nutzt feel/)
+│   │                          // FEEL-Front-end (Lexer→Parser→AST→Typecheck→Compiler→Closure),
+│   │                          // das Wertemodell und die Built-ins liegen extern in
+│   │                          // github.com/pblumer/feel (+/value, +/builtins) — extrahiert aus
+│   │                          // temis, hier als Modul-Abhängigkeit konsumiert (ADR-0039).
+│   ├── boxed/                  // Boxed Expressions → Compiler (nutzt feel/ + feel/value)
 │   │   ├── decisiontable.go    //   Unary Tests, Hit Policies, Aggregation
 │   │   ├── context.go invocation.go list.go relation.go
 │   │   ├── function.go         //   Boxed Function / BKM
@@ -63,12 +54,16 @@ temis/
 
 **Regel für KI-Agenten:** `dmn/` ist die einzige öffentliche API. Alles unter `internal/`
 darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf die Engine zugreifen
-— niemals direkt auf `internal/`.
+— niemals direkt auf `internal/`. Das FEEL-Front-end (`github.com/pblumer/feel`) ist seit
+ADR-0039 ein **externes** Modul; die Regel „Engine nur über `dmn/`" gilt weiterhin, ist für
+das nun öffentliche FEEL-Paket aber nicht mehr compiler-erzwungen (es lag zuvor unter
+`internal/`) — nur `dmn` und `internal/boxed` sollen es importieren.
 
-> **Hinweis (WP-05):** Das Wertemodell liegt in einem **eigenen Paket `internal/value`**
-> (nicht in `internal/feel`), damit Wert-Namen wie `Number`/`Kind` nicht mit den
-> Token-Kinds des Lexers (`feel.Number`, `feel.Kind`) kollidieren. `feel`, `boxed`,
-> `drg` und `dmn` importieren `internal/value`.
+> **Hinweis (WP-05, aktualisiert ADR-0039):** Das Wertemodell liegt in einem **eigenen Paket**
+> (nicht im FEEL-Paket), damit Wert-Namen wie `Number`/`Kind` nicht mit den Token-Kinds des
+> Lexers (`feel.Number`, `feel.Kind`) kollidieren. Seit ADR-0039 kommen FEEL-Front-end und
+> Wertemodell aus dem externen Modul `github.com/pblumer/feel` bzw. `github.com/pblumer/feel/value`;
+> `dmn` und `internal/boxed` importieren sie von dort.
 
 ## 3. Datenfluss im Detail
 
@@ -78,7 +73,7 @@ darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf d
 - dmn-js schreibt Standard-DMN-XML inkl. `DMNDI` (Diagramm-Layout). Layout wird
   **bewahrt** (round-trip-fähig), aber für die Ausführung ignoriert.
 
-### 3.2 Compile (`internal/feel` + `internal/boxed` + `dmn/graph.go`)
+### 3.2 Compile (`github.com/pblumer/feel` + `internal/boxed` + `dmn/graph.go`)
 - Jede Decision besitzt eine Logik-Form (Literal Expression, Decision Table, oder andere
   Boxed Expression). Diese wird in eine `CompiledExpr` übersetzt.
 - `dmn/graph.go` verdrahtet aus den Information Requirements einen DAG und prüft ihn zur
@@ -97,10 +92,10 @@ darf sich frei ändern. `service/` und `cmd/` dürfen **nur** über `dmn/` auf d
 ## 4. Zentrale interne Schnittstelle (stabilisierend)
 
 ```go
-// internal/value — das Wertemodell (eigenes Paket, s. §2-Hinweis)
+// github.com/pblumer/feel/value — das Wertemodell (eigenes Paket, s. §2-Hinweis)
 type Value interface{ Kind() Kind; String() string /* … */ }  // null/bool/number/string/temporal/list/context/range/function
 
-// internal/feel — Compiler & Hot-Path-Schnittstelle (WP-06)
+// github.com/pblumer/feel — Compiler & Hot-Path-Schnittstelle (WP-06)
 type Scope struct{ /* vars []value.Value */ }                 // Slot-Array, keine Map im Hot Path (§5.2)
 type Env struct{ /* name→Slot-Index */ }                      // Compile-Zeit-Layout; Env.NewScope(map) ist die einzige map→Slots-Grenze
 type CompiledExpr func(*Scope) (value.Value, error)            // reine Go-Closure, immutable, thread-safe

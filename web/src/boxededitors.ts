@@ -1,4 +1,4 @@
-import type { Anchor } from './api'
+import { createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, type Anchor, type ModelDetail } from './api'
 import { FEEL_TYPES } from './feeltypes'
 import { openTableOverlay } from './table'
 import { openBoxedContextOverlay } from './boxedcontext'
@@ -65,4 +65,43 @@ export function openBoxed(kind: string, t: BoxedTarget): boolean {
 // "entry.1" → "entry.1/item.0").
 export function joinAt(parent: string | undefined, step: string): string {
   return parent ? parent + '/' + step : step
+}
+
+// BoxedType is one row of the boxed-type registry (WP-142): the single source of
+// truth for a decision's boxed logic kind. Adding a boxed kind is one entry here
+// (plus its overlay in openBoxed and its icon in dmn-context-pad) rather than the
+// ~13 hardcoded sites it used to touch across main.ts/canvas.ts/dmn-context-pad.ts.
+// hasFlag is the GraphNode/Shape property that marks a decision as carrying this
+// kind. editTitle/createTitle are the context-pad labels; statusCreating/Created
+// are the app-shell status messages while a fresh one is created. create is the
+// api endpoint that gives an undecided decision a fresh instance — null for
+// literal (materialized on save, not up front).
+export type BoxedType = {
+  kind: string
+  hasFlag: 'hasTable' | 'hasLiteral' | 'hasContext' | 'hasConditional' | 'hasList' | 'hasRelation' | 'hasFilter' | 'hasIterator' | 'hasInvocation'
+  editTitle: string
+  createTitle: string
+  statusCreating: string
+  statusCreated: string
+  create: ((modelId: string, decision: string) => Promise<ModelDetail>) | null
+}
+
+// BOXED_TYPES is the ordered registry of a decision's boxed logic kinds. A decision
+// carries at most one, so lookups match the first entry whose hasFlag is set.
+export const BOXED_TYPES: BoxedType[] = [
+  { kind: 'table', hasFlag: 'hasTable', editTitle: 'Decision Table anzeigen', createTitle: 'Decision Table anlegen', statusCreating: 'legt Tabelle an …', statusCreated: 'Tabelle angelegt ✓', create: createDecisionTable },
+  { kind: 'literal', hasFlag: 'hasLiteral', editTitle: 'FEEL-Ausdruck anzeigen', createTitle: 'FEEL-Ausdruck anlegen', statusCreating: '', statusCreated: '', create: null },
+  { kind: 'context', hasFlag: 'hasContext', editTitle: 'Boxed Context bearbeiten', createTitle: 'Boxed Context anlegen', statusCreating: 'legt Boxed Context an …', statusCreated: 'Boxed Context angelegt ✓', create: createBoxedContext },
+  { kind: 'conditional', hasFlag: 'hasConditional', editTitle: 'Conditional (if/then/else) bearbeiten', createTitle: 'Conditional (if/then/else) anlegen', statusCreating: 'legt Conditional an …', statusCreated: 'Conditional angelegt ✓', create: createBoxedConditional },
+  { kind: 'list', hasFlag: 'hasList', editTitle: 'Liste bearbeiten', createTitle: 'Liste anlegen', statusCreating: 'legt Liste an …', statusCreated: 'Liste angelegt ✓', create: createBoxedList },
+  { kind: 'relation', hasFlag: 'hasRelation', editTitle: 'Relation bearbeiten', createTitle: 'Relation anlegen', statusCreating: 'legt Relation an …', statusCreated: 'Relation angelegt ✓', create: createBoxedRelation },
+  { kind: 'filter', hasFlag: 'hasFilter', editTitle: 'Filter bearbeiten', createTitle: 'Filter anlegen', statusCreating: 'legt Filter an …', statusCreated: 'Filter angelegt ✓', create: createBoxedFilter },
+  { kind: 'iterator', hasFlag: 'hasIterator', editTitle: 'Iteration (for/some/every) bearbeiten', createTitle: 'Iteration (for/some/every) anlegen', statusCreating: 'legt Iteration an …', statusCreated: 'Iteration angelegt ✓', create: createBoxedIterator },
+  { kind: 'invocation', hasFlag: 'hasInvocation', editTitle: 'Invocation (Funktions-/BKM-Aufruf) bearbeiten', createTitle: 'Invocation (Funktions-/BKM-Aufruf) anlegen', statusCreating: 'legt Invocation an …', statusCreated: 'Invocation angelegt ✓', create: createBoxedInvocation },
+]
+
+// boxedTypeFor returns the registry entry for the boxed kind a node carries (the
+// first whose hasFlag is set on the node), or undefined for an undecided node.
+export function boxedTypeFor(node: Record<string, unknown>): BoxedType | undefined {
+  return BOXED_TYPES.find((b) => node[b.hasFlag])
 }

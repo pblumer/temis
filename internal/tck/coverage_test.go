@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/dmn"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // TestScalarValueTemporals exercises the time/datetime/duration branches of

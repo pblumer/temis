@@ -17,7 +17,7 @@ import (
 )
 
 // h2cClient returns an HTTP client that speaks cleartext HTTP/2, so the gRPC
-// protocol (and the bidi EvaluateBatch stream) reach the h2c-wrapped handler.
+// protocol (and the bidi EvaluateBatch stream) reach the handler over h2c.
 func h2cClient() *http.Client {
 	return &http.Client{
 		Transport: &http2.Transport{
@@ -31,7 +31,14 @@ func h2cClient() *http.Client {
 
 func newGRPCClient(t *testing.T, opts ...Option) dmnv1connect.DmnEngineClient {
 	t.Helper()
-	srv := httptest.NewServer(NewServer(nil, opts...).Handler())
+	// Serve cleartext HTTP/2 (h2c) so the gRPC client below can reach the bare
+	// mux: the handler no longer wraps itself in h2c, the transport is chosen on
+	// the server via Protocols (mirrors cmd/temisd/main.go).
+	srv := httptest.NewUnstartedServer(NewServer(nil, opts...).Handler())
+	srv.Config.Protocols = new(http.Protocols)
+	srv.Config.Protocols.SetHTTP1(true)
+	srv.Config.Protocols.SetUnencryptedHTTP2(true)
+	srv.Start()
 	t.Cleanup(srv.Close)
 	return dmnv1connect.NewDmnEngineClient(h2cClient(), srv.URL, connect.WithGRPC())
 }
@@ -207,5 +214,30 @@ func TestGRPCScopeAuthorization(t *testing.T) {
 	bare := connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
 	if _, err := client.Compile(ctx, bare); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("Compile with no key: code = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// TestGRPCPublicEvaluate verifies the global public-evaluation switch (ADR-0035):
+// with keys configured, Evaluate is reachable without a credential while Compile
+// (models:write) still requires one.
+func TestGRPCPublicEvaluate(t *testing.T) {
+	path := writeKeysFile(t, []scopedKey{{"boss", "a", []Scope{ScopeAdmin}}})
+	client := newGRPCClient(t, WithKeysFile(path), WithPublicEvaluate(true))
+	ctx := context.Background()
+	xml := dishXML(t)
+
+	// Anonymous stateless Evaluate (inline XML) → served.
+	ev := connect.NewRequest(&dmnv1.EvaluateRequest{
+		Model:    &dmnv1.EvaluateRequest_Xml{Xml: xml},
+		Decision: "Dish",
+		Input:    mustStruct(t, map[string]any{"Season": "Winter", "Guest Count": 4}),
+	})
+	if _, err := client.Evaluate(ctx, ev); err != nil {
+		t.Fatalf("anonymous Evaluate under public-evaluate: %v", err)
+	}
+	// Compile stays gated for anonymous callers.
+	comp := connect.NewRequest(&dmnv1.CompileRequest{Xml: xml})
+	if _, err := client.Compile(ctx, comp); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("anonymous Compile under public-evaluate: code = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 }

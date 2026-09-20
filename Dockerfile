@@ -9,7 +9,7 @@
 # Run:
 #   docker run --rm -p 8080:8080 temisd:v1.2.3
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Cache module downloads separately from the source layer.

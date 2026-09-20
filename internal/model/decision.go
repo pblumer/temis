@@ -8,8 +8,9 @@ type Decision struct {
 	ID   string
 	Name string
 	// VariableName is the decision's output-variable name — how other decisions
-	// reference its result. Empty when the model declares no <variable>; tools
-	// then fall back to the decision name.
+	// reference its result in FEEL. Empty when the model declares no <variable>;
+	// tools then fall back to the decision name (see RefName). This is the FEEL
+	// identifier, kept distinct from Name, which is the free-form display label.
 	VariableName    string `json:",omitempty"`
 	VariableTypeRef string `json:",omitempty"`
 
@@ -60,11 +61,38 @@ func (d *Decision) Logic() Expression {
 	}
 }
 
+// RefName is the FEEL identifier a decision's result is bound to and referenced
+// by: its declared output-variable name, or — when the model declares none — its
+// display name. Name stays the free-form display label; RefName is what the
+// engine binds, the schema keys, and other expressions reference (DMN §7:
+// decision/variable/@name). For the common model, where no separate variable is
+// declared, the two coincide.
+func (d *Decision) RefName() string {
+	if d.VariableName != "" {
+		return d.VariableName
+	}
+	return d.Name
+}
+
 // InputData is an input data node feeding one or more decisions.
 type InputData struct {
-	ID      string
-	Name    string
-	TypeRef string `json:",omitempty"`
+	ID   string
+	Name string
+	// VariableName is the input's FEEL identifier (inputData/variable/@name) when
+	// declared, distinct from the free-form display Name; empty falls back to Name
+	// (see RefName).
+	VariableName string `json:",omitempty"`
+	TypeRef      string `json:",omitempty"`
+}
+
+// RefName is the FEEL identifier this input is bound under and referenced by: its
+// declared variable name, or its display name when none is declared. It mirrors
+// Decision.RefName so the engine, schema and expressions key inputs consistently.
+func (in *InputData) RefName() string {
+	if in.VariableName != "" {
+		return in.VariableName
+	}
+	return in.Name
 }
 
 // DecisionService is a reusable evaluation unit: it exposes its OutputDecisions,

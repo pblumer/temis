@@ -59,14 +59,26 @@ func (s *Server) MCPAuth() mcp.Auth {
 	if !s.auth.enabled() {
 		return nil
 	}
-	return mcpAuth{s.auth}
+	return mcpAuth{ks: s.auth, publicEvaluate: s.publicEvaluate}
 }
 
 // mcpAuth adapts the service keystore to mcp.Auth: it authenticates the bearer
 // and checks the tool's scope, mapping the outcome to mcp's verdict enum.
-type mcpAuth struct{ ks Authenticator }
+type mcpAuth struct {
+	ks Authenticator
+	// publicEvaluate mirrors the server's global public-evaluation switch
+	// (ADR-0035): when set, the evaluate tool (scope "evaluate") is served without a
+	// key. Per-model public (WithPublicModels) is not honoured here — the mcp.Auth
+	// gate sees only the scope, not the tool arguments' model id.
+	publicEvaluate bool
+}
 
 func (a mcpAuth) Authorize(bearer, scope string) mcp.AuthResult {
+	// Public evaluation (ADR-0035, global switch): the evaluate tool is open to
+	// anonymous callers when the operator enabled it.
+	if a.publicEvaluate && Scope(scope) == ScopeEvaluate {
+		return mcp.AuthAllowed
+	}
 	key, ok := a.ks.authenticate(bearer)
 	if !ok {
 		return mcp.AuthUnauthenticated
@@ -103,7 +115,15 @@ func (a mcpStore) List() []mcp.ModelInfo {
 	models := a.s.cache.snapshot()
 	out := make([]mcp.ModelInfo, 0, len(models))
 	for _, sm := range models {
-		out = append(out, mcp.ModelInfo{ID: sm.id, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
+		out = append(out, mcp.ModelInfo{ID: sm.id, Name: sm.name, Decisions: sm.index.Decisions, Inputs: sm.index.Inputs})
 	}
 	return out
+}
+
+func (a mcpStore) ModelXML(id string) ([]byte, bool) {
+	sm, ok := a.s.lookup(id)
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), sm.xml...), true
 }

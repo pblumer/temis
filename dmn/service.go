@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // CompiledService is a compiled DMN decision service: a reusable unit that
@@ -128,14 +128,17 @@ func compileServices(defs *Definitions, m *model.Definitions, items map[string]*
 // closure looks the compiled service up lazily because services are compiled
 // after the decisions that may call them.
 func registerServiceInvocables(m *model.Definitions, defs *Definitions, funcs map[string]*feel.Func, items map[string]*feel.Type, lim feel.Limits) {
+	// A service-invocable's parameters bind under the FEEL identifiers (variable
+	// name, else display name), matching how the encapsulated decisions reference
+	// their inputs during evaluation.
 	nameByID := make(map[string]string, len(m.InputData)+len(m.Decisions))
 	typeByID := make(map[string]string, len(m.InputData)+len(m.Decisions))
 	for _, in := range m.InputData {
-		nameByID[in.ID] = in.Name
+		nameByID[in.ID] = in.RefName()
 		typeByID[in.ID] = in.TypeRef
 	}
 	for _, d := range m.Decisions {
-		nameByID[d.ID] = d.Name
+		nameByID[d.ID] = d.RefName()
 		typeByID[d.ID] = d.VariableTypeRef
 	}
 	for _, ds := range m.Services {

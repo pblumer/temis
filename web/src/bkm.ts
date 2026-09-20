@@ -1,5 +1,5 @@
 import { getBKM, saveBKM, type BKMView, type BKMParam } from './api'
-import { ensureFeel, validateExpr, validateName } from './feel'
+import { ensureFeel, validateExpr, validateName, upsertModelFunction } from './feel'
 import { attachFeelField } from './feelfield'
 import { FEEL_TYPES } from './feeltypes'
 import { openBoxed } from './boxededitors'
@@ -50,7 +50,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   const typeSel = el('select', { class: 'dt-type-sel lit-type', title: 'Ergebnistyp' }) as HTMLSelectElement
   const cur = view.bodyTypeRef ?? ''
   for (const t of cur && !typeOptions.includes(cur) ? [...typeOptions, cur] : typeOptions) {
-    const o = el('option', { value: t }, t || '— Typ —') as HTMLOptionElement
+    const o = el('option', { value: t }, t || '— beliebig —') as HTMLOptionElement
     o.selected = cur === t
     typeSel.append(o)
   }
@@ -78,6 +78,11 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
   let hlRefresh: (() => void) | null = null
   const paramNames = (): string[] => params.map((p) => p.name.trim()).filter((n) => n !== '')
   const checkBody = (): void => {
+    // Keep this BKM registered as a function of the model, with its current
+    // parameters, so a recursive call in its own body (e.g. fact(n - 1) inside
+    // fact) resolves as a known function and is offered in completion — even for
+    // a just-created BKM the last model load did not yet know about.
+    if (view.name) upsertModelFunction({ name: view.name, params: paramNames() })
     const s = textarea.value.trim()
     const res = s === '' ? { ok: false, message: 'Body darf nicht leer sein' } : validateExpr(s, paramNames())
     textarea.classList.toggle('lit-invalid', !res.ok)
@@ -98,7 +103,7 @@ export async function openBKMOverlay(modelId: string, bkmId: string, onSaved?: (
         checkBody()
       })
       const type = el('select', { class: 'bkm-ptype' }) as HTMLSelectElement
-      for (const t of p.typeRef && !typeOptions.includes(p.typeRef) ? [...typeOptions, p.typeRef] : typeOptions) type.append(option(t, t || '— Typ —', (p.typeRef ?? '') === t))
+      for (const t of p.typeRef && !typeOptions.includes(p.typeRef) ? [...typeOptions, p.typeRef] : typeOptions) type.append(option(t, t || '— beliebig —', (p.typeRef ?? '') === t))
       type.addEventListener('change', () => {
         p.typeRef = type.value
       })

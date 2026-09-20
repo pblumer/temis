@@ -93,12 +93,11 @@ Verteilung der ~158 Go-Testdateien (grob): `internal/*` 59 · `dmn` 42 ·
 - `go test -fuzz` (WP-44). **Invariante:** kein Panic, kein Hang (Timeout), kein OOM
   bei beliebigem Input. Die Fuzz-Ziele decken jede Schicht ab, die untrusted Input
   sieht:
-  - `internal/feel.FuzzLexer`, `FuzzParser` — Lexer/Parser akzeptieren jeden String
-    ohne Panic; Fehler kommen als `*ParseError`, erfolgreiche ASTs rendern panikfrei.
-  - `internal/feel.FuzzBoundedEvaluation` — kompiliert **und** wertet FEEL unter engen
-    `Limits` aus; dank ADR-0008-Schranken (Rekursion/Iteration/Listengröße) terminiert
-    selbst feindlicher Input (z. B. `for i in 1..1000000000 …`) statt zu hängen.
-  - `internal/value.FuzzParseNumber`, `FuzzParseDuration` — Decimal-/Dauer-Parser.
+  - **FEEL-Front-end & Wertemodell:** die Fuzz-Ziele des Lexers/Parsers
+    (`FuzzLexer`/`FuzzParser`), der beschränkten Auswertung (`FuzzBoundedEvaluation`) und
+    der Decimal-/Dauer-Parser (`FuzzParseNumber`/`FuzzParseDuration`) leben seit ADR-0039
+    im externen Modul `github.com/pblumer/feel` und laufen dort in dessen CI. temis' eigener
+    `make fuzz`-Lane deckt nur noch die temis-eigenen Grenzschichten ab:
   - `internal/xml.FuzzDecode` — DMN-XML-Decoder (+ anschließendes Encode).
   - `dmn.FuzzCompile` — End-to-End über die **öffentliche** API: `Compile` und dann
     `Decision`/`Evaluate` jeder Decision unter engen `Limits`. Malformed Input ergibt

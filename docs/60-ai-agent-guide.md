@@ -7,6 +7,12 @@
 >   regelbasierte Entscheidung zu delegieren und sich gegen ein deterministisches,
 >   nachvollziehbares Ergebnis abzusichern. Sein Einstieg ist `temis-mcp` (MCP-Server,
 >   WP-50) bzw. der HTTP-Service — siehe README und ADR-0013, nicht dieses Dokument.
+>   Baut ein solcher Agent **gemeinsam mit einem Menschen** Decisions (Agent via MCP,
+>   Mensch via Modeler), gilt zusätzlich der Skill
+>   `.claude/skills/temis-decision-modeling/` — der Zusammenarbeits-Vertrag (Modell per
+>   `modelId`/Chip finden, `get_model_xml` lesen, `evaluate`/`explain` diagnostizieren,
+>   als neue Version zurückgeben) wird beim MCP-`initialize` auch als `instructions`
+>   ausgeliefert.
 >
 > Dieses Dokument richtet sich an Claude Code (o. ä.) in der **Contributor**-Rolle. Es ist
 > bewusst direktiv und deterministisch formuliert. Wenn etwas hier mit deinem „Bauchgefühl"

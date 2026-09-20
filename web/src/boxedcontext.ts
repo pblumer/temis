@@ -88,7 +88,7 @@ export async function openBoxedContextOverlay(modelId: string, decisionId: strin
     const sel = el('select', { class: 'ctx-type', title: 'Typ' }) as HTMLSelectElement
     const list = cur && !typeOptions.includes(cur) ? [...typeOptions, cur] : typeOptions
     for (const t of list) {
-      const o = el('option', { value: t }, t || '— Typ —') as HTMLOptionElement
+      const o = el('option', { value: t }, t || '— beliebig —') as HTMLOptionElement
       o.selected = cur === t
       sel.append(o)
     }

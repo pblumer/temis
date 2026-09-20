@@ -3,9 +3,9 @@ package boxed
 import (
 	"fmt"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // compileContext compiles a boxed context. Entries are evaluated in order, each

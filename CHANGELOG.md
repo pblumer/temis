@@ -57,6 +57,29 @@ in `docs/20-roadmap.md`).
 
 ### Fixed
 
+- **clio-Verbindung bricht nicht mehr durch die Authorship-Zuordnung (`clioauthkid`).**
+  Seit der Scoped-API-Key-Authorship (WP-105, ADR-0028) stempelt der Audit-Sink die `kid`
+  des authentifizierenden Keys auf jedes Decision-/Flow-Event. Sie wurde als **Top-Level-
+  CloudEvents-Extension** gesendet — clios `write-events` modelliert ein Event aber als genau
+  `{source, subject, type, data}` und wies das unbekannte Feld mit `400 unknown field
+  "clioauthkid"` ab (auch ohne registriertes Schema), sodass **jeder** authentifizierte Write
+  scheiterte und der Status trotz erreichbarer clio auf „getrennt" kippte. Die `kid` liegt
+  jetzt in **`data.clioauthkid`**: clio akzeptiert `data` frei und bindet es in die
+  Hash-Kette, also bleibt die Zuordnung manipulationssicher und über `event.data.clioauthkid`
+  abfragbar. Als Sicherheitsnetz degradiert der Sink zusätzlich automatisch (Event einmal
+  ohne das Feld nachschreiben, Authorship stilllegen, WARN); neuer Schalter
+  `-clio-authorship` / `TEMIS_CLIO_AUTHORSHIP` (Default an) schaltet das Stempeln vorab ab.
+- **Modeler-Login nach Browser-Neustart erreichbar & bleibt bestehen (WP-107).** Der
+  Zugangs-Key lag im `sessionStorage` und starb mit dem Tab; nach einem Browser-Neustart
+  war er weg, der erste `GET /v1/models` lief auf `HTTP 401` — und weil der Boot bei diesem
+  Fehler früh abbrach, bevor die Zugriff-Sektion (`mountAccess`) gemountet wurde, blieb das
+  Login-Feld unsichtbar: der Nutzer sah nur „Modelle laden fehlgeschlagen (HTTP 401)" ohne
+  Weg zurück. Zwei Korrekturen: (a) der Bearer wird jetzt persistent im `localStorage`
+  gehalten (mit client-seitigem 30-Tage-Ablauf; Alt-Tokens aus dem `sessionStorage` werden
+  einmalig migriert), sodass ein neu geöffneter Browser angemeldet bleibt; (b) schlägt der
+  Erst-Load dennoch fehl (401/403), wird die Zugriff-Sektion jetzt sofort eingeblendet und
+  aufgeklappt statt versteckt, mit klarem Hinweis „Nicht angemeldet — bitte in der Sidebar
+  unter ‚Zugriff' anmelden."
 - **`DELETE /v1/models/{id}` ist mit `-models-dir` dauerhaft (M3):** löschte bisher nur den
   Cache, sodass ein persistiertes Modell beim nächsten Zugriff zurückkehrte.
 - **Testsuite offline vollständig grün (M5):** die Scope-Autorisierungs-Tests rufen nicht mehr
@@ -66,6 +89,75 @@ in `docs/20-roadmap.md`).
 
 ### Added
 
+- **Knoten-Größe im Modeler ändern (Resize).** Ein selektierter Knoten zeigt jetzt
+  Größen-Anfasser an den Ecken/Kanten (diagram-js-Resize); Ziehen ändert seine Größe,
+  läuft über den Command-Stack (Undo/Redo) und markiert das Modell als geändert. Die
+  neue Breite/Höhe wird beim Speichern in die **DMNDI-Bounds** (`dc:Bounds`) geschrieben
+  und beim Laden zurückgelesen — die Größe übersteht also einen Reload. Ein Minimum
+  (80×50, Eingabe-Pillen 80×36) hält Badge und Label lesbar. Betroffen sind
+  `web/src/dmn-rules.ts` (`shape.resize`-Regel) und `web/src/canvas.ts` (Resize-Modul +
+  Mindestgröße); die Persistenz stand bereits (`ApplyGraph`/`UpsertShape`). Go- und
+  e2e-Test (Größe wächst, Save round-trips; DMNDI-Round-Trip separat) verifiziert.
+- **Anzeigename und FEEL-Variablenname getrennt (Weg A, DMN-idiomatisch).** Der Name eines
+  Elements ist jetzt zweigeteilt: ein **freies Anzeige-Label** (`@name`) und der **FEEL-Bezeichner**
+  (`variable/@name`), unter dem die Engine bindet und den Ausdrücke referenzieren. Für Decision und
+  Input Data darf das Anzeige-Label damit Zeichen enthalten, die FEEL ablehnt (z. B. Klammern,
+  `=`, `%`, führende Ziffer) — der FEEL-Name bleibt ein gültiger Bezeichner. *(FEEL selbst erlaubt
+  bereits Leerzeichen und Bindestriche wie „U-002 Nr." — die Trennung greift für die echt
+  ungültigen Fälle und ist die saubere DMN-Modellierung.)* Der FEEL-Name **folgt** dem Anzeige-Label,
+  solange dieses gültig ist (kein Mehraufwand im Normalfall, keine redundante `<variable>` in der
+  Datei); erst ein echt ungültiges Label oder ein bewusst gesetzter FEEL-Name (Context-Pad-Aktion
+  „FEEL-Name") lässt beide auseinanderlaufen. Der Kern bindet durchgängig über den FEEL-Bezeichner
+  (`RefName` = variable ∥ name): Schema, Env, Constraints, Type-Check, Decision-Service-Parameter,
+  Ergebnis-Keys und Decision-Table-Ausdrücke — mit Rückfall auf den Anzeigenamen, sodass alle
+  bestehenden Modelle unverändert evaluieren (nur 3 divergierende Namen existierten überhaupt im
+  Repo). Betroffen sind der Auswertungskern (`internal/model`, `dmn/{engine,eval,schema,constraint,
+  typecheck,service,drg,edit,graphedit,table}.go`, `internal/xml/{edit,graph}.go`) und das Frontend
+  (`dmn-label-editing`, `dmn-context-pad`, `dmn-renderer`, `canvas`, `main`, `feel`, `api`). Go- und
+  headless-e2e-Suite verifiziert, inklusive eines divergierenden Modells end-to-end.
+- **Neues Element direkt benennen + Enter als Umbenennen-Shortcut (Modeler).** Ein frisch
+  eingefügtes Element (aus der Palette abgelegt oder über das Context-Pad angehängt) öffnet
+  jetzt **sofort** sein Inline-Namensfeld — der Name lässt sich in einem Zug tippen, statt
+  danach erst das Bleistift-Symbol zu suchen; wer den Vorschlag („Neue Decision") behalten
+  will, drückt einfach `Esc`. Zusätzlich benennt neben `F2` nun auch **`Enter`** das
+  selektierte Element um (Finder-Manier; die meisten anderen Tasten sind vom Browser/OS
+  belegt) — der Context-Pad-Tooltip weist die Tasten aus („Umbenennen (Enter / F2)"). Beide
+  Wege ignorieren Modifier und Eingabe-Fokus (FEEL-Editor, Modell-Suche, Buttons), damit sie
+  nie eine für etwas anderes gedachte Taste abfangen; Laden und Undo/Redo lösen kein
+  Auto-Umbenennen aus. Das Inline-Namensfeld umbricht lange Namen jetzt innerhalb des Knotens
+  und zentriert sie vertikal, statt über die Ränder hinauszulaufen. Betroffen sind
+  `web/src/dmn-label-editing.ts` und `web/src/dmn-context-pad.ts`; headless (Chromium)
+  verifiziert.
+- **Strukturierte Typen im Modeler bearbeiten + über MCP.** Die Typen-Verwaltung des
+  Modelers zeigte strukturierte Typen bisher nur schreibgeschützt („struct"). Jetzt gibt es
+  einen **Feld-Editor**: eine „Struktur"-Umschaltung mit Feldzeilen (Name + Typ + Collection,
+  hinzufügen/entfernen), und strukturierte Typen sind in der Liste **bearbeitbar** (nicht mehr
+  read-only). Verschachtelung über Referenz auf einen anderen benannten Typ. Dieselbe Fähigkeit
+  über MCP: `save_type` nimmt jetzt `components` entgegen; `dmn.SetItemDefinition` schreibt eine
+  strukturierte Item-Definition (eine Ebene) statt sie abzulehnen.
+- **MCP: Typ-Werkzeuge `list_types`, `save_type`, `delete_type`.** Ein Agent kann die
+  eigenen Item-Definitionen eines gecachten Modells lesen (`list_types`, Scope
+  `models:read`) sowie einen einfachen Typ (Basistyp + optional Collection + Allowed-Values)
+  anlegen/ändern (`save_type`) oder entfernen (`delete_type`, beide `models:write`). Sie
+  spiegeln die HTTP-Endpunkte `…/types`; eine Änderung liefert eine neue content-adressierte
+  `modelId` und erscheint in der Typen-Verwaltung des Modelers. Strukturierte Typen bleiben
+  dem vollen `load_model`-XML vorbehalten.
+- **Agent-Zusammenarbeit: Co-Modeling-Vertrag als MCP-`instructions` + Repo-Skill.** Der
+  MCP-Server liefert beim `initialize` jetzt ein `instructions`-Feld, das jedem verbundenen
+  Agenten den Vertrag für gemeinsames Modellieren mit einem Menschen mitgibt (Agent via MCP,
+  Mensch via Modeler, geteilter Cache): Modell per `modelId`/Toolbar-Chip finden (Name nicht
+  eindeutig), `get_model_xml` vor dem Ändern lesen, mit `evaluate`/`explain` diagnostizieren,
+  als neue Version zurückgeben — inklusive der häufigsten `null`-Fallen (Unary-Test in
+  Tabellen-Eingabezellen, leeres BKM, `typeRef`=leer→Any). Die ausführliche Fassung liegt als
+  Skill unter `.claude/skills/temis-decision-modeling/` (mit ausgearbeiteten Vorher/Nachher-
+  Beispielen in `references/dmn-feel-traps.md`).
+- **MCP: Modellname in `list_models` und neues Tool `get_model_xml`.** `list_models`
+  liefert je Modell zusätzlich den Anzeigenamen (den DMN-`definitions`-Namen, wie im Modeler),
+  sodass ein Agent ein ihm bekanntes Modell wiederfindet — der Name ist kein eindeutiger
+  Schlüssel, da jede gespeicherte Revision eine eigene content-adressierte `modelId` ist. Das
+  neue Tool **`get_model_xml`** liest das rohe DMN/FEEL eines gecachten Modells zurück (Scope
+  `models:read`), analog zum HTTP-Endpunkt `GET /v1/models/{id}/xml` — ein Agent kann so die
+  FEEL-Ausdrücke inspizieren, nicht nur auswerten.
 - **DMN-TCK-Konformität: über 98 % (WP-41.28, 98,0 % → 98,1 %).**
   Vier weitere Fixes: ein `some`/`every` mit echt nicht-boolescher `satisfies`-Klausel ergibt null
   (dieselbe Regel wie beim Boxed-Filter, jetzt auch für Quantoren); `list replace(match: …)` bindet

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/pblumer/feel"
 	"github.com/pblumer/temis/internal/boxed"
-	"github.com/pblumer/temis/internal/feel"
 )
 
 // Input is an evaluation context: variable name → Go value. Keys are input-data

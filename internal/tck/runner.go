@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"reflect"
 
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/dmn"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // CaseResult is the outcome of one decision check within a test case.

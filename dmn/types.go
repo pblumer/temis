@@ -53,9 +53,12 @@ func itemType(it *model.ItemDefinition) ItemType {
 	return t
 }
 
-// SetItemDefinition creates or updates a simple item definition and returns the
-// updated XML. It errors on an empty name or when the named definition is
-// structured (has components), which the simple editor must not overwrite.
+// SetItemDefinition creates or updates an item definition and returns the updated
+// XML. With Components it upserts a STRUCTURED type (its fields, one level: name +
+// type + collection); nest by referencing another named type. Without Components it
+// upserts a SIMPLE type (base type + collection + allowed values) and errors if the
+// existing definition of that name is structured. An empty name (or a struct field
+// with an empty name) is an error.
 func SetItemDefinition(src []byte, t ItemType) ([]byte, error) {
 	if strings.TrimSpace(t.Name) == "" {
 		return nil, fmt.Errorf("dmn: type name must not be empty")
@@ -63,6 +66,23 @@ func SetItemDefinition(src []byte, t ItemType) ([]byte, error) {
 	def, err := dmnxml.Decode(src)
 	if err != nil {
 		return nil, err
+	}
+	if len(t.Components) > 0 {
+		comps := make([]dmnxml.ItemDef, 0, len(t.Components))
+		for _, c := range t.Components {
+			if strings.TrimSpace(c.Name) == "" {
+				return nil, fmt.Errorf("dmn: struct field name must not be empty")
+			}
+			comps = append(comps, dmnxml.ItemDef{
+				Name:         strings.TrimSpace(c.Name),
+				TypeRef:      strings.TrimSpace(c.TypeRef),
+				IsCollection: c.IsCollection,
+			})
+		}
+		if !def.UpsertStructDefinition(t.Name, comps, t.IsCollection) {
+			return nil, fmt.Errorf("dmn: could not set struct type %q", t.Name)
+		}
+		return dmnxml.Encode(def)
 	}
 	if !def.UpsertItemDefinition(t.Name, t.TypeRef, t.IsCollection, t.AllowedValues) {
 		return nil, fmt.Errorf("dmn: cannot edit structured type %q here", t.Name)

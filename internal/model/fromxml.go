@@ -59,7 +59,7 @@ func FromXML(def *dmnxml.Definitions) (*Definitions, []Diagnostic, error) {
 		m.ItemDefinitions = append(m.ItemDefinitions, mapItemDef(it))
 	}
 	for _, in := range def.InputData {
-		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, TypeRef: variableTypeRef(in.Variable)})
+		m.InputData = append(m.InputData, &InputData{ID: in.ID, Name: in.Name, VariableName: variableName(in.Variable), TypeRef: variableTypeRef(in.Variable)})
 	}
 	for _, b := range def.BKMs {
 		m.BKMs = append(m.BKMs, mapBKM(b))

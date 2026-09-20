@@ -107,6 +107,25 @@ func (d *diskStore) delete(id string) (bool, error) {
 	return true, nil
 }
 
+// listIDs returns the model id of every stored revision ("sha256:<hex>"), so a GC
+// pass can enumerate durable drafts that are no longer cached (ADR-0037). Order is
+// unspecified; temp files and non-model entries are skipped.
+func (d *diskStore) listIDs() []string {
+	entries, err := os.ReadDir(d.dir)
+	if err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".dmn") || strings.HasPrefix(n, ".tmp-") {
+			continue
+		}
+		ids = append(ids, "sha256:"+strings.TrimSuffix(n, ".dmn"))
+	}
+	return ids
+}
+
 // load returns every stored model's raw XML, oldest first (by modification time,
 // then file name as a stable tiebreaker), so the caller can repopulate the cache
 // in a stable, roughly creation-ordered sequence. Unreadable entries are skipped

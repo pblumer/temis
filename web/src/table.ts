@@ -341,7 +341,7 @@ function withCurrent(options: string[], current?: string): string[] {
 
 function typeSelect(col: { typeRef?: string }, typeOptions: string[]): HTMLSelectElement {
   const sel = el('select', { class: 'dt-type-sel', title: 'Typ' }) as HTMLSelectElement
-  for (const t of withCurrent(typeOptions, col.typeRef)) sel.append(option(t, t || '— Typ —', (col.typeRef ?? '') === t))
+  for (const t of withCurrent(typeOptions, col.typeRef)) sel.append(option(t, t || '— beliebig —', (col.typeRef ?? '') === t))
   sel.addEventListener('change', () => {
     col.typeRef = sel.value
   })

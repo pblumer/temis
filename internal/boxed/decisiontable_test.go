@@ -7,9 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 	dmnxml "github.com/pblumer/temis/internal/xml"
 )
 

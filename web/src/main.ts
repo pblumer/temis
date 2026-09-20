@@ -1,5 +1,5 @@
 import { APP_NAME } from './build-info'
-import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, createDecisionTable, createBoxedContext, createBoxedConditional, createBoxedList, createBoxedRelation, createBoxedFilter, createBoxedIterator, createBoxedInvocation, listTypes, getStatus, evaluateGraph, type ModelSummary, type Status } from './api'
+import { listModels, getGraph, getModel, createModel, createBlankModel, renameModel, deleteModel, saveGraph, listTypes, getStatus, evaluateGraph, listReleases, publishRelease, type ModelSummary, type ModelReleases, type Status } from './api'
 import { buildInputPills, type InputPills } from './inputpills'
 import { promptDialog, confirmDialog } from './dialog'
 import { layout, type Orientation } from './layout'
@@ -13,18 +13,15 @@ import { mountFlowEditor } from './flow-editor'
 import type { FlowDetail, GraphEvalResult, ModelDetail } from './api'
 import { openTableOverlay } from './table'
 import { openLiteralOverlay } from './literal'
-import { openBoxedContextOverlay } from './boxedcontext'
-import { openConditionalOverlay } from './conditional'
-import { openListOverlay } from './list'
-import { openRelationOverlay } from './relation'
-import { openFilterOverlay } from './filter'
-import { openIteratorOverlay } from './iterator'
-import { openInvocationOverlay } from './invocation'
 import { openBKMOverlay } from './bkm'
+import { openBoxed, BOXED_TYPES } from './boxededitors'
 import { openTypeManager } from './typemanager'
 import { mountAssist } from './assist'
 import { makeResizable } from './resizable'
 import { FEEL_TYPES } from './feeltypes'
+import { setModelFunctions } from './feel'
+import { installFetchAuth } from './session'
+import { mountAccess, createPublicToggle } from './access'
 import './style.css'
 
 // The modeler shell (ADR-0016): a VS-Code-style left sidebar lists the server's
@@ -55,6 +52,7 @@ async function boot(root: HTMLElement): Promise<void> {
               <button id="newFolder" class="icon-btn" type="button" title="Neuer Ordner"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 5h4l1.5 2H16v7H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 9.5v3.5M7.25 11.25h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               <button id="newModel" class="icon-btn" type="button" title="Neues Modell anlegen (leer)"><svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 2h6l4 4v10H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v4h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 8.5v5M6.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
               <button id="open" class="icon-btn" type="button" title="DMN-Datei laden (.dmn/.xml)">↑</button>
+              <button id="modelRefresh" class="icon-btn" type="button" title="Modelle neu laden">⟳</button>
             </span>
           </div>
           <input id="file" type="file" accept=".dmn,.xml,application/xml,text/xml" hidden>
@@ -64,6 +62,12 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="modelSearchClear" class="model-search-clear" type="button" title="Suche zurücksetzen" hidden>✕</button>
           </div>
           <div id="modelList" class="model-list"></div>
+        </div>
+        <div class="side-group side-group-access" id="groupAccess" hidden>
+          <div class="sidebar-section">
+            <button class="section-title" id="accessToggle" type="button" aria-expanded="true"><span class="section-chev">▾</span>Zugriff</button>
+          </div>
+          <div id="accessHost" class="access-host"></div>
         </div>
         <p class="sidebar-hint">
           Flows (L2a) komponieren Modelle (L1) — Modell öffnen zum Bearbeiten,
@@ -83,12 +87,18 @@ async function boot(root: HTMLElement): Promise<void> {
             <button id="redo" class="tbtn" type="button" disabled title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷</button>
             <button id="save" class="tbtn" type="button" disabled title="Änderungen speichern (Strg/Cmd+S)">Speichern</button>
             <button id="types" class="tbtn" type="button" title="Eigene Typen verwalten">Typen</button>
+            <button id="publish" class="tbtn" type="button" title="Aktuellen Stand als Release veröffentlichen (ADR-0037)">📦 Veröffentlichen</button>
           </span>
           <span class="zoom-group">
             <button id="zoomOut" class="tbtn" type="button" title="Verkleinern">−</button>
             <button id="zoomFit" class="tbtn" type="button" title="Einpassen">⤢</button>
             <button id="zoomIn" class="tbtn" type="button" title="Vergrößern">+</button>
             <button id="orient" class="tbtn design-only" type="button" title="Anordnung umschalten: Eingaben unten (Pfeile nach oben) ↔ Eingaben oben (Pfeile nach unten)">↥ Bottom-up</button>
+            <select id="edgeStyle" class="tbtn design-only edge-style-select" title="Form aller Verbindungen: eckig, gerundet oder direkt">
+              <option value="ortho">⌐ Eckig</option>
+              <option value="curved">◜ Gerundet</option>
+              <option value="direct">╱ Direkt</option>
+            </select>
             <button id="juice" class="tbtn" type="button" title="Effekte beim Auswerten: Datenfluss-Animation, Partikel & Combo ein-/ausschalten">⚡ Effekte</button>
           </span>
           <span id="typeEditor" class="type-editor design-only" style="display:none">
@@ -97,6 +107,8 @@ async function boot(root: HTMLElement): Promise<void> {
           </span>
           <button id="assistBtn" class="tbtn" type="button" title="Modellierungs-Assistent">✦ Assistent</button>
           <span id="status" class="status"></span>
+          <button id="modelIdChip" class="model-id-chip" type="button" hidden title="Modell-ID kopieren"></button>
+          <button id="publicToggle" class="tbtn public-toggle" type="button" hidden></button>
           <span id="clioStatus" class="conn-badge" hidden><span class="conn-dot"></span><span class="conn-label"></span></span>
         </div>
         <div id="opHistory" class="op-history"></div>
@@ -120,6 +132,7 @@ async function boot(root: HTMLElement): Promise<void> {
   const modelList = root.querySelector<HTMLElement>('#modelList')
   const canvas = root.querySelector<HTMLElement>('#canvas')
   const status = root.querySelector<HTMLElement>('#status')
+  const modelIdChip = root.querySelector<HTMLButtonElement>('#modelIdChip')
   const modeDesignBtn = root.querySelector<HTMLButtonElement>('#modeDesign')
   const modeOperateBtn = root.querySelector<HTMLButtonElement>('#modeOperate')
   const modeImportBtn = root.querySelector<HTMLButtonElement>('#modeImport')
@@ -142,9 +155,10 @@ async function boot(root: HTMLElement): Promise<void> {
   const evalHost = root.querySelector<HTMLElement>('#eval')
   const clioReplayHost = root.querySelector<HTMLElement>('#clioReplay')
   const typesBtn = root.querySelector<HTMLButtonElement>('#types')
+  const publishBtn = root.querySelector<HTMLButtonElement>('#publish')
   const typeEditor = root.querySelector<HTMLElement>('#typeEditor')
   const datatype = root.querySelector<HTMLSelectElement>('#datatype')
-  if (!appShell || !modelList || !canvas || !status || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
+  if (!appShell || !modelList || !canvas || !status || !modelIdChip || !modeDesignBtn || !modeOperateBtn || !modeImportBtn || !importHost || !flowListHost || !flowStudioHost || !flowEditorHost || !newFlowBtn || !opHistoryHost || !opOverlayHost || !undoBtn || !redoBtn || !saveBtn || !openBtn || !newModelBtn || !newFolderBtn || !fileInput || !modelSearch || !modelSearchClear || !typesBtn || !publishBtn || !evalHost || !clioReplayHost || !typeEditor || !datatype) return
 
   // The left sidebar sits at a fixed width by default; its divider lets the user
   // drag it wider/narrower (persisted per browser), so long model/flow names get
@@ -179,7 +193,7 @@ async function boot(root: HTMLElement): Promise<void> {
       ...opts.map((t) => {
         const o = document.createElement('option')
         o.value = t
-        o.textContent = t || '— Typ —'
+        o.textContent = t || '— beliebig —'
         return o
       }),
     )
@@ -196,6 +210,18 @@ async function boot(root: HTMLElement): Promise<void> {
   let orientation: Orientation = 'bottomUp'
   // The model currently loaded in the editor (a specific revision's id).
   let currentId = ''
+  // releasesByName maps a model name to its published releases + channels (ADR-0037),
+  // so the sidebar can surface curated versions instead of the raw revision flood.
+  // Loaded at boot and refreshed after publishing or any reselect.
+  let releasesByName = new Map<string, ModelReleases>()
+  const refreshReleases = async (): Promise<void> => {
+    try {
+      const all = await listReleases()
+      releasesByName = new Map(all.map((mr) => [mr.name, mr]))
+    } catch {
+      releasesByName = new Map() // releases are optional — never block the modeler
+    }
+  }
   // Design (edit) vs Operate (read-only runtime view): in Operate the user runs
   // evaluations and inspects the results — decision values and the hit rule(s)
   // highlighted on the nodes and in the table — with a session history of runs.
@@ -261,29 +287,17 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  // createTable gives a table-less decision a fresh table: persist any pending
-  // structural edits first (so the decision exists server-side), create the
-  // table, switch to the saved revision and open it for editing.
-  const createTable = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Tabelle an …'
-    try {
-      const created = await createDecisionTable(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Tabelle angelegt ✓'
-      const { names } = namesFor(decisionId)
-      void openTableOverlay(created.modelId, decisionId, (newId) => void reselect(newId), typeOptions, { wiredInputs: wiredInputsFor(decisionId), scope: names })
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
+  // feelRef is the identifier a node is referenced by in FEEL — its variable name
+  // when it declares one, else its (display) name. Expressions and the completion
+  // scope key on this, so a free-form display label never leaks into FEEL source.
+  const feelRef = (n: { name?: string; varName?: string }): string => (n.varName?.trim() || n.name?.trim() || '')
   // namesFor gathers the in-scope variable names for a decision's expression (the
-  // other nodes' names) and the decision's own title, from the live graph.
+  // other nodes' FEEL identifiers) and the decision's own display title, from the
+  // live graph.
   const namesFor = (decisionId: string): { names: string[]; title: string } => {
     const nodes = handle?.graph().nodes ?? []
     const self = nodes.find((n) => n.id === decisionId)
-    const names = nodes.filter((n) => n.id !== decisionId).map((n) => n.name ?? '').filter((s) => s !== '')
+    const names = nodes.filter((n) => n.id !== decisionId).map((n) => feelRef(n)).filter((s) => s !== '')
     return { names, title: self?.name ?? '' }
   }
   // wiredInputsFor lists the inputs the decision is wired to in the live graph (its
@@ -299,7 +313,8 @@ async function boot(root: HTMLElement): Promise<void> {
     for (const e of graph.edges) {
       if (e.type !== 'informationRequirement' || e.target !== decisionId) continue
       const src = byId.get(e.source)
-      const name = src?.name?.trim()
+      // The column expression references the input by its FEEL identifier.
+      const name = src ? feelRef(src) : ''
       if (name) out.push({ expression: name, typeRef: src?.dataType })
     }
     return out
@@ -309,134 +324,43 @@ async function boot(root: HTMLElement): Promise<void> {
     void openLiteralOverlay(modelId, decisionId, title, names, (newId) => void reselect(newId), { fresh, typeOptions, readOnly: mode === 'operate' && !fresh })
   }
 
-  // openContext opens a decision's boxed-context editor — editable in Design,
-  // read-only in Operate. names are the in-scope variables the entries may use.
-  const openContext = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openBoxedContextOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { typeOptions, readOnly: mode === 'operate' })
-  }
-
-  // createContext gives a logic-less decision a fresh boxed context: persist any
-  // pending structural edits first (so the decision exists server-side), create
-  // the context, switch to the saved revision and open it for editing.
-  const createContext = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Boxed Context an …'
-    try {
-      const created = await createBoxedContext(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Boxed Context angelegt ✓'
-      openContext(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+  // openLogic opens the editor for a decision's boxed logic of the given kind
+  // (WP-142, one entry point for all kinds). table and literal keep their special
+  // openers (mode-aware trace, fresh flag); every other boxed kind goes through the
+  // shared openBoxed dispatch, anchored at the decision — editable in Design,
+  // read-only in Operate.
+  const openLogic = (kind: string, modelId: string, decisionId: string): void => {
+    if (kind === 'literal') {
+      openLiteral(modelId, decisionId)
+      return
     }
-  }
-
-  // openConditional opens a decision's boxed-conditional (if/then/else) editor —
-  // editable in Design, read-only in Operate.
-  const openConditional = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openConditionalOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createConditional gives a logic-less decision a fresh boxed conditional:
-  // persist pending edits first, create it, switch to the saved revision and open.
-  const createConditional = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Conditional an …'
-    try {
-      const created = await createBoxedConditional(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Conditional angelegt ✓'
-      openConditional(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+    if (kind === 'table') {
+      openTable(modelId, decisionId)
+      return
     }
-  }
-
-  // openList opens a decision's boxed-list editor — editable in Design, read-only
-  // in Operate. names are the in-scope variables the items may reference.
-  const openList = (modelId: string, decisionId: string): void => {
     const { names } = namesFor(decisionId)
-    void openListOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
+    openBoxed(kind, { modelId, anchor: { kind: 'decision', id: decisionId }, names, onSaved: (newId) => void reselect(newId), typeOptions, readOnly: mode === 'operate' })
   }
 
-  // createList gives a logic-less decision a fresh boxed list: persist pending
-  // edits first, create it, switch to the saved revision and open for editing.
-  const createList = async (decisionId: string): Promise<void> => {
+  // createLogic gives an undecided decision a fresh boxed logic of the given kind
+  // (WP-142): persist pending structural edits first (so the decision exists
+  // server-side), create it via the registry endpoint, switch to the saved
+  // revision and open it. Literal has no create endpoint — it is materialized on
+  // save via createLiteral.
+  const createLogic = async (kind: string, decisionId: string): Promise<void> => {
     if (!currentId) return
-    status.textContent = 'legt Liste an …'
-    try {
-      const created = await createBoxedList(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Liste angelegt ✓'
-      openList(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
+    if (kind === 'literal') {
+      await createLiteral(decisionId)
+      return
     }
-  }
-
-  // openRelation opens a decision's boxed-relation grid editor — editable in
-  // Design, read-only in Operate. names are the in-scope variables the cells use.
-  const openRelation = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openRelationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createRelation gives a logic-less decision a fresh boxed relation: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createRelation = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Relation an …'
+    const bt = BOXED_TYPES.find((b) => b.kind === kind)
+    if (!bt?.create) return
+    status.textContent = bt.statusCreating
     try {
-      const created = await createBoxedRelation(await persistGraph(currentId, true), decisionId)
+      const created = await bt.create(await persistGraph(currentId, true), decisionId)
       await reselect(created.modelId)
-      status.textContent = 'Relation angelegt ✓'
-      openRelation(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
-  // openFilter opens a decision's boxed-filter editor — editable in Design,
-  // read-only in Operate. names are the in-scope variables the branches use.
-  const openFilter = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openFilterOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createFilter gives a logic-less decision a fresh boxed filter: persist pending
-  // edits first, create it, switch to the saved revision and open for editing.
-  const createFilter = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Filter an …'
-    try {
-      const created = await createBoxedFilter(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Filter angelegt ✓'
-      openFilter(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
-  // openIterator opens a decision's boxed-iteration (for/some/every) editor —
-  // editable in Design, read-only in Operate.
-  const openIterator = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openIteratorOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createIterator gives a logic-less decision a fresh boxed iteration: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createIterator = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Iteration an …'
-    try {
-      const created = await createBoxedIterator(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Iteration angelegt ✓'
-      openIterator(created.modelId, decisionId)
+      status.textContent = bt.statusCreated
+      openLogic(kind, created.modelId, decisionId)
     } catch (e) {
       status.textContent = (e as Error).message
     }
@@ -457,32 +381,50 @@ async function boot(root: HTMLElement): Promise<void> {
     }
   }
 
-  // openInvocation opens a decision's boxed-invocation editor — editable in
-  // Design, read-only in Operate.
-  const openInvocation = (modelId: string, decisionId: string): void => {
-    const { names } = namesFor(decisionId)
-    void openInvocationOverlay(modelId, decisionId, names, (newId) => void reselect(newId), { readOnly: mode === 'operate' })
-  }
-
-  // createInvocation gives a logic-less decision a fresh boxed invocation: persist
-  // pending edits first, create it, switch to the saved revision and open.
-  const createInvocation = async (decisionId: string): Promise<void> => {
-    if (!currentId) return
-    status.textContent = 'legt Invocation an …'
-    try {
-      const created = await createBoxedInvocation(await persistGraph(currentId, true), decisionId)
-      await reselect(created.modelId)
-      status.textContent = 'Invocation angelegt ✓'
-      openInvocation(created.modelId, decisionId)
-    } catch (e) {
-      status.textContent = (e as Error).message
-    }
-  }
-
   // Typen: open the custom-type manager; each save/delete switches to the saved
   // revision (which refreshes typeOptions via show()).
   typesBtn.addEventListener('click', () => {
     if (currentId) void openTypeManager(currentId, (newId) => reselect(newId))
+  })
+
+  // Publish the current revision as a named release (ADR-0037): every save is a
+  // draft; publishing tags one as a stable version consumers pin (name@version),
+  // so the sidebar shows curated releases instead of the raw revision flood.
+  const suggestNextVersion = (name: string): string => {
+    const latest = releasesByName.get(name)?.channels?.latest
+    if (!latest) return '1.0.0'
+    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(latest)
+    return m ? `${m[1]}.${m[2]}.${Number(m[3]) + 1}` : latest
+  }
+  publishBtn.addEventListener('click', () => {
+    void (async () => {
+      if (!currentId) {
+        status.textContent = 'Kein Modell geöffnet.'
+        return
+      }
+      const name = models.find((m) => m.modelId === currentId)?.name ?? ''
+      if (!name) {
+        status.textContent = 'Bitte dem Modell zuerst einen Namen geben (Umbenennen), dann veröffentlichen.'
+        return
+      }
+      const version = await promptDialog({
+        title: 'Release veröffentlichen',
+        label: `Version für „${name}"`,
+        value: suggestNextVersion(name),
+        placeholder: 'z. B. 2.1.0',
+        okLabel: 'Veröffentlichen',
+        hint: (v) => (v && !/^v?\d+(\.\d+){0,2}(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(v) ? 'Version wie 2.1.0, 2.1.0-rc.1 oder v3.' : null),
+      })
+      if (!version) return
+      status.textContent = 'veröffentlicht …'
+      try {
+        await publishRelease(currentId, version, { name })
+        await reselect(currentId)
+        status.textContent = `veröffentlicht: ${name} ${version} ✓`
+      } catch (e) {
+        status.textContent = (e as Error).message
+      }
+    })()
   })
 
   // Zoom controls.
@@ -507,6 +449,18 @@ async function boot(root: HTMLElement): Promise<void> {
       dirty = true
       syncButtons()
     }
+  })
+
+  // Connection-shape selector: set the shape of every requirement edge at once —
+  // eckig (right-angle), gerundet (rounded corners) or direkt (straight line). A
+  // single undoable step; individual edges can still be overridden via their
+  // context pad. Changing edge shape re-routes them, so the model is marked dirty.
+  const edgeStyleSel = root.querySelector<HTMLSelectElement>('#edgeStyle')
+  edgeStyleSel?.addEventListener('change', () => {
+    if (!handle) return
+    handle.setAllEdgeStyle(edgeStyleSel.value as 'ortho' | 'curved' | 'direct')
+    dirty = true
+    syncButtons()
   })
 
   // The juice toggle turns the evaluation animation (dataflow, particles, combo) on
@@ -541,6 +495,7 @@ async function boot(root: HTMLElement): Promise<void> {
   // or an upload created/changed a cached model).
   const reselect = async (modelId: string): Promise<void> => {
     models = await listModels()
+    await refreshReleases()
     await showModel(models.some((m) => m.modelId === modelId) ? modelId : (models[0]?.modelId ?? ''))
   }
 
@@ -700,9 +655,24 @@ async function boot(root: HTMLElement): Promise<void> {
   try {
     models = await listModels()
   } catch (e) {
-    status.textContent = (e as Error).message
+    // A failed initial load is almost always a missing/expired credential on a
+    // secured server (HTTP 401/403). The login lives in the Zugriff sidebar
+    // section, but mountAccess() only runs much later in boot — so a bare `return`
+    // here would strand the user with a raw "HTTP 401" and NO way to sign in (the
+    // very bug this fixes). Reveal and expand the Zugriff section right now and
+    // point at it, so logging back in is always one glance away.
+    const msg = (e as Error).message
+    const authish = /HTTP 40[13]/.test(msg)
+    status.textContent = authish ? 'Nicht angemeldet — bitte in der Sidebar unter „Zugriff" anmelden.' : msg
+    const grp = root.querySelector<HTMLElement>('#groupAccess')
+    const hst = root.querySelector<HTMLElement>('#accessHost')
+    if (grp && hst) {
+      grp.dataset.collapsed = 'false'
+      void mountAccess(grp, hst)
+    }
     return
   }
+  await refreshReleases()
   // Note: an empty server is NOT an early return — boot continues so every action
   // (new model/flow/folder, search, flows catalog) is wired. renderModelList
   // renders the "no models" empty state, and the initial selection below is
@@ -931,9 +901,27 @@ async function boot(root: HTMLElement): Promise<void> {
     const total = group.revisions.length
     if (older.some((m) => m.modelId === currentId)) expanded.add(group.name)
 
+    // Releases (ADR-0037) reframe the row: when a model is published, the row
+    // leads with its latest release version, not the raw revision count, and a
+    // head that has moved past the last release is flagged as an unpublished draft.
+    const rel = releasesByName.get(group.name)
+    const publishedVersion = rel?.releases.find((r) => r.modelId === current.modelId)?.version
+
     const row = el('div', 'model-item' + (current.modelId === currentId ? ' is-current' : ''))
     row.append(highlightName(group.name, terms))
-    if (total > 1) row.append(el('span', 'model-rev', 'v' + total))
+    if (rel && rel.releases.length) {
+      const latest = rel.channels?.latest ?? rel.releases[0].version
+      const badge = el('span', 'model-release-badge', latest)
+      badge.title = `veröffentlicht — neueste Version ${latest}`
+      row.append(badge)
+      if (!publishedVersion) {
+        const draft = el('span', 'model-draft-badge', 'Entwurf')
+        draft.title = 'Der aktuelle Stand ist noch nicht veröffentlicht.'
+        row.append(draft)
+      }
+    } else if (total > 1) {
+      row.append(el('span', 'model-rev', 'v' + total))
+    }
 
     // Per-model actions (rename / delete the whole named model incl. history),
     // revealed on row hover. stopPropagation keeps a click off the row's select.
@@ -979,6 +967,28 @@ async function boot(root: HTMLElement): Promise<void> {
     row.addEventListener('dragstart', (e) => e.dataTransfer?.setData('text/plain', group.name))
     row.addEventListener('click', () => void showModel(current.modelId))
     container.append(row)
+
+    // Release chips (ADR-0037): the curated versions and their moving channels,
+    // each a click away from loading that exact revision. This is what a consumer
+    // pins (name@version / name@channel) — kept front-and-centre so the raw
+    // drafts can stay tucked under the history toggle below.
+    if (rel && rel.releases.length) {
+      const chips = el('div', 'model-releases')
+      const channelOf = (version: string): string[] => Object.entries(rel.channels ?? {}).filter(([, v]) => v === version).map(([c]) => c)
+      for (const r of rel.releases) {
+        const chip = el('button', 'release-chip' + (r.modelId === currentId ? ' is-current' : '')) as HTMLButtonElement
+        chip.type = 'button'
+        chip.append(el('span', 'release-ver', r.version))
+        for (const c of channelOf(r.version)) chip.append(el('span', 'release-channel', c))
+        chip.title = r.notes ? `${r.version} — ${r.notes}` : `Release ${r.version} laden`
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation()
+          void showModel(r.modelId)
+        })
+        chips.append(chip)
+      }
+      container.append(chips)
+    }
 
     if (older.length) {
       const open = expanded.has(group.name)
@@ -1220,8 +1230,15 @@ async function boot(root: HTMLElement): Promise<void> {
   // run. Without a loaded schema/handle it simply shows no pills.
   const mountInputPills = (): void => {
     if (!handle || !currentModel) return
+    // Keyed by the FEEL identifier (variable name, else display name) — the same
+    // key the schema uses — so each schema input maps to its node even when the
+    // node's display label differs from the identifier.
     const nodeIdByName = new Map<string, string>()
-    for (const n of handle.graph().nodes) if (n.type === 'inputData' && n.name) nodeIdByName.set(n.name, n.id)
+    for (const n of handle.graph().nodes) {
+      if (n.type !== 'inputData') continue
+      const ref = feelRef(n)
+      if (ref) nodeIdByName.set(ref, n.id)
+    }
     inputPills = buildInputPills(currentModel, nodeIdByName, runFromPills)
     if (activeRun) inputPills.setValues(activeRun.inputs)
     handle.showInputPills(inputPills.items)
@@ -1231,7 +1248,9 @@ async function boot(root: HTMLElement): Promise<void> {
   // active run's hit rule(s) highlighted in Operate.
   const openTable = (modelId: string, decisionId: string): void => {
     if (mode === 'operate') {
-      const name = handle?.graph().nodes.find((n) => n.id === decisionId)?.name ?? ''
+      // Traces are keyed by the decision's FEEL identifier, not its display label.
+      const dnode = handle?.graph().nodes.find((n) => n.id === decisionId)
+      const name = dnode ? feelRef(dnode) : ''
       const tr = activeRun?.result.traces?.[name]
       const matched: number[] = []
       for (const t of tr?.tables ?? []) for (const m of t.matched ?? []) matched.push(m)
@@ -1257,6 +1276,13 @@ async function boot(root: HTMLElement): Promise<void> {
     modeDesignBtn.classList.toggle('is-active', m === 'design')
     modeOperateBtn.classList.toggle('is-active', m === 'operate')
     modeImportBtn.classList.toggle('is-active', m === 'import')
+    // The model-id chip belongs to the open L1 model; flows have no single model.
+    if (m === 'flows' || m === 'flow-edit') {
+      modelIdChip.hidden = true
+      publicToggle?.update('') // the per-model public toggle has no target in flow views
+    } else if (currentId) {
+      publicToggle?.update(currentId, currentModel?.name ?? '') // back to L1: reflect the open model
+    }
     if (m === 'operate') {
       operate.render()
       clioReplay.render()
@@ -1289,13 +1315,72 @@ async function boot(root: HTMLElement): Promise<void> {
   }
   wireToggle('flowsToggle', 'groupFlows')
   wireToggle('modelsToggle', 'groupModels')
+  wireToggle('accessToggle', 'groupAccess')
+  // Access section (WP-107, ADR-0028/0035): login + admin-only key/public panels.
+  // It self-hides when whoami is unreachable and drives the whole app's auth via
+  // the fetch interceptor installed at entry.
+  const accessGroup = root.querySelector<HTMLElement>('#groupAccess')
+  const accessHost = root.querySelector<HTMLElement>('#accessHost')
+  if (accessGroup && accessHost) void mountAccess(accessGroup, accessHost)
   root.querySelector<HTMLButtonElement>('#flowRefresh')?.addEventListener('click', () => flowView.render())
+  // Re-fetch the model list from the server so models added out-of-band (e.g. an
+  // agent's load_model over MCP, sharing this cache) show up without a full browser
+  // reload — the L1 counterpart to the Flows section's refresh.
+  root.querySelector<HTMLButtonElement>('#modelRefresh')?.addEventListener('click', () => {
+    void (async () => {
+      models = await listModels()
+      renderModelList()
+    })()
+  })
+
+  // The toolbar chip shows the currently-open model's content-addressed id and
+  // copies the full id (with the sha256: prefix) on click — the exact string the
+  // HTTP/MCP surfaces expect, so it can be pasted straight into an API or agent
+  // call. The label is shortened for the toolbar; the full id is the title.
+  // Per-model "Öffentlich"-Schalter (WP-107, ADR-0035): an admin-only toolbar
+  // toggle that opens/closes the current model for anonymous evaluation. Self-hides
+  // for non-admins and when no model is open.
+  const publicToggleBtn = root.querySelector<HTMLButtonElement>('#publicToggle')
+  const publicToggle = publicToggleBtn ? createPublicToggle(publicToggleBtn) : null
+
+  let chipResetTimer = 0
+  const setModelIdChip = (modelId: string): void => {
+    if (chipResetTimer) window.clearTimeout(chipResetTimer)
+    if (!modelId) {
+      modelIdChip.hidden = true
+      modelIdChip.textContent = ''
+      publicToggle?.update('')
+      return
+    }
+    const hex = modelId.startsWith('sha256:') ? modelId.slice('sha256:'.length) : modelId
+    const short = hex.length > 12 ? hex.slice(0, 8) + '…' + hex.slice(-4) : hex
+    modelIdChip.hidden = false
+    modelIdChip.classList.remove('is-copied')
+    modelIdChip.dataset.modelId = modelId
+    modelIdChip.textContent = 'ID ' + short
+    modelIdChip.title = 'Modell-ID kopieren: ' + modelId
+  }
+  modelIdChip.addEventListener('click', () => {
+    const id = modelIdChip.dataset.modelId
+    if (!id) return
+    void navigator.clipboard.writeText(id).then(() => {
+      modelIdChip.classList.add('is-copied')
+      const short = modelIdChip.textContent ?? ''
+      modelIdChip.textContent = '✓ kopiert'
+      if (chipResetTimer) window.clearTimeout(chipResetTimer)
+      chipResetTimer = window.setTimeout(() => {
+        modelIdChip.classList.remove('is-copied')
+        modelIdChip.textContent = short
+      }, 1400)
+    })
+  })
 
   const showModel = async (modelId: string): Promise<void> => {
     if (!modelId) return
     // Opening a model (L1) leaves the flow studio/designer and returns to the modeler.
     if (mode === 'flows' || mode === 'flow-edit') setMode('design')
     currentId = modelId
+    setModelIdChip(modelId)
     renderModelList()
     status.textContent = 'lädt …'
     dirty = false
@@ -1318,27 +1403,13 @@ async function boot(root: HTMLElement): Promise<void> {
         dirty = true
         syncButtons()
       })
-      handle.onOpenTable((decisionId) => openTable(modelId, decisionId))
-      handle.onCreateTable((decisionId) => void createTable(decisionId))
-      handle.onOpenLiteral((decisionId) => openLiteral(modelId, decisionId))
-      handle.onCreateLiteral((decisionId) => void createLiteral(decisionId))
-      handle.onOpenContext((decisionId) => openContext(modelId, decisionId))
-      handle.onCreateContext((decisionId) => void createContext(decisionId))
-      handle.onOpenConditional((decisionId) => openConditional(modelId, decisionId))
-      handle.onCreateConditional((decisionId) => void createConditional(decisionId))
-      handle.onOpenList((decisionId) => openList(modelId, decisionId))
-      handle.onCreateList((decisionId) => void createList(decisionId))
-      handle.onOpenRelation((decisionId) => openRelation(modelId, decisionId))
-      handle.onCreateRelation((decisionId) => void createRelation(decisionId))
-      handle.onOpenFilter((decisionId) => openFilter(modelId, decisionId))
-      handle.onCreateFilter((decisionId) => void createFilter(decisionId))
-      handle.onOpenIterator((decisionId) => openIterator(modelId, decisionId))
-      handle.onCreateIterator((decisionId) => void createIterator(decisionId))
-      handle.onOpenInvocation((decisionId) => openInvocation(modelId, decisionId))
-      handle.onCreateInvocation((decisionId) => void createInvocation(decisionId))
+      // One generic pair drives every boxed kind (WP-142): the canvas fires
+      // dmn.openLogic/dmn.createLogic with the kind, resolved through the registry.
+      handle.onOpenLogic((kind, decisionId) => openLogic(kind, modelId, decisionId))
+      handle.onCreateLogic((kind, decisionId) => void createLogic(kind, decisionId))
       handle.onOpenBKM((bkmId) => void openBKM(bkmId))
       handle.onBoxed(() => {
-        status.textContent = 'Boxed-Ausdruck (Liste/Invocation/Conditional/…) — im Modeler noch nicht editierbar.'
+        status.textContent = 'Boxed-Ausdruck dieses Typs — im Modeler noch nicht editierbar.'
       })
       handle.onSelect((sel) => {
         if (sel) {
@@ -1356,6 +1427,10 @@ async function boot(root: HTMLElement): Promise<void> {
       // runs the model (ADR-0016).
       try {
         const detail = await getModel(modelId)
+        // Tell the FEEL editors about this model's user-defined functions (BKMs),
+        // so every cell completes and validates calls to them — a BKM's own
+        // recursive call included — instead of flagging the name as unknown.
+        setModelFunctions(detail.functions ?? [])
         const diags = detail.diagnostics ?? []
         handle.showDiagnostics(diags)
         const errors = diags.filter((d) => d.severity === 'error').length
@@ -1374,6 +1449,9 @@ async function boot(root: HTMLElement): Promise<void> {
         renderEvaluatePanel(evalHost, detail, (run) => recordRun(run))
         // Share the loaded model with the Import cockpit (template + run source).
         currentModel = detail
+        // Reflect this model's public state in the toolbar toggle (by name, so a
+        // re-saved revision stays public).
+        publicToggle?.update(modelId, detail.name ?? '')
         if (mode === 'import') importView.render()
         if (mode === 'operate') clioReplay.render()
       } catch {
@@ -1404,6 +1482,11 @@ async function boot(root: HTMLElement): Promise<void> {
   // mode. Opening a flow from it switches the editor to the flow studio.
   flowView.render()
 }
+
+// Attach the stored bearer to every API request before the first fetch runs
+// (WP-107): on a secured server the modeler's own calls must carry the credential
+// the user set in the Zugriff section, or they'd all 401.
+installFetchAuth()
 
 const root = document.getElementById('app')
 if (root) void boot(root)

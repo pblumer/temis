@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"strings"
 
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel/value"
 )
 
 // testCases mirrors the root of a DMN TCK test-definition document (the standard

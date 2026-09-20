@@ -66,6 +66,42 @@ func (d *Definitions) BKMFunction(idOrName string) (BKMView, bool) {
 	return v, true
 }
 
+// FeelFunction is one user-defined invocable function of a model — a business
+// knowledge model — exposed to the modeler so its FEEL editors know the model's
+// callable functions. Params are the formal parameter names in order (for a
+// signature hint). It lets the editor offer these functions in code completion
+// and recognise calls to them during live validation, a BKM's own recursive
+// call included (it is a function in its own model), rather than flagging the
+// name as unknown.
+type FeelFunction struct {
+	Name   string   `json:"name"`
+	Params []string `json:"params"`
+}
+
+// Functions lists every business knowledge model as an invocable FEEL function
+// signature (name plus ordered parameter names). The modeler hands this to its
+// FEEL editors so calls to a BKM — from a decision, from a sibling BKM, or a
+// BKM's own recursion — complete and validate as known functions. It mirrors the
+// engine's compileBKMs, which registers exactly these names before any body
+// compiles (so recursion resolves), keeping the editor in step with what
+// actually evaluates.
+func (d *Definitions) Functions() []FeelFunction {
+	var out []FeelFunction
+	for _, b := range d.model.BKMs {
+		if b.Name == "" {
+			continue
+		}
+		fn := FeelFunction{Name: b.Name}
+		if b.EncapsulatedLogic != nil {
+			for _, p := range b.EncapsulatedLogic.Parameters {
+				fn.Params = append(fn.Params, p.Name)
+			}
+		}
+		out = append(out, fn)
+	}
+	return out
+}
+
 // BKMFunctionEdit is the editable payload for a BKM's function: its formal
 // parameters and a literal FEEL body.
 type BKMFunctionEdit struct {

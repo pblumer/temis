@@ -253,7 +253,7 @@ func CreateDecisionTable(src []byte, decisionID string) ([]byte, error) {
 // element, or nil when none matches.
 func (d *Definitions) decisionModel(idOrName string) *model.Decision {
 	for _, dec := range d.model.Decisions {
-		if dec.ID == idOrName || dec.Name == idOrName {
+		if dec.ID == idOrName || dec.Name == idOrName || dec.RefName() == idOrName {
 			return dec
 		}
 	}

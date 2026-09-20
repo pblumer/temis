@@ -226,6 +226,8 @@ mitschickt); setzt man `TEMIS_LLM_TOKEN`, nutzt der Server diesen Schlüssel.
 | `TEMIS_KEYS_DIR` | *(leer)* | Verzeichnis für den persistenten Keystore + Lifecycle-API (`POST /v1/keys …`); Keys überleben Neustart (leer = Key-Verwaltung aus; WP-103) |
 | `TEMIS_BOOTSTRAP_ADMIN_KEY` | *(leer)* | Bootstrap-Admin-Secret; erzeugt einen `admin`-Key, dessen `kid` beim Start geloggt wird (Secret nie) |
 | `TEMIS_API_TOKEN` | *(leer)* | **DEPRECATED** Legacy-Admin-Token für `/v1` (leer = keiner); ersetzt durch `TEMIS_KEYS_FILE` |
+| `TEMIS_PUBLIC_EVALUATE` | `false` | Öffnet den `evaluate`-Scope für anonyme Aufrufer trotz konfigurierter Keys — jede Auswertung (HTTP/gRPC/MCP) braucht keinen Token, `write`/`admin`/`assist`/`git`/`flow` weiterhin schon (ADR-0035) |
+| `TEMIS_PUBLIC_MODELS` | *(leer)* | Komma-Liste von `modelId`s **oder** Modellnamen, deren Auswertung anonym offen ist (public decisions) — alles andere bleibt hinter Key (leer = keine; ADR-0035) |
 | `TEMIS_EXAMPLES` | `true` | Beispielmodelle vorladen |
 | `TEMIS_MODELS_DIR` | *(leer)* | Modelle in dieses Verzeichnis persistieren + beim Start laden (leer = nur In-Memory) |
 | `TEMIS_MCP` | `true` | MCP-Endpunkt `POST /mcp` |
@@ -419,6 +421,25 @@ curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/rota
 curl -H "Authorization: Bearer $ADMIN" -X POST localhost:8080/v1/keys/k_…/revoke  # widerrufen
 ```
 
+**Absichern beim ersten Start (Trust-on-first-use, WP-107):** Ohne Bootstrap-Secret
+starten — nur mit `-keys-dir` — und den ersten Admin-Key **über die Oberfläche**
+anlegen. Solange **kein** Key existiert, ist die API offen (die Lifecycle-API ist
+erreichbar, beim Start laut geloggt); der **erste angelegte Key kippt den Server zur
+Laufzeit auf abgesichert** (`enabled()` hängt an „mindestens ein Key") und wird
+persistiert, übersteht also den Neustart.
+
+```sh
+go run ./cmd/temisd -keys-dir ./keystore           # offen; /v1/keys ist erreichbar
+# Browser → Modeler → Sidebar „Zugriff" → „🔒 Admin-Key anlegen & absichern"
+# Der Modeler übernimmt den neuen Bearer sofort als Session, zeigt das Secret
+# einmalig und lädt neu — ab jetzt ist der Server abgesichert.
+```
+
+Der Bootstrap-Button erzwingt bewusst `admin`-Scope (sonst würde man den Server ohne
+Admin-Key aussperren). Achtung: bis der erste Key existiert, ist die API offen —
+diesen Schritt im vertrauenswürdigen Netz bzw. direkt nach dem Deploy machen, und
+für Klartext-Transport TLS davorschalten (`-tls-cert`/`-tls-key` oder Reverse-Proxy).
+
 **Lockout-Recovery — Offline-CLI (WP-104):** Ist kein nutzbarer Admin-Key mehr da,
 verwaltet `temisd keys …` denselben Keystore **bei gestopptem Server** direkt am
 Verzeichnis. Ein so erzeugter Key wird beim nächsten Start akzeptiert:
@@ -435,8 +456,8 @@ einschränken — `evaluate:/orders/*` oder eine auf eine `modelId` gepinnte
 `models:read:sha256:…`. Der Grant greift nur, wenn die Request-Ressource (`{id}` =
 modelId/flowId) mit dem Prefix beginnt; ressourcenlose Routen (Listing, stateless
 `/v1/evaluate`, gRPC, MCP) erfüllt nur ein **unbeschränkter** Grant. **Authorship:**
-bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als CloudEvents-Extension
-`clioauthkid` auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
+bei aktiver Auth stempelt der clio-Audit-Sink die `kid` als `data.clioauthkid`
+auf jedes Decision-/Flow-Event (`docs/80`). Abgelaufene Keys
 (`expiresAt`) werden abgewiesen (`401`).
 
 **DEPRECATED Legacy-Token:** `-token <token>` (oder `TEMIS_API_TOKEN`) läuft weiter als
@@ -450,6 +471,37 @@ curl -H 'Authorization: Bearer gehenix' \
      --data-binary @dmn/testdata/models/dish_15.dmn \
      -H 'Content-Type: application/xml' localhost:8080/v1/models
 ```
+
+**Public decisions (ADR-0035):** Sonst ist Auth binär — sobald ein Key existiert, verlangt
+*jede* Route einen Token. Für „diese Entscheidung darf jeder auswerten, alles andere bleibt
+zu" öffnet man gezielt nur den `evaluate`-Scope, ohne die schreibenden/kostenverursachenden
+Routen (`models:write`/`admin`/`assist`) freizugeben:
+
+- **Pro Modell** — `-public-models "<modelId|Name>,…"` (oder `TEMIS_PUBLIC_MODELS`): nur die
+  gelisteten Modelle sind anonym auswertbar. Ein Eintrag matcht per content-adressierter
+  `modelId` **oder** per Anzeigename (so bleibt ein neu gespeichertes Modell per Name public).
+  Gilt für die id-adressierten Routen (`/v1/models/{id}/evaluate`, `…/evaluate-graph`).
+- **Global** — `-public-evaluate` (oder `TEMIS_PUBLIC_EVALUATE=true`): der ganze `evaluate`-Scope
+  ist anonym offen, inkl. dem stateless `POST /v1/evaluate`, über HTTP, gRPC und MCP.
+
+Beides ist opt-in und wird beim Start laut geloggt. Rate-Limiting (`-rate-limit`) greift auch
+für anonyme Aufrufer; ein trotzdem mitgeschickter gültiger Key stempelt weiterhin seine
+Authorship (`clioauthkid`) ins Audit-Log.
+
+```sh
+# Nur das Modell "Dish" ist öffentlich auswertbar, alles andere braucht einen Key:
+go run ./cmd/temisd -keys-file keys.json -public-models Dish
+curl --data '{"decision":"Dish","input":{"Season":"Winter","Guest Count":4}}' \
+     -H 'Content-Type: application/json' \
+     localhost:8080/v1/models/<modelId>/evaluate      # ohne Authorization-Header → 200
+```
+
+**Zur Laufzeit umschalten (WP-107):** Neben der Startup-Config lässt sich der Pro-Modell-Schalter
+**ohne Redeploy** umlegen — im Modeler über den **„🔒 Privat / 🌐 Öffentlich"-Toggle** in der
+Toolbar (pro geöffnetem Modell, nur für `admin`) oder das Zugriff-Panel, bzw. per API
+`POST /v1/access/public/models` `{"model":"<id|Name>","public":true|false}` (Scope `admin`). Mit
+`-keys-dir` werden Laufzeit-Umschaltungen in `public.json` **persistiert** (überstehen Neustart);
+ohne bleiben sie im Speicher. `-public-models`-Einträge sind fix (nur per Neustart änderbar).
 
 **Betriebs-Observability (`GET /v1/status`, ehrliches `/readyz`, ADR-0030):** temis
 ist *observierbar*, überwacht sich aber nicht selbst. `GET /v1/status` zeigt den Zustand
@@ -566,9 +618,14 @@ bietet die Engine dafür als natives Werkzeug über das **Model Context Protocol
 go run ./cmd/temis-mcp        # spricht MCP über stdin/stdout (Logs auf stderr)
 ```
 
-Vier Tools: **`list_models`** (Cache auflisten), **`load_model`** (DMN-XML kompilieren +
-content-addressed cachen, idempotent), **`describe_decision`** (Decision + erwartete
-Inputs beschreiben) und **`evaluate`** (auswerten per `modelId` oder stateless per `xml`).
+Kern-Tools: **`list_models`** (Cache auflisten — je Modell mit Name, Decisions und Inputs),
+**`get_model_xml`** (das rohe DMN/FEEL eines gecachten Modells zurücklesen, nicht nur
+auswerten), **`load_model`** (DMN-XML kompilieren + content-addressed cachen, idempotent),
+**`describe_decision`** (Decision + erwartete Inputs beschreiben), **`evaluate`**
+(auswerten per `modelId` oder stateless per `xml`) sowie die Typ-Werkzeuge
+**`list_types`**/**`save_type`**/**`delete_type`** (eigene Item-Definitionen lesen,
+Typen anlegen/ändern und entfernen — einfache wie strukturierte, letztere über
+`components`; jede Änderung liefert eine neue modelId).
 Ein Agent-Runtime (z. B. Claude) startet das Binary als Subprozess; Beispiel-Eintrag:
 
 ```jsonc
@@ -603,10 +660,32 @@ go run ./cmd/temisd -mcp=false      # MCP-Endpoint abschalten
 
 In `temisd` schützt `/mcp` derselbe scoped Keystore wie die `/v1`-Endpunkte
 (ADR-0028): jedes Tool verlangt seinen Scope (`evaluate`→`evaluate`,
-`list_models`/`load_model`/`describe_decision`→`models:read`, `git_*`→`git`,
+`list_models`/`get_model_xml`/`load_model`/`describe_decision`/`list_types`→`models:read`,
+`save_type`/`delete_type`→`models:write`, `git_*`→`git`,
 `*_flow`→`flow`), gültiger Key ohne Scope → `403`. Das eigenständige `temis-mcp`
 bleibt für reines stdio/lokales Einbetten erhalten (dort weiterhin optionaler
 `-token` nur über HTTP).
+
+**Remote-MCP-Client per OAuth verbinden (z. B. der claude.ai-Web-Connector).**
+Web-Connectors sprechen keinen statischen Bearer, sondern den OAuth-Flow. `temisd`
+kann daher **selbst als OAuth-2.1-Server** auftreten (Authorization- *und*
+Resource-Server ko-lokalisiert, ADR-0038) — kein externer IdP nötig. Voraussetzung:
+eine kanonische öffentliche URL (der Issuer) **und** ein persistenter Keystore, denn
+das ausgestellte Access-Token ist ein kurzlebiger scoped Key (ADR-0028):
+
+```sh
+temisd -external-url https://temis.example.com -keys-dir ./keystore
+# mountet /authorize, /token, /register und /.well-known/oauth-*
+```
+
+Ablauf: Der Connector schickt den Nutzer auf `/authorize` (Authorization Code +
+PKCE/S256); der Mensch meldet sich einmalig mit seinem `kid.secret` an (echte
+HttpOnly-Cookie-Session), bestätigt die Freigabe, und `/token` prägt ein Token mit
+least-privilege-Scopes (`evaluate, models:read, models:write, flow, git`; via
+`-oauth-scopes` änderbar). Erlaubte Redirect-Ziele sind `claude.ai` und Loopback
+(erweiterbar mit `-oauth-redirect-allow`). Ohne `-external-url`/`-keys-dir` bleibt
+OAuth aus — dann verbindet man rein per CLI-Header
+(`claude mcp add --transport http … --header "Authorization: Bearer kid.secret"`).
 
 **Entscheidungsspur (warum?).** Auswerten lässt sich opt-in erklären: `evaluate` mit
 `explain: true` (bzw. `dmn.WithTrace()` in der Library) liefert zusätzlich eine

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pblumer/temis/internal/feel"
-	"github.com/pblumer/temis/internal/value"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 )
 
 func TestCoerceToType(t *testing.T) {

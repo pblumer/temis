@@ -3,9 +3,9 @@ package boxed
 import (
 	"fmt"
 
-	"github.com/pblumer/temis/internal/feel"
+	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
-	"github.com/pblumer/temis/internal/value"
 )
 
 // compileList compiles a boxed list: its items evaluate to the elements of a
