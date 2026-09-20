@@ -13,6 +13,7 @@
 
 import { attachCompletion, feelItems, type CompletionItem } from './complete'
 import { attachHighlighter } from './highlight'
+import { attachSignatureHint } from './signature'
 
 export function attachFeelField(
   field: HTMLInputElement | HTMLTextAreaElement,
@@ -22,6 +23,8 @@ export function attachFeelField(
   const hl = attachHighlighter(field, names)
   if (!opts?.readOnly) {
     attachCompletion(field, () => feelItems(names(), opts?.extra?.() ?? []))
+    // Beginner aid: a translucent signature/construct hint above the field.
+    attachSignatureHint(field)
   }
   return hl
 }

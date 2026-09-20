@@ -2,6 +2,7 @@ import { getTable, saveTable, type Anchor, type TableView, type TableInput, type
 import { ensureFeel, validateExpr, validateUnary, validateName } from './feel'
 import { attachCompletion, feelItems, type CompletionItem } from './complete'
 import { attachHighlighter } from './highlight'
+import { attachSignatureHint } from './signature'
 import { FEEL_TYPES } from './feeltypes'
 
 // Hit policies offered in the editor (single-letter DMN codes) and the Collect
@@ -329,6 +330,9 @@ function cell(entries: string[], k: number, kind: 'in' | 'out', namesProvider: (
   // so offer it alongside the in-scope names; output cells are plain expressions.
   const extra: CompletionItem[] = kind === 'in' ? [{ label: '?', kind: 'variable', detail: 'Eingabewert dieser Spalte' }] : []
   attachCompletion(box, () => feelItems(namesProvider(), extra))
+  // Beginner aid: the translucent signature/construct hint above the cell (same
+  // primitive attachFeelField wires onto every other FEEL field).
+  attachSignatureHint(box)
   check()
   return box
 }
