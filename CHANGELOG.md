@@ -18,6 +18,33 @@ gilt für die öffentliche Go-API (`package dmn`) und die HTTP-API (ADR-0019,
 Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Version
 `0.0.0-dev`. Bisher umgesetzt (Auszug, voller Stand in `docs/20-roadmap.md`):
 
+### Changed
+
+- **Der deklarierte Eingabetyp entscheidet, wie ein Wert ankommt (ADR-0040).** Schema,
+  Validierung und Auswertung sagten für `date`, `time`, `date and time` und `duration`
+  drei verschiedene Dinge. `ReachableInputSchema` nannte die Eingabe `date`,
+  `ValidateInput` liess **jeden** String dafür durch — auch `"nonsense"` und `""` —, und
+  `toValue` machte daraus eine FEEL-Zeichenkette, worauf eine Tabellenzelle
+  `< date("2026-01-01")` nicht mehr traf und die Catch-all-Zeile antwortete: eine falsche
+  Antwort ohne Diagnose, ohne Trace-Eintrag und ohne Fehler. Umgekehrt wurde der einzige
+  Wert, der korrekt auswertete — eine echte `value.Date`, seit ADR-0039 öffentlich
+  konstruierbar — als `TYPE_MISMATCH` mit `got value.Date` abgelehnt, was kein
+  FEEL-Typname ist.
+
+  Jetzt wird an der Aussengrenze nach deklariertem Typ umgewandelt: ISO-8601-Text wird der
+  passende FEEL-Wert, Text, den der Typ nicht hergibt, wird `TYPE_MISMATCH` statt still
+  eine Zeichenkette, und `Got` benennt in beiden Richtungen einen FEEL-Typ. Gilt für
+  `CompiledDecision.Evaluate` und `CompiledService.Evaluate`, damit ein Service ein Datum
+  nicht anders behandelt als die Decision dahinter.
+
+  **Verhaltensänderung an einer öffentlichen Naht.** Ein Aufrufer, der sich darauf
+  verlassen hat, dass ein `date`-deklarierter Input als String ankommt, bekommt ein
+  anderes Ergebnis; ein Aufruf mit `WithStrictInput()` und unpassendem Text liefert jetzt
+  `*InputError` statt eines `Result`. Die exportierte Oberfläche ist unverändert
+  (`testdata/api/dmn.api` gleich). Die Einstufung nach ADR-0019 — Minor mit diesem Hinweis
+  oder Major mit `/vN` — steht in ADR-0040 und ist als Release-Entscheidung offen.
+  Gebietsabhängige Schreibweisen wie `dd.MM.yyyy` werden bewusst nicht akzeptiert.
+
 ### Security
 
 - **Härtungs-Etappe H2 (WP-137–139, aus dem Code-Qualitäts-Audit).** CI-Härtung: neuer

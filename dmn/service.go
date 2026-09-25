@@ -27,6 +27,26 @@ type CompiledService struct {
 	limits feel.Limits
 }
 
+// declaredInputs is what the service's output decisions declare about their
+// inputs, deduped by name. It is deliberately not exported and not called a
+// schema: an input decision the caller supplies at the boundary carries its own
+// type that nothing here reads yet, so this is a working set for conversion and
+// not the published self-description a service still lacks.
+func (s *CompiledService) declaredInputs() []InputField {
+	var out []InputField
+	seen := make(map[string]bool)
+	for _, dec := range s.outputs {
+		for _, f := range dec.inputs {
+			if seen[f.Name] {
+				continue
+			}
+			seen[f.Name] = true
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // Name returns the service's name.
 func (s *CompiledService) Name() string { return s.name }
 
@@ -73,7 +93,13 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOp
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	base, err := inputToValues(in)
+	// The declarations of the decisions the service publishes drive the conversion
+	// (ADR-0040). This is not the service-level schema §1.3 still calls a follow-up
+	// — nothing new is published, and WithStrictInput stays as inert as the comment
+	// above says. It is only that a service must not convert a `date` differently
+	// from the decision behind it, which is what would happen if one honoured the
+	// declared type and the other did not.
+	base, err := inputToValuesTyped(in, s.declaredInputs())
 	if err != nil {
 		return Result{}, err
 	}
