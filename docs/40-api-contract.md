@@ -156,6 +156,34 @@ FEEL-Typen: `string`, `number`, `boolean`, `date`, `time`, `date and time`, `dur
 unbekannte/Custom-Typen (Item Definitions, WP-31) erzeugen `""` und damit keine
 Constraint. `null` ist nie ein Typkonflikt (Abwesenheit ist `MISSING_INPUT`).
 
+**Der deklarierte Typ entscheidet auch die Umwandlung (ADR-0040).** JSON kennt kein
+Datum, ein Aufrufer über HTTP oder MCP kann eines also nur als Text senden. Wo ein
+Input einen zeitlichen Typ deklariert und der Wert Text ist, entsteht daraus der
+passende FEEL-Wert:
+
+| deklariert | akzeptierter Text | wird zu |
+|---|---|---|
+| `date` | `2026-09-25` | `value.Date` |
+| `time` | `14:30:00` (mit optionalem Offset) | `value.Time` |
+| `date and time` | `2026-09-25T14:30:00` (mit optionalem Offset) | `value.DateTime` |
+| `duration` | `P1D`, `PT2H`, `P1Y2M` | die passende FEEL-Dauer |
+
+Genau diese Schreibweisen — ISO 8601, dieselben, die FEELs eigene `date()`-, `time()`-,
+`date and time()`- und `duration()`-Literale annehmen. Eine gebietsabhängige Schreibweise
+wie `dd.MM.yyyy` wird **nicht** akzeptiert: Zwischen `03.04.2026` und `04.03.2026` zu
+raten ist genau die stille falsche Antwort, gegen die diese Prüfung antritt.
+
+Das ist **keine** FEEL-Koerzierung (DMN §10.3.2.9.4, die an Ausgabegrenzen konform hält
+oder `null` erzeugt), sondern die Abbildung Go-Wert → FEEL-Wert eine Zeile weiter
+aussen — die Grenze, die diese Engine definiert und die DMN der Implementierung
+überlässt. FEELs eigene Weigerung, innerhalb eines Ausdrucks einen String in ein Datum
+zu verwandeln, bleibt unberührt.
+
+Text, den der deklarierte Typ nicht hergibt, wird `TYPE_MISMATCH` — nicht still eine
+Zeichenkette und nicht `null`. Ein Aufrufer, der den FEEL-Wert bereits hält
+(`feel/value` ist seit ADR-0039 öffentlich), übergibt ihn direkt; `Got` benennt in
+beiden Richtungen einen FEEL-Typ und keinen Go-Typ.
+
 HTTP: Auswerten akzeptiert `"strict": true`; bei Verstoß `422` mit
 `code: INVALID_INPUT` und der Liste unter `problems`. Die Modell-Antwort
 (`POST /v1/models`, `GET /v1/models/{id}`) trägt zusätzlich `schema` (Decision-Name →

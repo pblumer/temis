@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pblumer/feel"
+	"github.com/pblumer/feel/value"
 	"github.com/pblumer/temis/internal/model"
 )
 
@@ -531,10 +532,8 @@ func typeMismatch(expected string, v any) (got, want string, bad bool) {
 	switch expected {
 	case "number", "string", "boolean":
 		ok = got == expected
-	case "date", "time", "duration":
-		ok = got == "string"
-	case "date and time":
-		ok = got == "string" || got == "date and time"
+	case "date", "time", "date and time", "duration":
+		ok = temporalConforms(expected, v, got)
 	default:
 		ok = true
 	}
@@ -544,11 +543,45 @@ func typeMismatch(expected string, v any) (got, want string, bad bool) {
 	return got, expected, true
 }
 
+// temporalConforms reports whether v may stand for a declared temporal type
+// (ADR-0040).
+//
+// Two ways it may. It is already the FEEL value — which a Go caller can build
+// since ADR-0039 made feel/value public, and which used to be *rejected* here
+// while the string that evaluates wrongly was waved through. Or it is text the
+// type can be made from, which is the only shape a JSON caller has; that text
+// must actually parse, so "nonsense" and "" stop being reported as a conforming
+// date.
+//
+// The duration case answers to either FEEL duration kind: DMN declares one
+// `duration`, FEEL holds two that are not interconvertible (months against
+// seconds), and which one a value is depends on the value, not on the model.
+func temporalConforms(expected string, v any, got string) bool {
+	if got == expected {
+		return true
+	}
+	if expected == "duration" &&
+		(got == "days and time duration" || got == "years and months duration") {
+		return true
+	}
+	if _, isStr := v.(string); !isStr {
+		return false
+	}
+	_, converted := declaredValue(v, expected)
+	return converted
+}
+
 // goKind names the FEEL kind a Go input value maps to (see Evaluate's mapping).
 func goKind(v any) string {
-	switch v.(type) {
+	switch x := v.(type) {
 	case nil:
 		return "null"
+	case value.Value:
+		// A caller holding a FEEL value already — feel/value is public since
+		// ADR-0039 — is naming its type exactly. Reporting it as `value.Date`,
+		// which is a Go type name and not a FEEL one, is how the only input that
+		// evaluated correctly came to be the one strict validation refused.
+		return x.Kind().String()
 	case bool:
 		return "boolean"
 	case string:

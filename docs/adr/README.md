@@ -44,4 +44,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0037 | Modell-Releases — benannte, unveränderliche Publikationen über content-adressierten Revisionen (Draft/Release/Channel, JSON-Manifest, stdlib, opt-in) | proposed |
 | 0038 | Self-contained OAuth-2.1-Authorization-Server für Remote-MCP | accepted |
 | 0039 | FEEL-Front-end als externes Modul (`github.com/pblumer/feel`) | accepted |
-| 0040 | Deklarierter Eingabetyp — Schema, Validierung und Auswertung stimmen überein | proposed |
+| 0040 | Deklarierter Eingabetyp — Schema, Validierung und Auswertung stimmen überein | accepted |

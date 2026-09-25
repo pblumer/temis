@@ -138,7 +138,10 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 		}
 	}
 
-	base, err := inputToValues(in)
+	// The decision's own declarations decide how its inputs are converted, so a
+	// `date` declared in the model is a FEEL date and not the text a JSON caller
+	// had to send (ADR-0040).
+	base, err := inputToValuesTyped(in, c.inputs)
 	if err != nil {
 		return Result{}, &EvalError{
 			Code:       CodeRuntime,

@@ -1,6 +1,6 @@
 # ADR-0040: Deklarierter Eingabetyp — Schema, Validierung und Auswertung stimmen überein
 
-- **Status:** proposed
+- **Status:** accepted
 - **Datum:** 2026-09-25
 - **Kontext-WP:** WP-52 (Agent-Schema & strenge Eingabevalidierung); berührt ADR-0013
   (Agent-First), ADR-0017 (Typprüfung ist advisory), ADR-0039 (`feel/value` ist
@@ -134,21 +134,50 @@ Drei Regeln halten es beherrschbar:
 **Negativ**
 
 - Ein Aufrufer, der sich darauf verlässt, dass ein `date`-deklarierter Input als String
-  ankommt (Teilstring-Vergleiche, `string length`), ändert sein Verhalten. Das ist eine
-  Verhaltensänderung an einer öffentlichen Naht und gehört in den CHANGELOG sowie nach
-  ADR-0019 bewertet — additive Erweiterung oder Breaking Change ist zu entscheiden,
-  bevor dieser Record von *proposed* auf *accepted* geht.
+  ankommt (Teilstring-Vergleiche, `string length`), ändert sein Verhalten.
+
+### Einstufung nach ADR-0019
+
+Die **exportierte Oberfläche ist unverändert**: `testdata/api/dmn.api` bleibt gleich,
+der Golden-Test bestätigt das. Geändert hat sich Verhalten an zwei Stellen:
+
+1. **Lenient (ohne `WithStrictInput`).** Ein `date`-deklarierter Input, der als ISO-Text
+   ankommt, wird jetzt als Datum ausgewertet statt als Zeichenkette. Ein Aufrufer, der
+   den String als String gelesen hat, bekommt ein anderes Ergebnis.
+2. **Strict.** `Evaluate(…, WithStrictInput())` lehnt jetzt einen String ab, den der
+   deklarierte Typ nicht hergibt. Ein Aufruf, der bisher ein `Result` lieferte, liefert
+   jetzt `*InputError`.
+
+Punkt 2 ist nach dem Wortlaut von ADR-0019 ein **Breaking Change** („Verschieben der
+Fehlergrenze") und damit **Major**. Dagegen lässt sich halten, dass `WithStrictInput`
+laut §1.3 genau dies immer tun sollte und die Grenze hier nicht verschoben, sondern
+erstmals dort hingelegt wird, wo sie dokumentiert ist. Dieser Record trifft die
+technische Entscheidung; **welche Version daraus folgt — Minor mit CHANGELOG-Hinweis
+oder Major mit `/vN`-Modulpfad — ist eine Release-Entscheidung und wird hier
+ausdrücklich nicht getroffen.**
 - Die Engine hält damit eine Meinung darüber, welche String-Schreibweisen ein Datum
   sind. Diese Meinung ist klein und aufgeschrieben, muss aber getestet bleiben.
 
 **Folgeaufgaben**
 
-- Tabellengetriebene Tests je deklariertem Typ × Eingabeform (gültiger String,
-  ungültiger String, bereits korrekter FEEL-Wert, falscher Typ, fehlend), über Library,
-  HTTP und MCP.
-- `docs/40-api-contract.md` §1.3 um die Abbildungstabelle ergänzen.
-- TCK-Lage prüfen: ob eine TCK-Testcase heute nur deshalb besteht, weil ein String als
-  Datum durchgereicht wird.
-- Ein Service veröffentlicht bislang kein Schema (§1.3), `WithStrictInput` ist dort
-  wirkungslos. Die Konvertierung braucht denselben Weg für `CompiledService`, sonst
-  gilt sie für Decisions und nicht für Services.
+Erledigt mit diesem Record:
+
+- Tabellengetriebene Tests über die Library (`dmn/inputtype_test.go`): je Eingabeform
+  — gültiger ISO-Text, Text ohne Datum, leerer Text, Datum mit Uhrzeit, gebietsabhängige
+  Schreibweise, Zahl, Wahrheitswert, `time.Time`, echter FEEL-Wert — gegen Auswertung
+  *und* Validierung, plus der Fall ohne deklarierten Typ.
+- `docs/40-api-contract.md` §1.3 trägt die Abbildungstabelle.
+- **TCK-Lage geprüft:** `make verify` inklusive `internal/tck` ist grün. Keine
+  TCK-Testcase bestand deshalb, weil ein String als Datum durchgereicht wurde.
+- `CompiledService.Evaluate` konvertiert nach denselben Deklarationen wie die Decisions,
+  die der Service veröffentlicht, damit ein Service ein `date` nicht anders behandelt
+  als die Decision dahinter.
+
+Offen:
+
+- Ein Service **veröffentlicht** weiterhin kein Schema (§1.3), `WithStrictInput` bleibt
+  dort wirkungslos. Die Konvertierung greift, die strenge Prüfung nicht. Das
+  Service-Schema bleibt die Folgearbeit, die §1.3 schon nennt.
+- HTTP und MCP reichen `Input` unverändert durch und erben die Konvertierung damit;
+  eigene Tests dafür stehen aus.
+- Die Release-Einstufung oben.

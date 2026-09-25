@@ -8,10 +8,44 @@ import (
 	"github.com/pblumer/feel/value"
 )
 
-// inputToValues converts an Input map into FEEL values keyed by variable name.
+// inputToValues converts an Input map into FEEL values keyed by variable name,
+// without a declared schema to consult. Kept for the callers that have none (a
+// standalone FEEL expression has no model to declare anything).
 func inputToValues(in Input) (map[string]value.Value, error) {
+	return inputToValuesTyped(in, nil)
+}
+
+// inputToValuesTyped is inputToValues with the model's own declarations in hand
+// (ADR-0040).
+//
+// JSON has no date, so a caller over HTTP or MCP can only send one as text. Left
+// to toValue that text becomes a FEEL *string*, and a decision table whose column
+// is declared `date` and whose cell reads `< date("2026-01-01")` then matches
+// nothing — the catch-all rule answers, with no diagnostic and no trace entry to
+// read. The model said which type it wanted; this is where that is honoured.
+//
+// It is deliberately **not** FEEL coercion (DMN §10.3.2.9.4, coerceToType), which
+// keeps a conforming value or makes it null. This is the Go-value-to-FEEL-value
+// mapping one line further out — the boundary this engine defines, and which DMN
+// leaves to the implementation. FEEL's own refusal to convert a string to a date
+// inside an expression is untouched.
+//
+// A value the declared type cannot be made from is passed through unchanged
+// rather than nulled: ValidateInput is what reports it, and an evaluation that
+// quietly replaced it with null would be the failure this record exists to end.
+func inputToValuesTyped(in Input, fields []InputField) (map[string]value.Value, error) {
+	declared := make(map[string]string, len(fields))
+	for _, f := range fields {
+		if f.Type != "" {
+			declared[f.Name] = f.Type
+		}
+	}
 	vals := make(map[string]value.Value, len(in))
 	for k, v := range in {
+		if fv, ok := declaredValue(v, declared[k]); ok {
+			vals[k] = fv
+			continue
+		}
 		fv, err := toValue(v)
 		if err != nil {
 			return nil, fmt.Errorf("dmn: input %q: %w", k, err)
@@ -19,6 +53,50 @@ func inputToValues(in Input) (map[string]value.Value, error) {
 		vals[k] = fv
 	}
 	return vals, nil
+}
+
+// declaredValue builds the FEEL value a declared temporal type asks for out of the
+// text a JSON caller can send. It reports false for anything it does not handle —
+// a value that is not a string, a type that is not temporal, or text the type
+// cannot be made from — and the caller falls back to toValue's type-driven
+// mapping, so nothing is lost and nothing is guessed.
+//
+// One spelling per type, and only ISO 8601: the formats FEEL's own date(), time(),
+// date and time() and duration() literals accept. A locale-dependent spelling like
+// `dd.MM.yyyy` is deliberately not accepted — an engine that guesses which of
+// 03.04.2026 and 04.03.2026 was meant is the class of silent wrong answer this
+// whole record is about.
+func declaredValue(v any, declared string) (value.Value, bool) {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return nil, false
+	}
+	var (
+		fv  value.Value
+		err error
+	)
+	switch declared {
+	case "date":
+		var d value.Date
+		d, err = value.ParseDate(s)
+		fv = d
+	case "time":
+		var t value.Time
+		t, err = value.ParseTime(s)
+		fv = t
+	case "date and time":
+		var dt value.DateTime
+		dt, err = value.ParseDateTime(s)
+		fv = dt
+	case "duration":
+		fv, err = value.ParseDuration(s)
+	default:
+		return nil, false
+	}
+	if err != nil {
+		return nil, false
+	}
+	return fv, true
 }
 
 // toValue converts a Go value into a FEEL value (see Evaluate for the mapping).
