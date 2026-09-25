@@ -3,6 +3,7 @@ package dmn
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/pblumer/feel"
@@ -122,8 +123,15 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 
 	// Strict validation runs first and reports every problem at once (wrong type,
 	// unknown or missing input); it supersedes the single-missing check below.
+	//
+	// Against the cone, not the decision's own declaration (ADR-0041). Evaluating
+	// a decision evaluates everything it requires, so the caller supplies the leaf
+	// inputs of the whole cone; checking those against what this one decision
+	// declares called every legitimate transitive input UNKNOWN_INPUT, and — for a
+	// decision that declares nothing itself — checked nothing at all.
 	if cfg.strict {
-		if probs := c.ValidateInput(in); len(probs) > 0 {
+		if probs := validateInputAgainst(in, c.reachable, c.reachableConstraints,
+			fmt.Sprintf("decision %q", c.name)); len(probs) > 0 {
 			return Result{}, &InputError{Problems: probs}
 		}
 	}
@@ -138,10 +146,16 @@ func (c *CompiledDecision) Evaluate(ctx context.Context, in Input, opts ...EvalO
 		}
 	}
 
-	// The decision's own declarations decide how its inputs are converted, so a
-	// `date` declared in the model is a FEEL date and not the text a JSON caller
-	// had to send (ADR-0040).
-	base, err := inputToValuesTyped(in, c.inputs)
+	// The declarations in the cone decide how the inputs are converted, so a `date`
+	// declared anywhere under this decision is a FEEL date and not the text a JSON
+	// caller had to send (ADR-0040, corrected by ADR-0041).
+	//
+	// Scoping this to the decision's own declarations meant a composed decision
+	// converted nothing: the value reached the sub-decision that declares it as
+	// text, every comparison against it was null, and a decision table cannot tell
+	// null from false. The same sub-decision evaluated directly was right, which is
+	// what made it so hard to see.
+	base, err := inputToValuesTyped(in, c.reachable)
 	if err != nil {
 		return Result{}, &EvalError{
 			Code:       CodeRuntime,
