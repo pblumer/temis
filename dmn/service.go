@@ -36,7 +36,12 @@ func (s *CompiledService) declaredInputs() []InputField {
 	var out []InputField
 	seen := make(map[string]bool)
 	for _, dec := range s.outputs {
-		for _, f := range dec.inputs {
+		// The cone, not the output decision's own declaration (ADR-0041). A service
+		// whose output decision reaches its inputs through other decisions — the
+		// ordinary shape, since that is what encapsulation is for — declared nothing
+		// here, so the conversion this set drives was a no-op for exactly the services
+		// that need it most.
+		for _, f := range dec.reachable {
 			if seen[f.Name] {
 				continue
 			}

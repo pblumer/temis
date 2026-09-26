@@ -45,3 +45,4 @@ kopieren, fortlaufend nummerieren, im `00-overview.md` referenzieren falls rahme
 | 0038 | Self-contained OAuth-2.1-Authorization-Server für Remote-MCP | accepted |
 | 0039 | FEEL-Front-end als externes Modul (`github.com/pblumer/feel`) | accepted |
 | 0040 | Deklarierter Eingabetyp — Schema, Validierung und Auswertung stimmen überein | accepted |
+| 0041 | Das Eingabeschema einer Decision ist ihr Anforderungskegel (korrigiert ADR-0040) | accepted |

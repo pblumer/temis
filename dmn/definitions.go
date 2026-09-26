@@ -38,6 +38,23 @@ type CompiledDecision struct {
 	// (input data only, not required decisions). Evaluate fails hard when any is
 	// absent from the supplied Input.
 	reqInputs []string
+	// reachable is what a caller actually supplies to evaluate this decision: the
+	// union of the declared inputs over its whole requirements cone, deduped by
+	// name. `inputs` above is the decision's own declaration and is the right
+	// answer only for a leaf; for a decision built on other decisions it is empty,
+	// because such a decision declares nothing itself and reaches every value it
+	// uses through the ones below it.
+	//
+	// Everything that reads an input against a schema reads this one — conversion
+	// by declared type, strict validation, and the published reachable schema — so
+	// the three cannot disagree about what a caller sends (ADR-0041). It is
+	// resolved once, after the requirement edges are wired, so no evaluation walks
+	// the graph.
+	reachable []InputField
+	// reachableConstraints are the structural and allowed-values matchers over that
+	// same cone, keyed by input name, so strict validation of a composed decision
+	// enforces what the decisions underneath it declare.
+	reachableConstraints map[string]*inputConstraint
 	// limits are the resource bounds enforced for an evaluation rooted at this
 	// decision (WP-34), resolved from the engine configuration at compile time.
 	limits feel.Limits
