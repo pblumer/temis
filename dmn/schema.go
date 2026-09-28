@@ -201,11 +201,17 @@ func (d *Definitions) ValidateReachableInput(idOrName string, in Input) ([]Input
 	return validateInputAgainst(in, cd.reachable, cd.reachableConstraints, subject), nil
 }
 
-// coneOf returns root's requirements cone — root plus every decision reachable
-// through its requiredDecision edges — in the model's declaration order, so a
-// union built over it is deterministic (ADR-0007/0023). The visit guard makes it
-// safe on a cyclic model, which Compile reports but still hands back.
-func coneOf(root *CompiledDecision, order []*CompiledDecision) []*CompiledDecision {
+// coneOf returns the requirements cone of roots — the roots plus every decision
+// reachable through their requiredDecision edges — in the model's declaration
+// order, so a union built over it is deterministic (ADR-0007/0023). The visit
+// guard makes it safe on a cyclic model, which Compile reports but still hands
+// back.
+//
+// A required decision named in boundary is not entered: it is a decision
+// service's input decision, which the caller supplies and the evaluator never
+// computes (eval.go), so nothing beneath it is read either (ADR-0042). A nil
+// boundary is the whole cone.
+func coneOf(order []*CompiledDecision, boundary map[string]bool, roots ...*CompiledDecision) []*CompiledDecision {
 	inCone := map[*CompiledDecision]bool{}
 	var visit func(cd *CompiledDecision)
 	visit = func(cd *CompiledDecision) {
@@ -214,10 +220,15 @@ func coneOf(root *CompiledDecision, order []*CompiledDecision) []*CompiledDecisi
 		}
 		inCone[cd] = true
 		for _, req := range cd.requires {
+			if req.name != "" && boundary[req.name] {
+				continue
+			}
 			visit(req)
 		}
 	}
-	visit(root)
+	for _, root := range roots {
+		visit(root)
+	}
 	var cone []*CompiledDecision
 	for _, cd := range order {
 		if inCone[cd] {
@@ -234,7 +245,7 @@ func coneOf(root *CompiledDecision, order []*CompiledDecision) []*CompiledDecisi
 // the published schema came to disagree (ADR-0041).
 func resolveReachableInputs(d *Definitions) {
 	for _, cd := range d.order {
-		cone := coneOf(cd, d.order)
+		cone := coneOf(d.order, nil, cd)
 		cd.reachable = unionInputs(cone)
 		cd.reachableConstraints = coneConstraints(cone)
 	}

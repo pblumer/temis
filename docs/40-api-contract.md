@@ -124,11 +124,12 @@ der Spur** — eine Input-Decision liefert der Aufrufer, der Service berechnet s
 nie, also taucht ihre Tabelle nicht auf. Die Spur eines Service ist ein Bericht
 darüber, was *hinter der Schnittstelle* geschah, nicht über den ganzen Graphen.
 
-`WithStrictInput()` bleibt beim Service **wirkungslos** (angenommen, aber
-ignoriert): strenge Validierung prüft gegen das deklarierte Schema einer Decision
-(WP-52), und ein Service veröffentlicht keines — seine Eingaben sind Input Data
-plus Input-Decisions, die `CompiledService` bisher nicht typisiert trägt. Ein
-Service-Schema ist die Folgearbeit, die der Option dort Bedeutung gäbe.
+`WithStrictInput()` prüft beim Service gegen `CompiledService.InputSchema()`
+(ADR-0042): die Input Data, die hinter der Schnittstelle gelesen werden, und die
+Input-Decisions an ihrer Grenze, jeweils mit deklariertem Typ.
+`CompiledService.ValidateInput(in)` liefert dieselben Probleme ohne Auswertung.
+Das Schema folgt dem, was die Auswertung liest, nicht der Liste im
+`<decisionService>`-Element; auf einem wohlgeformten Modell ist beides gleich.
 
 HTTP/MCP: das Auswerten akzeptiert ein optionales `"explain": true`; die Antwort trägt
 dann zusätzlich `"trace"` (gleiche Struktur, `omitempty`, camelCase-Feldnamen).
@@ -491,7 +492,8 @@ ADR-0019). Die Engine folgt [Semantic Versioning](https://semver.org/lang/de/):
   `Engine`/`New`/`Option` (+ `WithLimits`), `Compile`, `Definitions`
   (+ `Decision`/`Service`/`InputSchema`/`Index`/`ModelName`), `CompiledDecision`
   (+ `Evaluate`/`EvalOption`/`WithTrace`/`WithStrictInput`/`ValidateInput`),
-  `CompiledService` (+ `Evaluate`/`ID`/`Name`), `Input`/`Result`/`Trace`,
+  `CompiledService` (+ `Evaluate`/`ID`/`Name`/`InputSchema`/`ValidateInput`),
+  `Input`/`Result`/`Trace`,
   `Diagnostics`/`Diagnostic`/`Sev*`,
   die `Code*`-Konstanten, `EvalError`/`InputError`, `InputField`/`InputProblem`,
   `Limits`. Diese Menge ist durch den **API-Surface-Golden-Test**

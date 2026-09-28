@@ -3,6 +3,7 @@ package dmn
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pblumer/feel"
 	"github.com/pblumer/feel/value"
@@ -25,31 +26,40 @@ type CompiledService struct {
 	// limits are the resource bounds enforced for an evaluation of this service
 	// (WP-34), resolved from the engine configuration at compile time.
 	limits feel.Limits
+	// inputs is what a caller supplies to evaluate the service (ADR-0042): the
+	// input data read anywhere behind the interface — the output decisions' cones,
+	// cut at the input decisions — followed by the input decisions themselves,
+	// typed by their own declared variable type. It drives the conversion by
+	// declared type, strict validation and the published schema alike, so the
+	// three cannot disagree about what a caller sends, as they did for a decision
+	// before ADR-0041.
+	inputs []InputField
+	// constraints are the structural and allowed-values matchers over the same
+	// set, keyed by input name.
+	constraints map[string]*inputConstraint
 }
 
-// declaredInputs is what the service's output decisions declare about their
-// inputs, deduped by name. It is deliberately not exported and not called a
-// schema: an input decision the caller supplies at the boundary carries its own
-// type that nothing here reads yet, so this is a working set for conversion and
-// not the published self-description a service still lacks.
-func (s *CompiledService) declaredInputs() []InputField {
-	var out []InputField
-	seen := make(map[string]bool)
-	for _, dec := range s.outputs {
-		// The cone, not the output decision's own declaration (ADR-0041). A service
-		// whose output decision reaches its inputs through other decisions — the
-		// ordinary shape, since that is what encapsulation is for — declared nothing
-		// here, so the conversion this set drives was a no-op for exactly the services
-		// that need it most.
-		for _, f := range dec.reachable {
-			if seen[f.Name] {
-				continue
-			}
-			seen[f.Name] = true
-			out = append(out, f)
-		}
-	}
-	return out
+// InputSchema returns what a caller supplies to evaluate the service: every input
+// data value the service reads behind its interface, and the result of every
+// input decision it takes at its boundary instead of computing (ADR-0042).
+//
+// It describes what evaluation reads, not what the <decisionService> element
+// lists. The two agree on a well-formed model. Where they do not — a declaration
+// that misses an input one of its decisions reads, which is easy to leave behind
+// when a decision is moved inside the service — the declared list is the one that
+// is wrong, and a schema built on it would neither convert nor check the input the
+// evaluation actually uses.
+//
+// An input that only an input decision's own logic reads is not part of it: the
+// caller supplies that decision's result, so the service never computes it and
+// never reads what lies beneath it.
+func (s *CompiledService) InputSchema() []InputField { return s.inputs }
+
+// ValidateInput checks in against the service's input schema and returns every
+// problem found (an empty slice means the input is valid), with the same codes
+// and rules as CompiledDecision.ValidateInput. It never evaluates the service.
+func (s *CompiledService) ValidateInput(in Input) []InputProblem {
+	return validateInputAgainst(in, s.inputs, s.constraints, fmt.Sprintf("decision service %q", s.name))
 }
 
 // Name returns the service's name.
@@ -82,14 +92,10 @@ func (d *Definitions) Service(idOrName string) (*CompiledService, error) {
 // computed, so its table never runs and never appears — a service's trace is an
 // account of what happened behind the interface, not of the whole graph.
 //
-// WithStrictInput has no effect here, and deliberately so rather than by
-// oversight: strict validation checks an input against a decision's declared
-// schema (WP-52), and a service publishes none — its inputs are its input data
-// plus its input decisions, which nothing on CompiledService yet carries as
-// typed fields. Passing it is accepted and ignored instead of failing, because
-// an option that is meaningless for one callee should not turn a working call
-// into an error; a service-level schema is the follow-up that would give it
-// meaning.
+// WithStrictInput validates the input against the service's InputSchema first
+// and fails with an *InputError if it does not conform, exactly as it does for a
+// decision (ADR-0042). It was accepted and ignored for as long as a service
+// published no schema to validate against.
 func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOption) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -98,13 +104,16 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOp
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	// The declarations of the decisions the service publishes drive the conversion
-	// (ADR-0040). This is not the service-level schema §1.3 still calls a follow-up
-	// — nothing new is published, and WithStrictInput stays as inert as the comment
-	// above says. It is only that a service must not convert a `date` differently
-	// from the decision behind it, which is what would happen if one honoured the
-	// declared type and the other did not.
-	base, err := inputToValuesTyped(in, s.declaredInputs())
+	if cfg.strict {
+		if probs := s.ValidateInput(in); len(probs) > 0 {
+			return Result{}, &InputError{Problems: probs}
+		}
+	}
+	// The same set drives the conversion by declared type (ADR-0040), so an input
+	// decision declared `date` and supplied as text reaches the decisions that read
+	// it as a date — which the output decisions' cones alone could not see, since
+	// an input decision is a decision and not input data.
+	base, err := inputToValuesTyped(in, s.inputs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -145,6 +154,12 @@ func compileServices(defs *Definitions, m *model.Definitions, items map[string]*
 	defs.servicesByID = make(map[string]*CompiledService, len(m.Services))
 	defs.servicesByNam = make(map[string]*CompiledService, len(m.Services))
 
+	decByID := make(map[string]*model.Decision, len(m.Decisions))
+	for _, dec := range m.Decisions {
+		decByID[dec.ID] = dec
+	}
+	itemAllowed := allowedValuesByType(m)
+
 	var diags Diagnostics
 	for _, ds := range m.Services {
 		cs := &CompiledService{id: ds.ID, name: ds.Name, boundary: map[string]bool{}}
@@ -168,6 +183,7 @@ func compileServices(defs *Definitions, m *model.Definitions, items map[string]*
 				cs.boundary[in.name] = true
 			}
 		}
+		resolveServiceInputs(cs, defs, ds, decByID, itemAllowed, items)
 
 		defs.serviceOrder = append(defs.serviceOrder, cs)
 		if cs.id != "" {
@@ -178,6 +194,54 @@ func compileServices(defs *Definitions, m *model.Definitions, items map[string]*
 		}
 	}
 	return diags
+}
+
+// resolveServiceInputs fills a compiled service's input schema, once, after its
+// outputs and boundary are known (ADR-0042).
+//
+// Two halves, because a service takes two kinds of value. The input data comes
+// from the output decisions' cones, cut where the evaluator stops: an input
+// decision is supplied and never computed, so what only its own logic reads is
+// never read at all. That half reuses each decision's declared fields, so the
+// type an input data carries here is the one the decision reading it declares —
+// the same answer ReachableInputSchema gives. The input decisions are the other
+// half. They are decisions, not input data, so no cone can name them; each is
+// typed by its own variable's typeRef, which is the type its result carries when
+// it is computed and so the type the decisions behind the boundary expect.
+func resolveServiceInputs(cs *CompiledService, defs *Definitions, ds *model.DecisionService, decByID map[string]*model.Decision, itemAllowed map[string]string, items map[string]*feel.Type) {
+	cone := coneOf(defs.order, cs.boundary, cs.outputs...)
+	fields := unionInputs(cone)
+	constraints := coneConstraints(cone)
+
+	idx := make(map[string]int, len(fields))
+	for i, f := range fields {
+		idx[f.Name] = i
+	}
+	for _, id := range ds.InputDecisions {
+		cd, ok := defs.byID[id]
+		dec := decByID[id]
+		if !ok || dec == nil || cd.name == "" {
+			continue
+		}
+		ref := dec.VariableTypeRef
+		f := InputField{Name: cd.name, Type: schemaTypeName(ref, items), Required: true}
+		c := constraintFor(ref, itemAllowed[strings.TrimSpace(ref)], items)
+		if c != nil {
+			f.Constraint = c.allowedText
+		}
+		f.Values, f.ValuesClosed = suggestValues(f.Constraint, nil)
+		if i, seen := idx[f.Name]; seen {
+			mergeInputField(&fields[i], f)
+		} else {
+			idx[f.Name] = len(fields)
+			fields = append(fields, f)
+		}
+		if _, taken := constraints[cd.name]; !taken && c != nil {
+			constraints[cd.name] = c
+		}
+	}
+	cs.inputs = fields
+	cs.constraints = constraints
 }
 
 // registerServiceInvocables adds one callable FEEL function per decision service
