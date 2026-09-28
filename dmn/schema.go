@@ -156,11 +156,25 @@ func (d *Definitions) ModelInputSchema() []InputField {
 // comes from the first declaring decision in the cone, and it is required when
 // any decision in the cone requires it. It errs if no such decision exists.
 func (d *Definitions) ReachableInputSchema(idOrName string) ([]InputField, error) {
-	cone, err := d.requirementsCone(idOrName)
+	cd, err := d.decisionByRef(idOrName)
 	if err != nil {
 		return nil, err
 	}
-	return unionInputs(cone), nil
+	return cd.reachable, nil
+}
+
+// decisionByRef resolves a decision by id or name without requiring it to be
+// executable, which is what the schema surfaces want: a decision whose logic did
+// not compile still declares inputs, and describing it is not evaluating it.
+func (d *Definitions) decisionByRef(idOrName string) (*CompiledDecision, error) {
+	cd, ok := d.byID[idOrName]
+	if !ok {
+		cd, ok = d.byName[idOrName]
+	}
+	if !ok {
+		return nil, fmt.Errorf("dmn: no decision %q", idOrName)
+	}
+	return cd, nil
 }
 
 // ValidateModelInput checks in against the model's whole-graph input schema
@@ -179,26 +193,19 @@ func (d *Definitions) ValidateModelInput(in Input) []InputProblem {
 // catching genuine unknowns, type mismatches and missing required inputs. It errs
 // if no such decision exists.
 func (d *Definitions) ValidateReachableInput(idOrName string, in Input) ([]InputProblem, error) {
-	cone, err := d.requirementsCone(idOrName)
+	cd, err := d.decisionByRef(idOrName)
 	if err != nil {
 		return nil, err
 	}
 	subject := fmt.Sprintf("decision %q's reachable inputs", idOrName)
-	return validateInputAgainst(in, unionInputs(cone), coneConstraints(cone), subject), nil
+	return validateInputAgainst(in, cd.reachable, cd.reachableConstraints, subject), nil
 }
 
-// requirementsCone returns the decisions in the requirements cone of idOrName —
-// the decision itself plus every decision reachable through its requiredDecision
-// edges — in the model's declaration order (d.order), so any union built over it
-// is deterministic (no map-iteration order, ADR-0007/0023).
-func (d *Definitions) requirementsCone(idOrName string) ([]*CompiledDecision, error) {
-	root, ok := d.byID[idOrName]
-	if !ok {
-		root, ok = d.byName[idOrName]
-	}
-	if !ok {
-		return nil, fmt.Errorf("dmn: no decision %q", idOrName)
-	}
+// coneOf returns root's requirements cone — root plus every decision reachable
+// through its requiredDecision edges — in the model's declaration order, so a
+// union built over it is deterministic (ADR-0007/0023). The visit guard makes it
+// safe on a cyclic model, which Compile reports but still hands back.
+func coneOf(root *CompiledDecision, order []*CompiledDecision) []*CompiledDecision {
 	inCone := map[*CompiledDecision]bool{}
 	var visit func(cd *CompiledDecision)
 	visit = func(cd *CompiledDecision) {
@@ -212,12 +219,25 @@ func (d *Definitions) requirementsCone(idOrName string) ([]*CompiledDecision, er
 	}
 	visit(root)
 	var cone []*CompiledDecision
-	for _, cd := range d.order {
+	for _, cd := range order {
 		if inCone[cd] {
 			cone = append(cone, cd)
 		}
 	}
-	return cone, nil
+	return cone
+}
+
+// resolveReachableInputs fills every decision's cone union, once, after the
+// requirement edges are wired. It is what makes "the inputs a caller supplies" a
+// property of the compiled decision rather than something each caller re-derives
+// — and re-derives differently, which is how the conversion, the strict check and
+// the published schema came to disagree (ADR-0041).
+func resolveReachableInputs(d *Definitions) {
+	for _, cd := range d.order {
+		cone := coneOf(cd, d.order)
+		cd.reachable = unionInputs(cone)
+		cd.reachableConstraints = coneConstraints(cone)
+	}
 }
 
 // unionInputs merges the declared input fields of decs into one schema, deduped

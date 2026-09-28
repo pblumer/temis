@@ -20,6 +20,31 @@ Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Ve
 
 ### Changed
 
+- **Das Eingabeschema einer Decision ist ihr Anforderungskegel (ADR-0041, korrigiert
+  ADR-0040).** Die Umwandlung nach deklariertem Typ hing an den Inputs, die eine Decision
+  **selbst** deklariert. Für ein Blatt ist das richtig, darüber wertlos: Wer eine Decision
+  auswertet, wertet alles aus, was sie anfordert, und liefert deshalb die Blatt-Eingaben
+  des ganzen Kegels. Eine Decision, die nur andere Decisions anfordert, deklariert selbst
+  nichts — und wandelte deshalb nichts um. Der Wert erreichte die Sub-Decision, die ihn
+  deklariert, als Text, der Vergleich war null, und eine Tabelle kann null nicht von
+  `false` unterscheiden. Dieselbe Sub-Decision direkt ausgewertet war richtig, was den
+  Fehler so schwer sichtbar machte: er entstand nicht dort, wo er wirkte.
+
+  Betroffen waren drei Stellen im Kern — die Umwandlung, die strikte Validierung und die
+  Arbeitsmenge der Service-Grenze. `WithStrictInput()` war an einer zusammengesetzten
+  Decision nicht streng, sondern zufällig: es meldete jede legitime transitive Eingabe als
+  `UNKNOWN_INPUT` mit `expected one of (none)` und liess jeden Typkonflikt durch.
+
+  Die Kegel-Union wird jetzt einmal beim Kompilieren aufgelöst und auf der
+  `CompiledDecision` geführt; alles, was eine Eingabe gegen ein Schema liest, liest diese
+  eine Menge. `CompiledDecision.InputSchema()` bleibt die Deklaration der Decision und ist
+  unverändert. Unter dem Strich wird weniger gerechnet, weil `ReachableInputSchema` den
+  Kegel bisher bei jedem Aufruf neu gelaufen ist.
+
+  **Verhaltensänderung an derselben Naht wie ADR-0040**, in denselben Fällen, in denen die
+  bisherige Antwort nachweislich falsch war; für ein Blatt ändert sich nichts. Exportierte
+  Oberfläche unverändert (`testdata/api/dmn.api` gleich).
+
 - **Der deklarierte Eingabetyp entscheidet, wie ein Wert ankommt (ADR-0040).** Schema,
   Validierung und Auswertung sagten für `date`, `time`, `date and time` und `duration`
   drei verschiedene Dinge. `ReachableInputSchema` nannte die Eingabe `date`,

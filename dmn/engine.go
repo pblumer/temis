@@ -108,6 +108,10 @@ func (e *Engine) Compile(ctx context.Context, xml []byte) (*Definitions, Diagnos
 	}
 
 	diags = append(diags, wireRequirements(defs, m)...)
+	// The requirement edges exist now, so every decision's cone — and with it the
+	// set of inputs a caller supplies to evaluate it — is fixed and can be resolved
+	// once, here, rather than walked per evaluation (ADR-0041).
+	resolveReachableInputs(defs)
 	diags = append(diags, compileServices(defs, m, items)...)
 	for _, cs := range defs.serviceOrder {
 		cs.limits = lim

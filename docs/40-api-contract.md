@@ -173,6 +173,14 @@ Genau diese Schreibweisen — ISO 8601, dieselben, die FEELs eigene `date()`-, `
 wie `dd.MM.yyyy` wird **nicht** akzeptiert: Zwischen `03.04.2026` und `04.03.2026` zu
 raten ist genau die stille falsche Antwort, gegen die diese Prüfung antritt.
 
+**Massgeblich ist der Anforderungskegel, nicht die einzelne Decision (ADR-0041).**
+Wer eine Decision auswertet, wertet alles aus, was sie anfordert, und liefert deshalb
+die Blatt-Eingaben des ganzen Kegels. Umwandlung und strikte Validierung lesen genau
+diese Menge — dieselbe, die `ReachableInputSchema` veröffentlicht. Eine Decision, die
+nur andere Decisions anfordert, deklariert selbst nichts; `InputSchema()` ist für sie
+leer und beantwortet die Frage „was schickt ein Aufrufer" nicht.
+
+
 Das ist **keine** FEEL-Koerzierung (DMN §10.3.2.9.4, die an Ausgabegrenzen konform hält
 oder `null` erzeugt), sondern die Abbildung Go-Wert → FEEL-Wert eine Zeile weiter
 aussen — die Grenze, die diese Engine definiert und die DMN der Implementierung
