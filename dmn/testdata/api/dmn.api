@@ -108,7 +108,11 @@ func (s *CompiledService) Evaluate(ctx context.Context, in Input, opts ...EvalOp
 
 func (s *CompiledService) ID() string
 
+func (s *CompiledService) InputSchema() []InputField
+
 func (s *CompiledService) Name() string
+
+func (s *CompiledService) ValidateInput(in Input) []InputProblem
 
 func (s Severity) String() string
 

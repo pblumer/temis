@@ -41,10 +41,11 @@ func WithTrace() Option {
 }
 
 // Validate runs model-aware validation: every step's model resolves, its target
-// decision/service exists, and — for a decision — its required inputs are wired
-// and no wiring targets an input the decision cannot reach (typed against the
-// target's reachable input schema — its direct plus transitively-required leaf
-// inputs, ADR-0026 L2a — so a composed decision is wireable in a flow). Structural
+// decision/service exists, and its required inputs are wired and no wiring
+// targets an input the target cannot reach (typed against a decision's reachable
+// input schema — its direct plus transitively-required leaf inputs, ADR-0026 L2a
+// — so a composed decision is wireable in a flow, or against a service's input
+// schema, dmn ADR-0042). Structural
 // diagnostics from Compile are included first. A non-empty result means the flow
 // must not be evaluated.
 func (f *Flow) Validate(ctx context.Context, r Resolver) Diagnostics {
@@ -60,10 +61,16 @@ func (f *Flow) Validate(ctx context.Context, r Resolver) Diagnostics {
 			continue
 		}
 		if _, decErr := defs.Decision(s.Decision); decErr != nil {
-			if _, svcErr := defs.Service(s.Decision); svcErr != nil {
+			svc, svcErr := defs.Service(s.Decision)
+			if svcErr != nil {
 				diags = append(diags, Diagnostic{Code: CodeTargetNotFound, Step: id, Message: fmt.Sprintf("model has no decision or service %q", s.Decision)})
+				continue
 			}
-			continue // a service: no public input schema to type-check against
+			// A service publishes what its caller supplies (dmn ADR-0042), so its wiring
+			// is checked like a decision's. Until it did, a service step was the one
+			// kind whose wiring nothing looked at.
+			diags = append(diags, checkWiring(id, s, svc.InputSchema())...)
+			continue
 		}
 		// Type the wiring against the target's REACHABLE inputs — its direct inputs
 		// plus those reached transitively through required decisions (ADR-0026) — not
@@ -168,9 +175,16 @@ func (f *Flow) Evaluate(ctx context.Context, in dmn.Input, r Resolver, opts ...O
 			}
 			res, err = dec.Evaluate(ctx, stepIn, evalOpts...)
 		} else if svc, svcErr := defs.Service(s.Decision); svcErr == nil {
-			stepIn, berr := f.buildInput(ctx, idx, nil, in, stepOut)
+			// The same two steps as a decision, against the service's own schema (dmn
+			// ADR-0042). Without it a number an earlier step rendered as a decimal string
+			// reached a numeric service input as text, and a wrongly-typed value was
+			// evaluated rather than refused.
+			stepIn, berr := f.buildInput(ctx, idx, svc.InputSchema(), in, stepOut)
 			if berr != nil {
 				return dmn.Result{}, berr
+			}
+			if probs := svc.ValidateInput(stepIn); len(probs) > 0 {
+				return dmn.Result{}, fmt.Errorf("flow: step %q: %w", s.ID, &dmn.InputError{Problems: probs})
 			}
 			// A service step is traced like a decision step. It was not, because the
 			// service API took no options — which made a flow's trace silently skip

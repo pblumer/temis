@@ -114,20 +114,30 @@ func buildConstraints(m *model.Definitions, dec *model.Decision, items map[strin
 		if allowed == "" {
 			allowed = itemAllowed[strings.TrimSpace(ref)]
 		}
-
-		c := &inputConstraint{typ: resolveType(ref, items), allowedText: allowed}
-		if allowed != "" {
-			if matcher, err := feel.CompileUnaryTest(allowed, unaryEnv); err == nil {
-				c.matcher = matcher
-			} else {
-				c.allowedText = "" // unparsable constraint: drop it
-			}
-		}
-		if c.typ != nil || c.matcher != nil {
+		if c := constraintFor(ref, allowed, items); c != nil {
 			out[name] = c
 		}
 	}
 	return out
+}
+
+// constraintFor resolves one value's structural type and allowed-values matcher
+// from its typeRef and allowed-values text, or returns nil when it has neither.
+// An input data value and a service's input decision are constrained alike, so
+// both go through here.
+func constraintFor(ref, allowed string, items map[string]*feel.Type) *inputConstraint {
+	c := &inputConstraint{typ: resolveType(ref, items), allowedText: allowed}
+	if allowed != "" {
+		if matcher, err := feel.CompileUnaryTest(allowed, unaryEnv); err == nil {
+			c.matcher = matcher
+		} else {
+			c.allowedText = "" // unparsable constraint: drop it
+		}
+	}
+	if c.typ == nil && c.matcher == nil {
+		return nil
+	}
+	return c
 }
 
 // allowedValuesByType maps each named item definition to its allowed-values

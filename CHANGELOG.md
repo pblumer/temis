@@ -18,6 +18,27 @@ gilt für die öffentliche Go-API (`package dmn`) und die HTTP-API (ADR-0019,
 Vor-1.0-Entwicklung. Bis zum ersten getaggten Release tragen die Binaries die Version
 `0.0.0-dev`. Bisher umgesetzt (Auszug, voller Stand in `docs/20-roadmap.md`):
 
+### Added
+
+- **Ein Decision Service veröffentlicht, was sein Aufrufer liefert (ADR-0042).**
+  `CompiledService.InputSchema()` und `CompiledService.ValidateInput()` beschreiben und
+  prüfen die Eingaben eines Service: die Input Data, die hinter der Schnittstelle gelesen
+  werden, und die Input-Decisions an ihrer Grenze, jeweils mit deklariertem Typ. Das
+  Schema folgt dem, was die Auswertung liest, nicht der Liste im `<decisionService>`;
+  auf einem wohlgeformten Modell ist beides gleich, bei einer unvollständigen
+  Deklaration ist die Liste das Falsche.
+
+  Dieselbe Menge treibt jetzt die Umwandlung und `WithStrictInput()`, das an einem
+  Service bisher angenommen und ignoriert wurde. Eine als `date` deklarierte
+  Input-Decision, die als Text ankommt, wird damit erstmals ein Datum — vorher erreichte
+  sie die gekapselten Decisions als Zeichenkette, und der Service antwortete still mit
+  dem Catch-all. `flow` prüft einen Service-Schritt jetzt wie einen Decision-Schritt:
+  Verdrahtung, Umwandlung einer Zahl aus einem Dezimal-String, Typprüfung.
+
+  **Verhaltensänderung:** `WithStrictInput()` an einem Service kann jetzt einen
+  `*InputError` liefern; ein falsch verdrahteter Service-Schritt wird von `flow.Validate`
+  abgewiesen. Oberfläche: zwei neue Methoden (`testdata/api/dmn.api`).
+
 ### Changed
 
 - **Das Eingabeschema einer Decision ist ihr Anforderungskegel (ADR-0041, korrigiert
