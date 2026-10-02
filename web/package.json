@@ -14,11 +14,11 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "typescript": "~7.0.2",
-    "vite": "~8.3.0"
+    "vite": "~8.3.1"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
-    "diagram-js": "^15.26.0",
+    "diagram-js": "^15.27.1",
     "diagram-js-direct-editing": "^3.5.1"
   }
 }
