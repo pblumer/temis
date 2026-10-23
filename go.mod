@@ -6,10 +6,10 @@ module github.com/pblumer/temis
 // ListenAndServeTLS), fixed in Go 1.24.9+ and never backported to the EOL 1.23
 // line. The CI security lane scans with the latest stable Go; the release image
 // (Dockerfile) builds on 1.25.
-go 1.25.0
+go 1.26.0
 
 require (
-	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect v1.21.1
 	github.com/pblumer/feel v0.0.0-20260722114835-38f697db2c7d
 	google.golang.org/protobuf v1.36.12
 )
